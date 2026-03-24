@@ -6,7 +6,7 @@
  *  2. Probe dimensions (via `sips`)
  *  3. Group images into scenes by orientation
  *  4. Render each scene to a temp MP4 (FFmpeg filter_complex)
- *  5. Concatenate scenes with xfade transitions
+ *  5. Concatenate scenes with per-pair xfade transitions (flow-matched)
  *  6. Clean up temp files on success
  */
 
@@ -42,73 +42,133 @@ export interface StoryImageInfo {
 }
 
 export type SceneType = 'portrait' | 'landscape-3' | 'landscape-2' | 'landscape-1'
+export type StoryMotionType = 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'drift-up' | 'drift-down'
 
 export interface StorySceneInternal {
   type: SceneType
   images: StoryImageInfo[]
-  duration: number  // seconds
+  duration: number
+  motionType: StoryMotionType
 }
 
 export interface StoryOptions {
-  transition: 'fade' | 'slide' | 'zoom'
   totalDuration: number
-  style?: string
+  transitionStyle?: 'clean' | 'cinematic' | 'energetic'
+  colorMatch?: 'off' | 'subtle' | 'strong'
   motionMode?: 'none' | 'subtle' | 'dynamic'
 }
 
-// Target zoom amounts per mode (portrait / landscape)
+// ── Motion configuration ──────────────────────────────────────────────────────
+
+// Target zoom amounts per motionMode (portrait / landscape)
 const PORTRAIT_ZOOM:  Record<string, number> = { none: 1.0, subtle: 1.06, dynamic: 1.10 }
 const LANDSCAPE_ZOOM: Record<string, number> = { none: 1.0, subtle: 1.03, dynamic: 1.05 }
+
+// Deterministic motion sequences — assigned by sceneIndex % seq.length
+const PORTRAIT_MOTION_SEQ:  StoryMotionType[] = ['zoom-in', 'pan-right', 'zoom-out', 'pan-left', 'drift-up', 'drift-down']
+const LANDSCAPE_MOTION_SEQ: StoryMotionType[] = ['zoom-in', 'pan-left', 'pan-right', 'zoom-out']
+
+const PAN_ZOOM = 1.04  // fixed zoom used for pan-left / pan-right motions
+const DRIFT_PX = 60    // y-drift pixels at 2× working res (= 30px at final 1080p)
 
 // Working resolution: 2× output resolution.
 // Zoompan integer-pixel rounding creates 1px jumps at working res.
 // Processing at 2× then scaling down makes those jumps 0.5px → sub-pixel invisible.
 const WORK_W = 2160
 const WORK_H = 3840
-const LANDSCAPE3_PAN = 40  // pixels at 2× working res (= 20px at 1080p after downscale)
+
+// ── Motion type assignment ────────────────────────────────────────────────────
+
+function assignMotionType(sceneIndex: number, isPortrait: boolean, motionMode: string): StoryMotionType {
+  if (motionMode === 'none') return 'zoom-in'  // endZoom = 1.0 = no motion
+  const seq = isPortrait ? PORTRAIT_MOTION_SEQ : LANDSCAPE_MOTION_SEQ
+  return seq[sceneIndex % seq.length]
+}
+
+// ── Motion filter builder ─────────────────────────────────────────────────────
 
 /**
- * Build a zoompan z= expression that zooms from 1.0 to `endZoom` over `frames` frames.
- * Uses `on` (1-based output frame counter) so zoom starts at 1+rate on frame 1, not 0.
+ * Build a zoompan filter chain for a scene.
+ * Input: WORK_W×WORK_H composite. Output: 1080×1920 (downscaled).
+ * Does NOT include setsar=1 — callers append that (+ optional color match).
  */
-function zoomExpr(endZoom: number, frames: number): string {
-  if (endZoom <= 1.0) return `z='1'`
+function buildMotionFilter(
+  motionType: StoryMotionType,
+  frames: number,
+  motionMode: string,
+  isPortrait: boolean
+): string {
+  const zoomTable = isPortrait ? PORTRAIT_ZOOM : LANDSCAPE_ZOOM
+  const endZoom = zoomTable[motionMode] ?? zoomTable.subtle
+  const sz = `${WORK_W}x${WORK_H}`
+  const scale = 'scale=1080:1920:flags=lanczos'
+
+  if (endZoom <= 1.0) return scale
+
   const rate = ((endZoom - 1.0) / frames).toFixed(8)
-  return `z='min(1+on*${rate},${endZoom})'`
-}
+  const denom = Math.max(1, frames - 1)
 
-/**
- * Zoompan filter for a portrait scene.
- * Expects ${WORK_W}×${WORK_H} input. Outputs 1080×1920 after downscale.
- * Processing at 2× eliminates visible integer-pixel jitter.
- */
-function portraitZoompan(frames: number, motionMode?: string): string {
-  const endZoom = PORTRAIT_ZOOM[motionMode ?? 'subtle'] ?? PORTRAIT_ZOOM.subtle
-  if (endZoom <= 1.0) return `scale=1080:1920:flags=lanczos`
-  const z = zoomExpr(endZoom, frames)
-  return `zoompan=${z}:x='(iw*zoom-iw)/2':y='(ih*zoom-ih)/2':d=${frames}:s=${WORK_W}x${WORK_H},scale=1080:1920:flags=lanczos`
-}
-
-/**
- * Zoompan filter for a landscape composite scene.
- * Expects ${WORK_W}×${WORK_H} input. Outputs 1080×1920 after downscale.
- */
-function landscapeZoompan(frames: number, motionMode?: string, withPan = false): string {
-  const endZoom = LANDSCAPE_ZOOM[motionMode ?? 'subtle'] ?? LANDSCAPE_ZOOM.subtle
-  if (endZoom <= 1.0) return `scale=1080:1920:flags=lanczos`
-  const z = zoomExpr(endZoom, frames)
-  if (!withPan) {
-    return `zoompan=${z}:x='(iw*zoom-iw)/2':y='(ih*zoom-ih)/2':d=${frames}:s=${WORK_W}x${WORK_H},scale=1080:1920:flags=lanczos`
+  switch (motionType) {
+    case 'zoom-in':
+      return `zoompan=z='min(1+on*${rate},${endZoom})':x='(iw*zoom-iw)/2':y='(ih*zoom-ih)/2':d=${frames}:s=${sz},${scale}`
+    case 'zoom-out':
+      return `zoompan=z='max(1,${endZoom}-(on-1)*${rate})':x='(iw*zoom-iw)/2':y='(ih*zoom-ih)/2':d=${frames}:s=${sz},${scale}`
+    case 'pan-right':
+      return `zoompan=z='${PAN_ZOOM}':x='(iw*zoom-iw)*(on-1)/${denom}':y='(ih*zoom-ih)/2':d=${frames}:s=${sz},${scale}`
+    case 'pan-left':
+      return `zoompan=z='${PAN_ZOOM}':x='(iw*zoom-iw)*(${denom}-(on-1))/${denom}':y='(ih*zoom-ih)/2':d=${frames}:s=${sz},${scale}`
+    case 'drift-up':
+      return `zoompan=z='min(1+on*${rate},${endZoom})':x='(iw*zoom-iw)/2':y='max(0,(ih*zoom-ih)/2-${DRIFT_PX}*(on-1)/${denom})':d=${frames}:s=${sz},${scale}`
+    case 'drift-down':
+      return `zoompan=z='min(1+on*${rate},${endZoom})':x='(iw*zoom-iw)/2':y='min(ih*zoom-ih,(ih*zoom-ih)/2+${DRIFT_PX}*(on-1)/${denom})':d=${frames}:s=${sz},${scale}`
   }
-  const pan = LANDSCAPE3_PAN
-  const xExpr = `x='max(0,(iw*zoom-iw)/2-${pan}+${(pan / frames).toFixed(4)}*on)'`
-  return `zoompan=${z}:${xExpr}:y='(ih*zoom-ih)/2':d=${frames}:s=${WORK_W}x${WORK_H},scale=1080:1920:flags=lanczos`
 }
+
+// ── Color match filter ────────────────────────────────────────────────────────
+
+function buildColorMatchFilter(colorMatch?: string): string | null {
+  switch (colorMatch) {
+    case 'subtle': return "curves=all='0/0.025 1/0.975',eq=saturation=0.92"
+    case 'strong': return "curves=all='0/0.06 0.25/0.265 0.75/0.735 1/0.94',eq=saturation=0.84:contrast=0.95"
+    default: return null
+  }
+}
+
+// ── Flow transition selection ─────────────────────────────────────────────────
+
+/**
+ * Select an xfade transition whose direction matches the outgoing scene's motion.
+ */
+function selectTransition(outgoingMotion: StoryMotionType, transitionStyle?: string): string {
+  if (transitionStyle === 'cinematic') {
+    switch (outgoingMotion) {
+      case 'pan-right':  return 'slideleft'
+      case 'pan-left':   return 'slideright'
+      case 'drift-up':   return 'slideup'
+      case 'drift-down': return 'slidedown'
+      case 'zoom-in':    return 'zoomin'
+      default:           return 'fade'
+    }
+  }
+  if (transitionStyle === 'energetic') {
+    switch (outgoingMotion) {
+      case 'pan-right':  return 'slideleft'
+      case 'pan-left':   return 'slideright'
+      case 'drift-up':   return 'wipeleft'
+      case 'drift-down': return 'wiperight'
+      default:           return 'zoomin'
+    }
+  }
+  return 'fade'  // 'clean' or default
+}
+
+// ── Build scenes result ───────────────────────────────────────────────────────
 
 export interface BuildScenesResult {
   scenes: Array<{
     id: string
     type: SceneType
+    motionType: StoryMotionType
     imagePaths: string[]
     imageUrls: string[]
     duration: number
@@ -142,24 +202,21 @@ const TRANSITION_DURATION = 0.4   // seconds
 const MIN_SCENE_DURATION   = 2.0  // seconds
 const MAX_SCENE_DURATION   = 8.0  // seconds
 
-function buildSceneGroups(images: StoryImageInfo[], totalDuration: number): StorySceneInternal[] {
-  const groups: StorySceneInternal[] = []
+function buildSceneGroups(images: StoryImageInfo[], totalDuration: number, motionMode: string): StorySceneInternal[] {
+  const groups: Array<Omit<StorySceneInternal, 'motionType'>> = []
   let i = 0
 
   while (i < images.length) {
     const img = images[i]
     if (img.height > img.width) {
-      // Portrait → one full-screen scene
       groups.push({ type: 'portrait', images: [img], duration: 0 })
       i++
     } else {
-      // Landscape — collect consecutive landscape images
       const chunk: StoryImageInfo[] = []
       while (i < images.length && images[i].width >= images[i].height) {
         chunk.push(images[i])
         i++
       }
-      // Group into chunks of up to 3
       for (let j = 0; j < chunk.length; j += 3) {
         const slice = chunk.slice(j, j + 3)
         const type: SceneType =
@@ -170,7 +227,6 @@ function buildSceneGroups(images: StoryImageInfo[], totalDuration: number): Stor
     }
   }
 
-  // Distribute time across scenes
   const n = groups.length
   if (n === 0) return []
 
@@ -178,7 +234,11 @@ function buildSceneGroups(images: StoryImageInfo[], totalDuration: number): Stor
   const rawPerScene = usableDuration / n
   const clamped = Math.max(MIN_SCENE_DURATION, Math.min(rawPerScene, MAX_SCENE_DURATION))
 
-  return groups.map(g => ({ ...g, duration: clamped }))
+  return groups.map((g, idx) => ({
+    ...g,
+    duration: clamped,
+    motionType: assignMotionType(idx, g.type === 'portrait', motionMode)
+  }))
 }
 
 // ── Public: probe images and build scene definitions (no rendering) ────────────
@@ -186,7 +246,8 @@ function buildSceneGroups(images: StoryImageInfo[], totalDuration: number): Stor
 export async function buildStoryScenes(
   imagePaths: string[],
   totalDuration: number,
-  tmpDir: string
+  tmpDir: string,
+  motionMode = 'subtle'
 ): Promise<BuildScenesResult> {
   const imageInfos: StoryImageInfo[] = []
 
@@ -199,7 +260,7 @@ export async function buildStoryScenes(
     imageInfos.push({ processedPath, originalPath: origPath, ...dims })
   }
 
-  const scenes = buildSceneGroups(imageInfos, totalDuration)
+  const scenes = buildSceneGroups(imageInfos, totalDuration, motionMode)
   const actualDuration = scenes.reduce((s, sc) => s + sc.duration, 0) +
     Math.max(0, scenes.length - 1) * TRANSITION_DURATION
 
@@ -207,6 +268,7 @@ export async function buildStoryScenes(
     scenes: scenes.map((sc, idx) => ({
       id: `scene_${idx}`,
       type: sc.type,
+      motionType: sc.motionType,
       imagePaths: sc.images.map(i => i.processedPath),
       imageUrls: sc.images.map(i => `localfile://${encodeURIComponent(i.processedPath).replace(/%2F/g, '/')}`),
       duration: sc.duration,
@@ -232,7 +294,6 @@ function runFFmpeg(
     proc.stderr.on('data', (buf: Buffer) => {
       const chunk = buf.toString()
       stderr += chunk
-      // Parse time= from FFmpeg progress output
       const m = chunk.match(/time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})/)
       if (m) {
         const elapsed = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseInt(m[3]) + parseInt(m[4]) / 100
@@ -249,22 +310,28 @@ function runFFmpeg(
 
 // ── Scene renderers ────────────────────────────────────────────────────────────
 
+function sceneFilterTail(colorMatchFilter: string | null): string {
+  return colorMatchFilter ? `,${colorMatchFilter},setsar=1` : ',setsar=1'
+}
+
 async function renderPortraitScene(
   img: StoryImageInfo,
   duration: number,
   outPath: string,
   onProgress: (p: number) => void,
-  motionMode?: string
+  motionType: StoryMotionType,
+  motionMode: string,
+  colorMatchFilter: string | null
 ): Promise<void> {
-  const d = Math.round(duration * 30)  // frame count
+  const d = Math.round(duration * 30)
+  const motion = buildMotionFilter(motionType, d, motionMode, true)
   const args = [
     '-loop', '1', '-framerate', '30', '-i', img.processedPath,
     '-vf',
     [
       `scale=${WORK_W}:${WORK_H}:force_original_aspect_ratio=increase:flags=lanczos`,
       `crop=${WORK_W}:${WORK_H}`,
-      portraitZoompan(d, motionMode),
-      'setsar=1'
+      motion + sceneFilterTail(colorMatchFilter)
     ].join(','),
     '-vframes', String(d),
     '-r', '30', '-c:v', 'libx264', '-preset', 'fast', '-b:v', '2500k', '-pix_fmt', 'yuv420p', '-g', '15',
@@ -278,18 +345,21 @@ async function renderLandscape3Scene(
   duration: number,
   outPath: string,
   onProgress: (p: number) => void,
-  motionMode?: string
+  motionType: StoryMotionType,
+  motionMode: string,
+  colorMatchFilter: string | null
 ): Promise<void> {
   const d = Math.round(duration * 30)
   const inputArgs = imgs.flatMap(i => ['-loop', '1', '-framerate', '30', '-i', i.processedPath])
-  const rowH = WORK_H / 3  // 1280px per row at 2× resolution
+  const rowH = WORK_H / 3
+  const motion = buildMotionFilter(motionType, d, motionMode, false)
   const filter = [
     `[0:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[a]`,
     `[1:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[b]`,
     `[2:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[c]`,
     '[a][b]vstack=inputs=2[ab]',
     '[ab][c]vstack=inputs=2[stacked]',
-    `[stacked]${landscapeZoompan(d, motionMode, true)},setsar=1[out]`
+    `[stacked]${motion}${sceneFilterTail(colorMatchFilter)}[out]`
   ].join(';')
   const args = [
     ...inputArgs,
@@ -307,16 +377,19 @@ async function renderLandscape2Scene(
   duration: number,
   outPath: string,
   onProgress: (p: number) => void,
-  motionMode?: string
+  motionType: StoryMotionType,
+  motionMode: string,
+  colorMatchFilter: string | null
 ): Promise<void> {
   const d = Math.round(duration * 30)
   const inputArgs = imgs.flatMap(i => ['-loop', '1', '-framerate', '30', '-i', i.processedPath])
-  const rowH = WORK_H / 2  // 1920px per row at 2× resolution
+  const rowH = WORK_H / 2
+  const motion = buildMotionFilter(motionType, d, motionMode, false)
   const filter = [
     `[0:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[a]`,
     `[1:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[b]`,
     '[a][b]vstack=inputs=2[stacked]',
-    `[stacked]${landscapeZoompan(d, motionMode)},setsar=1[out]`
+    `[stacked]${motion}${sceneFilterTail(colorMatchFilter)}[out]`
   ].join(';')
   const args = [
     ...inputArgs,
@@ -334,17 +407,17 @@ async function renderLandscape1Scene(
   duration: number,
   outPath: string,
   onProgress: (p: number) => void,
-  motionMode?: string
+  motionType: StoryMotionType,
+  motionMode: string,
+  colorMatchFilter: string | null
 ): Promise<void> {
   const d = Math.round(duration * 30)
+  const motion = buildMotionFilter(motionType, d, motionMode, false)
   const filter = [
-    // Background: fill working res, heavy blur + darken
     `[0:v]scale=${WORK_W}:${WORK_H}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${WORK_H},boxblur=luma_radius=44:luma_power=2,colorlevels=rimax=0.55:gimax=0.55:bimax=0.55[bg]`,
-    // Foreground: scale to working width, maintain aspect
     `[0:v]scale=${WORK_W}:-2:flags=lanczos[fg]`,
-    // Composite
     '[bg][fg]overlay=x=0:y=(H-h)/2[composed]',
-    `[composed]${landscapeZoompan(d, motionMode)},setsar=1[out]`
+    `[composed]${motion}${sceneFilterTail(colorMatchFilter)}[out]`
   ].join(';')
   const args = [
     '-loop', '1', '-framerate', '30', '-i', img.processedPath,
@@ -357,27 +430,20 @@ async function renderLandscape1Scene(
   await runFFmpeg(args, duration, onProgress)
 }
 
-// ── Concatenation with xfade ──────────────────────────────────────────────────
-
-const XFADE_TRANSITION: Record<string, string> = {
-  fade:  'fade',
-  slide: 'slideleft',
-  zoom:  'zoomin'
-}
+// ── Concatenation with flow-matched xfade ─────────────────────────────────────
 
 async function concatenateScenes(
   scenePaths: string[],
   durations: number[],
-  transition: string,
+  sceneMotions: StoryMotionType[],
+  transitionStyle: string,
   outputPath: string,
   onProgress: (p: number) => void
 ): Promise<void> {
-  const xfade = XFADE_TRANSITION[transition] ?? 'fade'
   const totalDuration = durations.reduce((s, d) => s + d, 0) -
     Math.max(0, scenePaths.length - 1) * TRANSITION_DURATION
 
   if (scenePaths.length === 1) {
-    // Single scene — just re-encode for final quality
     const args = [
       '-i', scenePaths[0],
       '-c:v', 'libx264', '-preset', 'medium', '-b:v', '4500k',
@@ -389,7 +455,6 @@ async function concatenateScenes(
     return
   }
 
-  // Build chained xfade filter
   const inputArgs = scenePaths.flatMap(p => ['-i', p])
   const filterParts: string[] = []
   let offset = 0
@@ -397,6 +462,7 @@ async function concatenateScenes(
 
   for (let i = 1; i < scenePaths.length; i++) {
     offset += durations[i - 1] - TRANSITION_DURATION
+    const xfade = selectTransition(sceneMotions[i - 1], transitionStyle)
     const outLabel = i === scenePaths.length - 1 ? '[out]' : `[v${i}]`
     filterParts.push(
       `${prevLabel}[${i}:v]xfade=transition=${xfade}:duration=${TRANSITION_DURATION}:offset=${offset.toFixed(3)}${outLabel}`
@@ -423,6 +489,7 @@ export interface RenderStoryParams {
     type: SceneType
     imagePaths: string[]
     duration: number
+    motionType: StoryMotionType
   }>
   options: StoryOptions
   outputPath: string
@@ -441,8 +508,11 @@ export async function renderStory(
     }
   }
 
+  const motionMode = params.options.motionMode ?? 'subtle'
+  const colorMatchFilter = buildColorMatchFilter(params.options.colorMatch)
   const scenePaths: string[] = []
   const sceneDurations: number[] = []
+  const sceneMotions: StoryMotionType[] = []
 
   try {
     // ── Phase 1: render individual scenes ─────────────────────────────────
@@ -457,7 +527,6 @@ export async function renderStory(
         sendProgress(sceneBaseProgress + (pct / 100) * (75 / params.scenes.length), `Rendering scene ${i + 1}…`)
       }
 
-      // Convert any remaining HEIC paths (in case buildStoryScenes wasn't called first)
       const imgs: StoryImageInfo[] = await Promise.all(
         scene.imagePaths.map(async imgPath => {
           const ext = path.extname(imgPath).toLowerCase()
@@ -469,25 +538,26 @@ export async function renderStory(
         })
       )
 
-      const motionMode = params.options.motionMode
+      const motionType = scene.motionType
 
       switch (scene.type) {
         case 'portrait':
-          await renderPortraitScene(imgs[0], scene.duration, sceneOut, onSceneProgress, motionMode)
+          await renderPortraitScene(imgs[0], scene.duration, sceneOut, onSceneProgress, motionType, motionMode, colorMatchFilter)
           break
         case 'landscape-3':
-          await renderLandscape3Scene(imgs, scene.duration, sceneOut, onSceneProgress, motionMode)
+          await renderLandscape3Scene(imgs, scene.duration, sceneOut, onSceneProgress, motionType, motionMode, colorMatchFilter)
           break
         case 'landscape-2':
-          await renderLandscape2Scene(imgs, scene.duration, sceneOut, onSceneProgress, motionMode)
+          await renderLandscape2Scene(imgs, scene.duration, sceneOut, onSceneProgress, motionType, motionMode, colorMatchFilter)
           break
         case 'landscape-1':
-          await renderLandscape1Scene(imgs[0], scene.duration, sceneOut, onSceneProgress, motionMode)
+          await renderLandscape1Scene(imgs[0], scene.duration, sceneOut, onSceneProgress, motionType, motionMode, colorMatchFilter)
           break
       }
 
       scenePaths.push(sceneOut)
       sceneDurations.push(scene.duration)
+      sceneMotions.push(motionType)
     }
 
     // ── Phase 2: concatenate ───────────────────────────────────────────────
@@ -495,7 +565,8 @@ export async function renderStory(
     await concatenateScenes(
       scenePaths,
       sceneDurations,
-      params.options.transition,
+      sceneMotions,
+      params.options.transitionStyle ?? 'clean',
       params.outputPath,
       (pct) => sendProgress(78 + pct * 0.2, 'Finalizing video…')
     )

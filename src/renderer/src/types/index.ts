@@ -45,23 +45,28 @@ export type SortMode = 'filename' | 'date-asc' | 'date-desc' | 'shuffle'
 
 // ─── Story Video ─────────────────────────────────────────────────────────────
 
-export type StoryTransition = 'fade' | 'slide' | 'zoom'
 export type StoryDuration = 15 | 20 | 30
 export type StorySceneType = 'portrait' | 'landscape-3' | 'landscape-2' | 'landscape-1'
 export type StoryStyle = 'clean' | 'cinematic' | 'fast-social' | 'elegant'
 export type StoryMotionMode = 'none' | 'subtle' | 'dynamic'
+export type StoryMotionType = 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'drift-up' | 'drift-down'
+export type StoryTransitionStyle = 'clean' | 'cinematic' | 'energetic'
+export type StoryColorMatch = 'off' | 'subtle' | 'strong'
 
 export interface StoryOptions {
-  transition: StoryTransition
   totalDuration: StoryDuration
   style: StoryStyle
   motionMode: StoryMotionMode
+  transitionStyle: StoryTransitionStyle
+  colorMatch: StoryColorMatch
 }
 
 /** A scene definition returned from the main process after probing image dimensions */
 export interface StorySceneDef {
   id: string
   type: StorySceneType
+  /** Motion type assigned to this scene for Ken Burns effect */
+  motionType: StoryMotionType
   /** Absolute paths to images in this scene (already converted from HEIC if needed) */
   imagePaths: string[]
   /** localfile:// URLs for display in the renderer */

@@ -6,7 +6,7 @@ import {
 import { SortableContext, useSortable, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useGallery } from '../store/gallery'
-import type { StorySceneDef, StoryOptions, StoryTransition, StoryDuration, StoryStyle, StoryMotionMode } from '../types'
+import type { StorySceneDef, StoryOptions, StoryDuration, StoryStyle, StoryMotionMode, StoryTransitionStyle, StoryColorMatch } from '../types'
 import { toLocalURL } from '../utils/imageUtils'
 
 type Step = 'configure' | 'preview' | 'exporting' | 'done' | 'error'
@@ -16,34 +16,39 @@ type Step = 'configure' | 'preview' | 'exporting' | 'done' | 'error'
 interface StylePreset {
   label: string
   description: string
-  transition: StoryTransition
   motionMode: StoryMotionMode
+  transitionStyle: StoryTransitionStyle
+  colorMatch: StoryColorMatch
 }
 
 const STYLE_PRESETS: Record<StoryStyle, StylePreset> = {
   clean: {
     label: 'Clean',
-    description: 'Subtle motion, fade transitions',
-    transition: 'fade',
-    motionMode: 'subtle'
+    description: 'Subtle Ken Burns, fade transitions',
+    motionMode: 'subtle',
+    transitionStyle: 'clean',
+    colorMatch: 'off'
   },
   cinematic: {
     label: 'Cinematic',
-    description: 'Dynamic zoom, slow & dramatic',
-    transition: 'zoom',
-    motionMode: 'dynamic'
+    description: 'Dynamic zoom, flow-matched cuts',
+    motionMode: 'dynamic',
+    transitionStyle: 'cinematic',
+    colorMatch: 'subtle'
   },
   'fast-social': {
     label: 'Fast Social',
-    description: 'Snappy slides, quick pace',
-    transition: 'slide',
-    motionMode: 'subtle'
+    description: 'Energetic motion, snappy slides',
+    motionMode: 'subtle',
+    transitionStyle: 'energetic',
+    colorMatch: 'off'
   },
   elegant: {
     label: 'Elegant',
-    description: 'No motion, pure fades',
-    transition: 'fade',
-    motionMode: 'none'
+    description: 'No motion, pure fades, color unity',
+    motionMode: 'none',
+    transitionStyle: 'clean',
+    colorMatch: 'subtle'
   }
 }
 
@@ -98,10 +103,11 @@ export function StoryModal() {
 
   const [step, setStep] = useState<Step>('configure')
   const [options, setOptions] = useState<StoryOptions>({
-    transition: 'fade',
     totalDuration: 20,
     style: 'clean',
-    motionMode: 'subtle'
+    motionMode: 'subtle',
+    transitionStyle: 'clean',
+    colorMatch: 'off'
   })
   const [scenes, setScenes] = useState<StorySceneDef[]>([])
   const [actualDuration, setActualDuration] = useState(0)
@@ -138,8 +144,9 @@ export function StoryModal() {
     setOptions(o => ({
       ...o,
       style,
-      transition: preset.transition,
-      motionMode: preset.motionMode
+      motionMode: preset.motionMode,
+      transitionStyle: preset.transitionStyle,
+      colorMatch: preset.colorMatch
     }))
   }, [])
 
@@ -147,7 +154,7 @@ export function StoryModal() {
   const handlePreview = useCallback(async () => {
     setIsBuilding(true)
     const imagePaths = topPickImages.map(img => img.path)
-    const result = await window.api.buildStoryScenes(imagePaths, options.totalDuration) as {
+    const result = await window.api.buildStoryScenes(imagePaths, options.totalDuration, options.motionMode) as {
       scenes: StorySceneDef[]
       totalDuration: number
       sceneCount: number
@@ -175,7 +182,7 @@ export function StoryModal() {
     setStep('exporting')
 
     const result = await window.api.renderStory(
-      scenes.map(s => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration })),
+      scenes.map(s => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })),
       options,
       path
     )
@@ -283,6 +290,36 @@ export function StoryModal() {
               </div>
             </div>
 
+            <div className="story-option-group">
+              <label className="story-option-label">Transitions</label>
+              <div className="story-option-pills">
+                {(['clean', 'cinematic', 'energetic'] as StoryTransitionStyle[]).map(t => (
+                  <button
+                    key={t}
+                    className={`story-pill ${options.transitionStyle === t ? 'active' : ''}`}
+                    onClick={() => setOptions(o => ({ ...o, transitionStyle: t }))}
+                  >
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="story-option-group">
+              <label className="story-option-label">Color Match</label>
+              <div className="story-option-pills">
+                {(['off', 'subtle', 'strong'] as StoryColorMatch[]).map(c => (
+                  <button
+                    key={c}
+                    className={`story-pill ${options.colorMatch === c ? 'active' : ''}`}
+                    onClick={() => setOptions(o => ({ ...o, colorMatch: c }))}
+                  >
+                    {c.charAt(0).toUpperCase() + c.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="story-info-box">
               <div className="story-info-box__row">
                 <span>Images</span><strong>{topPickImages.length}</strong>
@@ -291,7 +328,7 @@ export function StoryModal() {
                 <span>Output</span><strong>1080×1920 · 30fps · H.264</strong>
               </div>
               <div className="story-info-box__row">
-                <span>Motion</span><strong>{STYLE_PRESETS[options.style].description}</strong>
+                <span>Style</span><strong>{STYLE_PRESETS[options.style].description}</strong>
               </div>
             </div>
           </div>

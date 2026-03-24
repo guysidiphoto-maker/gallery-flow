@@ -222,11 +222,11 @@ ipcMain.handle('set-pref', (_e, key: string, value: unknown) => {
 // ─── Story Video IPC ──────────────────────────────────────────────────────────
 
 // Probe images and build scene layout (no rendering)
-ipcMain.handle('build-story-scenes', async (_e, imagePaths: string[], totalDuration: number) => {
+ipcMain.handle('build-story-scenes', async (_e, imagePaths: string[], totalDuration: number, motionMode?: string) => {
   try {
     const tmpDir = join(os.tmpdir(), `gf-story-probe-${Date.now()}`)
     await mkdir(tmpDir, { recursive: true })
-    const result = await buildStoryScenes(imagePaths, totalDuration, tmpDir)
+    const result = await buildStoryScenes(imagePaths, totalDuration, tmpDir, motionMode)
     return result
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

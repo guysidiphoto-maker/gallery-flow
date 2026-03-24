@@ -22,7 +22,7 @@ declare global {
       readFileBuffer: (p: string) => Promise<ArrayBuffer | null>
       getPref: (k: string) => Promise<unknown>
       setPref: (k: string, v: unknown) => Promise<void>
-      buildStoryScenes: (imagePaths: string[], totalDuration: number) => Promise<StoryBuildResult & { error?: string }>
+      buildStoryScenes: (imagePaths: string[], totalDuration: number, motionMode?: string) => Promise<StoryBuildResult & { error?: string }>
       renderStory: (scenes: StorySceneDef[], options: StoryOptions, outputPath: string) => Promise<{ success: boolean; error?: string }>
       chooseExportPath: (defaultName: string) => Promise<string | null>
       onStoryProgress: (cb: (data: { percent: number; stage: string }) => void) => () => void
@@ -111,6 +111,7 @@ export interface GalleryState {
   // Top Picks
   toggleTopPick: (id: string) => void
   toggleTopPickSelected: () => void
+  removeTopPickSelected: () => void
   clearTopPicks: () => void
 
   // Image Viewer
@@ -594,17 +595,56 @@ export const useGallery = create<GalleryState>((set, get) => ({
     }
   },
 
-  toggleTopPickSelected: () => {
+  toggleTopPickSelected: async () => {
+    const { selectedIds, topPickIds, images } = get()
+    if (selectedIds.size === 0) return
+
+    const newPickIds = [...selectedIds].filter(id => !topPickIds.has(id))
+
+    if (newPickIds.length === 0) {
+      // All are already picks — un-pick them (use Shift+T for explicit remove)
+      const next = new Set(topPickIds)
+      for (const id of selectedIds) next.delete(id)
+      set({ topPickIds: next })
+      return
+    }
+
+    // Mark all selected as picks
+    const next = new Set(topPickIds)
+    for (const id of selectedIds) next.add(id)
+
+    if (selectedIds.size === 1) {
+      // Single image: rename-based move to top
+      const [id] = selectedIds
+      set({ topPickIds: next })
+      await get().moveToTop(id)
+      return
+    }
+
+    // Multi-select: float all picks to top of images array in gallery order (no rename)
+    const picksInOrder = images.filter(img => next.has(img.id))
+    const nonPicks = images.filter(img => !next.has(img.id))
+    set({ topPickIds: next, images: [...picksInOrder, ...nonPicks] })
+    get().addToast(
+      `${newPickIds.length} image${newPickIds.length !== 1 ? 's' : ''} added to top picks — press ⌘Enter to apply order`,
+      'success'
+    )
+  },
+
+  removeTopPickSelected: () => {
     const { selectedIds, topPickIds } = get()
     if (selectedIds.size === 0) return
     const next = new Set(topPickIds)
-    // If all selected are already picks, un-pick them; otherwise pick all
-    const allArePicks = [...selectedIds].every(id => next.has(id))
+    let removed = 0
     for (const id of selectedIds) {
-      if (allArePicks) next.delete(id)
-      else next.add(id)
+      if (next.has(id)) { next.delete(id); removed++ }
     }
+    if (removed === 0) return
     set({ topPickIds: next })
+    get().addToast(
+      `${removed} image${removed !== 1 ? 's' : ''} removed from top picks`,
+      'info'
+    )
   },
 
   clearTopPicks: () => set({ topPickIds: new Set() }),

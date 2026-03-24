@@ -32,12 +32,14 @@ function GridCell({
   post,
   index,
   imageUrl,
+  isLocked,
   onAction
 }: {
   post: SocialPost
   index: number
   imageUrl: string
-  onAction: (action: 'split' | 'carousel' | 'revert' | 'ungroup' | 'crop', postId: string) => void
+  isLocked: boolean
+  onAction: (action: 'split' | 'carousel' | 'revert' | 'ungroup' | 'crop' | 'lock', postId: string) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: post.id })
   const { cropStates } = useSocial()
@@ -69,10 +71,10 @@ function GridCell({
     <div
       ref={setNodeRef}
       style={style}
-      className={`social-cell ${isSplitTile ? 'social-cell--split' : ''} ${isCarousel ? 'social-cell--carousel' : ''}`}
+      className={`social-cell ${isSplitTile ? 'social-cell--split' : ''} ${isCarousel ? 'social-cell--carousel' : ''} ${isLocked ? 'social-cell--locked' : ''}`}
       {...attributes}
     >
-      <div className="social-cell__inner" {...listeners}>
+      <div className="social-cell__inner" {...(isLocked ? {} : listeners)}>
         {imageUrl ? (() => {
           const tilePos = getSplitTilePos(post)
           if (tilePos) {
@@ -113,6 +115,9 @@ function GridCell({
         {cropStates[post.id] && (
           <div className="social-cell__crop-badge" title="Custom crop applied">✂</div>
         )}
+        {isLocked && (
+          <div className="social-cell__lock-badge" title="Position locked">⊠</div>
+        )}
       </div>
 
       {/* Action menu */}
@@ -149,6 +154,9 @@ function GridCell({
                 Revert Split to Single
               </button>
             )}
+            <button onClick={() => { setShowMenu(false); onAction('lock', post.id) }}>
+              {isLocked ? '🔓 Unlock Position' : '🔒 Lock Position'}
+            </button>
           </div>
         </>
       )}
@@ -563,7 +571,8 @@ export function SocialMode() {
     initFromPicks, reorderPosts,
     startSplitBuilder, revertToSingle,
     startCarouselBuilder, ungroupCarousel,
-    exportPackage, startCropAdjust
+    exportPackage, startCropAdjust,
+    lockedPostIds, toggleLockPost
   } = useSocial()
   const { images, topPickIds } = useGallery()
 
@@ -614,12 +623,13 @@ export function SocialMode() {
     if (fromIdx >= 0 && toIdx >= 0) reorderPosts(fromIdx, toIdx)
   }
 
-  const handleCellAction = (action: 'split' | 'carousel' | 'revert' | 'ungroup' | 'crop', id: string) => {
+  const handleCellAction = (action: 'split' | 'carousel' | 'revert' | 'ungroup' | 'crop' | 'lock', id: string) => {
     if (action === 'split') startSplitBuilder(id)
     else if (action === 'carousel') startCarouselBuilder(id)
     else if (action === 'revert') revertToSingle(id)
     else if (action === 'ungroup') ungroupCarousel(id)
     else if (action === 'crop') startCropAdjust(id)
+    else if (action === 'lock') toggleLockPost(id)
   }
 
   const splitTargetPost = splitTargetId ? posts.find(p => p.id === splitTargetId) : null
@@ -693,6 +703,7 @@ export function SocialMode() {
                       post={post}
                       index={i}
                       imageUrl={getPostImageUrl(post)}
+                      isLocked={lockedPostIds.has(post.id)}
                       onAction={handleCellAction}
                     />
                   ))}

@@ -44,8 +44,8 @@ const api = {
     ipcRenderer.invoke('set-pref', key, value),
 
   // ── Story Video ────────────────────────────────────────────────────────
-  buildStoryScenes: (imagePaths: string[], totalDuration: number): Promise<unknown> =>
-    ipcRenderer.invoke('build-story-scenes', imagePaths, totalDuration),
+  buildStoryScenes: (imagePaths: string[], totalDuration: number, motionMode?: string): Promise<unknown> =>
+    ipcRenderer.invoke('build-story-scenes', imagePaths, totalDuration, motionMode),
 
   chooseExportPath: (defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('choose-export-path', defaultName),

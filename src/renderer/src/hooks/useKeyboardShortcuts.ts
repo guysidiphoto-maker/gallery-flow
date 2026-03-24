@@ -15,6 +15,7 @@ export function useKeyboardShortcuts() {
     togglePreviewMode,
     prepareApplyOrder,
     toggleTopPickSelected,
+    removeTopPickSelected,
     openStoryModal,
     topPickIds,
     viewerImageId
@@ -96,10 +97,17 @@ export function useKeyboardShortcuts() {
         return
       }
 
-      // T: Toggle Top Pick on selected image(s)
-      if ((e.key === 't' || e.key === 'T') && !meta && selectedIds.size > 0) {
+      // T: Add selected image(s) to Top Picks (move to top)
+      if (e.key === 't' && !meta && !e.shiftKey && selectedIds.size > 0) {
         e.preventDefault()
         toggleTopPickSelected()
+        return
+      }
+
+      // Shift+T: Remove selected image(s) from Top Picks
+      if (e.key === 'T' && !meta && e.shiftKey && selectedIds.size > 0) {
+        e.preventDefault()
+        removeTopPickSelected()
         return
       }
 
@@ -118,6 +126,6 @@ export function useKeyboardShortcuts() {
     openFolder, moveToTop, moveToBottom,
     deleteSelected, undoLastRename, selectAll, deselectAll,
     togglePreviewMode, prepareApplyOrder,
-    toggleTopPickSelected, openStoryModal
+    toggleTopPickSelected, removeTopPickSelected, openStoryModal
   ])
 }

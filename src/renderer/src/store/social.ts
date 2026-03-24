@@ -42,6 +42,9 @@ interface SocialState {
   cropAdjustPostId: string | null
   includeOrderOverlay: boolean
 
+  // Lock
+  lockedPostIds: Set<string>
+
   // Actions
   openSocial: () => void
   closeSocial: () => void
@@ -63,6 +66,7 @@ interface SocialState {
   saveCropState: (postId: string, state: CropState) => void
   closeCropAdjust: () => void
   setIncludeOrderOverlay: (v: boolean) => void
+  toggleLockPost: (postId: string) => void
 }
 
 export const useSocial = create<SocialState>((set, get) => ({
@@ -81,9 +85,10 @@ export const useSocial = create<SocialState>((set, get) => ({
   exportError: null,
   cropStates: {},
   cropAdjustPostId: null,
-  includeOrderOverlay: true,
+  includeOrderOverlay: false,
+  lockedPostIds: new Set(),
 
-  openSocial: () => set({ isOpen: true, screen: 'grid', exportDone: false, exportDir: null, exportError: null }),
+  openSocial: () => set({ isOpen: true, screen: 'grid', exportDone: false, exportDir: null, exportError: null, lockedPostIds: new Set() }),
 
   closeSocial: () => set({ isOpen: false }),
 
@@ -98,6 +103,8 @@ export const useSocial = create<SocialState>((set, get) => ({
   },
 
   reorderPosts: (fromIndex, toIndex) => {
+    const { lockedPostIds, posts } = get()
+    if (lockedPostIds.has(posts[fromIndex]?.id)) return  // locked posts can't be moved
     set(state => ({ posts: arrayMove(state.posts, fromIndex, toIndex) }))
   },
 
@@ -237,6 +244,13 @@ export const useSocial = create<SocialState>((set, get) => ({
   saveCropState: (postId, state) => set(s => ({ cropStates: { ...s.cropStates, [postId]: state } })),
   closeCropAdjust: () => set({ cropAdjustPostId: null }),
   setIncludeOrderOverlay: (v) => set({ includeOrderOverlay: v }),
+
+  toggleLockPost: (postId) => set(s => {
+    const next = new Set(s.lockedPostIds)
+    if (next.has(postId)) next.delete(postId)
+    else next.add(postId)
+    return { lockedPostIds: next }
+  }),
 
   exportPackage: async (imagePathMap) => {
     const dirResult = await window.api.chooseSocialExportDir()
