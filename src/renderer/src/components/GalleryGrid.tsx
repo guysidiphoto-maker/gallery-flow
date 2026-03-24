@@ -1,23 +1,12 @@
-import React, { useCallback, useState } from 'react'
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-  DragStartEvent,
-  DragOverlay,
-  MeasuringStrategy
-} from '@dnd-kit/core'
+import React from 'react'
 import {
   SortableContext,
-  sortableKeyboardCoordinates,
   rectSortingStrategy
 } from '@dnd-kit/sortable'
 import { useGallery } from '../store/gallery'
-import { ImageCard, DragOverlayCard } from './ImageCard'
+import { useSections } from '../store/sections'
+import { ImageCard } from './ImageCard'
+import type { ImageFile } from '../types'
 
 export function GalleryGrid() {
   const {
@@ -25,7 +14,6 @@ export function GalleryGrid() {
     selectedIds,
     topPickIds,
     thumbnailSize,
-    handleDrop,
     moveToTop,
     moveToBottom,
     selectImage,
@@ -35,35 +23,40 @@ export function GalleryGrid() {
     openViewer
   } = useGallery()
 
-  const [activeId, setActiveId] = useState<string | null>(null)
+  const {
+    sections,
+    activeSectionFilter,
+    addImagesToSection,
+    removeImageFromSection
+  } = useSections()
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        // Require 5px movement before activating drag (allows clicks to register)
-        distance: 5
-      }
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates
-    })
-  )
+  // Compute the display image list based on active filter
+  const imgMap = new Map(images.map(i => [i.id, i]))
+  let displayImages: ImageFile[]
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(String(event.active.id))
-  }, [])
-
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-    const { active, over } = event
-    setActiveId(null)
-    if (over && active.id !== over.id) {
-      await handleDrop(String(active.id), String(over.id))
+  if (activeSectionFilter === null) {
+    displayImages = images
+  } else {
+    const sec = sections.find(s => s.id === activeSectionFilter)
+    if (sec) {
+      displayImages = sec.imageIds
+        .map(id => imgMap.get(id))
+        .filter((i): i is ImageFile => !!i)
+    } else {
+      displayImages = images
     }
-  }, [handleDrop])
+  }
 
-  const activeImage = activeId ? images.find(img => img.id === activeId) : null
+  // Compute per-image section membership for badges
+  const imageSectionMap = new Map<string, string[]>()
+  for (const sec of sections) {
+    for (const imgId of sec.imageIds) {
+      const existing = imageSectionMap.get(imgId) ?? []
+      imageSectionMap.set(imgId, [...existing, sec.id])
+    }
+  }
 
-  if (images.length === 0) {
+  if (images.length === 0 || displayImages.length === 0) {
     return (
       <div className="gallery-empty">
         <div className="gallery-empty__icon">
@@ -80,50 +73,38 @@ export function GalleryGrid() {
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
+    <SortableContext
+      items={displayImages.map(img => img.id)}
+      strategy={rectSortingStrategy}
     >
-      <SortableContext
-        items={images.map(img => img.id)}
-        strategy={rectSortingStrategy}
+      <div
+        className="gallery-grid"
+        style={{
+          gridTemplateColumns: `repeat(auto-fill, ${thumbnailSize}px)`
+        }}
       >
-        <div
-          className="gallery-grid"
-          style={{
-            gridTemplateColumns: `repeat(auto-fill, ${thumbnailSize}px)`
-          }}
-        >
-          {images.map(image => (
-            <ImageCard
-              key={image.id}
-              image={image}
-              isSelected={selectedIds.has(image.id)}
-              isTopPick={topPickIds.has(image.id)}
-              thumbnailSize={thumbnailSize}
-              onSelect={selectImage}
-              onOpenViewer={openViewer}
-              onMoveToTop={moveToTop}
-              onMoveToBottom={moveToBottom}
-              onDelete={deleteImage}
-              onReveal={revealInFinder}
-              onToggleTopPick={toggleTopPick}
-            />
-          ))}
-        </div>
-      </SortableContext>
-
-      <DragOverlay dropAnimation={{
-        duration: 200,
-        easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)'
-      }}>
-        {activeImage ? (
-          <DragOverlayCard image={activeImage} thumbnailSize={thumbnailSize} />
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+        {displayImages.map(image => (
+          <ImageCard
+            key={image.id}
+            image={image}
+            isSelected={selectedIds.has(image.id)}
+            isTopPick={topPickIds.has(image.id)}
+            thumbnailSize={thumbnailSize}
+            onSelect={selectImage}
+            onOpenViewer={openViewer}
+            onMoveToTop={moveToTop}
+            onMoveToBottom={moveToBottom}
+            onDelete={deleteImage}
+            onReveal={revealInFinder}
+            onToggleTopPick={toggleTopPick}
+            sections={sections}
+            imageSectionIds={imageSectionMap.get(image.id) ?? []}
+            selectedIds={selectedIds}
+            onAddToSection={addImagesToSection}
+            onRemoveFromSection={removeImageFromSection}
+          />
+        ))}
+      </div>
+    </SortableContext>
   )
 }

@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react'
 import { useGallery } from './store/gallery'
+import { useSections } from './store/sections'
 import { Toolbar } from './components/Toolbar'
 import { GalleryGrid } from './components/GalleryGrid'
 import { PreviewMode } from './components/PreviewMode'
@@ -9,10 +10,14 @@ import { ToastStack } from './components/ToastStack'
 import { StoryModal } from './components/StoryModal'
 import { ImageViewer } from './components/ImageViewer'
 import { SocialMode } from './components/SocialMode'
+import { SectionsPanel } from './components/SectionsPanel'
+import { PublishModal } from './components/PublishModal'
+import { GalleryDndProvider } from './components/GalleryDndProvider'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 
 export default function App() {
   const { showPreviewMode, showDuplicatesPanel, showStoryModal, isLoading, folderPath, reloadFolder } = useGallery()
+  const { isPanelOpen: isSectionsPanelOpen, isPublishModalOpen, isPublishing, publishDone, publishError, resetForFolder } = useSections()
 
   // Register keyboard shortcuts
   useKeyboardShortcuts()
@@ -32,28 +37,38 @@ export default function App() {
     })
   }, [])
 
+  // Reset sections when folder changes
+  useEffect(() => {
+    resetForFolder()
+  }, [folderPath])
+
   return (
     <div className="app">
       <Toolbar />
 
-      <div className="app__content">
-        {/* Main gallery or empty state */}
-        <div className={`app__main ${showDuplicatesPanel ? 'app__main--sidebar-open' : ''}`}>
-          {isLoading ? (
-            <div className="loading-state">
-              <div className="spinner" />
-              <span>Loading images…</span>
-            </div>
-          ) : (
-            <div className="gallery-scroll">
-              <GalleryGrid />
-            </div>
-          )}
-        </div>
+      <GalleryDndProvider>
+        <div className="app__content">
+          {/* Sections sidebar */}
+          {isSectionsPanelOpen && <SectionsPanel />}
 
-        {/* Duplicates sidebar */}
-        {showDuplicatesPanel && <DuplicatesPanel />}
-      </div>
+          {/* Main gallery or empty state */}
+          <div className={`app__main ${isSectionsPanelOpen ? 'app__main--sections-open' : ''} ${showDuplicatesPanel ? 'app__main--sidebar-open' : ''}`}>
+            {isLoading ? (
+              <div className="loading-state">
+                <div className="spinner" />
+                <span>Loading images…</span>
+              </div>
+            ) : (
+              <div className="gallery-scroll">
+                <GalleryGrid />
+              </div>
+            )}
+          </div>
+
+          {/* Duplicates sidebar */}
+          {showDuplicatesPanel && <DuplicatesPanel />}
+        </div>
+      </GalleryDndProvider>
 
       {/* Overlays */}
       {showPreviewMode && <PreviewMode />}
@@ -61,6 +76,7 @@ export default function App() {
       <ImageViewer />
       <SocialMode />
       <RenamePreviewModal />
+      {(isPublishModalOpen || isPublishing || publishDone || !!publishError) && <PublishModal />}
       <ToastStack />
     </div>
   )

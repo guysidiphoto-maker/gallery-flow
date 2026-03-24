@@ -5,9 +5,7 @@ export function useKeyboardShortcuts() {
   const {
     images,
     selectedIds,
-    folderPath,
     openFolder,
-    sortBy,
     moveToTop,
     moveToBottom,
     deleteSelected,
@@ -16,7 +14,6 @@ export function useKeyboardShortcuts() {
     deselectAll,
     togglePreviewMode,
     prepareApplyOrder,
-    showPreviewMode,
     toggleTopPickSelected,
     openStoryModal,
     topPickIds,
@@ -117,8 +114,8 @@ export function useKeyboardShortcuts() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [
-    images, selectedIds, folderPath, showPreviewMode, topPickIds, viewerImageId,
-    openFolder, sortBy, moveToTop, moveToBottom,
+    images, selectedIds, topPickIds, viewerImageId,
+    openFolder, moveToTop, moveToBottom,
     deleteSelected, undoLastRename, selectAll, deselectAll,
     togglePreviewMode, prepareApplyOrder,
     toggleTopPickSelected, openStoryModal

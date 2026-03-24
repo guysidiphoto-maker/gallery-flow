@@ -70,7 +70,17 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, data: { percent: number; stage: string }) => cb(data)
     ipcRenderer.on('social-export-progress', handler)
     return () => ipcRenderer.removeListener('social-export-progress', handler)
-  }
+  },
+
+  // ── Sections / Publish ────────────────────────────────────────────────────
+  choosePublishDir: (): Promise<string | null> =>
+    ipcRenderer.invoke('choose-publish-dir'),
+
+  publishSections: (params: {
+    outputDir: string
+    sections: Array<{ name: string; images: Array<{ srcPath: string; destName: string }> }>
+  }): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('publish-sections', params)
 }
 
 contextBridge.exposeInMainWorld('api', api)

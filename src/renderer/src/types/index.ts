@@ -79,6 +79,18 @@ export interface StoryBuildResult {
   sceneCount: number
 }
 
+// ─── Sections ─────────────────────────────────────────────────────────────────
+
+export type SectionNamingMode = 'sequential' | 'original' | 'custom-prefix'
+
+export interface Section {
+  id: string
+  name: string
+  imageIds: string[]          // ordered list of image IDs belonging to this section
+  namingMode: SectionNamingMode
+  customPrefix: string        // used when namingMode === 'custom-prefix'
+}
+
 // ─── Social / Instagram Mode ──────────────────────────────────────────────────
 
 export type SocialPostType = 'single' | 'carousel' | 'split-tile'

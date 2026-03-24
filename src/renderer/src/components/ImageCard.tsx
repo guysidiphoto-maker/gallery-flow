@@ -1,8 +1,9 @@
 import React, { memo, useState, useCallback } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { ImageFile } from '../types'
+import type { ImageFile, Section } from '../types'
 import { toLocalURL } from '../utils/imageUtils'
+import { SECTION_COLORS } from './SectionsPanel'
 
 interface ImageCardProps {
   image: ImageFile
@@ -17,6 +18,12 @@ interface ImageCardProps {
   onReveal: (id: string) => void
   onToggleTopPick: (id: string) => void
   isOverlay?: boolean
+  // Sections
+  sections?: Section[]
+  imageSectionIds?: string[]
+  selectedIds?: Set<string>
+  onAddToSection?: (imageIds: string[], sectionId: string) => void
+  onRemoveFromSection?: (imageId: string, sectionId: string) => void
 }
 
 export const ImageCard = memo(function ImageCard({
@@ -31,7 +38,12 @@ export const ImageCard = memo(function ImageCard({
   onDelete,
   onReveal,
   onToggleTopPick,
-  isOverlay = false
+  isOverlay = false,
+  sections = [],
+  imageSectionIds = [],
+  selectedIds,
+  onAddToSection,
+  onRemoveFromSection,
 }: ImageCardProps) {
   const {
     attributes,
@@ -44,6 +56,7 @@ export const ImageCard = memo(function ImageCard({
 
   const [imgError, setImgError] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
+  const [showSectionSubmenu, setShowSectionSubmenu] = useState(false)
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -69,6 +82,7 @@ export const ImageCard = memo(function ImageCard({
 
   const handleMenuAction = useCallback((action: string) => {
     setShowMenu(false)
+    setShowSectionSubmenu(false)
     switch (action) {
       case 'top': onMoveToTop(image.id); break
       case 'bottom': onMoveToBottom(image.id); break
@@ -77,6 +91,22 @@ export const ImageCard = memo(function ImageCard({
       case 'pick': onToggleTopPick(image.id); break
     }
   }, [image.id, onMoveToTop, onMoveToBottom, onReveal, onDelete, onToggleTopPick])
+
+  const handleAddToSection = useCallback((sectionId: string) => {
+    setShowMenu(false)
+    setShowSectionSubmenu(false)
+    if (!onAddToSection) return
+    // Add all selected images if this image is in the selection, otherwise just this one
+    const ids = (selectedIds?.has(image.id) && selectedIds.size > 1)
+      ? [...selectedIds]
+      : [image.id]
+    onAddToSection(ids, sectionId)
+  }, [image.id, selectedIds, onAddToSection])
+
+  const handleRemoveFromSection = useCallback((sectionId: string) => {
+    setShowMenu(false)
+    onRemoveFromSection?.(image.id, sectionId)
+  }, [image.id, onRemoveFromSection])
 
   const imgSrc = toLocalURL(image.path)
 
@@ -129,16 +159,64 @@ export const ImageCard = memo(function ImageCard({
         <span className="image-card__filename" title={image.filename}>
           {image.filename}
         </span>
+        {imageSectionIds.length > 0 && (
+          <div className="image-card__section-badges">
+            {imageSectionIds.map((sid, i) => {
+              const sec = sections.find(s => s.id === sid)
+              if (!sec) return null
+              const color = SECTION_COLORS[sections.indexOf(sec) % SECTION_COLORS.length]
+              return (
+                <span
+                  key={sid}
+                  className="image-card__section-badge"
+                  style={{ background: color }}
+                  title={sec.name}
+                >
+                  {sec.name}
+                </span>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Context menu */}
       {showMenu && (
         <>
-          <div className="context-menu-overlay" onClick={() => setShowMenu(false)} />
+          <div className="context-menu-overlay" onClick={() => { setShowMenu(false); setShowSectionSubmenu(false) }} />
           <div className="context-menu">
             <button onClick={() => handleMenuAction('pick')}>
               {isTopPick ? '★ Remove from Top Picks' : '☆ Mark as Top Pick (T)'}
             </button>
+
+            {sections.length > 0 && onAddToSection && (
+              <>
+                <div className="context-menu__divider" />
+                <div className="context-menu__submenu-trigger" onMouseEnter={() => setShowSectionSubmenu(true)} onMouseLeave={() => setShowSectionSubmenu(false)}>
+                  <span>Add to Section ▶</span>
+                  {showSectionSubmenu && (
+                    <div className="context-menu__submenu">
+                      {sections.map((sec, idx) => {
+                        const inSection = imageSectionIds.includes(sec.id)
+                        const color = SECTION_COLORS[idx % SECTION_COLORS.length]
+                        return (
+                          <button
+                            key={sec.id}
+                            onClick={() => inSection ? handleRemoveFromSection(sec.id) : handleAddToSection(sec.id)}
+                            className={inSection ? 'active' : ''}
+                          >
+                            <span className="context-menu__dot" style={{ background: color }} />
+                            {sec.name}
+                            {inSection && ' ✓'}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
             <div className="context-menu__divider" />
             <button onClick={() => handleMenuAction('top')}>Move to Top ↑</button>
             <button onClick={() => handleMenuAction('bottom')}>Move to Bottom ↓</button>

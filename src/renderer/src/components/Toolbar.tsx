@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useGallery } from '../store/gallery'
 import { useSocial } from '../store/social'
+import { useSections } from '../store/sections'
 import type { SortMode } from '../types'
 
 export function Toolbar() {
@@ -32,6 +33,7 @@ export function Toolbar() {
     clearTopPicks
   } = useGallery()
   const { openSocial, initFromPicks } = useSocial()
+  const { isPanelOpen: isSectionsPanelOpen, togglePanel: toggleSectionsPanel, sections } = useSections()
 
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [showApplyOptions, setShowApplyOptions] = useState(false)
@@ -234,6 +236,25 @@ export function Toolbar() {
             title={`Undo: ${renameHistory[0]?.description}`}
           >
             ↩ Undo
+          </button>
+        )}
+
+        {/* Sections */}
+        {images.length > 0 && (
+          <button
+            className={`btn ${isSectionsPanelOpen ? 'btn--accent' : 'btn--ghost'}`}
+            onClick={toggleSectionsPanel}
+            title="Manage gallery sections"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="8" y1="6" x2="21" y2="6" />
+              <line x1="8" y1="12" x2="21" y2="12" />
+              <line x1="8" y1="18" x2="21" y2="18" />
+              <line x1="3" y1="6" x2="3.01" y2="6" />
+              <line x1="3" y1="12" x2="3.01" y2="12" />
+              <line x1="3" y1="18" x2="3.01" y2="18" />
+            </svg>
+            Sections{sections.length > 0 ? ` (${sections.length})` : ''}
           </button>
         )}
 

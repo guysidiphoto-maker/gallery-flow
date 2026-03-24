@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, shell } from 'electron'
 import { join, dirname } from 'path'
-import { readdir, stat, rename, readFile, mkdir } from 'fs/promises'
+import { readdir, stat, rename, readFile, mkdir, copyFile } from 'fs/promises'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import * as os from 'os'
 import { buildStoryScenes, renderStory } from './storyRenderer'
@@ -273,6 +273,40 @@ ipcMain.handle('export-social-package', async (_e, scenes: SocialExportScene[], 
   if (!mainWindow) return { success: false, error: 'No window' }
   try {
     await exportSocialPackage(scenes, outputDir, mainWindow, options ?? { includeOrderOverlay: true })
+    return { success: true }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { success: false, error: msg }
+  }
+})
+
+// ─── Sections / Publish ───────────────────────────────────────────────────────
+
+ipcMain.handle('choose-publish-dir', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Choose Publish Folder',
+    properties: ['openDirectory', 'createDirectory']
+  })
+  return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+})
+
+ipcMain.handle('publish-sections', async (_e, params: {
+  outputDir: string
+  sections: Array<{ name: string; images: Array<{ srcPath: string; destName: string }> }>
+}) => {
+  try {
+    await mkdir(params.outputDir, { recursive: true })
+
+    // Copy each section's images to its own subfolder
+    for (const section of params.sections) {
+      if (section.images.length === 0) continue
+      const subDir = join(params.outputDir, section.name)
+      await mkdir(subDir, { recursive: true })
+      for (const img of section.images) {
+        await copyFile(img.srcPath, join(subDir, img.destName))
+      }
+    }
+
     return { success: true }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
