@@ -70,50 +70,56 @@ async function probeImage(imagePath: string): Promise<ImageDims> {
   }
 }
 
-// Compute crop parameters for a split tile
+const LAYOUT_DIMS: Record<SplitLayout, [number, number]> = {
+  '2h': [2, 1], '3h': [3, 1], '2v': [1, 2],
+  '4': [2, 2], '6': [3, 2], '9': [3, 3]
+}
+
+/**
+ * Compute the exact crop rectangle for one tile of a split post.
+ *
+ * Step 1 — Frame: center-crop the source image to the canvas aspect ratio (cols:rows).
+ *   This is the same framing that CSS object-fit:cover uses when rendering the full canvas.
+ * Step 2 — Tile: divide the frame into cols×rows equal pieces.
+ *   Each resulting tile is square (tileW === tileH) because frameW/frameH === cols/rows.
+ */
 function computeTileCrop(
   layout: SplitLayout,
   tileIndex: number,
   imgW: number,
   imgH: number
 ): { x: number; y: number; w: number; h: number } {
-  switch (layout) {
-    case '2h': {
-      const w = Math.floor(imgW / 2)
-      return { x: tileIndex * w, y: 0, w, h: imgH }
-    }
-    case '3h': {
-      const w = Math.floor(imgW / 3)
-      return { x: tileIndex * w, y: 0, w, h: imgH }
-    }
-    case '2v': {
-      const h = Math.floor(imgH / 2)
-      return { x: 0, y: tileIndex * h, w: imgW, h }
-    }
-    case '4': {
-      const cols = 2, rows = 2
-      const w = Math.floor(imgW / cols)
-      const h = Math.floor(imgH / rows)
-      const col = tileIndex % cols
-      const row = Math.floor(tileIndex / cols)
-      return { x: col * w, y: row * h, w, h }
-    }
-    case '6': {
-      const cols = 3, rows = 2
-      const w = Math.floor(imgW / cols)
-      const h = Math.floor(imgH / rows)
-      const col = tileIndex % cols
-      const row = Math.floor(tileIndex / cols)
-      return { x: col * w, y: row * h, w, h }
-    }
-    case '9': {
-      const cols = 3, rows = 3
-      const w = Math.floor(imgW / cols)
-      const h = Math.floor(imgH / rows)
-      const col = tileIndex % cols
-      const row = Math.floor(tileIndex / cols)
-      return { x: col * w, y: row * h, w, h }
-    }
+  const [cols, rows] = LAYOUT_DIMS[layout]
+
+  // Step 1: frame — center-crop to cols:rows aspect ratio
+  const sourceRatio = imgW / imgH
+  const targetRatio = cols / rows
+  let frameX: number, frameY: number, frameW: number, frameH: number
+  if (sourceRatio > targetRatio) {
+    // Source is wider: fill by height
+    frameH = imgH
+    frameW = imgH * targetRatio
+    frameX = (imgW - frameW) / 2
+    frameY = 0
+  } else {
+    // Source is taller (or equal): fill by width
+    frameW = imgW
+    frameH = imgW / targetRatio
+    frameX = 0
+    frameY = (imgH - frameH) / 2
+  }
+
+  // Step 2: tile — divide frame into cols×rows equal squares
+  const tileW = frameW / cols
+  const tileH = frameH / rows  // equals tileW since frameW/frameH === cols/rows
+  const col = tileIndex % cols
+  const row = Math.floor(tileIndex / cols)
+
+  return {
+    x: Math.round(frameX + col * tileW),
+    y: Math.round(frameY + row * tileH),
+    w: Math.round(tileW),
+    h: Math.round(tileH),
   }
 }
 
@@ -175,7 +181,8 @@ async function renderTile(
   outPath: string
 ): Promise<void> {
   const { x, y, w, h } = crop
-  const vf = `crop=${w}:${h}:${x}:${y},scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080`
+  // Tile is always square (computeTileCrop guarantees w === h), so no extra crop needed
+  const vf = `crop=${w}:${h}:${x}:${y},scale=1080:1080`
   await new Promise<void>((resolve, reject) => {
     const args = ['-y', '-i', srcPath, '-vf', vf, '-q:v', '2', '-frames:v', '1', outPath]
     const proc = spawn(FFMPEG, args, { stdio: 'pipe' })

@@ -1926,6 +1926,23 @@ input {
   display: block;
 }
 
+.social-cell__split-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.social-cell__split-canvas {
+  position: absolute;
+}
+
+.social-cell__split-canvas img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .social-cell__placeholder {
   color: var(--text-muted);
   font-size: 24px;
@@ -2058,11 +2075,15 @@ input {
   display: block;
 }
 
-.social-split-builder__tile-bg {
+.social-split-builder__tile-canvas {
+  position: absolute;
+}
+
+.social-split-builder__tile-canvas img {
   width: 100%;
   height: 100%;
-  position: absolute;
-  inset: 0;
+  object-fit: cover;
+  display: block;
 }
 
 .social-split-builder__tile-num {

@@ -59,11 +59,17 @@ export interface StoryOptions {
 // Target zoom amounts per mode (portrait / landscape)
 const PORTRAIT_ZOOM:  Record<string, number> = { none: 1.0, subtle: 1.06, dynamic: 1.10 }
 const LANDSCAPE_ZOOM: Record<string, number> = { none: 1.0, subtle: 1.03, dynamic: 1.05 }
-const LANDSCAPE3_PAN = 20  // pixels of horizontal drift for landscape-3 scenes
+
+// Working resolution: 2× output resolution.
+// Zoompan integer-pixel rounding creates 1px jumps at working res.
+// Processing at 2× then scaling down makes those jumps 0.5px → sub-pixel invisible.
+const WORK_W = 2160
+const WORK_H = 3840
+const LANDSCAPE3_PAN = 40  // pixels at 2× working res (= 20px at 1080p after downscale)
 
 /**
  * Build a zoompan z= expression that zooms from 1.0 to `endZoom` over `frames` frames.
- * Rate is computed per-frame so the full zoom range is always consumed.
+ * Uses `on` (1-based output frame counter) so zoom starts at 1+rate on frame 1, not 0.
  */
 function zoomExpr(endZoom: number, frames: number): string {
   if (endZoom <= 1.0) return `z='1'`
@@ -71,23 +77,32 @@ function zoomExpr(endZoom: number, frames: number): string {
   return `z='min(1+on*${rate},${endZoom})'`
 }
 
-/** Full zoompan filter string for a portrait scene */
+/**
+ * Zoompan filter for a portrait scene.
+ * Expects ${WORK_W}×${WORK_H} input. Outputs 1080×1920 after downscale.
+ * Processing at 2× eliminates visible integer-pixel jitter.
+ */
 function portraitZoompan(frames: number, motionMode?: string): string {
   const endZoom = PORTRAIT_ZOOM[motionMode ?? 'subtle'] ?? PORTRAIT_ZOOM.subtle
+  if (endZoom <= 1.0) return `scale=1080:1920:flags=lanczos`
   const z = zoomExpr(endZoom, frames)
-  return `zoompan=${z}:x='(iw*zoom-iw)/2':y='(ih*zoom-ih)/2':d=${frames}:s=1080x1920`
+  return `zoompan=${z}:x='(iw*zoom-iw)/2':y='(ih*zoom-ih)/2':d=${frames}:s=${WORK_W}x${WORK_H},scale=1080:1920:flags=lanczos`
 }
 
-/** Full zoompan filter string for a landscape scene (optional horizontal pan) */
+/**
+ * Zoompan filter for a landscape composite scene.
+ * Expects ${WORK_W}×${WORK_H} input. Outputs 1080×1920 after downscale.
+ */
 function landscapeZoompan(frames: number, motionMode?: string, withPan = false): string {
   const endZoom = LANDSCAPE_ZOOM[motionMode ?? 'subtle'] ?? LANDSCAPE_ZOOM.subtle
+  if (endZoom <= 1.0) return `scale=1080:1920:flags=lanczos`
   const z = zoomExpr(endZoom, frames)
-  if (!withPan || endZoom <= 1.0) {
-    return `zoompan=${z}:x='(iw*zoom-iw)/2':y='(ih*zoom-ih)/2':d=${frames}:s=1080x1920`
+  if (!withPan) {
+    return `zoompan=${z}:x='(iw*zoom-iw)/2':y='(ih*zoom-ih)/2':d=${frames}:s=${WORK_W}x${WORK_H},scale=1080:1920:flags=lanczos`
   }
   const pan = LANDSCAPE3_PAN
   const xExpr = `x='max(0,(iw*zoom-iw)/2-${pan}+${(pan / frames).toFixed(4)}*on)'`
-  return `zoompan=${z}:${xExpr}:y='(ih*zoom-ih)/2':d=${frames}:s=1080x1920`
+  return `zoompan=${z}:${xExpr}:y='(ih*zoom-ih)/2':d=${frames}:s=${WORK_W}x${WORK_H},scale=1080:1920:flags=lanczos`
 }
 
 export interface BuildScenesResult {
@@ -246,8 +261,8 @@ async function renderPortraitScene(
     '-loop', '1', '-framerate', '30', '-i', img.processedPath,
     '-vf',
     [
-      'scale=1080:1920:force_original_aspect_ratio=increase',
-      'crop=1080:1920',
+      `scale=${WORK_W}:${WORK_H}:force_original_aspect_ratio=increase:flags=lanczos`,
+      `crop=${WORK_W}:${WORK_H}`,
       portraitZoompan(d, motionMode),
       'setsar=1'
     ].join(','),
@@ -267,10 +282,11 @@ async function renderLandscape3Scene(
 ): Promise<void> {
   const d = Math.round(duration * 30)
   const inputArgs = imgs.flatMap(i => ['-loop', '1', '-framerate', '30', '-i', i.processedPath])
+  const rowH = WORK_H / 3  // 1280px per row at 2× resolution
   const filter = [
-    '[0:v]scale=1080:640:force_original_aspect_ratio=increase,crop=1080:640[a]',
-    '[1:v]scale=1080:640:force_original_aspect_ratio=increase,crop=1080:640[b]',
-    '[2:v]scale=1080:640:force_original_aspect_ratio=increase,crop=1080:640[c]',
+    `[0:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[a]`,
+    `[1:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[b]`,
+    `[2:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[c]`,
     '[a][b]vstack=inputs=2[ab]',
     '[ab][c]vstack=inputs=2[stacked]',
     `[stacked]${landscapeZoompan(d, motionMode, true)},setsar=1[out]`
@@ -295,9 +311,10 @@ async function renderLandscape2Scene(
 ): Promise<void> {
   const d = Math.round(duration * 30)
   const inputArgs = imgs.flatMap(i => ['-loop', '1', '-framerate', '30', '-i', i.processedPath])
+  const rowH = WORK_H / 2  // 1920px per row at 2× resolution
   const filter = [
-    '[0:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960[a]',
-    '[1:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960[b]',
+    `[0:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[a]`,
+    `[1:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[b]`,
     '[a][b]vstack=inputs=2[stacked]',
     `[stacked]${landscapeZoompan(d, motionMode)},setsar=1[out]`
   ].join(';')
@@ -321,10 +338,10 @@ async function renderLandscape1Scene(
 ): Promise<void> {
   const d = Math.round(duration * 30)
   const filter = [
-    // Background: fill 1080x1920, heavy blur + darken
-    '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=luma_radius=22:luma_power=2,colorlevels=rimax=0.55:gimax=0.55:bimax=0.55[bg]',
-    // Foreground: scale to 1080 wide, maintain aspect
-    '[0:v]scale=1080:-2[fg]',
+    // Background: fill working res, heavy blur + darken
+    `[0:v]scale=${WORK_W}:${WORK_H}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${WORK_H},boxblur=luma_radius=44:luma_power=2,colorlevels=rimax=0.55:gimax=0.55:bimax=0.55[bg]`,
+    // Foreground: scale to working width, maintain aspect
+    `[0:v]scale=${WORK_W}:-2:flags=lanczos[fg]`,
     // Composite
     '[bg][fg]overlay=x=0:y=(H-h)/2[composed]',
     `[composed]${landscapeZoompan(d, motionMode)},setsar=1[out]`

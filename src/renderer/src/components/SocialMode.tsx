@@ -49,15 +49,16 @@ function GridCell({
     opacity: isDragging ? 0.35 : 1
   }
 
-  const getSplitImgStyle = useCallback((p: SocialPost): React.CSSProperties => {
-    if (p.type !== 'split-tile' || !p.splitLayout || p.splitTileIndex === undefined) return {}
+  const getSplitTilePos = useCallback((p: SocialPost): { cols: number; rows: number; col: number; row: number } | null => {
+    if (p.type !== 'split-tile' || !p.splitLayout || p.splitTileIndex === undefined) return null
     const layout = SPLIT_LAYOUTS.find(l => l.value === p.splitLayout)
-    if (!layout) return {}
-    const col = p.splitTileIndex % layout.cols
-    const row = Math.floor(p.splitTileIndex / layout.cols)
-    const xPct = layout.cols === 1 ? 50 : (col / (layout.cols - 1)) * 100
-    const yPct = layout.rows === 1 ? 50 : (row / (layout.rows - 1)) * 100
-    return { objectPosition: `${xPct}% ${yPct}%` }
+    if (!layout) return null
+    return {
+      cols: layout.cols,
+      rows: layout.rows,
+      col: p.splitTileIndex % layout.cols,
+      row: Math.floor(p.splitTileIndex / layout.cols),
+    }
   }, [])
 
   const gridPos = index + 1
@@ -72,14 +73,27 @@ function GridCell({
       {...attributes}
     >
       <div className="social-cell__inner" {...listeners}>
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt=""
-            className="social-cell__img"
-            style={getSplitImgStyle(post)}
-          />
-        ) : (
+        {imageUrl ? (() => {
+          const tilePos = getSplitTilePos(post)
+          if (tilePos) {
+            return (
+              <div className="social-cell__split-viewport">
+                <div
+                  className="social-cell__split-canvas"
+                  style={{
+                    width: `${tilePos.cols * 100}%`,
+                    height: `${tilePos.rows * 100}%`,
+                    left: `${-tilePos.col * 100}%`,
+                    top: `${-tilePos.row * 100}%`,
+                  }}
+                >
+                  <img src={imageUrl} alt="" draggable={false} />
+                </div>
+              </div>
+            )
+          }
+          return <img src={imageUrl} alt="" className="social-cell__img" />
+        })() : (
           <div className="social-cell__placeholder">?</div>
         )}
 
@@ -290,21 +304,19 @@ function SplitBuilder({ imageUrl }: { imageUrl: string }) {
           {Array.from({ length: layout.cols * layout.rows }, (_, i) => {
             const col = i % layout.cols
             const row = Math.floor(i / layout.cols)
-            const xPct = layout.cols === 1 ? 50 : (col / (layout.cols - 1)) * 100
-            const yPct = layout.rows === 1 ? 50 : (row / (layout.rows - 1)) * 100
             return (
               <div key={i} className="social-split-builder__tile">
                 <div
-                  className="social-split-builder__tile-bg"
+                  className="social-split-builder__tile-canvas"
                   style={{
-                    backgroundImage: `url(${imageUrl})`,
-                    backgroundSize: `${layout.cols * 100}% ${layout.rows * 100}%`,
-                    backgroundPosition: `${xPct}% ${yPct}%`,
-                    backgroundRepeat: 'no-repeat',
-                    width: '100%',
-                    height: '100%',
+                    width: `${layout.cols * 100}%`,
+                    height: `${layout.rows * 100}%`,
+                    left: `${-col * 100}%`,
+                    top: `${-row * 100}%`,
                   }}
-                />
+                >
+                  <img src={imageUrl} alt="" draggable={false} />
+                </div>
                 <div className="social-split-builder__tile-num">{i + 1}</div>
               </div>
             )
