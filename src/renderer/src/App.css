@@ -3212,3 +3212,96 @@ input {
 .publish-modal__error-title { font-size: 16px; font-weight: 600; color: var(--danger); margin: 0; }
 .publish-modal__error-msg { font-size: 12px; color: var(--text-muted); margin: 0; }
 
+
+/* ─── Randomize Modal ────────────────────────────────────────────────────────── */
+.randomize-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.randomize-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.randomize-mode:hover:not(.randomize-mode--disabled) {
+  border-color: var(--accent);
+  background: rgba(10, 132, 255, 0.04);
+}
+
+.randomize-mode--active {
+  border-color: var(--accent);
+  background: rgba(10, 132, 255, 0.07);
+}
+
+.randomize-mode--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.randomize-mode input[type="radio"] {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.randomize-mode__content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.randomize-mode__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.randomize-mode__desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Fixed / Shuffled badges in preview */
+.randomize-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.randomize-badge--fixed {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.randomize-badge--shuffled {
+  background: rgba(10, 132, 255, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(10, 132, 255, 0.25);
+}
+
+.rename-preview-list__row--fixed {
+  opacity: 0.7;
+}
+
+.rename-preview-list__unchanged {
+  color: var(--text-muted);
+}
+
+/* Row variant with badge column (used in RandomizeModal) */
+.rename-preview-list__row--with-badge {
+  grid-template-columns: 1fr 20px 1fr auto;
+}

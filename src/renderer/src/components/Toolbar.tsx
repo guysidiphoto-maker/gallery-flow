@@ -24,7 +24,7 @@ export function Toolbar() {
     toggleDuplicatesPanel,
     scanDuplicates,
     prepareApplyOrder,
-    randomizeOrder,
+    openRandomizeModal,
     undoLastRename,
     filenamePrefix,
     setFilenamePrefix,
@@ -163,7 +163,7 @@ export function Toolbar() {
         {images.length > 1 && (
           <button
             className="btn btn--ghost"
-            onClick={randomizeOrder}
+            onClick={openRandomizeModal}
             title="Shuffle images and rename files to match new order"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

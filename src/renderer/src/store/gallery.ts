@@ -122,6 +122,12 @@ export interface GalleryState {
   // Story Video
   openStoryModal: () => void
   closeStoryModal: () => void
+
+  // Randomize modal
+  showRandomizeModal: boolean
+  openRandomizeModal: () => void
+  closeRandomizeModal: () => void
+  executeRandomize: (shuffled: ImageFile[], mode: 'all' | 'picks-only') => Promise<void>
 }
 
 export const useGallery = create<GalleryState>((set, get) => ({
@@ -146,6 +152,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
   topPickIds: new Set(),
   viewerImageId: null,
   showStoryModal: false,
+  showRandomizeModal: false,
 
   // ── Folder Loading ──────────────────────────────────────────────────────
 
@@ -508,21 +515,64 @@ export const useGallery = create<GalleryState>((set, get) => ({
   cancelApplyOrder: () => set({ showRenamePreview: false, pendingBatchRename: null, pendingImageOrder: null }),
 
   randomizeOrder: () => {
-    const { images } = get()
-    if (images.length < 2) return
-    // Fisher-Yates shuffle
-    const shuffled = [...images]
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-    }
-    const ops = generateSequentialNames(shuffled)
-    set({
-      pendingBatchRename: ops,
-      pendingImageOrder: shuffled,
-      showRenamePreview: true,
-      renamePreviewMode: 'randomize'
+    get().openRandomizeModal()
+  },
+
+  openRandomizeModal: () => set({ showRandomizeModal: true }),
+  closeRandomizeModal: () => set({ showRandomizeModal: false }),
+
+  executeRandomize: async (shuffled, mode) => {
+    const { images, filenamePrefix } = get()
+    const ops = generateSequentialNames(shuffled, filenamePrefix)
+
+    const renameOps = ops.map(op => {
+      const img = images.find(i => i.path === op.oldPath)!
+      return { oldPath: op.oldPath, newPath: join(img.folderPath, op.newFilename) }
     })
+
+    const result = await window.api.batchRename(renameOps)
+    if (!result.success) {
+      get().addToast(`Shuffle failed: ${result.error}`, 'error')
+      set({ showRandomizeModal: false })
+      return
+    }
+
+    const historyOps = ops.map(op => {
+      const img = images.find(i => i.path === op.oldPath)!
+      return {
+        imageId: img.id,
+        oldPath: op.oldPath,
+        oldFilename: img.filename,
+        newPath: join(img.folderPath, op.newFilename),
+        newFilename: op.newFilename
+      }
+    })
+
+    const desc = mode === 'all'
+      ? `Shuffled all (${ops.length} files)`
+      : `Shuffled non-picks (${ops.length} files)`
+
+    const historyEntry: RenameHistoryEntry = {
+      id: nanoid(),
+      timestamp: Date.now(),
+      description: desc,
+      operations: historyOps
+    }
+
+    const opMap = new Map(historyOps.map(op => [op.imageId, op]))
+    const updatedImages = shuffled.map(img => {
+      const op = opMap.get(img.id)
+      if (!op) return img
+      return { ...img, filename: op.newFilename, path: op.newPath }
+    })
+
+    set(state => ({
+      images: updatedImages,
+      showRandomizeModal: false,
+      renameHistory: [historyEntry, ...state.renameHistory].slice(0, 50)
+    }))
+
+    get().addToast(desc, 'success', historyEntry.id)
   },
 
   // ── Undo ────────────────────────────────────────────────────────────────

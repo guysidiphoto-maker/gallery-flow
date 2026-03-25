@@ -13,6 +13,7 @@ import { SocialMode } from './components/SocialMode'
 import { SectionsPanel } from './components/SectionsPanel'
 import { PublishModal } from './components/PublishModal'
 import { GalleryDndProvider } from './components/GalleryDndProvider'
+import { RandomizeModal } from './components/RandomizeModal'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 
 export default function App() {
@@ -76,6 +77,7 @@ export default function App() {
       <ImageViewer />
       <SocialMode />
       <RenamePreviewModal />
+      <RandomizeModal />
       {(isPublishModalOpen || isPublishing || publishDone || !!publishError) && <PublishModal />}
       <ToastStack />
     </div>
