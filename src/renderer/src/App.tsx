@@ -13,7 +13,6 @@ import { SocialMode } from './components/SocialMode'
 import { SectionsPanel } from './components/SectionsPanel'
 import { PublishModal } from './components/PublishModal'
 import { GalleryDndProvider } from './components/GalleryDndProvider'
-import { DemoOverlay } from './components/DemoOverlay'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 
 export default function App() {
@@ -79,7 +78,6 @@ export default function App() {
       <RenamePreviewModal />
       {(isPublishModalOpen || isPublishing || publishDone || !!publishError) && <PublishModal />}
       <ToastStack />
-      <DemoOverlay />
     </div>
   )
 }

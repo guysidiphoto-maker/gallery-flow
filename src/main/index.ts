@@ -39,6 +39,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 900,
     minHeight: 600,
+    fullscreen: true,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#141414',
     vibrancy: 'under-window',
