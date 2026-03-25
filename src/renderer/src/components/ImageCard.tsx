@@ -11,6 +11,7 @@ interface ImageCardProps {
   isTopPick: boolean
   thumbnailSize: number
   onSelect: (id: string, multi: boolean) => void
+  onSelectRange: (id: string) => void
   onOpenViewer: (id: string) => void
   onMoveToTop: (id: string) => void
   onMoveToBottom: (id: string) => void
@@ -32,6 +33,7 @@ export const ImageCard = memo(function ImageCard({
   isTopPick,
   thumbnailSize,
   onSelect,
+  onSelectRange,
   onOpenViewer,
   onMoveToTop,
   onMoveToBottom,
@@ -67,8 +69,12 @@ export const ImageCard = memo(function ImageCard({
   }
 
   const handleClick = useCallback((e: React.MouseEvent) => {
-    onSelect(image.id, e.metaKey || e.ctrlKey || e.shiftKey)
-  }, [image.id, onSelect])
+    if (e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      onSelectRange(image.id)
+    } else {
+      onSelect(image.id, e.metaKey || e.ctrlKey)
+    }
+  }, [image.id, onSelect, onSelectRange])
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault()

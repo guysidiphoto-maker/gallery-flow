@@ -89,6 +89,7 @@ export interface GalleryState {
   sortBy: (mode: SortMode) => void
   loadExifData: () => Promise<void>
   selectImage: (id: string, multi: boolean) => void
+  selectRange: (id: string) => void
   selectAll: () => void
   deselectAll: () => void
   setThumbnailSize: (size: number) => void
@@ -136,6 +137,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
   isLoading: false,
   loadError: null,
   selectedIds: new Set(),
+  anchorId: null as string | null,
   thumbnailSize: 220,
   showPreviewMode: false,
   showDuplicatesPanel: false,
@@ -364,12 +366,24 @@ export const useGallery = create<GalleryState>((set, get) => ({
         if (next.size === 1 && next.has(id)) next.clear()
         else { next.clear(); next.add(id) }
       }
-      return { selectedIds: next }
+      return { selectedIds: next, anchorId: id }
+    })
+  },
+
+  selectRange: (id) => {
+    set(state => {
+      const anchor = state.anchorId ?? id
+      const anchorIdx = state.images.findIndex(img => img.id === anchor)
+      const targetIdx = state.images.findIndex(img => img.id === id)
+      if (anchorIdx === -1 || targetIdx === -1) return { selectedIds: new Set([id]) }
+      const [from, to] = anchorIdx <= targetIdx ? [anchorIdx, targetIdx] : [targetIdx, anchorIdx]
+      return { selectedIds: new Set(state.images.slice(from, to + 1).map(img => img.id)) }
+      // anchorId stays unchanged — it's the fixed end of the range
     })
   },
 
   selectAll: () => set(state => ({ selectedIds: new Set(state.images.map(img => img.id)) })),
-  deselectAll: () => set({ selectedIds: new Set() }),
+  deselectAll: () => set({ selectedIds: new Set(), anchorId: null }),
 
   // ── UI ──────────────────────────────────────────────────────────────────
 

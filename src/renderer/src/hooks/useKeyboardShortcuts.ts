@@ -13,6 +13,7 @@ export function useKeyboardShortcuts() {
     selectAll,
     deselectAll,
     selectImage,
+    selectRange,
     togglePreviewMode,
     prepareApplyOrder,
     toggleTopPickSelected,
@@ -99,17 +100,18 @@ export function useKeyboardShortcuts() {
       }
 
       // T: Add selected image(s) to Top Picks (move to top)
-      // For single selection: auto-advance to the next image after the move
+      // Auto-advance selection to the image after the last selected one
       if (e.key === 't' && !meta && !e.shiftKey && selectedIds.size > 0) {
         e.preventDefault()
 
+        // Find the image right after the last selected image in array order
         let nextId: string | null = null
-        if (selectedIds.size === 1) {
-          const [id] = selectedIds
-          const idx = images.findIndex(img => img.id === id)
-          if (idx !== -1 && idx + 1 < images.length) {
-            nextId = images[idx + 1].id
-          }
+        let lastSelectedIdx = -1
+        for (let i = images.length - 1; i >= 0; i--) {
+          if (selectedIds.has(images[i].id)) { lastSelectedIdx = i; break }
+        }
+        if (lastSelectedIdx !== -1 && lastSelectedIdx + 1 < images.length) {
+          nextId = images[lastSelectedIdx + 1].id
         }
 
         const result = toggleTopPickSelected()
@@ -183,7 +185,11 @@ export function useKeyboardShortcuts() {
         else if (e.key === 'ArrowUp') newIdx = Math.max(0, currentIdx - cols)
 
         if (newIdx !== currentIdx) {
-          selectImage(images[newIdx].id, false)
+          if (e.shiftKey) {
+            selectRange(images[newIdx].id)
+          } else {
+            selectImage(images[newIdx].id, false)
+          }
           scrollTo(images[newIdx].id)
         }
         return
@@ -195,7 +201,7 @@ export function useKeyboardShortcuts() {
   }, [
     images, selectedIds, topPickIds, viewerImageId,
     openFolder, moveToTop, moveToBottom,
-    deleteSelected, undoLastRename, selectAll, deselectAll, selectImage,
+    deleteSelected, undoLastRename, selectAll, deselectAll, selectImage, selectRange,
     togglePreviewMode, prepareApplyOrder,
     toggleTopPickSelected, removeTopPickSelected, openStoryModal
   ])

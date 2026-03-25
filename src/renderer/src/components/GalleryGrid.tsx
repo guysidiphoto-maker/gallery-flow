@@ -17,6 +17,7 @@ export function GalleryGrid() {
     moveToTop,
     moveToBottom,
     selectImage,
+    selectRange,
     deleteImage,
     revealInFinder,
     toggleTopPick,
@@ -91,6 +92,7 @@ export function GalleryGrid() {
             isTopPick={topPickIds.has(image.id)}
             thumbnailSize={thumbnailSize}
             onSelect={selectImage}
+            onSelectRange={selectRange}
             onOpenViewer={openViewer}
             onMoveToTop={moveToTop}
             onMoveToBottom={moveToBottom}
