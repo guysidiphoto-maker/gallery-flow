@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useGallery } from '../store/gallery'
 import { useSocial } from '../store/social'
 import { useSections } from '../store/sections'
+import { useDemo } from '../store/demo'
 import type { SortMode } from '../types'
 
 export function Toolbar() {
@@ -34,6 +35,7 @@ export function Toolbar() {
   } = useGallery()
   const { openSocial, initFromPicks } = useSocial()
   const { isPanelOpen: isSectionsPanelOpen, togglePanel: toggleSectionsPanel, sections } = useSections()
+  const { phase: demoPhase, startDemo, stopDemo } = useDemo()
 
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [showApplyOptions, setShowApplyOptions] = useState(false)
@@ -77,6 +79,21 @@ export function Toolbar() {
             </svg>
           </button>
         )}
+
+        {/* Demo button */}
+        {demoPhase === 'idle' ? (
+          <button
+            className="btn btn--demo"
+            onClick={startDemo}
+            title="Run a cinematic demo of GalleryFlow features"
+          >
+            ▶ Demo
+          </button>
+        ) : demoPhase === 'running' ? (
+          <button className="btn btn--demo" onClick={stopDemo}>
+            ■ Stop
+          </button>
+        ) : null}
       </div>
 
       {/* Center: Folder path + image count */}
