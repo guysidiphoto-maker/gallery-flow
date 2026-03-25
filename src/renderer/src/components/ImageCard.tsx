@@ -115,6 +115,7 @@ export const ImageCard = memo(function ImageCard({
       ref={setNodeRef}
       style={style}
       className={`image-card ${isSelected ? 'selected' : ''} ${isTopPick ? 'top-pick' : ''} ${isDragging ? 'dragging' : ''} ${isOverlay ? 'overlay' : ''}`}
+      data-image-id={image.id}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}

@@ -12,6 +12,7 @@ export function useKeyboardShortcuts() {
     undoLastRename,
     selectAll,
     deselectAll,
+    selectImage,
     togglePreviewMode,
     prepareApplyOrder,
     toggleTopPickSelected,
@@ -117,6 +118,55 @@ export function useKeyboardShortcuts() {
         openStoryModal()
         return
       }
+
+      // Arrow keys: navigate between images
+      // Right/Left: ±1 (wraps to next/prev row naturally)
+      // Down/Up: ±columns (moves one row down/up)
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && !meta) {
+        if (images.length === 0) return
+        if (document.querySelector('.modal-backdrop')) return  // don't interfere with modals
+
+        e.preventDefault()
+
+        // Count grid columns from computed style
+        const getCols = (): number => {
+          const grid = document.querySelector('.gallery-grid')
+          if (!grid) return 1
+          const cols = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length
+          return Math.max(1, cols)
+        }
+
+        // Find first selected image index in array order
+        let currentIdx = -1
+        for (let i = 0; i < images.length; i++) {
+          if (selectedIds.has(images[i].id)) { currentIdx = i; break }
+        }
+
+        const scrollTo = (id: string) => {
+          requestAnimationFrame(() => {
+            document.querySelector(`[data-image-id="${id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+          })
+        }
+
+        if (currentIdx === -1) {
+          selectImage(images[0].id, false)
+          scrollTo(images[0].id)
+          return
+        }
+
+        const cols = getCols()
+        let newIdx = currentIdx
+        if (e.key === 'ArrowRight') newIdx = Math.min(images.length - 1, currentIdx + 1)
+        else if (e.key === 'ArrowLeft') newIdx = Math.max(0, currentIdx - 1)
+        else if (e.key === 'ArrowDown') newIdx = Math.min(images.length - 1, currentIdx + cols)
+        else if (e.key === 'ArrowUp') newIdx = Math.max(0, currentIdx - cols)
+
+        if (newIdx !== currentIdx) {
+          selectImage(images[newIdx].id, false)
+          scrollTo(images[newIdx].id)
+        }
+        return
+      }
     }
 
     window.addEventListener('keydown', handler)
@@ -124,7 +174,7 @@ export function useKeyboardShortcuts() {
   }, [
     images, selectedIds, topPickIds, viewerImageId,
     openFolder, moveToTop, moveToBottom,
-    deleteSelected, undoLastRename, selectAll, deselectAll,
+    deleteSelected, undoLastRename, selectAll, deselectAll, selectImage,
     togglePreviewMode, prepareApplyOrder,
     toggleTopPickSelected, removeTopPickSelected, openStoryModal
   ])

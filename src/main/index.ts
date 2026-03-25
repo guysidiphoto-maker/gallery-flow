@@ -59,7 +59,6 @@ function createWindow(): void {
 
   if (isDev) {
     win.loadURL('http://localhost:5173')
-    win.webContents.openDevTools({ mode: 'detach' })
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
@@ -277,7 +276,8 @@ ipcMain.handle('export-social-package', async (_e, scenes: SocialExportScene[], 
     return { success: true }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    return { success: false, error: msg }
+    console.error('[Export] failed:', msg)
+    return { success: false, error: 'Export failed. Please try again.' }
   }
 })
 

@@ -37,6 +37,10 @@ const FFMPEG = getFFmpegPath()
 // causing drawtext to crash (SIGSEGV / exit null) when no fontfile is specified.
 const MACOS_FONT = '/System/Library/Fonts/Helvetica.ttc'
 
+// Instagram feed post dimensions (4:5 portrait, mandatory)
+const OUT_W = 1080
+const OUT_H = 1350
+
 // ── Types (mirrored from renderer types) ──────────────────────────────────────
 
 type SocialPostType = 'single' | 'carousel' | 'split-tile'
@@ -151,8 +155,10 @@ function runFFmpeg(args: string[], tag: string): Promise<void> {
   })
 }
 
-// Resize/crop image to 1080×1080, optionally applying custom crop state
-async function renderSquare(
+// Render image to OUT_W × OUT_H (1080×1350, 4:5 portrait).
+// Default: scale to fit, pad remainder with black (no stretching, no cropping).
+// With cropState: scale to cover, apply user pan/zoom, then crop to exact output size.
+async function renderPortrait(
   srcPath: string,
   outPath: string,
   cropState?: { panX: number; panY: number; zoom: number },
@@ -162,26 +168,31 @@ async function renderSquare(
   if (cropState && (cropState.zoom !== 1.0 || cropState.panX !== 0 || cropState.panY !== 0)) {
     const dims = srcDims ?? await probeImage(srcPath)
     const { width: W, height: H } = dims
+    log(`  renderPortrait crop: src=${W}x${H} → ${OUT_W}x${OUT_H}`)
 
-    const baseFitScale = Math.max(1080 / W, 1080 / H)
+    // Scale to cover OUT_W × OUT_H, apply user zoom on top
+    const baseFitScale = Math.max(OUT_W / W, OUT_H / H)
     const userZoom = cropState.zoom ?? 1.0
     const finalScale = baseFitScale * userZoom
 
     const scaledW = Math.round(W * finalScale)
     const scaledH = Math.round(H * finalScale)
 
-    const displayCoverScale = Math.max(360 / W, 360 / H)
-    const cssToExportRatio = (baseFitScale * userZoom) / (displayCoverScale * userZoom)
+    // Display cell in SocialMode is approximately 300×375 (4:5)
+    const displayCoverScale = Math.max(300 / W, 375 / H)
+    const cssToExportRatio = baseFitScale / displayCoverScale
 
     const panX_export = (cropState.panX ?? 0) * cssToExportRatio
     const panY_export = (cropState.panY ?? 0) * cssToExportRatio
 
-    const cropX = Math.round(Math.max(0, Math.min(scaledW - 1080, (scaledW - 1080) / 2 - panX_export)))
-    const cropY = Math.round(Math.max(0, Math.min(scaledH - 1080, (scaledH - 1080) / 2 - panY_export)))
+    const cropX = Math.round(Math.max(0, Math.min(scaledW - OUT_W, (scaledW - OUT_W) / 2 - panX_export)))
+    const cropY = Math.round(Math.max(0, Math.min(scaledH - OUT_H, (scaledH - OUT_H) / 2 - panY_export)))
 
-    vf = `scale=${scaledW}:${scaledH},crop=1080:1080:${cropX}:${cropY}`
+    vf = `scale=${scaledW}:${scaledH},crop=${OUT_W}:${OUT_H}:${cropX}:${cropY}`
   } else {
-    vf = 'scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080'
+    // Scale to fit within OUT_W × OUT_H, pad to exact size with black
+    vf = `scale=${OUT_W}:${OUT_H}:force_original_aspect_ratio=decrease,` +
+         `pad=${OUT_W}:${OUT_H}:(ow-iw)/2:(oh-ih)/2:black`
   }
 
   await runFFmpeg([
@@ -190,17 +201,19 @@ async function renderSquare(
     '-q:v', '2',
     '-frames:v', '1',
     outPath
-  ], `renderSquare(${path.basename(srcPath)})`)
+  ], `renderPortrait(${path.basename(srcPath)})`)
 }
 
-// Crop a tile from image and resize to 1080×1080
+// Crop a tile from image and scale to OUT_W × OUT_H (1080×1350) with padding
 async function renderTile(
   srcPath: string,
   crop: { x: number; y: number; w: number; h: number },
   outPath: string
 ): Promise<void> {
   const { x, y, w, h } = crop
-  const vf = `crop=${w}:${h}:${x}:${y},scale=1080:1080`
+  const vf = `crop=${w}:${h}:${x}:${y},` +
+             `scale=${OUT_W}:${OUT_H}:force_original_aspect_ratio=decrease,` +
+             `pad=${OUT_W}:${OUT_H}:(ow-iw)/2:(oh-ih)/2:black`
   await runFFmpeg([
     '-i', srcPath,
     '-vf', vf,
@@ -236,28 +249,34 @@ async function generateGuidePage(
   totalPosts: number,
   outputPath: string
 ): Promise<void> {
-  const THUMB = 400
-  const COLS = Math.min(3, pagePaths.length)
+  // Thumbnails at 4:5 ratio to match feed posts (1080×1350 → 270×338)
+  const THUMB_W = 270
+  const THUMB_H = 338
+  const MAX_COLS = 3
+  const COLS = Math.min(MAX_COLS, pagePaths.length)
   const ROWS = Math.ceil(pagePaths.length / COLS)
+  const FULL_ROW_W = MAX_COLS * THUMB_W  // 810px — all rows padded to this width
 
   const inputArgs = pagePaths.flatMap(p => ['-i', p])
   const filterParts: string[] = []
 
-  // Per-image thumbnail with posting-order number label
-  // Single-line labels only — multi-line drawtext crashes ffmpeg-static on macOS
-  // (static binary has no fontconfig; fontfile= is required to prevent SIGSEGV)
+  // Per-image thumbnail with label
+  // scale+pad to exact THUMB_W × THUMB_H → guarantees identical dimensions for hstack
   pagePaths.forEach((_, i) => {
     const globalStep = pageOffset + i + 1
     const suffix = globalStep === 1 ? ' FIRST' : globalStep === totalPosts ? ' LAST' : ''
     const label = `POST ${globalStep}${suffix}`
     filterParts.push(
-      `[${i}:v]scale=${THUMB}:${THUMB}:force_original_aspect_ratio=increase,crop=${THUMB}:${THUMB},` +
-      `drawbox=x=0:y=${THUMB - 68}:w=${THUMB}:h=68:color=black@0.75:t=fill,` +
-      `drawtext=fontfile='${MACOS_FONT}':text='${label}':fontsize=32:fontcolor=white:x=(w-tw)/2:y=${THUMB - 52}:shadowcolor=black:shadowx=1:shadowy=1[t${i}]`
+      `[${i}:v]` +
+      `scale=${THUMB_W}:${THUMB_H}:force_original_aspect_ratio=decrease,` +
+      `pad=${THUMB_W}:${THUMB_H}:(ow-iw)/2:(oh-ih)/2:black,` +
+      `drawbox=x=0:y=${THUMB_H - 56}:w=${THUMB_W}:h=56:color=black@0.75:t=fill,` +
+      `drawtext=fontfile='${MACOS_FONT}':text='${label}':fontsize=26:fontcolor=white:x=(w-tw)/2:y=${THUMB_H - 42}:shadowcolor=black:shadowx=1:shadowy=1` +
+      `[t${i}]`
     )
   })
 
-  // Arrange into rows — rows with a single item use `copy` (hstack=inputs=1 may fail)
+  // Build rows — partial rows are padded to FULL_ROW_W so vstack never sees mismatched widths
   const rowLabels: string[] = []
   for (let r = 0; r < ROWS; r++) {
     const rowItems: string[] = []
@@ -266,12 +285,23 @@ async function generateGuidePage(
       if (idx < pagePaths.length) rowItems.push(`[t${idx}]`)
     }
     if (rowItems.length === 0) continue
+
     const rowLabel = `[row${r}]`
+    const isPartial = rowItems.length < MAX_COLS
+    const tempLabel = `[rowraw${r}]`
+
     if (rowItems.length === 1) {
-      filterParts.push(`${rowItems[0]}copy${rowLabel}`)
+      // Single item — pad directly to full row width
+      filterParts.push(`${rowItems[0]}pad=${FULL_ROW_W}:${THUMB_H}:0:0:black${rowLabel}`)
+    } else if (isPartial) {
+      // Partial row: hstack first, then pad to full row width
+      filterParts.push(`${rowItems.join('')}hstack=inputs=${rowItems.length}${tempLabel}`)
+      filterParts.push(`${tempLabel}pad=${FULL_ROW_W}:${THUMB_H}:0:0:black${rowLabel}`)
     } else {
+      // Full row
       filterParts.push(`${rowItems.join('')}hstack=inputs=${rowItems.length}${rowLabel}`)
     }
+
     rowLabels.push(rowLabel)
   }
 
@@ -393,13 +423,15 @@ export async function exportSocialPackage(
   try {
     for (const scene of scenes) {
       const numStr = String(scene.postNumber).padStart(2, '0')
-      log(`Processing post ${scene.postNumber}/${scenes.length} (${scene.type})`)
+      log(`Processing post ${scene.postNumber}/${scenes.length} (${scene.type}) → ${OUT_W}x${OUT_H}`)
       progress(`Processing post ${scene.postNumber}/${scenes.length}…`)
 
       if (scene.type === 'single') {
         const srcPath = await convertHeicIfNeeded(scene.imagePaths[0], tmpDir)
+        const dims = await probeImage(srcPath)
+        log(`  input: ${dims.width}x${dims.height}`)
         const outPath = path.join(outputDir, `post_${numStr}.jpg`)
-        await renderSquare(srcPath, outPath, scene.cropState, scene.imageDims)
+        await renderPortrait(srcPath, outPath, scene.cropState, dims)
         done++
 
         if (options.includeOrderOverlay) {
@@ -420,7 +452,7 @@ export async function exportSocialPackage(
         for (let i = 0; i < scene.imagePaths.length; i++) {
           const srcPath = await convertHeicIfNeeded(scene.imagePaths[i], tmpDir)
           const outPath = path.join(subdir, `${i + 1}.jpg`)
-          await renderSquare(srcPath, outPath, i === 0 ? scene.cropState : undefined, i === 0 ? scene.imageDims : undefined)
+          await renderPortrait(srcPath, outPath, i === 0 ? scene.cropState : undefined, i === 0 ? scene.imageDims : undefined)
           done++
           progress(`Carousel post ${scene.postNumber}: slide ${i + 1}/${scene.imagePaths.length}`)
           if (i === 0) firstSlidePath = outPath

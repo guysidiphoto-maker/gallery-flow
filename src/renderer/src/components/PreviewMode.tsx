@@ -65,7 +65,6 @@ export function PreviewMode() {
             <img
               src={toLocalURL(image.path)}
               alt={image.filename}
-              loading="lazy"
               draggable={false}
             />
             <div className="preview-mode__item-num">{idx + 1}</div>
