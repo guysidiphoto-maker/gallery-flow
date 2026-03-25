@@ -99,9 +99,30 @@ export function useKeyboardShortcuts() {
       }
 
       // T: Add selected image(s) to Top Picks (move to top)
+      // For single selection: auto-advance to the next image after the move
       if (e.key === 't' && !meta && !e.shiftKey && selectedIds.size > 0) {
         e.preventDefault()
-        toggleTopPickSelected()
+
+        let nextId: string | null = null
+        if (selectedIds.size === 1) {
+          const [id] = selectedIds
+          const idx = images.findIndex(img => img.id === id)
+          if (idx !== -1 && idx + 1 < images.length) {
+            nextId = images[idx + 1].id
+          }
+        }
+
+        const result = toggleTopPickSelected()
+        const p = result instanceof Promise ? result : Promise.resolve()
+        if (nextId) {
+          const id = nextId
+          p.then(() => {
+            selectImage(id, false)
+            requestAnimationFrame(() => {
+              document.querySelector(`[data-image-id="${id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+            })
+          })
+        }
         return
       }
 
