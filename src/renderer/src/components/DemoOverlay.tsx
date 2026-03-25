@@ -2,12 +2,13 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useDemo } from '../store/demo'
 
 export function DemoOverlay() {
-  const { phase, step, progress, stopDemo } = useDemo()
+  const { phase, step, progress, titleCard, stopDemo } = useDemo()
+
+  // ── Step caption fade ────────────────────────────────────────────────────────
   const [displayedStep, setDisplayedStep] = useState(step)
   const [stepVisible, setStepVisible] = useState(true)
   const prevStep = useRef(step)
 
-  // Fade step text when it changes
   useEffect(() => {
     if (step === prevStep.current) return
     prevStep.current = step
@@ -15,7 +16,7 @@ export function DemoOverlay() {
     const t = setTimeout(() => {
       setDisplayedStep(step)
       setStepVisible(true)
-    }, 220)
+    }, 200)
     return () => clearTimeout(t)
   }, [step])
 
@@ -23,13 +24,31 @@ export function DemoOverlay() {
     if (phase !== 'idle') setDisplayedStep(step)
   }, [phase])
 
+  // ── Title card fade ──────────────────────────────────────────────────────────
+  // Keep the content rendered for 280ms after titleCard is cleared so the
+  // CSS fade-out can complete before the element is removed from the DOM.
+  const [cardContent, setCardContent] = useState<string | null>(null)
+  const [cardVisible, setCardVisible] = useState(false)
+
+  useEffect(() => {
+    if (titleCard) {
+      setCardContent(titleCard)
+      // Double-rAF ensures the element is painted before the transition fires
+      requestAnimationFrame(() => requestAnimationFrame(() => setCardVisible(true)))
+    } else {
+      setCardVisible(false)
+      const t = setTimeout(() => setCardContent(null), 300)
+      return () => clearTimeout(t)
+    }
+  }, [titleCard])
+
   if (phase === 'idle') return null
 
   const isCurtain = phase === 'intro' || phase === 'done'
 
   return (
     <>
-      {/* Full-screen click blocker (transparent during running, dark during curtain) */}
+      {/* Full-screen click blocker */}
       <div className={`demo-blocker${isCurtain ? ' demo-blocker--curtain' : ''}`}>
         {isCurtain && (
           <div className="demo-curtain">
@@ -48,30 +67,27 @@ export function DemoOverlay() {
         )}
       </div>
 
-      {/* UI chrome — only during running */}
+      {/* Full-screen title card (between steps) */}
+      {cardContent && (
+        <div className={`demo-title-card${cardVisible ? ' demo-title-card--visible' : ''}`}>
+          <p className="demo-title-card__text">{cardContent}</p>
+        </div>
+      )}
+
+      {/* Running HUD */}
       {phase === 'running' && (
         <>
-          {/* Amber progress bar at top */}
           <div className="demo-progress-track">
-            <div
-              className="demo-progress-fill"
-              style={{ width: `${progress}%` }}
-            />
+            <div className="demo-progress-fill" style={{ width: `${progress}%` }} />
           </div>
 
-          {/* DEMO badge */}
           <div className="demo-badge">DEMO</div>
 
-          {/* Bottom caption strip */}
           <div className="demo-caption">
-            <span
-              className={`demo-caption__text${stepVisible ? ' demo-caption__text--visible' : ''}`}
-            >
+            <span className={`demo-caption__text${stepVisible ? ' demo-caption__text--visible' : ''}`}>
               {displayedStep}
             </span>
-            <button className="demo-stop" onClick={stopDemo}>
-              Stop
-            </button>
+            <button className="demo-stop" onClick={stopDemo}>Stop</button>
           </div>
         </>
       )}
