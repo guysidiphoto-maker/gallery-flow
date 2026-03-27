@@ -6,74 +6,105 @@ interface Props {
 
 interface Slide {
   icon: React.ReactNode
+  tag: string
   title: string
-  subtitle: string
-  tips: { keys?: string; text: string }[]
+  body: React.ReactNode
 }
 
 const slides: Slide[] = [
   {
+    tag: 'Gallery Order',
     icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <circle cx="8.5" cy="8.5" r="1.5" />
-        <polyline points="21 15 16 10 5 21" />
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
       </svg>
     ),
-    title: 'Welcome to GalleryFlow',
-    subtitle: 'A fast, keyboard-driven photo editor for photographers. Here\'s everything you need to know in 4 steps.',
-    tips: [
-      { keys: '⌘O', text: 'Open a folder of images to get started' },
-      { keys: '⌘A', text: 'Select all images — press again to deselect' },
-      { keys: 'Esc', text: 'Clear selection at any time' },
-    ]
+    title: 'סדר התמונות = שמות הקבצים',
+    body: (
+      <>
+        <p>
+          כשאתה גורר תמונה למיקום אחר בגלריה, אתה קובע את הסדר שבו היא תופיע.
+          לחיצה על <strong>Apply Order</strong> בטולבר תשנה את שמות הקבצים בתיקיית המקור
+          כדי לשקף את הסדר הזה — <em>0001.jpg, 0002.jpg…</em>
+        </p>
+        <p>
+          כך כשתשלח את התיקייה ללקוח או תעלה לפלטפורמה, הסדר שבחרת ישמר אוטומטית.
+          אפשר גם להוסיף prefix לשמות, למשל <em>wedding_0001.jpg</em>.
+        </p>
+      </>
+    )
   },
   {
+    tag: 'Top Picks',
     icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M5 12h14M12 5l7 7-7 7" />
-      </svg>
-    ),
-    title: 'Navigate & Select',
-    subtitle: 'Move through your gallery quickly with the keyboard. No need to touch the mouse.',
-    tips: [
-      { keys: '← → ↑ ↓', text: 'Move between images one by one or row by row' },
-      { keys: 'Shift + Arrow', text: 'Extend selection to a range of images' },
-      { keys: 'Shift + Click', text: 'Select a range from last selected to here' },
-      { keys: '⌘ + Click', text: 'Toggle individual images in/out of selection' },
-      { keys: 'Double-click', text: 'Open full-screen image viewer' },
-    ]
-  },
-  {
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
       </svg>
     ),
-    title: 'Mark Your Top Picks',
-    subtitle: 'Star your best shots with T. These become your selection for Story and Social export.',
-    tips: [
-      { keys: 'T', text: 'Mark image as Top Pick — selection auto-advances to next image' },
-      { keys: 'Shift + T', text: 'Remove image from Top Picks' },
-      { keys: '★ badge', text: 'Click the star on any image to toggle its pick status' },
-      { text: 'Top Picks are shown with a gold border in the gallery' },
-    ]
+    title: 'T = תמונה קדימה',
+    body: (
+      <>
+        <p>
+          לחיצה על <strong>T</strong> על תמונה מסמנת אותה כ-Top Pick —
+          היא קופצת לתחילת הגלריה, ושמה ישתנה כך שתופיע ראשונה לאחר Apply Order.
+          הבחירה עוברת אוטומטית לתמונה הבאה כדי לא לשבור את הפלואו.
+        </p>
+        <p>
+          כל התמונות שסימנת כ-Top Picks מוצגות עם כוכב זהב ומאוחסנות יחד.
+          הן הבסיס לכל הייצוא — סטורי, אינסטגרם, וסקשנים.
+        </p>
+      </>
+    )
   },
   {
+    tag: 'Story & Social',
     icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
         <polygon points="23 7 16 12 23 17 23 7" />
         <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
       </svg>
     ),
-    title: 'Export & Organise',
-    subtitle: 'Rename files to match your curation order, create a story video, or export for Instagram.',
-    tips: [
-      { keys: '⌘ + Enter', text: 'Apply current order — renames files to 0001, 0002…' },
-      { keys: '⌘S', text: 'Open Story Creator — make a 9:16 video from Top Picks' },
-      { text: 'Social button — export Top Picks as 1080×1350 images for Instagram' },
-      { text: 'Sections — group images into named collections and publish them to folders' },
-    ]
+    title: 'ייצוא ל-Story ואינסטגרם',
+    body: (
+      <>
+        <p>
+          <strong>Create Story</strong> — ייצור סרטון 9:16 מ-Top Picks שלך, עם אנימציית Ken Burns,
+          מעברים ואפקטי תנועה. אפשר לבחור סגנון, משך ולסדר את הסצנות לפני הייצוא.
+        </p>
+        <p>
+          <strong>Social</strong> — מייצא את ה-Top Picks כתמונות 1080×1350 (פורמט 4:5 לאינסטגרם)
+          ויוצר מדריך פרסום ויזואלי שמראה את הסדר המומלץ לפוסטים.
+        </p>
+      </>
+    )
+  },
+  {
+    tag: 'Export to Folder',
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        <line x1="12" y1="11" x2="12" y2="17" />
+        <polyline points="9 14 12 17 15 14" />
+      </svg>
+    ),
+    title: 'לשמור בחזרה לתיקייה',
+    body: (
+      <>
+        <p>
+          כשסיימת לסדר, לסמן Top Picks וליצור Sections —
+          לחץ <strong>Apply Order</strong> בטולבר.
+          הפעולה משנה את שמות הקבצים ישירות <em>בתיקיית המקור</em> במחשב שלך,
+          כך שהשינויים קיימים גם מחוץ לאפליקציה.
+        </p>
+        <p>
+          אם יש לך סקשנים, לחץ <strong>Publish Sections</strong> — הוא יעתיק את
+          התמונות לתיקיות מחולקות לפי שם הסקשן, מוכנות לשליחה ללקוח.
+        </p>
+      </>
+    )
   }
 ]
 
@@ -99,18 +130,12 @@ export function WelcomeModal({ onClose }: Props) {
 
         {/* Slide content */}
         <div className="welcome-body">
-          <div className="welcome-icon">{slide.icon}</div>
-          <h2 className="welcome-title">{slide.title}</h2>
-          <p className="welcome-subtitle">{slide.subtitle}</p>
-
-          <div className="welcome-tips">
-            {slide.tips.map((tip, i) => (
-              <div key={i} className="welcome-tip">
-                {tip.keys && <kbd className="welcome-kbd">{tip.keys}</kbd>}
-                <span className={tip.keys ? '' : 'welcome-tip--nokey'}>{tip.text}</span>
-              </div>
-            ))}
+          <div className="welcome-top">
+            <div className="welcome-icon">{slide.icon}</div>
+            <span className="welcome-tag">{slide.tag}</span>
           </div>
+          <h2 className="welcome-title">{slide.title}</h2>
+          <div className="welcome-text">{slide.body}</div>
         </div>
 
         {/* Footer */}
