@@ -259,17 +259,16 @@ export function Toolbar({ onShowHelp }: { onShowHelp?: () => void }) {
           </button>
         )}
 
-        {/* Help */}
+        {/* Tour Guide */}
         <button
-          className="btn btn--ghost btn--icon"
+          className="btn btn--ghost"
           onClick={onShowHelp}
-          title="Quick start guide"
+          title="Open feature tour"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-            <line x1="12" y1="17" x2="12.01" y2="17" strokeWidth="3" strokeLinecap="round" />
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight: 4}}>
+            <polygon points="3 11 22 2 13 21 11 13 3 11" />
           </svg>
+          Tour Guide
         </button>
 
         {/* Preview mode */}
