@@ -75,7 +75,7 @@ interface SectionsState {
 export const useSections = create<SectionsState>((set, get) => ({
   sections: [],
   activeSectionFilter: null,
-  isPanelOpen: false,
+  isPanelOpen: true,
   isPublishModalOpen: false,
   isPublishing: false,
   publishError: null,
