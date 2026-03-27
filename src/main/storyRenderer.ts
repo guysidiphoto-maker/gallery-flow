@@ -132,7 +132,7 @@ function buildMotionFilter(
 function buildGradingFilter(options: { style?: string; colorMatch?: string }): string | null {
   if (options.style === 'vintage') {
     // Film grain only — no color/saturation/contrast changes
-    return 'noise=alls=8:allf=t+u'
+    return 'noise=alls=25:allf=t+u'
   }
   switch (options.colorMatch) {
     case 'subtle': return "curves=all='0/0.025 1/0.975',eq=saturation=0.92"
@@ -525,9 +525,9 @@ async function renderOutroScene(
   const imgInputArgs = cellPaths.flatMap(p => ['-loop', '1', '-framerate', '30', '-i', p])
   const logoIdx = totalCells
 
-  // ── Grid filter: fit each image (no crop), pad with black ───────────────────
+  // ── Grid filter: cover each cell fully (zoom to fill, center crop) ──────────
   const cellFilters = cellPaths.map((_, i) =>
-    `[${i}:v]scale=${cellW}:${cellH}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${cellW}:${cellH}:(ow-iw)/2:(oh-ih)/2:black[c${i}]`
+    `[${i}:v]scale=${cellW}:${cellH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${cellW}:${cellH}[c${i}]`
   )
 
   const rowFilters: string[] = []
@@ -562,7 +562,7 @@ async function renderOutroScene(
 
   const args = [
     ...imgInputArgs,
-    '-i', logoPath,
+    '-loop', '1', '-framerate', '30', '-i', logoPath,
     '-filter_complex', filter,
     '-map', '[out]',
     '-vframes', String(d),
