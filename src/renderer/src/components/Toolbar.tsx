@@ -4,7 +4,7 @@ import { useSocial } from '../store/social'
 import { useSections } from '../store/sections'
 import type { SortMode } from '../types'
 
-export function Toolbar({ onShowHelp }: { onShowHelp?: () => void }) {
+export function Toolbar() {
   const {
     folderPath,
     images,
@@ -259,29 +259,14 @@ export function Toolbar({ onShowHelp }: { onShowHelp?: () => void }) {
           </button>
         )}
 
-        {/* Tour Guide */}
-        <button
-          className="btn btn--ghost"
-          onClick={onShowHelp}
-          title="Open feature tour"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight: 4}}>
-            <polygon points="3 11 22 2 13 21 11 13 3 11" />
-          </svg>
-          Tour Guide
-        </button>
-
         {/* Preview mode */}
         {images.length > 0 && (
           <button
-            className="btn btn--ghost btn--icon"
+            className="btn btn--ghost"
             onClick={togglePreviewMode}
             title="Client preview mode"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
+            Preview
           </button>
         )}
 

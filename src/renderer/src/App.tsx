@@ -55,7 +55,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Toolbar onShowHelp={() => setShowWelcome(true)} />
+      <Toolbar />
 
       <GalleryDndProvider>
         <div className="app__content">
