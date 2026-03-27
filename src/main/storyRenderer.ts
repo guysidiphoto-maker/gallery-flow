@@ -131,8 +131,8 @@ function buildMotionFilter(
 
 function buildGradingFilter(options: { style?: string; colorMatch?: string }): string | null {
   if (options.style === 'vintage') {
-    // Warm tones (boost reds, reduce blues), reduced saturation, softer contrast, subtle grain
-    return "hue=s=0.82,eq=contrast=0.88:brightness=0.015:saturation=0.82,curves=r='0/0 0.5/0.56 1/1':b='0/0 0.5/0.44 1/0.88',noise=alls=6:allf=t+u"
+    // Film grain only — no color/saturation/contrast changes
+    return 'noise=alls=8:allf=t+u'
   }
   switch (options.colorMatch) {
     case 'subtle': return "curves=all='0/0.025 1/0.975',eq=saturation=0.92"
@@ -507,56 +507,58 @@ async function renderOutroScene(
   const OUTRO_W = 1080
   const OUTRO_H = 1920
   const d = Math.round(duration * 30)
-  const fadeD = Math.min(0.5, duration * 0.25)
 
-  // Pick 1-6 unique images, cycling if fewer than needed
-  const raw = processedImagePaths.slice(0, 6)
-  if (raw.length === 0) throw new Error('No images for outro collage')
+  if (processedImagePaths.length === 0) throw new Error('No images for outro collage')
 
-  let imgCount: number
-  let collageFilter: string
-  let pickedPaths: string[]
+  // ── Grid dimensions ──────────────────────────────────────────────────────────
+  // cols: 1 for single image, 2 for two, 3 for everything else
+  const cols = processedImagePaths.length === 1 ? 1 : processedImagePaths.length === 2 ? 2 : 3
+  const rows = Math.ceil(processedImagePaths.length / cols)
+  const totalCells = cols * rows
+  const cellW = Math.floor(OUTRO_W / cols)
+  const cellH = Math.ceil(OUTRO_H / rows)  // may be 1-2px over; grid is cropped to exact size below
 
-  if (raw.length === 1) {
-    imgCount = 1
-    pickedPaths = raw
-    collageFilter = `[0:v]scale=${OUTRO_W}:${OUTRO_H}:force_original_aspect_ratio=increase,crop=${OUTRO_W}:${OUTRO_H}[collage]`
-  } else if (raw.length === 2) {
-    imgCount = 2
-    pickedPaths = raw
-    const cw = 540
-    collageFilter = [
-      `[0:v]scale=${cw}:${OUTRO_H}:force_original_aspect_ratio=increase,crop=${cw}:${OUTRO_H}[c0]`,
-      `[1:v]scale=${cw}:${OUTRO_H}:force_original_aspect_ratio=increase,crop=${cw}:${OUTRO_H}[c1]`,
-      `[c0][c1]hstack=inputs=2[collage]`
-    ].join(';')
-  } else {
-    // 3-6 images: use 3×2 grid (360×960 cells), cycle to fill 6
-    imgCount = 6
-    pickedPaths = Array.from({ length: 6 }, (_, i) => raw[i % raw.length])
-    const cw = 360, ch = 960
-    const parts: string[] = pickedPaths.map((_, i) =>
-      `[${i}:v]scale=${cw}:${ch}:force_original_aspect_ratio=increase,crop=${cw}:${ch}[c${i}]`
+  // Pad image list by cycling to fill the grid completely
+  const cellPaths = Array.from({ length: totalCells }, (_, i) => processedImagePaths[i % processedImagePaths.length])
+
+  // ── FFmpeg inputs ────────────────────────────────────────────────────────────
+  const imgInputArgs = cellPaths.flatMap(p => ['-loop', '1', '-framerate', '30', '-i', p])
+  const logoIdx = totalCells
+
+  // ── Grid filter: fit each image (no crop), pad with black ───────────────────
+  const cellFilters = cellPaths.map((_, i) =>
+    `[${i}:v]scale=${cellW}:${cellH}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${cellW}:${cellH}:(ow-iw)/2:(oh-ih)/2:black[c${i}]`
+  )
+
+  const rowFilters: string[] = []
+  for (let r = 0; r < rows; r++) {
+    const inputs = Array.from({ length: cols }, (_, c) => `[c${r * cols + c}]`).join('')
+    rowFilters.push(cols === 1
+      ? `[c${r * cols}]copy[row${r}]`
+      : `${inputs}hstack=inputs=${cols}[row${r}]`
     )
-    parts.push(`[c0][c1][c2]hstack=inputs=3[top]`)
-    parts.push(`[c3][c4][c5]hstack=inputs=3[bot]`)
-    parts.push(`[top][bot]vstack=inputs=2[collage]`)
-    collageFilter = parts.join(';')
   }
 
-  const imgInputArgs = pickedPaths.slice(0, imgCount).flatMap(p => ['-loop', '1', '-framerate', '30', '-i', p])
-  const logoIdx = imgCount
-  const logoLabel = `[${logoIdx}:v]`
-  const logoMaxW = 560  // ~52% of 1080
+  const rowLabels = Array.from({ length: rows }, (_, r) => `[row${r}]`).join('')
+  const vstackFilter = rows === 1
+    ? `[row0]crop=${OUTRO_W}:${OUTRO_H}:0:0[grid]`
+    : `${rowLabels}vstack=inputs=${rows}[grid_raw];[grid_raw]crop=${OUTRO_W}:${OUTRO_H}:0:0[grid]`
 
-  const postFilter = [
-    `[collage]drawbox=x=0:y=0:w=iw:h=ih:color=0x00000080:t=fill[dark]`,
-    `${logoLabel}scale='min(${logoMaxW}\\,iw)':-1[logo_s]`,
-    `[dark][logo_s]overlay=(W-w)/2:(H-h)/2:format=auto[with_logo]`,
-    `[with_logo]fade=t=in:st=0:d=${fadeD},fade=t=out:st=${(duration - fadeD).toFixed(3)}:d=${fadeD},setsar=1[out]`
-  ].join(';')
+  // ── Animation timings ────────────────────────────────────────────────────────
+  // 0.0–0.5s  : grid fades in
+  // 0.5–1.5s  : logo fades in (grid fully visible)
+  // 1.5–3.0s  : grid fades to black (logo stays)
+  // 3.0–3.5s  : logo fades out
+  const logoMaxW = 560
 
-  const filter = [collageFilter, postFilter].join(';')
+  const animFilters = [
+    `[grid]fade=t=in:st=0:d=0.5,fade=t=out:st=1.5:d=1.5[grid_anim]`,
+    `[${logoIdx}:v]scale='min(${logoMaxW}\\,iw)':-1,format=rgba,` +
+      `fade=t=in:st=0.5:d=1.0:alpha=1,fade=t=out:st=${(duration - 0.5).toFixed(2)}:d=0.5:alpha=1[logo_anim]`,
+    `[grid_anim][logo_anim]overlay=(W-w)/2:(H-h)/2:format=auto,setsar=1[out]`
+  ]
+
+  const filter = [...cellFilters, ...rowFilters, vstackFilter, ...animFilters].join(';')
 
   const args = [
     ...imgInputArgs,
@@ -564,7 +566,7 @@ async function renderOutroScene(
     '-filter_complex', filter,
     '-map', '[out]',
     '-vframes', String(d),
-    '-r', '30', '-c:v', 'libx264', '-preset', 'fast', '-b:v', '2500k', '-pix_fmt', 'yuv420p', '-g', '15',
+    '-r', '30', '-c:v', 'libx264', '-preset', 'fast', '-b:v', '3000k', '-pix_fmt', 'yuv420p', '-g', '15',
     outPath
   ]
 
@@ -655,7 +657,7 @@ export async function renderStory(
     // ── Branded outro (add as final scene before concat) ───────────────────
     if (params.options.brandedOutro && params.options.logoPath) {
       sendProgress(76, 'Rendering branded outro…')
-      const outroDur = 2.0
+      const outroDur = 3.5
       const outroPath = path.join(tmpDir, `scene_outro.mp4`)
       await renderOutroScene(
         allProcessedPaths,
