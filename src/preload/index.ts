@@ -80,7 +80,10 @@ const api = {
     outputDir: string
     sections: Array<{ name: string; images: Array<{ srcPath: string; destName: string }> }>
   }): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('publish-sections', params)
+    ipcRenderer.invoke('publish-sections', params),
+
+  chooseLogoFile: (): Promise<string | null> =>
+    ipcRenderer.invoke('choose-logo-file'),
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -314,3 +314,12 @@ ipcMain.handle('publish-sections', async (_e, params: {
     return { success: false, error: msg }
   }
 })
+
+ipcMain.handle('choose-logo-file', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Choose Logo Image',
+    properties: ['openFile'],
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+  })
+  return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+})

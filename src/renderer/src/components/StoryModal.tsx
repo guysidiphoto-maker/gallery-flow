@@ -54,6 +54,14 @@ const STYLE_PRESETS: Record<StoryStyle, StylePreset> = {
     motionMode: 'none',
     transitionStyle: 'clean',
     colorMatch: 'subtle'
+  },
+  vintage: {
+    label: 'Vintage',
+    description: 'Film grain · Warm tones · Soft',
+    icon: '◎',
+    motionMode: 'subtle',
+    transitionStyle: 'soft-fade',
+    colorMatch: 'off'
   }
 }
 
@@ -124,8 +132,11 @@ export function StoryModal() {
     style: 'clean',
     motionMode: 'subtle',
     transitionStyle: 'clean',
-    colorMatch: 'off'
+    colorMatch: 'off',
+    brandedOutro: false,
+    logoPath: null
   })
+  const [outroValidationError, setOutroValidationError] = useState(false)
   const [scenes, setScenes] = useState<StorySceneDef[]>([])
   const [actualDuration, setActualDuration] = useState(0)
   const [isBuilding, setIsBuilding] = useState(false)
@@ -185,6 +196,11 @@ export function StoryModal() {
   }, [topPickImages, options.totalDuration])
 
   const handleExport = useCallback(async () => {
+    if (options.brandedOutro && !options.logoPath) {
+      setOutroValidationError(true)
+      return
+    }
+    setOutroValidationError(false)
     const defaultName = `story_${new Date().toISOString().slice(0, 10)}.mp4`
     const path = await window.api.chooseExportPath(defaultName)
     if (!path) return
@@ -336,13 +352,13 @@ export function StoryModal() {
               <div className="story-option-group story-option-group--inline">
                 <label className="story-option-label">Transitions</label>
                 <div className="story-option-pills">
-                  {(['clean', 'cinematic', 'energetic'] as StoryTransitionStyle[]).map(t => (
+                  {(['clean', 'cinematic', 'energetic', 'soft-fade'] as StoryTransitionStyle[]).map(t => (
                     <button
                       key={t}
                       className={`story-pill ${options.transitionStyle === t ? 'active' : ''}`}
                       onClick={() => setOptions(o => ({ ...o, transitionStyle: t }))}
                     >
-                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                      {t === 'soft-fade' ? 'Soft Fade' : t.charAt(0).toUpperCase() + t.slice(1)}
                     </button>
                   ))}
                 </div>
@@ -362,6 +378,62 @@ export function StoryModal() {
                   ))}
                 </div>
               </div>
+            </div>
+
+            {/* Branded Outro */}
+            <div className="story-option-group">
+              <label className="story-option-label">Branded Outro</label>
+              <div className="story-outro-row">
+                <button
+                  className={`story-pill ${options.brandedOutro ? 'active' : ''}`}
+                  onClick={() => {
+                    setOptions(o => ({ ...o, brandedOutro: !o.brandedOutro }))
+                    setOutroValidationError(false)
+                  }}
+                >
+                  {options.brandedOutro ? '✓ Enabled' : 'Add Outro'}
+                </button>
+              </div>
+              {options.brandedOutro && (
+                <div className="story-logo-zone">
+                  {options.logoPath ? (
+                    <div className="story-logo-preview">
+                      <img
+                        src={`localfile://${options.logoPath.split('/').map(encodeURIComponent).join('/')}`}
+                        alt="Logo"
+                        className="story-logo-img"
+                      />
+                      <div className="story-logo-preview__info">
+                        <span>{options.logoPath.split('/').pop()}</span>
+                        <button
+                          className="btn btn--ghost story-logo-remove"
+                          onClick={() => setOptions(o => ({ ...o, logoPath: null }))}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      className={`story-logo-picker ${outroValidationError ? 'error' : ''}`}
+                      onClick={async () => {
+                        const p = await window.api.chooseLogoFile()
+                        if (p) { setOptions(o => ({ ...o, logoPath: p })); setOutroValidationError(false) }
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      {outroValidationError ? 'Logo required — click to upload' : 'Upload Logo…'}
+                    </button>
+                  )}
+                  <p className="story-logo-hint">
+                    Your logo appears centered over a collage of your images at the end of the video.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}

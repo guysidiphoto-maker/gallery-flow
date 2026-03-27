@@ -53,9 +53,12 @@ export interface StorySceneInternal {
 
 export interface StoryOptions {
   totalDuration: number
-  transitionStyle?: 'clean' | 'cinematic' | 'energetic'
+  style?: string
+  transitionStyle?: string
   colorMatch?: 'off' | 'subtle' | 'strong'
   motionMode?: 'none' | 'subtle' | 'dynamic'
+  brandedOutro?: boolean
+  logoPath?: string | null
 }
 
 // ── Motion configuration ──────────────────────────────────────────────────────
@@ -124,10 +127,14 @@ function buildMotionFilter(
   }
 }
 
-// ── Color match filter ────────────────────────────────────────────────────────
+// ── Color/grading filter ──────────────────────────────────────────────────────
 
-function buildColorMatchFilter(colorMatch?: string): string | null {
-  switch (colorMatch) {
+function buildGradingFilter(options: { style?: string; colorMatch?: string }): string | null {
+  if (options.style === 'vintage') {
+    // Warm tones (boost reds, reduce blues), reduced saturation, softer contrast, subtle grain
+    return "hue=s=0.82,eq=contrast=0.88:brightness=0.015:saturation=0.82,curves=r='0/0 0.5/0.56 1/1':b='0/0 0.5/0.44 1/0.88',noise=alls=6:allf=t+u"
+  }
+  switch (options.colorMatch) {
     case 'subtle': return "curves=all='0/0.025 1/0.975',eq=saturation=0.92"
     case 'strong': return "curves=all='0/0.06 0.25/0.265 0.75/0.735 1/0.94',eq=saturation=0.84:contrast=0.95"
     default: return null
@@ -140,6 +147,7 @@ function buildColorMatchFilter(colorMatch?: string): string | null {
  * Select an xfade transition whose direction matches the outgoing scene's motion.
  */
 function selectTransition(outgoingMotion: StoryMotionType, transitionStyle?: string): string {
+  if (transitionStyle === 'soft-fade') return 'fade'
   if (transitionStyle === 'cinematic') {
     switch (outgoingMotion) {
       case 'pan-right':  return 'slideleft'
@@ -160,6 +168,10 @@ function selectTransition(outgoingMotion: StoryMotionType, transitionStyle?: str
     }
   }
   return 'fade'  // 'clean' or default
+}
+
+function getTransitionDuration(transitionStyle?: string): number {
+  return transitionStyle === 'soft-fade' ? 0.8 : 0.4
 }
 
 // ── Build scenes result ───────────────────────────────────────────────────────
@@ -440,8 +452,9 @@ async function concatenateScenes(
   outputPath: string,
   onProgress: (p: number) => void
 ): Promise<void> {
+  const td = getTransitionDuration(transitionStyle)
   const totalDuration = durations.reduce((s, d) => s + d, 0) -
-    Math.max(0, scenePaths.length - 1) * TRANSITION_DURATION
+    Math.max(0, scenePaths.length - 1) * td
 
   if (scenePaths.length === 1) {
     const args = [
@@ -461,11 +474,11 @@ async function concatenateScenes(
   let prevLabel = '[0:v]'
 
   for (let i = 1; i < scenePaths.length; i++) {
-    offset += durations[i - 1] - TRANSITION_DURATION
+    offset += durations[i - 1] - td
     const xfade = selectTransition(sceneMotions[i - 1], transitionStyle)
     const outLabel = i === scenePaths.length - 1 ? '[out]' : `[v${i}]`
     filterParts.push(
-      `${prevLabel}[${i}:v]xfade=transition=${xfade}:duration=${TRANSITION_DURATION}:offset=${offset.toFixed(3)}${outLabel}`
+      `${prevLabel}[${i}:v]xfade=transition=${xfade}:duration=${td}:offset=${offset.toFixed(3)}${outLabel}`
     )
     prevLabel = outLabel
   }
@@ -480,6 +493,82 @@ async function concatenateScenes(
     outputPath
   ]
   await runFFmpeg(args, totalDuration, onProgress)
+}
+
+// ── Branded outro renderer ─────────────────────────────────────────────────────
+
+async function renderOutroScene(
+  processedImagePaths: string[],
+  logoPath: string,
+  duration: number,
+  outPath: string,
+  onProgress: (p: number) => void
+): Promise<void> {
+  const OUTRO_W = 1080
+  const OUTRO_H = 1920
+  const d = Math.round(duration * 30)
+  const fadeD = Math.min(0.5, duration * 0.25)
+
+  // Pick 1-6 unique images, cycling if fewer than needed
+  const raw = processedImagePaths.slice(0, 6)
+  if (raw.length === 0) throw new Error('No images for outro collage')
+
+  let imgCount: number
+  let collageFilter: string
+  let pickedPaths: string[]
+
+  if (raw.length === 1) {
+    imgCount = 1
+    pickedPaths = raw
+    collageFilter = `[0:v]scale=${OUTRO_W}:${OUTRO_H}:force_original_aspect_ratio=increase,crop=${OUTRO_W}:${OUTRO_H}[collage]`
+  } else if (raw.length === 2) {
+    imgCount = 2
+    pickedPaths = raw
+    const cw = 540
+    collageFilter = [
+      `[0:v]scale=${cw}:${OUTRO_H}:force_original_aspect_ratio=increase,crop=${cw}:${OUTRO_H}[c0]`,
+      `[1:v]scale=${cw}:${OUTRO_H}:force_original_aspect_ratio=increase,crop=${cw}:${OUTRO_H}[c1]`,
+      `[c0][c1]hstack=inputs=2[collage]`
+    ].join(';')
+  } else {
+    // 3-6 images: use 3×2 grid (360×960 cells), cycle to fill 6
+    imgCount = 6
+    pickedPaths = Array.from({ length: 6 }, (_, i) => raw[i % raw.length])
+    const cw = 360, ch = 960
+    const parts: string[] = pickedPaths.map((_, i) =>
+      `[${i}:v]scale=${cw}:${ch}:force_original_aspect_ratio=increase,crop=${cw}:${ch}[c${i}]`
+    )
+    parts.push(`[c0][c1][c2]hstack=inputs=3[top]`)
+    parts.push(`[c3][c4][c5]hstack=inputs=3[bot]`)
+    parts.push(`[top][bot]vstack=inputs=2[collage]`)
+    collageFilter = parts.join(';')
+  }
+
+  const imgInputArgs = pickedPaths.slice(0, imgCount).flatMap(p => ['-loop', '1', '-framerate', '30', '-i', p])
+  const logoIdx = imgCount
+  const logoLabel = `[${logoIdx}:v]`
+  const logoMaxW = 560  // ~52% of 1080
+
+  const postFilter = [
+    `[collage]drawbox=x=0:y=0:w=iw:h=ih:color=0x00000080:t=fill[dark]`,
+    `${logoLabel}scale='min(${logoMaxW}\\,iw)':-1[logo_s]`,
+    `[dark][logo_s]overlay=(W-w)/2:(H-h)/2:format=auto[with_logo]`,
+    `[with_logo]fade=t=in:st=0:d=${fadeD},fade=t=out:st=${(duration - fadeD).toFixed(3)}:d=${fadeD},setsar=1[out]`
+  ].join(';')
+
+  const filter = [collageFilter, postFilter].join(';')
+
+  const args = [
+    ...imgInputArgs,
+    '-i', logoPath,
+    '-filter_complex', filter,
+    '-map', '[out]',
+    '-vframes', String(d),
+    '-r', '30', '-c:v', 'libx264', '-preset', 'fast', '-b:v', '2500k', '-pix_fmt', 'yuv420p', '-g', '15',
+    outPath
+  ]
+
+  await runFFmpeg(args, duration, onProgress)
 }
 
 // ── Main export function ───────────────────────────────────────────────────────
@@ -509,10 +598,11 @@ export async function renderStory(
   }
 
   const motionMode = params.options.motionMode ?? 'subtle'
-  const colorMatchFilter = buildColorMatchFilter(params.options.colorMatch)
+  const colorMatchFilter = buildGradingFilter({ style: params.options.style, colorMatch: params.options.colorMatch })
   const scenePaths: string[] = []
   const sceneDurations: number[] = []
   const sceneMotions: StoryMotionType[] = []
+  const allProcessedPaths: string[] = []
 
   try {
     // ── Phase 1: render individual scenes ─────────────────────────────────
@@ -538,6 +628,8 @@ export async function renderStory(
         })
       )
 
+      allProcessedPaths.push(...imgs.map(i => i.processedPath))
+
       const motionType = scene.motionType
 
       switch (scene.type) {
@@ -558,6 +650,23 @@ export async function renderStory(
       scenePaths.push(sceneOut)
       sceneDurations.push(scene.duration)
       sceneMotions.push(motionType)
+    }
+
+    // ── Branded outro (add as final scene before concat) ───────────────────
+    if (params.options.brandedOutro && params.options.logoPath) {
+      sendProgress(76, 'Rendering branded outro…')
+      const outroDur = 2.0
+      const outroPath = path.join(tmpDir, `scene_outro.mp4`)
+      await renderOutroScene(
+        allProcessedPaths,
+        params.options.logoPath,
+        outroDur,
+        outroPath,
+        (pct) => sendProgress(76 + pct * 0.02, 'Rendering outro…')
+      )
+      scenePaths.push(outroPath)
+      sceneDurations.push(outroDur)
+      sceneMotions.push('zoom-in')
     }
 
     // ── Phase 2: concatenate ───────────────────────────────────────────────

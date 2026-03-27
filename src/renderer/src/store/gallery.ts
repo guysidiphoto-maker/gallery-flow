@@ -29,6 +29,7 @@ declare global {
       chooseSocialExportDir: () => Promise<string | null>
       exportSocialPackage: (scenes: unknown[], outputDir: string, options: { includeOrderOverlay: boolean }) => Promise<{ success: boolean; error?: string }>
       onSocialExportProgress: (cb: (data: { percent: number; stage: string }) => void) => () => void
+      chooseLogoFile: () => Promise<string | null>
     }
   }
 }

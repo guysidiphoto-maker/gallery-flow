@@ -47,10 +47,10 @@ export type SortMode = 'filename' | 'date-asc' | 'date-desc' | 'shuffle'
 
 export type StoryDuration = 15 | 20 | 30
 export type StorySceneType = 'portrait' | 'landscape-3' | 'landscape-2' | 'landscape-1'
-export type StoryStyle = 'clean' | 'cinematic' | 'fast-social' | 'elegant'
+export type StoryStyle = 'clean' | 'cinematic' | 'fast-social' | 'elegant' | 'vintage'
 export type StoryMotionMode = 'none' | 'subtle' | 'dynamic'
 export type StoryMotionType = 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'drift-up' | 'drift-down'
-export type StoryTransitionStyle = 'clean' | 'cinematic' | 'energetic'
+export type StoryTransitionStyle = 'clean' | 'cinematic' | 'energetic' | 'soft-fade'
 export type StoryColorMatch = 'off' | 'subtle' | 'strong'
 
 export interface StoryOptions {
@@ -59,6 +59,8 @@ export interface StoryOptions {
   motionMode: StoryMotionMode
   transitionStyle: StoryTransitionStyle
   colorMatch: StoryColorMatch
+  brandedOutro: boolean
+  logoPath: string | null
 }
 
 /** A scene definition returned from the main process after probing image dimensions */
