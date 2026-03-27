@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useGallery } from './store/gallery'
 import { useSections } from './store/sections'
 import { Toolbar } from './components/Toolbar'
@@ -14,16 +14,18 @@ import { SectionsPanel } from './components/SectionsPanel'
 import { PublishModal } from './components/PublishModal'
 import { GalleryDndProvider } from './components/GalleryDndProvider'
 import { RandomizeModal } from './components/RandomizeModal'
+import { WelcomeModal } from './components/WelcomeModal'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 
 export default function App() {
   const { showPreviewMode, showDuplicatesPanel, showStoryModal, isLoading, folderPath, reloadFolder } = useGallery()
   const { isPanelOpen: isSectionsPanelOpen, isPublishModalOpen, isPublishing, publishDone, publishError, resetForFolder } = useSections()
+  const [showWelcome, setShowWelcome] = useState(false)
 
   // Register keyboard shortcuts
   useKeyboardShortcuts()
 
-  // Restore last folder on launch
+  // Restore last folder on launch + show welcome on first run
   useEffect(() => {
     window.api.getPref('lastFolder').then(lastFolder => {
       if (typeof lastFolder === 'string' && lastFolder) {
@@ -36,7 +38,15 @@ export default function App() {
         useGallery.setState({ thumbnailSize: size })
       }
     })
+    window.api.getPref('welcomeShown').then(shown => {
+      if (!shown) setShowWelcome(true)
+    })
   }, [])
+
+  const handleCloseWelcome = () => {
+    setShowWelcome(false)
+    window.api.setPref('welcomeShown', true)
+  }
 
   // Reset sections when folder changes
   useEffect(() => {
@@ -45,7 +55,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Toolbar />
+      <Toolbar onShowHelp={() => setShowWelcome(true)} />
 
       <GalleryDndProvider>
         <div className="app__content">
@@ -79,6 +89,7 @@ export default function App() {
       <RenamePreviewModal />
       <RandomizeModal />
       {(isPublishModalOpen || isPublishing || publishDone || !!publishError) && <PublishModal />}
+      {showWelcome && <WelcomeModal onClose={handleCloseWelcome} />}
       <ToastStack />
     </div>
   )

@@ -4,7 +4,7 @@ import { useSocial } from '../store/social'
 import { useSections } from '../store/sections'
 import type { SortMode } from '../types'
 
-export function Toolbar() {
+export function Toolbar({ onShowHelp }: { onShowHelp?: () => void }) {
   const {
     folderPath,
     images,
@@ -258,6 +258,19 @@ export function Toolbar() {
             Sections{sections.length > 0 ? ` (${sections.length})` : ''}
           </button>
         )}
+
+        {/* Help */}
+        <button
+          className="btn btn--ghost btn--icon"
+          onClick={onShowHelp}
+          title="Quick start guide"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" strokeWidth="3" strokeLinecap="round" />
+          </svg>
+        </button>
 
         {/* Preview mode */}
         {images.length > 0 && (
