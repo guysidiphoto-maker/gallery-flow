@@ -10,6 +10,12 @@ interface ImageCardProps {
   isSelected: boolean
   isTopPick: boolean
   thumbnailSize: number
+  /** Explicit width from justified layout (overrides thumbnailSize for width) */
+  cardWidth?: number
+  /** Explicit height from justified layout (overrides thumbnailSize for height) */
+  cardHeight?: number
+  /** Called with the image's natural aspect ratio once it loads */
+  onAspectRatio?: (id: string, ar: number) => void
   onSelect: (id: string, multi: boolean) => void
   onSelectRange: (id: string) => void
   onOpenViewer: (id: string) => void
@@ -32,6 +38,9 @@ export const ImageCard = memo(function ImageCard({
   isSelected,
   isTopPick,
   thumbnailSize,
+  cardWidth,
+  cardHeight,
+  onAspectRatio,
   onSelect,
   onSelectRange,
   onOpenViewer,
@@ -60,11 +69,15 @@ export const ImageCard = memo(function ImageCard({
   const [showMenu, setShowMenu] = useState(false)
   const [showSectionSubmenu, setShowSectionSubmenu] = useState(false)
 
+  const w = cardWidth ?? thumbnailSize
+  const h = cardHeight ?? thumbnailSize
+
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
-    width: thumbnailSize,
+    width: w,
+    flexShrink: 0,
     zIndex: isDragging ? 999 : 'auto'
   }
 
@@ -130,7 +143,7 @@ export const ImageCard = memo(function ImageCard({
     >
       <div
         className="image-card__thumb"
-        style={{ height: thumbnailSize }}
+        style={{ height: h }}
       >
         {imgError ? (
           <div className="image-card__error">
@@ -144,6 +157,12 @@ export const ImageCard = memo(function ImageCard({
             decoding="async"
             draggable={false}
             onError={() => setImgError(true)}
+            onLoad={(e) => {
+              const el = e.currentTarget
+              if (el.naturalWidth && el.naturalHeight && onAspectRatio) {
+                onAspectRatio(image.id, el.naturalWidth / el.naturalHeight)
+              }
+            }}
           />
         )}
 
@@ -160,31 +179,32 @@ export const ImageCard = memo(function ImageCard({
         >
           ★
         </div>
+
+        {/* Section dots — always visible, bottom-left */}
+        {imageSectionIds.length > 0 && (
+          <div className="image-card__section-dots">
+            {imageSectionIds.slice(0, 4).map((sid) => {
+              const secIdx = sections.findIndex(s => s.id === sid)
+              if (secIdx < 0) return null
+              const sec = sections[secIdx]
+              const color = SECTION_COLORS[secIdx % SECTION_COLORS.length]
+              return (
+                <span
+                  key={sid}
+                  className="image-card__section-dot"
+                  style={{ background: color }}
+                  title={sec.name}
+                />
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <div className="image-card__info">
         <span className="image-card__filename" title={image.filename}>
           {image.filename}
         </span>
-        {imageSectionIds.length > 0 && (
-          <div className="image-card__section-badges">
-            {imageSectionIds.map((sid, i) => {
-              const sec = sections.find(s => s.id === sid)
-              if (!sec) return null
-              const color = SECTION_COLORS[sections.indexOf(sec) % SECTION_COLORS.length]
-              return (
-                <span
-                  key={sid}
-                  className="image-card__section-badge"
-                  style={{ background: color }}
-                  title={sec.name}
-                >
-                  {sec.name}
-                </span>
-              )
-            })}
-          </div>
-        )}
       </div>
 
       {/* Context menu */}

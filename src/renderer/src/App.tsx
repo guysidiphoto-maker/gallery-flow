@@ -15,10 +15,21 @@ import { PublishModal } from './components/PublishModal'
 import { GalleryDndProvider } from './components/GalleryDndProvider'
 import { RandomizeModal } from './components/RandomizeModal'
 import { WelcomeModal } from './components/WelcomeModal'
+import { StatusBar } from './components/StatusBar'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 
+function GallerySkeleton({ thumbnailSize }: { thumbnailSize: number }) {
+  return (
+    <div className="gallery-grid" style={{ gridTemplateColumns: `repeat(auto-fill, ${thumbnailSize}px)` }}>
+      {Array.from({ length: 24 }).map((_, i) => (
+        <div key={i} className="skeleton-card" style={{ width: thumbnailSize, height: thumbnailSize }} />
+      ))}
+    </div>
+  )
+}
+
 export default function App() {
-  const { showPreviewMode, showDuplicatesPanel, showStoryModal, isLoading, folderPath, reloadFolder } = useGallery()
+  const { showPreviewMode, showDuplicatesPanel, showStoryModal, isLoading, folderPath, reloadFolder, thumbnailSize } = useGallery()
   const { isPanelOpen: isSectionsPanelOpen, isPublishModalOpen, isPublishing, publishDone, publishError, resetForFolder } = useSections()
   const [showWelcome, setShowWelcome] = useState(false)
 
@@ -64,16 +75,9 @@ export default function App() {
 
           {/* Main gallery or empty state */}
           <div className={`app__main ${isSectionsPanelOpen ? 'app__main--sections-open' : ''} ${showDuplicatesPanel ? 'app__main--sidebar-open' : ''}`}>
-            {isLoading ? (
-              <div className="loading-state">
-                <div className="spinner" />
-                <span>Loading images…</span>
-              </div>
-            ) : (
-              <div className="gallery-scroll">
-                <GalleryGrid />
-              </div>
-            )}
+            <div className="gallery-scroll">
+              {isLoading ? <GallerySkeleton thumbnailSize={thumbnailSize} /> : <GalleryGrid />}
+            </div>
           </div>
 
           {/* Duplicates sidebar */}
@@ -91,6 +95,7 @@ export default function App() {
       {(isPublishModalOpen || isPublishing || publishDone || !!publishError) && <PublishModal />}
       {showWelcome && <WelcomeModal onClose={handleCloseWelcome} />}
       <ToastStack />
+      <StatusBar />
     </div>
   )
 }

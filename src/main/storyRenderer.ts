@@ -495,6 +495,103 @@ async function concatenateScenes(
   await runFFmpeg(args, totalDuration, onProgress)
 }
 
+// ── Fast Social: smooth vertical scroll ───────────────────────────────────────
+
+async function renderScrollVideo(
+  rawImagePaths: string[],
+  totalDuration: number,
+  outputPath: string,
+  onProgress: (pct: number) => void,
+  tmpDir: string,
+  logoPath?: string | null
+): Promise<void> {
+  const OUT_W = 1080
+  const OUT_H = 1920
+  const FPS = 30
+
+  // ── Step 1: Process HEIC and get dimensions ───────────────────────────────
+  onProgress(2)
+  const imgs = await Promise.all(
+    rawImagePaths.map(async p => {
+      const ext = path.extname(p).toLowerCase()
+      const processedPath = (ext === '.heic' || ext === '.heif')
+        ? await convertHeicToJpeg(p, tmpDir)
+        : p
+      const dims = await getImageDimensions(processedPath)
+      return { processedPath, ...dims }
+    })
+  )
+
+  // Scale each image to OUT_W wide, preserve aspect ratio (even height for yuv420p)
+  const scaledHeights = imgs.map(img => {
+    const h = Math.round(img.height * OUT_W / img.width)
+    return h % 2 === 0 ? h : h + 1
+  })
+  const stripHeight = scaledHeights.reduce((a, b) => a + b, 0)
+
+  // Single pass: scroll from top to bottom exactly once over totalDuration
+  // y goes from 0 → (stripHeight - OUT_H), clamped so we never show empty space
+  const maxY = Math.max(0, stripHeight - OUT_H)
+  const scrollSpeed = maxY > 0 ? maxY / totalDuration : 0  // px / sec
+
+  // ── Step 2: Composite all images into a single strip PNG ─────────────────
+  onProgress(10)
+  const stripPath = path.join(tmpDir, 'scroll_strip.png')
+  const N = imgs.length
+
+  const stripInputArgs = imgs.flatMap(img => ['-i', img.processedPath])
+  const stripScaleFilters = scaledHeights.map((h, i) => `[${i}:v]scale=${OUT_W}:${h}:flags=lanczos[s${i}]`)
+  const vstackInputs = imgs.map((_, i) => `[s${i}]`).join('')
+  const vstackFilter = N === 1 ? `[s0]copy[out]` : `${vstackInputs}vstack=inputs=${N}[out]`
+
+  await runFFmpeg([
+    ...stripInputArgs,
+    '-filter_complex', [...stripScaleFilters, vstackFilter].join(';'),
+    '-map', '[out]', '-vframes', '1', '-y', stripPath
+  ], 0.1, () => {})
+
+  onProgress(25)
+
+  // ── Step 3: Scroll + optional logo fade-in at the end ────────────────────
+  const hasLogo = !!logoPath
+  const logoFadeStart = totalDuration - 2.0   // 2s before end: logo fades in, images fade out
+
+  const stripInput = ['-loop', '1', '-framerate', String(FPS), '-i', stripPath]
+  const logoInput  = hasLogo ? ['-loop', '1', '-framerate', String(FPS), '-i', logoPath!] : []
+
+  // Scroll: y moves linearly, clamped at maxY
+  const scrollCrop = `[0:v]crop=${OUT_W}:${OUT_H}:0:'min(t*${scrollSpeed.toFixed(4)}\\,${maxY})'`
+
+  let filterParts: string[]
+  if (hasLogo) {
+    filterParts = [
+      // Images fade to black starting 2s before end
+      `${scrollCrop},fade=t=out:st=${logoFadeStart.toFixed(3)}:d=1.5[scroll_fade]`,
+      // Logo fades in at center
+      `[1:v]scale='min(560\\,iw)':-2,format=rgba,` +
+        `fade=t=in:st=${logoFadeStart.toFixed(3)}:d=0.5:alpha=1[logo_anim]`,
+      `[scroll_fade][logo_anim]overlay=(W-w)/2:(H-h)/2:format=auto,setsar=1[out]`
+    ]
+  } else {
+    filterParts = [`${scrollCrop}[out]`]
+  }
+
+  const args = [
+    ...stripInput,
+    ...logoInput,
+    '-filter_complex', filterParts.join(';'),
+    '-map', '[out]',
+    '-t', String(totalDuration),
+    '-r', String(FPS),
+    '-c:v', 'libx264', '-preset', 'fast', '-b:v', '6000k',
+    '-maxrate', '8000k', '-bufsize', '12000k',
+    '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+    outputPath
+  ]
+
+  await runFFmpeg(args, totalDuration, (pct) => onProgress(25 + pct * 0.74))
+}
+
 // ── Branded outro renderer ─────────────────────────────────────────────────────
 
 async function renderOutroScene(
@@ -553,7 +650,7 @@ async function renderOutroScene(
 
   const animFilters = [
     `[grid]fade=t=in:st=0:d=0.5,fade=t=out:st=1.5:d=1.5[grid_anim]`,
-    `[${logoIdx}:v]scale='min(${logoMaxW}\\,iw)':-1,format=rgba,` +
+    `[${logoIdx}:v]scale='min(${logoMaxW}\\,iw)':-2,format=rgba,` +
       `fade=t=in:st=0.5:d=1.0:alpha=1,fade=t=out:st=${(duration - 0.5).toFixed(2)}:d=0.5:alpha=1[logo_anim]`,
     `[grid_anim][logo_anim]overlay=(W-w)/2:(H-h)/2:format=auto,setsar=1[out]`
   ]
@@ -607,6 +704,23 @@ export async function renderStory(
   const allProcessedPaths: string[] = []
 
   try {
+    // ── Fast Social: vertical scroll (bypasses scene pipeline) ────────────
+    if (params.options.style === 'fast-social') {
+      sendProgress(5, 'Preparing images…')
+      const allPaths = params.scenes.flatMap(s => s.imagePaths)
+      await renderScrollVideo(
+        allPaths,
+        params.options.totalDuration,
+        params.outputPath,
+        (pct) => sendProgress(5 + pct * 0.93, pct < 100 ? 'Rendering scroll video…' : 'Done!'),
+        tmpDir,
+        params.options.brandedOutro ? params.options.logoPath : null
+      )
+      sendProgress(100, 'Done!')
+      await fs.rm(tmpDir, { recursive: true, force: true })
+      return
+    }
+
     // ── Phase 1: render individual scenes ─────────────────────────────────
     for (let i = 0; i < params.scenes.length; i++) {
       const scene = params.scenes[i]
