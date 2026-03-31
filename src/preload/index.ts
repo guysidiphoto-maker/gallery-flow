@@ -84,6 +84,12 @@ const api = {
 
   chooseLogoFile: (): Promise<string | null> =>
     ipcRenderer.invoke('choose-logo-file'),
+
+  createFolder: (folderPath: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('create-folder', folderPath),
+
+  getSystemUsername: (): Promise<string | null> =>
+    ipcRenderer.invoke('get-system-username'),
 }
 
 contextBridge.exposeInMainWorld('api', api)

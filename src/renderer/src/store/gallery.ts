@@ -30,6 +30,7 @@ declare global {
       exportSocialPackage: (scenes: unknown[], outputDir: string, options: { includeOrderOverlay: boolean }) => Promise<{ success: boolean; error?: string }>
       onSocialExportProgress: (cb: (data: { percent: number; stage: string }) => void) => () => void
       chooseLogoFile: () => Promise<string | null>
+      createFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
     }
   }
 }
@@ -81,12 +82,18 @@ export interface GalleryState {
   // Story Video
   showStoryModal: boolean
 
+  // Top Picks Tray
+  showTopPicksTray: boolean
+
+  // Export Panel
+  showExportPanel: boolean
+
   // Actions
   openFolder: () => Promise<void>
   reloadFolder: () => Promise<void>
-  handleDrop: (activeId: string, overId: string) => Promise<void>
-  moveToTop: (imageId: string) => Promise<void>
-  moveToBottom: (imageId: string) => Promise<void>
+  handleDrop: (activeId: string, overId: string) => void
+  moveToTop: (imageId: string) => void
+  moveToBottom: (imageId: string) => void
   sortBy: (mode: SortMode) => void
   loadExifData: () => Promise<void>
   selectImage: (id: string, multi: boolean) => void
@@ -125,6 +132,14 @@ export interface GalleryState {
   openStoryModal: () => void
   closeStoryModal: () => void
 
+  // Top Picks Tray
+  toggleTopPicksTray: () => void
+  closeTopPicksTray: () => void
+
+  // Export Panel
+  openExportPanel: () => void
+  closeExportPanel: () => void
+
   // Randomize modal
   showRandomizeModal: boolean
   openRandomizeModal: () => void
@@ -156,6 +171,8 @@ export const useGallery = create<GalleryState>((set, get) => ({
   viewerImageId: null,
   showStoryModal: false,
   showRandomizeModal: false,
+  showTopPicksTray: false,
+  showExportPanel: false,
 
   // ── Folder Loading ──────────────────────────────────────────────────────
 
@@ -188,112 +205,33 @@ export const useGallery = create<GalleryState>((set, get) => ({
   },
 
   // ── Drag & Drop Reorder ─────────────────────────────────────────────────
+  //
+  // Visual-only reorder: changes displayOrder immediately, never touches files.
+  // Physical renaming happens only when user explicitly clicks Rename Files.
 
-  handleDrop: async (activeId, overId) => {
+  handleDrop: (activeId, overId) => {
     const { images } = get()
     if (activeId === overId) return
-
     const oldIdx = images.findIndex(img => img.id === activeId)
     const newIdx = images.findIndex(img => img.id === overId)
     if (oldIdx === -1 || newIdx === -1) return
-
-    const newOrder = arrayMove(images, oldIdx, newIdx)
-    const movedImage = newOrder[newIdx]
-
-    // Determine the previous image in new order (null if moved to index 0)
-    const prevImage = newIdx > 0 ? newOrder[newIdx - 1] : null
-
-    // Build existing names set (exclude the moved file's old name)
-    const existingNames = new Set(
-      newOrder
-        .filter(img => img.id !== movedImage.id)
-        .map(img => img.filename.toLowerCase())
-    )
-
-    let newFilename: string
-    try {
-      newFilename = generateInsertAfterName(
-        prevImage?.filename ?? null,
-        movedImage.ext,
-        existingNames
-      )
-    } catch (err) {
-      get().addToast(`Could not rename: ${err}`, 'error')
-      return
-    }
-
-    const validation = validateRename(movedImage.filename, newFilename, existingNames)
-    if (!validation.valid) {
-      get().addToast(validation.error ?? 'Rename conflict', 'error')
-      return
-    }
-
-    const oldPath = movedImage.path
-    const newPath = join(movedImage.folderPath, newFilename)
-    const isNoOp = movedImage.filename.toLowerCase() === newFilename.toLowerCase()
-
-    if (!isNoOp) {
-      // Apply rename to filesystem
-      const result = await window.api.renameFile(oldPath, newPath)
-      if (!result.success) {
-        get().addToast(`Rename failed: ${result.error}`, 'error')
-        return
-      }
-    }
-
-    // Update state: apply new order (and filename if it changed)
-    const updatedImages = newOrder.map(img =>
-      img.id === movedImage.id
-        ? { ...img, filename: newFilename, path: newPath }
-        : img
-    )
-
-    if (isNoOp) {
-      // Just reorder, no rename needed
-      set({ images: updatedImages })
-      return
-    }
-
-    // Record history for undo
-    const historyEntry: RenameHistoryEntry = {
-      id: nanoid(),
-      timestamp: Date.now(),
-      description: `Moved "${movedImage.filename}" → "${newFilename}"`,
-      operations: [{
-        imageId: movedImage.id,
-        oldPath,
-        oldFilename: movedImage.filename,
-        newPath,
-        newFilename
-      }]
-    }
-
-    set(state => ({
-      images: updatedImages,
-      renameHistory: [historyEntry, ...state.renameHistory].slice(0, 50)
-    }))
-
-    get().addToast(
-      `Renamed to ${newFilename}`,
-      'success',
-      historyEntry.id
-    )
+    set({ images: arrayMove(images, oldIdx, newIdx) })
   },
 
   // ── Move to Top / Bottom ────────────────────────────────────────────────
 
-  moveToTop: async (imageId) => {
+  moveToTop: (imageId) => {
     const { images } = get()
     const idx = images.findIndex(img => img.id === imageId)
     if (idx <= 0) return
-    await get().handleDrop(imageId, images[0].id)
+    set({ images: arrayMove(images, idx, 0) })
   },
 
-  moveToBottom: async (imageId) => {
+  moveToBottom: (imageId) => {
     const { images } = get()
     const idx = images.findIndex(img => img.id === imageId)
-    if (idx === images.length - 1) return
-    await get().handleDrop(imageId, images[images.length - 1].id)
+    if (idx === -1 || idx === images.length - 1) return
+    set({ images: arrayMove(images, idx, images.length - 1) })
   },
 
   // ── Sorting ─────────────────────────────────────────────────────────────
@@ -536,58 +474,13 @@ export const useGallery = create<GalleryState>((set, get) => ({
   openRandomizeModal: () => set({ showRandomizeModal: true }),
   closeRandomizeModal: () => set({ showRandomizeModal: false }),
 
-  executeRandomize: async (shuffled, mode) => {
-    const { images, filenamePrefix } = get()
-    const ops = generateSequentialNames(shuffled, filenamePrefix)
-
-    const renameOps = ops.map(op => {
-      const img = images.find(i => i.path === op.oldPath)!
-      return { oldPath: op.oldPath, newPath: join(img.folderPath, op.newFilename) }
-    })
-
-    const result = await window.api.batchRename(renameOps)
-    if (!result.success) {
-      get().addToast(`Shuffle failed: ${result.error}`, 'error')
-      set({ showRandomizeModal: false })
-      return
-    }
-
-    const historyOps = ops.map(op => {
-      const img = images.find(i => i.path === op.oldPath)!
-      return {
-        imageId: img.id,
-        oldPath: op.oldPath,
-        oldFilename: img.filename,
-        newPath: join(img.folderPath, op.newFilename),
-        newFilename: op.newFilename
-      }
-    })
-
+  // Visual-only shuffle: reorders displayOrder without touching filenames.
+  executeRandomize: (shuffled, mode) => {
     const desc = mode === 'all'
-      ? `Shuffled all (${ops.length} files)`
-      : `Shuffled non-picks (${ops.length} files)`
-
-    const historyEntry: RenameHistoryEntry = {
-      id: nanoid(),
-      timestamp: Date.now(),
-      description: desc,
-      operations: historyOps
-    }
-
-    const opMap = new Map(historyOps.map(op => [op.imageId, op]))
-    const updatedImages = shuffled.map(img => {
-      const op = opMap.get(img.id)
-      if (!op) return img
-      return { ...img, filename: op.newFilename, path: op.newPath }
-    })
-
-    set(state => ({
-      images: updatedImages,
-      showRandomizeModal: false,
-      renameHistory: [historyEntry, ...state.renameHistory].slice(0, 50)
-    }))
-
-    get().addToast(desc, 'success', historyEntry.id)
+      ? `Shuffled all (${shuffled.length} images)`
+      : `Shuffled non-picks (${shuffled.length} images)`
+    set({ images: shuffled, showRandomizeModal: false })
+    get().addToast(`${desc} — click Rename Files to apply to disk`, 'info')
   },
 
   // ── Undo ────────────────────────────────────────────────────────────────
@@ -660,38 +553,37 @@ export const useGallery = create<GalleryState>((set, get) => ({
     }
   },
 
-  toggleTopPickSelected: async () => {
+  toggleTopPickSelected: () => {
     const { selectedIds, topPickIds, images } = get()
     if (selectedIds.size === 0) return
 
     const newPickIds = [...selectedIds].filter(id => !topPickIds.has(id))
 
     if (newPickIds.length === 0) {
-      // All are already picks — un-pick them (use Shift+T for explicit remove)
+      // All are already picks — un-pick them
       const next = new Set(topPickIds)
       for (const id of selectedIds) next.delete(id)
       set({ topPickIds: next })
       return
     }
 
-    // Mark all selected as picks
+    // Mark all selected as picks and float to top (visual only, no rename)
     const next = new Set(topPickIds)
     for (const id of selectedIds) next.add(id)
 
     if (selectedIds.size === 1) {
-      // Single image: rename-based move to top
       const [id] = selectedIds
       set({ topPickIds: next })
-      await get().moveToTop(id)
+      get().moveToTop(id)
       return
     }
 
-    // Multi-select: float all picks to top of images array in gallery order (no rename)
+    // Multi-select: float picks to top of display order
     const picksInOrder = images.filter(img => next.has(img.id))
     const nonPicks = images.filter(img => !next.has(img.id))
     set({ topPickIds: next, images: [...picksInOrder, ...nonPicks] })
     get().addToast(
-      `${newPickIds.length} image${newPickIds.length !== 1 ? 's' : ''} added to top picks — press ⌘Enter to apply order`,
+      `${newPickIds.length} image${newPickIds.length !== 1 ? 's' : ''} moved to top`,
       'success'
     )
   },
@@ -730,5 +622,13 @@ export const useGallery = create<GalleryState>((set, get) => ({
   // ── Story Video ──────────────────────────────────────────────────────────
 
   openStoryModal: () => set({ showStoryModal: true }),
-  closeStoryModal: () => set({ showStoryModal: false })
+  closeStoryModal: () => set({ showStoryModal: false }),
+
+  // ── Top Picks Tray ────────────────────────────────────────────────────────
+  toggleTopPicksTray: () => set(state => ({ showTopPicksTray: !state.showTopPicksTray })),
+  closeTopPicksTray: () => set({ showTopPicksTray: false }),
+
+  // ── Export Panel ──────────────────────────────────────────────────────────
+  openExportPanel: () => set({ showExportPanel: true }),
+  closeExportPanel: () => set({ showExportPanel: false }),
 }))

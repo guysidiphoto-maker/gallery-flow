@@ -198,6 +198,35 @@ ipcMain.handle('reveal-in-finder', async (_e, filePath: string) => {
   shell.showItemInFolder(filePath)
 })
 
+// Create a folder (used when a section is created)
+ipcMain.handle('create-folder', async (_e, folderPath: string) => {
+  try {
+    await mkdir(folderPath, { recursive: true })
+    return { success: true }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { success: false, error: msg }
+  }
+})
+
+ipcMain.handle('get-system-username', () => {
+  try {
+    const raw = os.userInfo().username ?? ''
+    // Take the first alphabetic segment (e.g. "guysidi" → "Guy", "guy_sidi" → "Guy")
+    const name = raw.split(/[._\-\d0-9]/)[0]
+    if (name.length > 0) return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()
+  } catch { /* ignore */ }
+  try {
+    // Fallback: parse hostname "Guys-MacBook-Pro" → "Guys" or "MacBook-Pro-of-Guy" → "Guy"
+    const hostname = os.hostname().replace(/\.local$/, '')
+    const macwords = new Set(['MacBook', 'Pro', 'Air', 'iMac', 'Mac', 'Mini', 'Studio', 'of', 'the', 's', 'de'])
+    const parts = hostname.split('-')
+    const name = parts.find(p => p.length > 1 && !macwords.has(p) && /^[A-Za-z]+$/.test(p))
+    if (name) return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()
+  } catch { /* ignore */ }
+  return null
+})
+
 // Read image as base64 for EXIF parsing (renderer exifr needs the buffer)
 ipcMain.handle('read-file-buffer', async (_e, filePath: string) => {
   try {

@@ -25,9 +25,13 @@ function getFFmpegPath(): string {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const p = require('ffmpeg-static') as string | null
-    if (p) return p
+    if (p) {
+      // When packaged, ffmpeg-static is extracted to app.asar.unpacked but the
+      // module still returns a path inside app.asar → replace so spawn can run it.
+      return p.replace('app.asar', 'app.asar.unpacked')
+    }
   } catch { /* fall through */ }
-  return 'ffmpeg'  // hope it's in PATH
+  return 'ffmpeg'
 }
 
 const FFMPEG = getFFmpegPath()

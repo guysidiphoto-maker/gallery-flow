@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^1.0.1",
+    "@electron/notarize": "^3.1.1",
     "@types/node": "^20.14.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
@@ -33,11 +34,18 @@
     "vite": "^5.3.1"
   },
   "build": {
-    "appId": "com.galleryflow.app",
-    "productName": "GalleryFlow",
-    "copyright": "Copyright © 2025",
+    "appId": "com.pixflow.app",
+    "productName": "Pixflow",
+    "copyright": "Copyright © 2025 Pixflow",
+    "icon": "build/icon.icns",
+    "afterSign": "build/notarize.js",
     "mac": {
       "category": "public.app-category.photography",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "darkModeSupport": true,
       "target": [
         {
           "target": "dmg",
@@ -46,11 +54,16 @@
             "x64"
           ]
         }
-      ],
-      "darkModeSupport": true
+      ]
+    },
+    "dmg": {
+      "sign": false
     },
     "files": [
       "out/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**/*"
     ]
   }
 }

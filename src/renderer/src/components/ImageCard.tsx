@@ -66,6 +66,7 @@ export const ImageCard = memo(function ImageCard({
   } = useSortable({ id: image.id, disabled: isOverlay })
 
   const [imgError, setImgError] = useState(false)
+  const [imgLoaded, setImgLoaded] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showSectionSubmenu, setShowSectionSubmenu] = useState(false)
 
@@ -156,9 +157,11 @@ export const ImageCard = memo(function ImageCard({
             loading="lazy"
             decoding="async"
             draggable={false}
+            className={imgLoaded ? 'img-loaded' : ''}
             onError={() => setImgError(true)}
             onLoad={(e) => {
               const el = e.currentTarget
+              setImgLoaded(true)
               if (el.naturalWidth && el.naturalHeight && onAspectRatio) {
                 onAspectRatio(image.id, el.naturalWidth / el.naturalHeight)
               }

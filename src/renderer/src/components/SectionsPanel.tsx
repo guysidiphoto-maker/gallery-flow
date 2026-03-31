@@ -85,18 +85,22 @@ export function SectionsPanel() {
     togglePanel,
     openPublishModal,
   } = useSections()
-  const { images } = useGallery()
+  const { images, folderPath } = useGallery()
 
   const [newName, setNewName] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
   const newInputRef = useRef<HTMLInputElement>(null)
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const name = newName.trim()
-    if (name) {
-      addSection(name)
-      setNewName('')
+    if (!name) return
+    addSection(name)
+    setNewName('')
+    // Auto-create a matching subfolder in the source folder
+    if (folderPath) {
+      const subPath = `${folderPath}/${name}`
+      await window.api.createFolder(subPath)
     }
   }
 

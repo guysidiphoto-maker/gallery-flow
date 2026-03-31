@@ -16,6 +16,7 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useGallery } from '../store/gallery'
 import { useSections } from '../store/sections'
 import { DragOverlayCard } from './ImageCard'
+import { FIRST_POSITION_DROP_ID } from './GalleryGrid'
 
 interface PendingDrop {
   imageIds: string[]
@@ -53,7 +54,7 @@ function SectionDropDialog({
 }
 
 export function GalleryDndProvider({ children }: { children: React.ReactNode }) {
-  const { images, selectedIds, thumbnailSize, handleDrop } = useGallery()
+  const { images, selectedIds, thumbnailSize, handleDrop, moveToTop } = useGallery()
   const {
     sections,
     activeSectionFilter,
@@ -77,7 +78,7 @@ export function GalleryDndProvider({ children }: { children: React.ReactNode }) 
     })
   )
 
-  // Prefer section droppables when pointer is over them; fall back to closestCenter
+  // Priority: section zones → first-position zone → closestCenter
   const collisionDetection = useCallback((args: Parameters<typeof closestCenter>[0]) => {
     const sectionContainers = args.droppableContainers.filter(c =>
       String(c.id).startsWith('section-drop-')
@@ -86,6 +87,13 @@ export function GalleryDndProvider({ children }: { children: React.ReactNode }) 
       const sectionHits = pointerWithin({ ...args, droppableContainers: sectionContainers })
       if (sectionHits.length > 0) return sectionHits
     }
+    const firstPosContainers = args.droppableContainers.filter(c =>
+      String(c.id) === FIRST_POSITION_DROP_ID
+    )
+    if (firstPosContainers.length > 0) {
+      const firstPosHits = pointerWithin({ ...args, droppableContainers: firstPosContainers })
+      if (firstPosHits.length > 0) return firstPosHits
+    }
     return closestCenter(args)
   }, [])
 
@@ -93,12 +101,20 @@ export function GalleryDndProvider({ children }: { children: React.ReactNode }) 
     setActiveId(String(event.active.id))
   }, [])
 
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
     setActiveId(null)
     if (!over) return
 
     const overId = String(over.id)
+
+    // Dropped on first-position zone → move to front (visual only)
+    if (overId === FIRST_POSITION_DROP_ID) {
+      if (!activeSectionFilter && images.length > 0 && String(active.id) !== images[0].id) {
+        moveToTop(String(active.id))
+      }
+      return
+    }
 
     // Dropped on a section drop zone
     if (overId.startsWith('section-drop-')) {
@@ -120,9 +136,9 @@ export function GalleryDndProvider({ children }: { children: React.ReactNode }) 
     if (activeSectionFilter) {
       reorderSectionImages(activeSectionFilter, String(active.id), overId)
     } else {
-      await handleDrop(String(active.id), overId)
+      handleDrop(String(active.id), overId)
     }
-  }, [sections, selectedIds, activeSectionFilter, reorderSectionImages, handleDrop])
+  }, [sections, selectedIds, activeSectionFilter, reorderSectionImages, handleDrop, moveToTop])
 
   return (
     <DndContext

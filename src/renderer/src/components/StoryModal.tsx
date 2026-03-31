@@ -142,6 +142,7 @@ export function StoryModal() {
   const [isBuilding, setIsBuilding] = useState(false)
   const [exportProgress, setExportProgress] = useState(0)
   const [exportStage, setExportStage] = useState('')
+  const [exportHidden, setExportHidden] = useState(false)
   const [outputPath, setOutputPath] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -240,6 +241,39 @@ export function StoryModal() {
   const activeScene = activeId ? scenes.find(s => s.id === activeId) : null
 
   const stepIndex = { configure: 0, preview: 1, exporting: 2, done: 2, error: 2 }[step]
+
+  // Floating mini indicator when export is hidden
+  if (exportHidden && step === 'exporting') {
+    return (
+      <div className="export-float" onClick={() => setExportHidden(false)}>
+        <div className="export-float__progress" style={{ width: `${exportProgress}%` }} />
+        <div className="export-float__content">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polygon points="23 7 16 12 23 17 23 7"/>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
+          <span className="export-float__text">Exporting… {exportProgress}%</span>
+        </div>
+      </div>
+    )
+  }
+
+  // When export finishes while hidden, show done indicator briefly then close
+  if (exportHidden && step === 'done') {
+    return (
+      <div className="export-float export-float--done" onClick={() => { setExportHidden(false) }}>
+        <div className="export-float__content">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          <span className="export-float__text">Export complete!</span>
+          <button className="export-float__reveal" onClick={(e) => { e.stopPropagation(); window.api.revealInFinder(outputPath) }}>
+            Show
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="modal-backdrop story-backdrop">
@@ -472,20 +506,56 @@ export function StoryModal() {
         {(step === 'exporting' || step === 'done' || step === 'error') && (
           <div className="modal__body story-export-body">
             {step === 'exporting' && (
-              <>
-                <div className="story-export-ring">
-                  <svg viewBox="0 0 80 80" className="story-ring-svg">
-                    <circle className="story-ring-track" cx="40" cy="40" r="34" />
-                    <circle
-                      className="story-ring-fill"
-                      cx="40" cy="40" r="34"
-                      style={{ strokeDashoffset: 214 - (214 * exportProgress / 100) }}
-                    />
-                  </svg>
-                  <span className="story-ring-pct">{exportProgress}%</span>
+              <div className="sex">
+                {/* Steps */}
+                <div className="sex__steps">
+                  {[
+                    { label: 'Preparing media', threshold: 15 },
+                    { label: 'Building scenes', threshold: 40 },
+                    { label: 'Rendering video', threshold: 85 },
+                    { label: 'Finalizing export', threshold: 100 },
+                  ].map((s, i, arr) => {
+                    const done = exportProgress >= s.threshold
+                    const active = !done && (i === 0 || exportProgress >= arr[i - 1].threshold)
+                    return (
+                      <div key={s.label} className={`sex__step ${done ? 'sex__step--done' : ''} ${active ? 'sex__step--active' : ''}`}>
+                        <div className="sex__step-icon">
+                          {done ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                          ) : (
+                            <span className="sex__step-num">{i + 1}</span>
+                          )}
+                        </div>
+                        <span className="sex__step-label">{s.label}</span>
+                        {active && <span className="sex__step-pct">{exportProgress}%</span>}
+                      </div>
+                    )
+                  })}
                 </div>
-                <p className="story-export-stage">{exportStage}</p>
-              </>
+
+                {/* Progress bar */}
+                <div className="sex__bar">
+                  <div className="sex__bar-fill" style={{ width: `${exportProgress}%` }} />
+                </div>
+
+                {/* Time estimate */}
+                <p className="sex__estimate">
+                  {exportProgress}% {exportProgress < 100 && `· ~${Math.max(1, Math.round((100 - exportProgress) * 0.4))}s remaining`}
+                </p>
+                <p className="sex__hint">You can keep working while we export</p>
+
+                {/* Actions */}
+                <div className="sex__actions">
+                  <button className="sex__hide" onClick={() => setExportHidden(true)}>
+                    Hide & continue
+                  </button>
+                  <button className="sex__cancel" onClick={() => { setStep('preview'); setExportProgress(0); setExportStage('') }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
             )}
 
             {step === 'done' && (

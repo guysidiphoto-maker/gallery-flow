@@ -1,11 +1,14 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
+import { useDroppable, useDndContext } from '@dnd-kit/core'
 import { useGallery } from '../store/gallery'
 import { useSections } from '../store/sections'
 import { ImageCard } from './ImageCard'
 import type { ImageFile } from '../types'
 
-const GAP = 6 // px between images
+export const FIRST_POSITION_DROP_ID = 'gallery-first-position'
+
+const GAP = 4 // px between images
 
 interface JustifiedRow {
   imgs: ImageFile[]
@@ -36,18 +39,16 @@ function buildJustifiedRows(
 
     if (naturalRowWidth >= containerWidth || isLast) {
       const avail = containerWidth - (rowImgs.length - 1) * GAP
-      let h: number
 
-      if (isLast && naturalRowWidth < containerWidth) {
-        // Last partial row: don't upscale, use target height
-        h = targetHeight
-      } else {
-        h = avail / sumAR
-        // Cap to avoid extremely tall rows on narrow containers
-        h = Math.min(h, targetHeight * 1.6)
-      }
+      const rawH = (isLast && naturalRowWidth < containerWidth)
+        ? targetHeight
+        : avail / sumAR
 
-      h = Math.max(h, 60) // floor
+      // Clamp tightly: rows stay between 65%–130% of target height.
+      // This prevents extreme outlier rows and keeps the grid visually stable.
+      const minH = Math.round(targetHeight * 0.65)
+      const maxH = Math.round(targetHeight * 1.30)
+      const h = Math.max(minH, Math.min(Math.round(rawH), maxH))
 
       rows.push({
         imgs: rowImgs,
@@ -155,9 +156,22 @@ export function GalleryGrid() {
     )
   }
 
+  const { active: dndActive } = useDndContext()
+  const isDragging = dndActive !== null
+  const { setNodeRef: setFirstZoneRef, isOver: isOverFirstZone } = useDroppable({ id: FIRST_POSITION_DROP_ID })
+
   return (
     <SortableContext items={displayImages.map(img => img.id)} strategy={rectSortingStrategy}>
       <div ref={containerRef} className="gallery-justified">
+
+        {/* Drop zone: drag here to place image at position 1 */}
+        <div
+          ref={setFirstZoneRef}
+          className={`gallery-first-drop ${isDragging ? 'gallery-first-drop--visible' : ''} ${isOverFirstZone ? 'gallery-first-drop--active' : ''}`}
+        >
+          {isOverFirstZone && <span className="gallery-first-drop__label">Move to first</span>}
+        </div>
+
         {rows.map((row, ri) => (
           <div key={ri} className="gallery-row" style={{ gap: GAP }}>
             {row.imgs.map((image, ii) => (

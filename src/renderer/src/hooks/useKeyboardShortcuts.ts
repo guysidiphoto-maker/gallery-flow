@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useGallery } from '../store/gallery'
+import { useSections } from '../store/sections'
 
 export function useKeyboardShortcuts() {
   const {
@@ -20,8 +21,12 @@ export function useKeyboardShortcuts() {
     removeTopPickSelected,
     openStoryModal,
     topPickIds,
-    viewerImageId
+    viewerImageId,
+    toggleTopPicksTray,
+    showTopPicksTray,
   } = useGallery()
+
+  const { sections, addSection, addImagesToSection, isPanelOpen, togglePanel } = useSections()
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -99,7 +104,15 @@ export function useKeyboardShortcuts() {
         return
       }
 
+      // T with no selection: toggle Top Picks tray
+      if (e.key === 't' && !meta && !e.shiftKey && selectedIds.size === 0 && topPickIds.size > 0) {
+        e.preventDefault()
+        toggleTopPicksTray()
+        return
+      }
+
       // T: Add selected image(s) to Top Picks (move to top)
+      // Also add to "Top Picks" section automatically
       // Auto-advance selection to the image after the last selected one
       if (e.key === 't' && !meta && !e.shiftKey && selectedIds.size > 0) {
         e.preventDefault()
@@ -112,6 +125,23 @@ export function useKeyboardShortcuts() {
         }
         if (lastSelectedIdx !== -1 && lastSelectedIdx + 1 < images.length) {
           nextId = images[lastSelectedIdx + 1].id
+        }
+
+        // Add to "Top Picks" section
+        const imageIds = Array.from(selectedIds)
+        const { sections: currentSections } = useSections.getState()
+        let topPicksSection = currentSections.find(s => s.name === 'Top Picks')
+        if (!topPicksSection) {
+          useSections.getState().addSection('Top Picks')
+          const updated = useSections.getState().sections
+          topPicksSection = updated[updated.length - 1]
+        }
+        if (topPicksSection) {
+          useSections.getState().addImagesToSection(imageIds, topPicksSection.id)
+        }
+        // Open sections panel if not open
+        if (!useSections.getState().isPanelOpen) {
+          useSections.getState().togglePanel()
         }
 
         const result = toggleTopPickSelected()
@@ -128,9 +158,17 @@ export function useKeyboardShortcuts() {
         return
       }
 
-      // Shift+T: Remove selected image(s) from Top Picks
+      // Shift+T: Remove selected image(s) from Top Picks + section
       if (e.key === 'T' && !meta && e.shiftKey && selectedIds.size > 0) {
         e.preventDefault()
+        // Remove from "Top Picks" section
+        const { sections: currentSections } = useSections.getState()
+        const topPicksSection = currentSections.find(s => s.name === 'Top Picks')
+        if (topPicksSection) {
+          for (const imgId of selectedIds) {
+            useSections.getState().removeImageFromSection(imgId, topPicksSection.id)
+          }
+        }
         removeTopPickSelected()
         return
       }
@@ -151,11 +189,16 @@ export function useKeyboardShortcuts() {
 
         e.preventDefault()
 
-        // Count grid columns from computed style
+        // Count columns by checking how many cards fit in the first row
         const getCols = (): number => {
-          const grid = document.querySelector('.gallery-grid')
-          if (!grid) return 1
-          const cols = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length
+          const cards = document.querySelectorAll('[data-image-id]')
+          if (cards.length < 2) return 1
+          const firstTop = (cards[0] as HTMLElement).getBoundingClientRect().top
+          let cols = 1
+          for (let i = 1; i < cards.length; i++) {
+            if ((cards[i] as HTMLElement).getBoundingClientRect().top > firstTop + 5) break
+            cols++
+          }
           return Math.max(1, cols)
         }
 
@@ -199,10 +242,11 @@ export function useKeyboardShortcuts() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [
-    images, selectedIds, topPickIds, viewerImageId,
+    images, selectedIds, topPickIds, viewerImageId, showTopPicksTray, sections,
     openFolder, moveToTop, moveToBottom,
     deleteSelected, undoLastRename, selectAll, deselectAll, selectImage, selectRange,
     togglePreviewMode, prepareApplyOrder,
-    toggleTopPickSelected, removeTopPickSelected, openStoryModal
+    toggleTopPickSelected, removeTopPickSelected, openStoryModal, toggleTopPicksTray,
+    addSection, addImagesToSection, isPanelOpen, togglePanel
   ])
 }
