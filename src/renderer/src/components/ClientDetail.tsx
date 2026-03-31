@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { toLocalURL } from '../utils/imageUtils'
 import type { ClientData, ProjectData } from '../App'
-import { getProjectsByClient, getTotalImagesForClient } from '../App'
+import type { ImageFile } from '../types'
+import { getProjectsByClient, getTotalImagesForClient, getProjectCover } from '../App'
 
 function clientColor(name: string): string {
   const colors = ['#6366f1','#ec4899','#8b5cf6','#a855f7','#3b82f6','#d946ef','#818cf8','#f43f5e','#7c3aed','#c084fc']
@@ -20,14 +21,16 @@ function getInitials(name: string): string {
 interface ClientDetailProps {
   client: ClientData
   projects: ProjectData[]
+  imageRegistry: Record<string, ImageFile>
   onSelectProject: (id: string) => void
   onDeleteProject: (id: string) => void
   onBack: () => void
   onRenameClient: (id: string, name: string) => void
   onNewGallery: () => void
+  onPreviewGallery: (projectId: string) => void
 }
 
-export function ClientDetail({ client, projects, onSelectProject, onDeleteProject, onBack, onRenameClient, onNewGallery }: ClientDetailProps) {
+export function ClientDetail({ client, projects, imageRegistry, onSelectProject, onDeleteProject, onBack, onRenameClient, onNewGallery, onPreviewGallery }: ClientDetailProps) {
   const clientProjects = getProjectsByClient(client.id, projects)
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
   const totalImages = getTotalImagesForClient(client.id, projects)
@@ -159,8 +162,8 @@ export function ClientDetail({ client, projects, onSelectProject, onDeleteProjec
                   <div key={p.id} className="cdv__card-wrap">
                     <div className="cdv__card" onClick={() => onSelectProject(p.id)}>
                       <div className="cdv__card-cover">
-                        {p.images.length > 0 ? (
-                          <img src={toLocalURL(p.images[0].path)} alt="" className="cdv__card-img" />
+                        {(() => { const cover = getProjectCover(p, imageRegistry); return cover ? (
+                          <img src={toLocalURL(cover)} alt="" className="cdv__card-img" />
                         ) : (
                           <div className="cdv__card-placeholder">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -169,14 +172,24 @@ export function ClientDetail({ client, projects, onSelectProject, onDeleteProjec
                               <polyline points="21 15 16 10 5 21"/>
                             </svg>
                           </div>
-                        )}
+                        )})()}
                       </div>
                       <div className="cdv__card-info">
                         <span className="cdv__card-name">{p.name}</span>
-                        <span className="cdv__card-count">{p.images.length} {p.images.length === 1 ? 'image' : 'images'}</span>
+                        <span className="cdv__card-count">{p.imageIds.length} {p.imageIds.length === 1 ? 'image' : 'images'}</span>
                       </div>
                     </div>
                     <div className="wsd__card-actions">
+                      <button
+                        className="wsd__card-action"
+                        title="Preview gallery"
+                        onClick={e => { e.stopPropagation(); onPreviewGallery(p.id) }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                          <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                      </button>
                       <button
                         className={`wsd__card-action ${copiedGalleryId === p.id ? 'wsd__card-action--copied' : ''}`}
                         title="Share gallery"

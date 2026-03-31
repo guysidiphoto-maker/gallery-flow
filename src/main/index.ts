@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import * as os from 'os'
 import { buildStoryScenes, renderStory } from './storyRenderer'
 import { exportSocialPackage, type SocialExportScene } from './socialExporter'
+import { exportGallery } from './exportGallery'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
@@ -342,6 +343,21 @@ ipcMain.handle('publish-sections', async (_e, params: {
     const msg = err instanceof Error ? err.message : String(err)
     return { success: false, error: msg }
   }
+})
+
+// ─── Client Gallery Export ────────────────────────────────────────────────────
+
+ipcMain.handle('choose-export-dir', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Choose Export Destination',
+    properties: ['openDirectory', 'createDirectory']
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  return result.filePaths[0]
+})
+
+ipcMain.handle('export-gallery', async (_e, projectName: string, clientName: string, imagePaths: string[], destDir: string) => {
+  return exportGallery(projectName, clientName, imagePaths, destDir)
 })
 
 ipcMain.handle('choose-logo-file', async () => {

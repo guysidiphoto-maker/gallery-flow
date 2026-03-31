@@ -25,6 +25,7 @@ import { StatusBar } from './components/StatusBar'
 import { TopPicksTray } from './components/TopPicksTray'
 import { ExportPanel } from './components/ExportPanel'
 import { RenameFab } from './components/RenameFab'
+import { ClientGalleryPage } from './components/ClientGalleryPage'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import type { ImageFile } from './types'
 
@@ -40,7 +41,7 @@ export interface ProjectData {
   name: string
   clientId: string | null
   clientName: string | null
-  images: ImageFile[]
+  imageIds: string[]
   createdAt: string
   updatedAt: string
 }
@@ -61,7 +62,19 @@ export function getProjectsByClient(clientId: string, projects: ProjectData[]): 
 }
 
 export function getTotalImagesForClient(clientId: string, projects: ProjectData[]): number {
-  return getProjectsByClient(clientId, projects).reduce((sum, p) => sum + p.images.length, 0)
+  return getProjectsByClient(clientId, projects).reduce((sum, p) => sum + p.imageIds.length, 0)
+}
+
+// Resolve imageIds to ImageFile array (filters out missing)
+export function resolveImages(imageIds: string[], registry: Record<string, ImageFile>): ImageFile[] {
+  return imageIds.map(id => registry[id]).filter(Boolean)
+}
+
+// Get cover image path for a project
+export function getProjectCover(project: ProjectData, registry: Record<string, ImageFile>): string | null {
+  if (project.imageIds.length === 0) return null
+  const img = registry[project.imageIds[0]]
+  return img?.path || null
 }
 
 export function getLatestProjectForClient(clientId: string, projects: ProjectData[]): ProjectData | null {
@@ -92,6 +105,8 @@ export default function App() {
   const [nextId, setNextId] = useState(1)
   const projectsLoaded = useRef(false)
   const clientsLoaded = useRef(false)
+  const [imageRegistry, setImageRegistry] = useState<Record<string, ImageFile>>({})
+  const registryLoaded = useRef(false)
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null)
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [importInitialView, setImportInitialView] = useState<'menu' | 'create'>('menu')
@@ -104,38 +119,90 @@ export default function App() {
   const [newProjectHighlight, setNewProjectHighlight] = useState(-1)
   const [newProjectSaveClient, setNewProjectSaveClient] = useState(false)
   const [prefilledClientId, setPrefilledClientId] = useState<string | null>(null)
+  const [galleryPreviewProjectId, setGalleryPreviewProjectId] = useState<string | null>(null)
   // Register keyboard shortcuts
   useKeyboardShortcuts()
 
   const currentProject = projects.find(p => p.id === currentProjectId) || null
 
-  // Save current project's images back to projects array when gallery images change
+  const handleExportGallery = async (projectId: string) => {
+    const project = projects.find(p => p.id === projectId)
+    if (!project) return
+    const imgs = resolveImages(project.imageIds, imageRegistry)
+    const destDir = await window.api.chooseExportDir?.()
+    if (!destDir) return
+    await window.api.exportGallery?.(project.name, project.clientName || '', imgs.map(i => i.path), destDir)
+  }
+
+  // Sync gallery images back to project imageIds + registry
   useEffect(() => {
     if (!currentProjectId) return
     const galleryImages = useGallery.getState().images
+    // Update registry with current images
+    setImageRegistry(prev => {
+      const updated = { ...prev }
+      for (const img of galleryImages) {
+        updated[img.id] = img
+      }
+      return updated
+    })
+    // Update project's imageIds
+    const ids = galleryImages.map(i => i.id)
     setProjects(prev => prev.map(p =>
-      p.id === currentProjectId ? { ...p, images: galleryImages } : p
+      p.id === currentProjectId ? { ...p, imageIds: ids } : p
     ))
   }, [images, currentProjectId])
 
-  // Load projects from prefs on startup (welcome screen stays until user acts)
+  // Load projects + image registry from prefs on startup
   useEffect(() => {
-    window.api.getPref('projects').then(val => {
-      if (val && Array.isArray(val)) {
-        // Migrate old projects that may lack clientId/clientName/createdAt/updatedAt
-        const migrated = (val as ProjectData[]).map(p => ({
-          ...p,
-          clientId: p.clientId ?? null,
-          clientName: p.clientName ?? null,
-          createdAt: p.createdAt ?? '',
-          updatedAt: p.updatedAt ?? '',
-        }))
+    ;(async () => {
+      const [rawProjects, rawRegistry] = await Promise.all([
+        window.api.getPref('projects'),
+        window.api.getPref('imageRegistry')
+      ])
+
+      let registry: Record<string, ImageFile> = {}
+      if (rawRegistry && typeof rawRegistry === 'object' && !Array.isArray(rawRegistry)) {
+        registry = rawRegistry as Record<string, ImageFile>
+      }
+
+      if (rawProjects && Array.isArray(rawProjects)) {
+        const migrated = (rawProjects as any[]).map(p => {
+          // Migration: if project has old `images` array, extract to registry
+          if (p.images && Array.isArray(p.images) && p.images.length > 0 && !p.imageIds) {
+            const ids: string[] = []
+            for (const img of p.images) {
+              registry[img.id || img.path] = img
+              ids.push(img.id || img.path)
+            }
+            return {
+              id: p.id,
+              name: p.name,
+              clientId: p.clientId ?? null,
+              clientName: p.clientName ?? null,
+              imageIds: ids,
+              createdAt: p.createdAt ?? '',
+              updatedAt: p.updatedAt ?? '',
+            }
+          }
+          return {
+            ...p,
+            imageIds: p.imageIds || [],
+            clientId: p.clientId ?? null,
+            clientName: p.clientName ?? null,
+            createdAt: p.createdAt ?? '',
+            updatedAt: p.updatedAt ?? '',
+          }
+        })
         setProjects(migrated)
-        const maxId = migrated.reduce((max, p) => Math.max(max, Number(p.id) || 0), 0)
+        const maxId = migrated.reduce((max: number, p: ProjectData) => Math.max(max, Number(p.id) || 0), 0)
         setNextId(maxId + 1)
       }
+
+      setImageRegistry(registry)
       projectsLoaded.current = true
-    })
+      registryLoaded.current = true
+    })()
   }, [])
 
   // Load clients from prefs on startup
@@ -154,6 +221,12 @@ export default function App() {
     window.api.setPref('projects', projects)
   }, [projects])
 
+  // Persist image registry to prefs
+  useEffect(() => {
+    if (!registryLoaded.current) return
+    window.api.setPref('imageRegistry', imageRegistry)
+  }, [imageRegistry])
+
   // Persist clients to prefs
   useEffect(() => {
     if (!clientsLoaded.current) return
@@ -165,30 +238,41 @@ export default function App() {
     const handleBeforeUnload = () => {
       if (currentProjectId) {
         const galleryImages = useGallery.getState().images
-        const updated = projects.map(p =>
-          p.id === currentProjectId ? { ...p, images: galleryImages } : p
+        const ids = galleryImages.map(i => i.id)
+        const updatedRegistry = { ...imageRegistry }
+        for (const img of galleryImages) updatedRegistry[img.id] = img
+        const updatedProjects = projects.map(p =>
+          p.id === currentProjectId ? { ...p, imageIds: ids } : p
         )
-        window.api.setPref('projects', updated)
+        window.api.setPref('projects', updatedProjects)
+        window.api.setPref('imageRegistry', updatedRegistry)
       }
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [currentProjectId, projects])
+  }, [currentProjectId, projects, imageRegistry])
 
   // Switch to a project: load its images into gallery
   const switchToProject = (projectId: string) => {
     console.log('SWITCH_TO_PROJECT', projectId, 'projects count:', projects.length)
-    // Save current project images first
+    // Save current project first
     if (currentProjectId) {
       const currentImages = useGallery.getState().images
+      const ids = currentImages.map(i => i.id)
+      setImageRegistry(prev => {
+        const updated = { ...prev }
+        for (const img of currentImages) updated[img.id] = img
+        return updated
+      })
       setProjects(prev => prev.map(p =>
-        p.id === currentProjectId ? { ...p, images: currentImages } : p
+        p.id === currentProjectId ? { ...p, imageIds: ids } : p
       ))
     }
     const target = projects.find(p => p.id === projectId)
-    console.log('FOUND_TARGET', !!target, target?.name, 'images:', target?.images.length)
+    console.log('FOUND_TARGET', !!target, target?.name, 'imageIds:', target?.imageIds.length)
     if (target) {
-      useGallery.setState({ images: target.images, folderPath: '' })
+      const resolved = resolveImages(target.imageIds, imageRegistry)
+      useGallery.setState({ images: resolved, folderPath: '' })
     }
     setCurrentProjectId(projectId)
     setWelcomed(true)
@@ -198,8 +282,14 @@ export default function App() {
   const goWorkspace = () => {
     if (currentProjectId) {
       const currentImages = useGallery.getState().images
+      const ids = currentImages.map(i => i.id)
+      setImageRegistry(prev => {
+        const updated = { ...prev }
+        for (const img of currentImages) updated[img.id] = img
+        return updated
+      })
       setProjects(prev => prev.map(p =>
-        p.id === currentProjectId ? { ...p, images: currentImages } : p
+        p.id === currentProjectId ? { ...p, imageIds: ids } : p
       ))
     }
     setCurrentProjectId(null)
@@ -274,11 +364,27 @@ export default function App() {
         <WorkspaceDashboard
           projects={projects}
           clients={clients}
+          imageRegistry={imageRegistry}
           onNewProject={() => { setImportInitialView('create'); setIsImportOpen(true) }}
           onSelectProject={(id) => switchToProject(id)}
           onSelectClient={(id) => { setSelectedClientId(id); setView('clientDetail') }}
           onDeleteProject={(id) => {
-            setProjects(prev => prev.filter(p => p.id !== id))
+            const project = projects.find(p => p.id === id)
+            setProjects(prev => {
+              const updated = prev.filter(p => p.id !== id)
+              // Clean orphan registry entries
+              if (project) {
+                const allUsedIds = new Set(updated.flatMap(p => p.imageIds))
+                setImageRegistry(prev => {
+                  const cleaned = { ...prev }
+                  for (const imgId of project.imageIds) {
+                    if (!allUsedIds.has(imgId)) delete cleaned[imgId]
+                  }
+                  return cleaned
+                })
+              }
+              return updated
+            })
           }}
           onRenameProject={(id, name) => {
             setProjects(prev => prev.map(p => p.id === id ? { ...p, name } : p))
@@ -288,6 +394,7 @@ export default function App() {
         <ClientsDashboard
           clients={clients}
           projects={projects}
+          imageRegistry={imageRegistry}
           onSelectClient={(id) => { setSelectedClientId(id); setView('clientDetail') }}
           onBack={() => setView('workspace')}
         />
@@ -299,14 +406,32 @@ export default function App() {
             <ClientDetail
               client={client}
               projects={projects}
+              imageRegistry={imageRegistry}
               onSelectProject={(id) => switchToProject(id)}
-              onDeleteProject={(id) => setProjects(prev => prev.filter(p => p.id !== id))}
+              onDeleteProject={(id) => {
+                const project = projects.find(p => p.id === id)
+                setProjects(prev => {
+                  const updated = prev.filter(p => p.id !== id)
+                  if (project) {
+                    const allUsedIds = new Set(updated.flatMap(p => p.imageIds))
+                    setImageRegistry(prev => {
+                      const cleaned = { ...prev }
+                      for (const imgId of project.imageIds) {
+                        if (!allUsedIds.has(imgId)) delete cleaned[imgId]
+                      }
+                      return cleaned
+                    })
+                  }
+                  return updated
+                })
+              }}
               onBack={() => setView('workspace')}
               onRenameClient={(id, newName) => {
                 setClients(prev => prev.map(c => c.id === id ? { ...c, name: newName, updatedAt: new Date().toISOString() } : c))
                 setProjects(prev => prev.map(p => p.clientId === id ? { ...p, clientName: newName } : p))
               }}
               onNewGallery={() => { setPrefilledClientId(client.id); setImportInitialView('create'); setIsImportOpen(true) }}
+              onPreviewGallery={(id) => setGalleryPreviewProjectId(id)}
             />
           )
         })()
@@ -339,6 +464,22 @@ export default function App() {
       <RenameFab />
       </>
       )}
+
+      {/* Client Gallery Preview */}
+      {galleryPreviewProjectId && (() => {
+        const project = projects.find(p => p.id === galleryPreviewProjectId)
+        if (!project) return null
+        const imgs = resolveImages(project.imageIds, imageRegistry)
+        return (
+          <ClientGalleryPage
+            projectName={project.name}
+            clientName={project.clientName}
+            images={imgs}
+            onBack={() => setGalleryPreviewProjectId(null)}
+            onExport={() => handleExportGallery(galleryPreviewProjectId)}
+          />
+        )
+      })()}
 
       {/* Overlays */}
       {showPreviewMode && <PreviewMode />}
@@ -411,7 +552,7 @@ export default function App() {
             }
             const id = String(nextId)
             setNextId(n => n + 1)
-            const newProject: ProjectData = { id, name, clientId, clientName: resolvedClientName, images: [], createdAt: now, updatedAt: now }
+            const newProject: ProjectData = { id, name, clientId, clientName: resolvedClientName, imageIds: [], createdAt: now, updatedAt: now }
             setProjects(prev => [...prev, newProject])
             setCurrentProjectId(id)
             useGallery.setState({ images: [], folderPath: '' })
@@ -483,7 +624,7 @@ export default function App() {
           setIsNewProjectModalOpen(false)
           setNewProjectClientName(''); setNewProjectSelectedClientId(null); setNewProjectShowSuggestions(false); setNewProjectSaveClient(false)
           const id = String(nextId); setNextId(n => n + 1)
-          const newProject: ProjectData = { id, name, clientId, clientName: resolvedClientName, images: [], createdAt: now, updatedAt: now }
+          const newProject: ProjectData = { id, name, clientId, clientName: resolvedClientName, imageIds: [], createdAt: now, updatedAt: now }
           setProjects(prev => [...prev, newProject])
           setCurrentProjectId(id); setWelcomed(true)
           useGallery.setState({ images: [], folderPath: '' })

@@ -82,6 +82,13 @@ const api = {
   }): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('publish-sections', params),
 
+  // ── Client Gallery Export ────────────────────────────────────────────────
+  chooseExportDir: (): Promise<string | null> =>
+    ipcRenderer.invoke('choose-export-dir'),
+
+  exportGallery: (projectName: string, clientName: string, imagePaths: string[], destDir: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('export-gallery', projectName, clientName, imagePaths, destDir),
+
   chooseLogoFile: (): Promise<string | null> =>
     ipcRenderer.invoke('choose-logo-file'),
 

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { toLocalURL } from '../utils/imageUtils'
 import type { ProjectData, ClientData } from '../App'
-import { getProjectsByClient, getLatestProjectForClient } from '../App'
+import type { ImageFile } from '../types'
+import { getProjectsByClient, getLatestProjectForClient, getProjectCover } from '../App'
 
 // Stable color from string
 function clientColor(name: string): string {
@@ -14,6 +15,7 @@ function clientColor(name: string): string {
 interface WorkspaceDashboardProps {
   projects: ProjectData[]
   clients: ClientData[]
+  imageRegistry: Record<string, ImageFile>
   onNewProject: () => void
   onSelectProject: (id: string) => void
   onSelectClient: (id: string) => void
@@ -21,7 +23,7 @@ interface WorkspaceDashboardProps {
   onRenameProject: (id: string, name: string) => void
 }
 
-export function WorkspaceDashboard({ projects, clients, onNewProject, onSelectProject, onSelectClient, onDeleteProject, onRenameProject }: WorkspaceDashboardProps) {
+export function WorkspaceDashboard({ projects, clients, imageRegistry, onNewProject, onSelectProject, onSelectClient, onDeleteProject, onRenameProject }: WorkspaceDashboardProps) {
   const [sysName, setSysName] = useState('')
   const [search, setSearch] = useState('')
   const [showAll, setShowAll] = useState(false)
@@ -155,8 +157,8 @@ export function WorkspaceDashboard({ projects, clients, onNewProject, onSelectPr
                 <div key={p.id} className="wsd__card-wrap">
                   <div className="wsd__card" onClick={() => onSelectProject(p.id)}>
                     <div className="wsd__card-cover">
-                      {p.images.length > 0 ? (
-                        <img src={toLocalURL(p.images[0].path)} alt="" className="wsd__card-img" />
+                      {(() => { const cover = getProjectCover(p, imageRegistry); return cover ? (
+                        <img src={toLocalURL(cover)} alt="" className="wsd__card-img" />
                       ) : (
                         <div className="wsd__card-placeholder">
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -165,12 +167,12 @@ export function WorkspaceDashboard({ projects, clients, onNewProject, onSelectPr
                             <polyline points="21 15 16 10 5 21"/>
                           </svg>
                         </div>
-                      )}
+                      )})()}
                     </div>
                     <div className="wsd__card-info">
                       <span className="wsd__card-name">{p.name}</span>
                       {p.clientName && <span className="wsd__card-client">{p.clientName}</span>}
-                      <span className="wsd__card-count">{p.images.length} images</span>
+                      <span className="wsd__card-count">{p.imageIds.length} images</span>
                     </div>
                   </div>
                   <div className="wsd__card-actions">

@@ -31,6 +31,8 @@ declare global {
       onSocialExportProgress: (cb: (data: { percent: number; stage: string }) => void) => () => void
       chooseLogoFile: () => Promise<string | null>
       createFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
+      chooseExportDir: () => Promise<string | null>
+      exportGallery: (projectName: string, clientName: string, imagePaths: string[], destDir: string) => Promise<{ success: boolean; error?: string }>
     }
   }
 }

@@ -1,16 +1,18 @@
 import React from 'react'
 import { toLocalURL } from '../utils/imageUtils'
 import type { ClientData, ProjectData } from '../App'
-import { getProjectsByClient, getTotalImagesForClient, getLatestProjectForClient } from '../App'
+import type { ImageFile } from '../types'
+import { getProjectsByClient, getTotalImagesForClient, getLatestProjectForClient, getProjectCover } from '../App'
 
 interface ClientsDashboardProps {
   clients: ClientData[]
   projects: ProjectData[]
+  imageRegistry: Record<string, ImageFile>
   onSelectClient: (id: string) => void
   onBack: () => void
 }
 
-export function ClientsDashboard({ clients, projects, onSelectClient, onBack }: ClientsDashboardProps) {
+export function ClientsDashboard({ clients, projects, imageRegistry, onSelectClient, onBack }: ClientsDashboardProps) {
   return (
     <div className="cd">
       <div className="cd__inner">
@@ -31,15 +33,13 @@ export function ClientsDashboard({ clients, projects, onSelectClient, onBack }: 
               const clientProjects = getProjectsByClient(c.id, projects)
               const totalImages = getTotalImagesForClient(c.id, projects)
               const latestProject = getLatestProjectForClient(c.id, projects)
-              const coverImage = latestProject && latestProject.images.length > 0
-                ? latestProject.images[0]
-                : null
+              const coverPath = latestProject ? getProjectCover(latestProject, imageRegistry) : null
 
               return (
                 <div key={c.id} className="cd__card" onClick={() => onSelectClient(c.id)}>
                   <div className="cd__card-cover">
-                    {coverImage ? (
-                      <img src={toLocalURL(coverImage.path)} alt="" className="cd__card-img" />
+                    {coverPath ? (
+                      <img src={toLocalURL(coverPath)} alt="" className="cd__card-img" />
                     ) : (
                       <div className="cd__card-placeholder">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
