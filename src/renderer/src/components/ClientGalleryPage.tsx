@@ -8,19 +8,19 @@ interface ClientGalleryPageProps {
   images: ImageFile[]
   onBack: () => void
   onExport: () => void
+  storyPaths?: string[]
 }
 
-export function ClientGalleryPage({ projectName, clientName, images, onBack, onExport }: ClientGalleryPageProps) {
+export function ClientGalleryPage({ projectName, clientName, images, onBack, onExport, storyPaths }: ClientGalleryPageProps) {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set())
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
-  const [slideshow, setSlideshow] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+
   const touchStartX = useRef(0)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const slideshowTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const displayImages = showFavoritesOnly ? images.filter(i => favoriteIds.has(i.id)) : images
 
@@ -66,33 +66,6 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
     a.click()
   }
 
-  // Download all as zip (via IPC)
-  const downloadAll = async () => {
-    const destPath = await window.api.chooseExportPath?.(`${projectName}.zip`)
-    if (!destPath) return
-    // For now, trigger full export
-    onExport()
-  }
-
-  // Slideshow
-  useEffect(() => {
-    if (!slideshow || viewerIndex === null) return
-    slideshowTimer.current = setTimeout(() => {
-      setViewerIndex(i => i !== null ? (i + 1) % displayImages.length : null)
-    }, 4000)
-    return () => { if (slideshowTimer.current) clearTimeout(slideshowTimer.current) }
-  }, [slideshow, viewerIndex, displayImages.length])
-
-  const startSlideshow = () => {
-    setViewerIndex(0)
-    setSlideshow(true)
-  }
-
-  const stopSlideshow = () => {
-    setSlideshow(false)
-    if (slideshowTimer.current) clearTimeout(slideshowTimer.current)
-  }
-
   // Track scroll
   useEffect(() => {
     const el = scrollRef.current
@@ -105,14 +78,13 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
   // Keyboard
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (viewerIndex === null) return
-    if (e.key === 'Escape') { setViewerIndex(null); stopSlideshow() }
-    if (e.key === 'ArrowRight') { stopSlideshow(); setViewerIndex(i => i !== null ? (i + 1) % displayImages.length : null) }
-    if (e.key === 'ArrowLeft') { stopSlideshow(); setViewerIndex(i => i !== null ? (i - 1 + displayImages.length) % displayImages.length : null) }
+    if (e.key === 'Escape') setViewerIndex(null)
+    if (e.key === 'ArrowRight') setViewerIndex(i => i !== null ? (i + 1) % displayImages.length : null)
+    if (e.key === 'ArrowLeft') setViewerIndex(i => i !== null ? (i - 1 + displayImages.length) % displayImages.length : null)
     if (e.key === 'f' || e.key === 'F') {
       const img = displayImages[viewerIndex]
       if (img) toggleFavorite(img.id)
     }
-    if (e.key === ' ') { e.preventDefault(); setSlideshow(s => !s) }
   }, [viewerIndex, displayImages])
 
   useEffect(() => {
@@ -125,7 +97,6 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
   const handleTouchEnd = (e: React.TouchEvent) => {
     const dx = e.changedTouches[0].clientX - touchStartX.current
     if (Math.abs(dx) > 50) {
-      stopSlideshow()
       setViewerIndex(i => {
         if (i === null) return null
         return dx < 0 ? (i + 1) % displayImages.length : (i - 1 + displayImages.length) % displayImages.length
@@ -135,6 +106,7 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
 
   const coverImage = images.length > 0 ? images[0] : null
   const currentViewerImage = viewerIndex !== null ? displayImages[viewerIndex] : null
+  const selectedCount = selectedIds.size
 
   return (
     <div className="cg">
@@ -150,13 +122,7 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
               {clientName && <p className="cg__hero-client">{clientName}</p>}
               <p className="cg__hero-count">{images.length} photos</p>
               <div className="cg__hero-actions">
-                <button className="cg__hero-btn" onClick={startSlideshow}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polygon points="5 3 19 12 5 21 5 3"/>
-                  </svg>
-                  Slideshow
-                </button>
-                <button className="cg__hero-btn cg__hero-btn--ghost" onClick={onExport}>
+                <button className="cg__hero-btn" onClick={onExport}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/>
@@ -174,15 +140,45 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
           </div>
         )}
 
+        {/* Ready Stories */}
+        {storyPaths && storyPaths.length > 0 && (
+          <div className="cg__stories-section">
+            <h2 className="cg__stories-title">Your Stories</h2>
+            <p className="cg__stories-sub">Ready to share on Instagram</p>
+            <div className="cg__stories-row">
+              {storyPaths.map((path, i) => {
+                const styleName = path.split('_').pop()?.replace('.mp4', '') || ''
+                const displayName = styleName.charAt(0).toUpperCase() + styleName.slice(1)
+                return (
+                  <div key={i} className="cg__stories-card">
+                    <div className="cg__stories-preview">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                      </svg>
+                    </div>
+                    <span className="cg__stories-name">{displayName}</span>
+                    <a className="cg__stories-download" href={toLocalURL(path)} download>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Download
+                    </a>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Filter bar */}
         {favoriteIds.size > 0 && (
           <div className="cg__filter-bar">
             <button
               className={`cg__filter-chip ${!showFavoritesOnly ? 'cg__filter-chip--active' : ''}`}
               onClick={() => setShowFavoritesOnly(false)}
-            >
-              All ({images.length})
-            </button>
+            >All ({images.length})</button>
             <button
               className={`cg__filter-chip ${showFavoritesOnly ? 'cg__filter-chip--active' : ''}`}
               onClick={() => setShowFavoritesOnly(true)}
@@ -205,7 +201,6 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
               style={{ animationDelay: `${Math.min(i * 30, 600)}ms` }}
             >
               <img src={toLocalURL(img.path)} alt="" loading="lazy" />
-              {/* Favorite heart — always visible on favorited, hover on others */}
               {!selectionMode && (
                 <button
                   className={`cg__thumb-heart ${favoriteIds.has(img.id) ? 'cg__thumb-heart--active' : ''}`}
@@ -237,9 +232,9 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
         <div className={`cg__float-bar ${selectionMode ? 'cg__float-bar--sel' : ''}`}>
           {selectionMode ? (
             <>
-              <span className="cg__float-count">{selectedIds.size} selected</span>
+              <span className="cg__float-count">{selectedCount} selected</span>
               <div className="cg__float-actions">
-                <button className="cg__float-btn" disabled={selectedIds.size === 0}>
+                <button className="cg__float-btn" disabled={selectedCount === 0}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/>
@@ -255,11 +250,6 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
               <span className="cg__float-title">{projectName}</span>
               <div className="cg__float-actions">
                 <button className="cg__float-ghost" onClick={() => setSelectionMode(true)}>Select</button>
-                <button className="cg__float-ghost" onClick={startSlideshow}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polygon points="5 3 19 12 5 21 5 3"/>
-                  </svg>
-                </button>
               </div>
             </>
           )}
@@ -269,22 +259,12 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
       {/* Fullscreen Viewer */}
       {viewerIndex !== null && currentViewerImage && (
         <div
-          className={`cg__viewer ${slideshow ? 'cg__viewer--slideshow' : ''}`}
+          className="cg__viewer"
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
-          onClick={(e) => { if (e.target === e.currentTarget) { setViewerIndex(null); stopSlideshow() } }}
+          onClick={(e) => { if (e.target === e.currentTarget) setViewerIndex(null) }}
         >
-          <img
-            className="cg__viewer-img"
-            src={toLocalURL(currentViewerImage.path)}
-            alt=""
-            key={viewerIndex}
-          />
-
-          {/* Slideshow progress bar */}
-          {slideshow && <div className="cg__viewer-progress" key={`prog-${viewerIndex}`} />}
-
-          {/* Top bar */}
+          <img className="cg__viewer-img" src={toLocalURL(currentViewerImage.path)} alt="" key={viewerIndex} />
           <div className="cg__viewer-top">
             <div className="cg__viewer-counter">{viewerIndex + 1} / {displayImages.length}</div>
             <div className="cg__viewer-top-actions">
@@ -296,55 +276,38 @@ export function ClientGalleryPage({ projectName, clientName, images, onBack, onE
                   <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                 </svg>
               </button>
-              <button className="cg__viewer-close" onClick={() => { setViewerIndex(null); stopSlideshow() }}>
+              <button className="cg__viewer-close" onClick={() => setViewerIndex(null)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
               </button>
             </div>
           </div>
-
-          {/* Nav arrows */}
-          {!slideshow && (
-            <>
-              <button
-                className="cg__viewer-nav cg__viewer-prev"
-                onClick={() => { stopSlideshow(); setViewerIndex((viewerIndex - 1 + displayImages.length) % displayImages.length) }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="15 18 9 12 15 6"/>
-                </svg>
-              </button>
-              <button
-                className="cg__viewer-nav cg__viewer-next"
-                onClick={() => { stopSlideshow(); setViewerIndex((viewerIndex + 1) % displayImages.length) }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="9 6 15 12 9 18"/>
-                </svg>
-              </button>
-            </>
-          )}
-
-          {/* Bottom bar */}
+          <button
+            className="cg__viewer-nav cg__viewer-prev"
+            onClick={() => setViewerIndex((viewerIndex - 1 + displayImages.length) % displayImages.length)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+          <button
+            className="cg__viewer-nav cg__viewer-next"
+            onClick={() => setViewerIndex((viewerIndex + 1) % displayImages.length)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="9 6 15 12 9 18"/>
+            </svg>
+          </button>
           <div className="cg__viewer-bottom">
-            {slideshow ? (
-              <button className="cg__viewer-slide-toggle" onClick={stopSlideshow}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
-                </svg>
-                Pause
-              </button>
-            ) : (
-              <button className="cg__viewer-download" onClick={() => downloadImage(currentViewerImage)}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="7 10 12 15 17 10"/>
-                  <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                Download
-              </button>
-            )}
+            <button className="cg__viewer-download" onClick={() => downloadImage(currentViewerImage)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Download
+            </button>
           </div>
         </div>
       )}

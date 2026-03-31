@@ -6,12 +6,18 @@ export async function exportGallery(
   projectName: string,
   clientName: string,
   imagePaths: string[],
-  destDir: string
-): Promise<{ success: boolean; error?: string }> {
+  destDir: string,
+  topPickPaths: string[],
+  settings?: { studioName?: string; logoPath?: string | null; allowDownloads?: boolean; autoGenerateStories?: boolean }
+): Promise<{ success: boolean; error?: string; galleryDir?: string }> {
   try {
     const galleryDir = join(destDir, projectName.replace(/[/\\?%*:|"<>]/g, '-'))
     const imagesDir = join(galleryDir, 'images')
     mkdirSync(imagesDir, { recursive: true })
+
+    // Create stories directory
+    const storiesDir = join(galleryDir, 'stories')
+    mkdirSync(storiesDir, { recursive: true })
 
     // Copy images and create thumbnails
     const imageData: Array<{ filename: string; thumb: string; full: string }> = []
@@ -44,11 +50,16 @@ export async function exportGallery(
       imageData.push({ filename: basename(src), thumb: `images/${thumbName}`, full: `images/${fullName}` })
     }
 
+    // Determine story names for HTML (stories will be rendered by the renderer process)
+    const storyStyles = topPickPaths.length >= 2
+      ? ['minimal', 'bold', 'cinematic', 'fast']
+      : []
+
     // Generate HTML
-    const html = generateGalleryHTML(projectName, clientName, imageData)
+    const html = generateGalleryHTML(projectName, clientName, imageData, storyStyles, settings)
     writeFileSync(join(galleryDir, 'index.html'), html)
 
-    return { success: true }
+    return { success: true, galleryDir }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return { success: false, error: msg }
@@ -58,7 +69,9 @@ export async function exportGallery(
 function generateGalleryHTML(
   projectName: string,
   clientName: string,
-  images: Array<{ filename: string; thumb: string; full: string }>
+  images: Array<{ filename: string; thumb: string; full: string }>,
+  storyStyles: string[],
+  settings?: { studioName?: string; logoPath?: string | null; allowDownloads?: boolean; autoGenerateStories?: boolean }
 ): string {
   const escapedProjectName = projectName.replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const escapedClientName = clientName ? clientName.replace(/</g, '&lt;').replace(/>/g, '&gt;') : ''
@@ -93,6 +106,15 @@ body{background:#0a0a0f;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 .viewer .download{position:absolute;bottom:16px;right:16px;padding:8px 16px;background:rgba(99,102,241,.8);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none}
 .viewer .download:hover{background:rgba(99,102,241,1)}
 .footer{text-align:center;padding:40px 24px;color:rgba(255,255,255,.15);font-size:11px}
+.stories{padding:0 16px 24px;text-align:center}
+.stories h2{font-size:16px;font-weight:700;color:rgba(255,255,255,.85);margin:0 0 4px}
+.stories .sub{font-size:12px;color:rgba(255,255,255,.3);margin:0 0 16px}
+.stories .row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.stories .card{display:flex;flex-direction:column;align-items:center;gap:8px;width:120px}
+.stories .preview{width:120px;height:213px;border-radius:12px;background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(168,85,247,.1));border:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.25)}
+.stories .sname{font-size:12px;font-weight:600;color:rgba(255,255,255,.6)}
+.stories .dl{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;background:rgba(99,102,241,.12);color:#a5b4fc;font-size:11px;font-weight:600;text-decoration:none;transition:background .12s}
+.stories .dl:hover{background:rgba(99,102,241,.2)}
 </style>
 </head>
 <body>
@@ -100,6 +122,13 @@ body{background:#0a0a0f;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 <h1>${escapedProjectName}</h1>
 ${escapedClientName ? `<p>${escapedClientName} \u00B7 ${images.length} photos</p>` : `<p>${images.length} photos</p>`}
 </div>
+${storyStyles.length > 0 ? `<div class="stories">
+<h2>Your Stories</h2>
+<p class="sub">Ready to share on Instagram</p>
+<div class="row">
+${storyStyles.map(s => `<div class="card"><div class="preview"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div><span class="sname">${s.charAt(0).toUpperCase() + s.slice(1)}</span><a class="dl" href="stories/story_${s}.mp4" download>Download</a></div>`).join('\n')}
+</div>
+</div>` : ''}
 <div class="grid">
 ${images.map((img, i) => `<img src="${img.thumb}" data-full="${img.full}" data-index="${i}" loading="lazy" alt="">`).join('\n')}
 </div>
@@ -109,9 +138,9 @@ ${images.map((img, i) => `<img src="${img.thumb}" data-full="${img.full}" data-i
 <button class="nav next" onclick="navigate(1)">\u203A</button>
 <img id="viewerImg" src="" alt="">
 <div class="counter" id="counter"></div>
-<a class="download" id="downloadBtn" href="" download>Download</a>
+${settings?.allowDownloads !== false ? '<a class="download" id="downloadBtn" href="" download>Download</a>' : ''}
 </div>
-<div class="footer">Delivered with Pixflow</div>
+<div class="footer">${settings?.studioName ? settings.studioName.replace(/</g, '&lt;').replace(/>/g, '&gt;') : 'Delivered with Pixflow'}</div>
 <script>
 const images=${JSON.stringify(images)};
 let current=-1;

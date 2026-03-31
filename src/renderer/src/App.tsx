@@ -26,6 +26,7 @@ import { TopPicksTray } from './components/TopPicksTray'
 import { ExportPanel } from './components/ExportPanel'
 import { RenameFab } from './components/RenameFab'
 import { ClientGalleryPage } from './components/ClientGalleryPage'
+import { PublishPanel } from './components/PublishPanel'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import type { ImageFile } from './types'
 
@@ -36,6 +37,20 @@ export interface ClientData {
   updatedAt: string
 }
 
+export interface DeliverySettings {
+  studioName: string
+  logoPath: string | null
+  allowDownloads: boolean
+  autoGenerateStories: boolean
+}
+
+export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
+  studioName: '',
+  logoPath: null,
+  allowDownloads: true,
+  autoGenerateStories: true,
+}
+
 export interface ProjectData {
   id: string
   name: string
@@ -44,6 +59,7 @@ export interface ProjectData {
   imageIds: string[]
   createdAt: string
   updatedAt: string
+  deliverySettings?: DeliverySettings
 }
 
 function normalizeClientName(name: string): string {
@@ -120,6 +136,13 @@ export default function App() {
   const [newProjectSaveClient, setNewProjectSaveClient] = useState(false)
   const [prefilledClientId, setPrefilledClientId] = useState<string | null>(null)
   const [galleryPreviewProjectId, setGalleryPreviewProjectId] = useState<string | null>(null)
+  const [exportProgress, setExportProgress] = useState<string | null>(null)
+  const [publishProjectId, setPublishProjectId] = useState<string | null>(null)
+  const [publishPhase, setPublishPhase] = useState<'settings' | 'publishing' | 'done' | 'error'>('settings')
+  const [publishUpload, setPublishUpload] = useState({ uploaded: 0, total: 0 })
+  const [publishStory, setPublishStory] = useState({ completed: 0, total: 4, currentStyle: '' })
+  const [pubError, setPubError] = useState('')
+  const [publishGalleryDir, setPublishGalleryDir] = useState('')
   // Register keyboard shortcuts
   useKeyboardShortcuts()
 
@@ -131,7 +154,139 @@ export default function App() {
     const imgs = resolveImages(project.imageIds, imageRegistry)
     const destDir = await window.api.chooseExportDir?.()
     if (!destDir) return
-    await window.api.exportGallery?.(project.name, project.clientName || '', imgs.map(i => i.path), destDir)
+
+    setExportProgress('Exporting gallery...')
+
+    // Get top pick paths
+    const topPickIds = useGallery.getState().topPickIds
+    const topPickPaths = imgs.filter(i => topPickIds.has(i.id)).map(i => i.path)
+
+    // Export images + HTML
+    const result = await window.api.exportGallery(project.name, project.clientName || '', imgs.map(i => i.path), destDir, topPickPaths)
+
+    if (!result.success) {
+      setExportProgress(null)
+      return
+    }
+
+    // Generate stories if we have enough top picks
+    if (topPickPaths.length >= 2) {
+      const picks = topPickPaths.length > 25 ? topPickPaths.slice(0, 25) : topPickPaths
+      const duration = topPickPaths.length <= 25 ? 15 : 20
+      const galleryDir = result.galleryDir || `${destDir}/${project.name.replace(/[/\\?%*:|"<>]/g, '-')}`
+
+      const styles = [
+        { name: 'minimal', motionMode: 'subtle', transitionStyle: 'clean', colorMatch: 'off' },
+        { name: 'bold', motionMode: 'dynamic', transitionStyle: 'cinematic', colorMatch: 'subtle' },
+        { name: 'cinematic', motionMode: 'dynamic', transitionStyle: 'cinematic', colorMatch: 'subtle' },
+        { name: 'fast', motionMode: 'subtle', transitionStyle: 'energetic', colorMatch: 'off' },
+      ]
+
+      for (let i = 0; i < styles.length; i++) {
+        const style = styles[i]
+        setExportProgress(`Generating stories (${i + 1}/4) \u2014 ${style.name}...`)
+
+        try {
+          const buildResult = await window.api.buildStoryScenes(picks, duration, style.motionMode) as {
+            error?: string
+            scenes: Array<{ type: string; imagePaths: string[]; duration: number; motionType: string }>
+            totalDuration: number
+          }
+          if (buildResult.error) continue
+
+          const outputPath = `${galleryDir}/stories/story_${style.name}.mp4`
+          await window.api.renderStory(
+            buildResult.scenes.map((s) => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })),
+            { totalDuration: buildResult.totalDuration, resolution: '1080x1920', fps: 30, motionMode: style.motionMode, transitionStyle: style.transitionStyle, colorMatch: style.colorMatch === 'subtle' },
+            outputPath
+          )
+        } catch {
+          // Skip failed story
+        }
+      }
+    }
+
+    setExportProgress(null)
+  }
+
+  const handlePublish = async (projectId: string) => {
+    const project = projects.find(p => p.id === projectId)
+    if (!project) return
+    const imgs = resolveImages(project.imageIds, imageRegistry)
+    const settings = project.deliverySettings || DEFAULT_DELIVERY_SETTINGS
+
+    const destDir = await window.api.chooseExportDir?.()
+    if (!destDir) return
+
+    setPublishPhase('publishing')
+    setPublishUpload({ uploaded: 0, total: imgs.length })
+    setPublishStory({ completed: 0, total: 4, currentStyle: '' })
+
+    try {
+      // Step 1: Export gallery (images + HTML)
+      const result = await window.api.exportGallery(
+        project.name,
+        project.clientName || '',
+        imgs.map(i => i.path),
+        destDir,
+        [],
+        settings
+      )
+
+      if (!result.success) {
+        setPubError(result.error || 'Export failed')
+        setPublishPhase('error')
+        return
+      }
+
+      setPublishUpload({ uploaded: imgs.length, total: imgs.length })
+      const galleryDir = result.galleryDir || destDir
+
+      // Step 2: Generate stories if enabled
+      if (settings.autoGenerateStories) {
+        const topPickIds = useGallery.getState().topPickIds
+        const topPickPaths = imgs.filter(i => topPickIds.has(i.id)).map(i => i.path)
+
+        if (topPickPaths.length >= 2) {
+          const picks = topPickPaths.length > 25 ? topPickPaths.slice(0, 25) : topPickPaths
+          const duration = topPickPaths.length <= 25 ? 15 : 20
+
+          const styles = [
+            { name: 'minimal', motionMode: 'subtle', transitionStyle: 'clean', colorMatch: 'off' },
+            { name: 'bold', motionMode: 'dynamic', transitionStyle: 'cinematic', colorMatch: 'subtle' },
+            { name: 'cinematic', motionMode: 'dynamic', transitionStyle: 'cinematic', colorMatch: 'subtle' },
+            { name: 'fast', motionMode: 'subtle', transitionStyle: 'energetic', colorMatch: 'off' },
+          ]
+
+          for (let i = 0; i < styles.length; i++) {
+            const style = styles[i]
+            setPublishStory({ completed: i, total: 4, currentStyle: style.name })
+
+            try {
+              const buildResult = await window.api.buildStoryScenes(picks, duration, style.motionMode) as {
+                error?: string
+                scenes: Array<{ type: string; imagePaths: string[]; duration: number; motionType: string }>
+                totalDuration: number
+              }
+              if (!buildResult.error) {
+                await window.api.renderStory(
+                  buildResult.scenes.map((s) => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })),
+                  { totalDuration: buildResult.totalDuration, resolution: '1080x1920', fps: 30, motionMode: style.motionMode, transitionStyle: style.transitionStyle, colorMatch: style.colorMatch === 'subtle' },
+                  `${galleryDir}/stories/story_${style.name}.mp4`
+                )
+              }
+            } catch { /* skip failed story */ }
+          }
+          setPublishStory({ completed: 4, total: 4, currentStyle: '' })
+        }
+      }
+
+      setPublishGalleryDir(galleryDir)
+      setPublishPhase('done')
+    } catch (err: unknown) {
+      setPubError(err instanceof Error ? err.message : 'Unknown error')
+      setPublishPhase('error')
+    }
   }
 
   // Sync gallery images back to project imageIds + registry
@@ -432,6 +587,7 @@ export default function App() {
               }}
               onNewGallery={() => { setPrefilledClientId(client.id); setImportInitialView('create'); setIsImportOpen(true) }}
               onPreviewGallery={(id) => setGalleryPreviewProjectId(id)}
+              onPublish={(id) => { setPublishProjectId(id); setPublishPhase('settings') }}
             />
           )
         })()
@@ -477,6 +633,35 @@ export default function App() {
             images={imgs}
             onBack={() => setGalleryPreviewProjectId(null)}
             onExport={() => handleExportGallery(galleryPreviewProjectId)}
+            storyPaths={[]}
+          />
+        )
+      })()}
+
+      {/* Publish Panel */}
+      {publishProjectId && (() => {
+        const project = projects.find(p => p.id === publishProjectId)
+        if (!project) return null
+        const settings = project.deliverySettings || DEFAULT_DELIVERY_SETTINGS
+        return (
+          <PublishPanel
+            projectName={project.name}
+            clientName={project.clientName}
+            imageCount={project.imageIds.length}
+            topPickCount={useGallery.getState().topPickIds.size}
+            settings={settings}
+            onSettingsChange={(s) => {
+              setProjects(prev => prev.map(p => p.id === publishProjectId ? { ...p, deliverySettings: s } : p))
+            }}
+            onPublish={() => handlePublish(publishProjectId)}
+            onClose={() => { setPublishProjectId(null); setPublishPhase('settings') }}
+            phase={publishPhase}
+            uploadProgress={publishUpload}
+            storyProgress={publishStory}
+            error={pubError}
+            galleryDir={publishGalleryDir}
+            onOpenGallery={() => { if (publishGalleryDir) window.api.revealInFinder(publishGalleryDir) }}
+            onRetry={() => handlePublish(publishProjectId)}
           />
         )
       })()}
@@ -493,6 +678,16 @@ export default function App() {
       {demoActive && <DemoMode onDone={handleDemoDone} />}
       <ToastStack />
       <StatusBar />
+
+      {/* Export progress indicator */}
+      {exportProgress && (
+        <div className="export-float">
+          <div className="export-float__content">
+            <div className="cg__story-spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+            <span className="export-float__text">{exportProgress}</span>
+          </div>
+        </div>
+      )}
 
       {/* Import Modal */}
       {isImportOpen && (

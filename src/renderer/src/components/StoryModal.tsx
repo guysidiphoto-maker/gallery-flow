@@ -121,10 +121,21 @@ function AnimatedCheck() {
 
 // ── Main modal ────────────────────────────────────────────────────────────────
 
-export function StoryModal() {
+interface StoryModalProps {
+  /** Pass images directly (client mode). If omitted, uses gallery store top picks. */
+  externalImages?: Array<{ id: string; path: string }>
+  /** Custom close handler (client mode). If omitted, uses gallery store. */
+  onClose?: () => void
+}
+
+export function StoryModal({ externalImages, onClose }: StoryModalProps = {}) {
   const { images, topPickIds, closeStoryModal } = useGallery()
 
-  const topPickImages = images.filter(img => topPickIds.has(img.id))
+  const topPickImages = externalImages
+    ? externalImages as Array<{ id: string; path: string; filename: string; folderPath: string; ext: string; size: number; mtimeMs: number; birthtimeMs: number }>
+    : images.filter(img => topPickIds.has(img.id))
+
+  const handleClose = onClose || closeStoryModal
 
   const [step, setStep] = useState<Step>('configure')
   const [options, setOptions] = useState<StoryOptions>({
@@ -151,11 +162,11 @@ export function StoryModal() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && step !== 'exporting') closeStoryModal()
+      if (e.key === 'Escape' && step !== 'exporting') handleClose()
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [step, closeStoryModal])
+  }, [step, handleClose])
 
   useEffect(() => {
     const unsub = window.api.onStoryProgress(({ percent, stage }) => {
@@ -302,7 +313,7 @@ export function StoryModal() {
               </div>
             </div>
             {step !== 'exporting' && (
-              <button className="btn btn--ghost btn--icon story-modal__close" onClick={closeStoryModal}>
+              <button className="btn btn--ghost btn--icon story-modal__close" onClick={handleClose}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -602,7 +613,7 @@ export function StoryModal() {
         <div className="modal__footer">
           {step === 'configure' && (
             <>
-              <button className="btn btn--ghost" onClick={closeStoryModal}>Cancel</button>
+              <button className="btn btn--ghost" onClick={handleClose}>Cancel</button>
               <button
                 className="btn btn--accent story-cta"
                 onClick={handlePreview}
@@ -623,7 +634,7 @@ export function StoryModal() {
           )}
 
           {step === 'done' && (
-            <button className="btn btn--accent" onClick={closeStoryModal}>Done</button>
+            <button className="btn btn--accent" onClick={handleClose}>Done</button>
           )}
         </div>
       </div>

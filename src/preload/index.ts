@@ -86,8 +86,8 @@ const api = {
   chooseExportDir: (): Promise<string | null> =>
     ipcRenderer.invoke('choose-export-dir'),
 
-  exportGallery: (projectName: string, clientName: string, imagePaths: string[], destDir: string): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('export-gallery', projectName, clientName, imagePaths, destDir),
+  exportGallery: (projectName: string, clientName: string, imagePaths: string[], destDir: string, topPickPaths: string[], settings?: { studioName?: string; logoPath?: string | null; allowDownloads?: boolean; autoGenerateStories?: boolean }): Promise<{ success: boolean; error?: string; galleryDir?: string }> =>
+    ipcRenderer.invoke('export-gallery', projectName, clientName, imagePaths, destDir, topPickPaths, settings),
 
   chooseLogoFile: (): Promise<string | null> =>
     ipcRenderer.invoke('choose-logo-file'),

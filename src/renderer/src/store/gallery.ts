@@ -32,7 +32,7 @@ declare global {
       chooseLogoFile: () => Promise<string | null>
       createFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
       chooseExportDir: () => Promise<string | null>
-      exportGallery: (projectName: string, clientName: string, imagePaths: string[], destDir: string) => Promise<{ success: boolean; error?: string }>
+      exportGallery: (projectName: string, clientName: string, imagePaths: string[], destDir: string, topPickPaths: string[], settings?: { studioName?: string; logoPath?: string | null; allowDownloads?: boolean; autoGenerateStories?: boolean }) => Promise<{ success: boolean; error?: string; galleryDir?: string }>
     }
   }
 }

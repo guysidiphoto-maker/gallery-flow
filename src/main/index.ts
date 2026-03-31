@@ -356,8 +356,8 @@ ipcMain.handle('choose-export-dir', async () => {
   return result.filePaths[0]
 })
 
-ipcMain.handle('export-gallery', async (_e, projectName: string, clientName: string, imagePaths: string[], destDir: string) => {
-  return exportGallery(projectName, clientName, imagePaths, destDir)
+ipcMain.handle('export-gallery', async (_e, projectName: string, clientName: string, imagePaths: string[], destDir: string, topPickPaths: string[], settings?: { studioName?: string; logoPath?: string | null; allowDownloads?: boolean; autoGenerateStories?: boolean }) => {
+  return exportGallery(projectName, clientName, imagePaths, destDir, topPickPaths || [], settings)
 })
 
 ipcMain.handle('choose-logo-file', async () => {

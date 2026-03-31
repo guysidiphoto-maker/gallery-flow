@@ -28,9 +28,10 @@ interface ClientDetailProps {
   onRenameClient: (id: string, name: string) => void
   onNewGallery: () => void
   onPreviewGallery: (projectId: string) => void
+  onPublish: (projectId: string) => void
 }
 
-export function ClientDetail({ client, projects, imageRegistry, onSelectProject, onDeleteProject, onBack, onRenameClient, onNewGallery, onPreviewGallery }: ClientDetailProps) {
+export function ClientDetail({ client, projects, imageRegistry, onSelectProject, onDeleteProject, onBack, onRenameClient, onNewGallery, onPreviewGallery, onPublish }: ClientDetailProps) {
   const clientProjects = getProjectsByClient(client.id, projects)
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
   const totalImages = getTotalImagesForClient(client.id, projects)
@@ -136,7 +137,17 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
             <p className="cdv__subtitle">{clientProjects.length} {clientProjects.length === 1 ? 'gallery' : 'galleries'} &middot; {totalImages} {totalImages === 1 ? 'image' : 'images'}</p>
           </div>
           <div className="cdv__header-actions">
-            <button className="cdv__btn-primary" onClick={handleShare}>
+            {clientProjects.length > 0 && (
+              <button className="cdv__btn-primary" onClick={() => onPublish(clientProjects[0].id)}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                  <polyline points="16 6 12 2 8 6"/>
+                  <line x1="12" y1="2" x2="12" y2="15"/>
+                </svg>
+                Publish
+              </button>
+            )}
+            <button className="cdv__btn-secondary" onClick={handleShare}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
@@ -180,6 +191,17 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
                       </div>
                     </div>
                     <div className="wsd__card-actions">
+                      <button
+                        className="wsd__card-action"
+                        title="Publish gallery"
+                        onClick={e => { e.stopPropagation(); onPublish(p.id) }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                          <polyline points="16 6 12 2 8 6"/>
+                          <line x1="12" y1="2" x2="12" y2="15"/>
+                        </svg>
+                      </button>
                       <button
                         className="wsd__card-action"
                         title="Preview gallery"
