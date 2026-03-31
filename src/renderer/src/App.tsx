@@ -28,6 +28,7 @@ import { RenameFab } from './components/RenameFab'
 import { ClientGalleryPage } from './components/ClientGalleryPage'
 import { PublishPanel } from './components/PublishPanel'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { uploadGalleryToCloud, uploadStoryToCloud } from './lib/cloudUpload'
 import type { ImageFile } from './types'
 
 export interface ClientData {
@@ -51,6 +52,13 @@ export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
   autoGenerateStories: true,
 }
 
+export interface GalleryPublishState {
+  status: 'draft' | 'publishing' | 'live'
+  publicUrl?: string
+  galleryDir?: string
+  storiesReady: boolean
+}
+
 export interface ProjectData {
   id: string
   name: string
@@ -60,6 +68,7 @@ export interface ProjectData {
   createdAt: string
   updatedAt: string
   deliverySettings?: DeliverySettings
+  publishState?: GalleryPublishState
 }
 
 function normalizeClientName(name: string): string {
@@ -139,7 +148,11 @@ export default function App() {
   const [exportProgress, setExportProgress] = useState<string | null>(null)
   const [publishProjectId, setPublishProjectId] = useState<string | null>(null)
   const [publishPhase, setPublishPhase] = useState<'settings' | 'publishing' | 'done' | 'error'>('settings')
-  const [publishUpload, setPublishUpload] = useState({ uploaded: 0, total: 0 })
+  const [publishUpload, setPublishUpload] = useState<{
+    uploaded: number; total: number; currentFile: string;
+    phase?: string;
+    result?: { totalImages: number; originalsUploaded: number; webCopiesUploaded: number; thumbsUploaded: number; failedFiles: Array<{ filename: string; reason: string }> }
+  }>({ uploaded: 0, total: 0, currentFile: '' })
   const [publishStory, setPublishStory] = useState({ completed: 0, total: 4, currentStyle: '' })
   const [pubError, setPubError] = useState('')
   const [publishGalleryDir, setPublishGalleryDir] = useState('')
@@ -215,41 +228,49 @@ export default function App() {
     const imgs = resolveImages(project.imageIds, imageRegistry)
     const settings = project.deliverySettings || DEFAULT_DELIVERY_SETTINGS
 
-    const destDir = await window.api.chooseExportDir?.()
-    if (!destDir) return
-
     setPublishPhase('publishing')
-    setPublishUpload({ uploaded: 0, total: imgs.length })
+    setPubError('')
+    setPublishUpload({ uploaded: 0, total: imgs.length, currentFile: '' })
     setPublishStory({ completed: 0, total: 4, currentStyle: '' })
 
+    // Mark as publishing
+    setProjects(prev => prev.map(p => p.id === projectId
+      ? { ...p, publishState: { status: 'publishing', storiesReady: false } }
+      : p
+    ))
+
     try {
-      // Step 1: Export gallery (images + HTML)
-      const result = await window.api.exportGallery(
+      // Step 1: Upload originals + web copies + thumbnails to cloud (individually)
+      const topPickIdSet = useGallery.getState().topPickIds
+      const cloudGallery = await uploadGalleryToCloud(
         project.name,
-        project.clientName || '',
+        project.clientName,
+        project.clientId,
+        project.id,
         imgs.map(i => i.path),
-        destDir,
-        [],
-        settings
+        topPickIdSet,
+        settings as Record<string, unknown>,
+        (progress) => {
+          setPublishUpload({
+            uploaded: progress.uploaded,
+            total: progress.total,
+            currentFile: progress.currentFile || '',
+            phase: progress.phase,
+            result: progress.result,
+          })
+        }
       )
 
-      if (!result.success) {
-        setPubError(result.error || 'Export failed')
-        setPublishPhase('error')
-        return
-      }
-
-      setPublishUpload({ uploaded: imgs.length, total: imgs.length })
-      const galleryDir = result.galleryDir || destDir
-
-      // Step 2: Generate stories if enabled
+      // Step 2: Generate & upload stories (each uploaded individually)
+      let storiesReady = false
+      const storyWarnings: string[] = []
       if (settings.autoGenerateStories) {
-        const topPickIds = useGallery.getState().topPickIds
-        const topPickPaths = imgs.filter(i => topPickIds.has(i.id)).map(i => i.path)
+        const topPickPaths = imgs.filter(i => topPickIdSet.has(i.id)).map(i => i.path)
 
         if (topPickPaths.length >= 2) {
           const picks = topPickPaths.length > 25 ? topPickPaths.slice(0, 25) : topPickPaths
           const duration = topPickPaths.length <= 25 ? 15 : 20
+          const tempDir = await window.api.getTempDir()
 
           const styles = [
             { name: 'minimal', motionMode: 'subtle', transitionStyle: 'clean', colorMatch: 'off' },
@@ -258,6 +279,7 @@ export default function App() {
             { name: 'fast', motionMode: 'subtle', transitionStyle: 'energetic', colorMatch: 'off' },
           ]
 
+          let storiesUploaded = 0
           for (let i = 0; i < styles.length; i++) {
             const style = styles[i]
             setPublishStory({ completed: i, total: 4, currentStyle: style.name })
@@ -269,23 +291,45 @@ export default function App() {
                 totalDuration: number
               }
               if (!buildResult.error) {
-                await window.api.renderStory(
+                const outputPath = `${tempDir}/story_${style.name}.mp4`
+                const renderResult = await window.api.renderStory(
                   buildResult.scenes.map((s) => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })),
                   { totalDuration: buildResult.totalDuration, resolution: '1080x1920', fps: 30, motionMode: style.motionMode, transitionStyle: style.transitionStyle, colorMatch: style.colorMatch === 'subtle' },
-                  `${galleryDir}/stories/story_${style.name}.mp4`
+                  outputPath
                 )
+                if (renderResult.success) {
+                  const uploadResult = await uploadStoryToCloud(cloudGallery.id, style.name, outputPath)
+                  if (uploadResult.skipped) {
+                    storyWarnings.push(uploadResult.reason || `Story "${style.name}" skipped`)
+                  } else {
+                    storiesUploaded++
+                  }
+                }
               }
-            } catch { /* skip failed story */ }
+            } catch { /* skip */ }
           }
           setPublishStory({ completed: 4, total: 4, currentStyle: '' })
+          storiesReady = storiesUploaded > 0
         }
       }
 
-      setPublishGalleryDir(galleryDir)
+      // Step 3: Update local state — publish succeeded (all images uploaded)
+      setPublishGalleryDir(cloudGallery.publicUrl)
       setPublishPhase('done')
+      if (storyWarnings.length > 0) {
+        setPubError(storyWarnings.join('; '))
+      }
+      setProjects(prev => prev.map(p => p.id === projectId
+        ? { ...p, publishState: { status: 'live', publicUrl: cloudGallery.publicUrl, storiesReady } }
+        : p
+      ))
     } catch (err: unknown) {
       setPubError(err instanceof Error ? err.message : 'Unknown error')
       setPublishPhase('error')
+      setProjects(prev => prev.map(p => p.id === projectId
+        ? { ...p, publishState: { status: 'draft', storiesReady: false } }
+        : p
+      ))
     }
   }
 
@@ -596,7 +640,13 @@ export default function App() {
       <GalleryDndProvider>
         <div className="app__content">
           {/* Sections sidebar */}
-          {isSectionsPanelOpen && <SectionsPanel />}
+          {isSectionsPanelOpen && (
+            <SectionsPanel
+              publishStatus={currentProject?.publishState?.status || 'draft'}
+              publicUrl={currentProject?.publishState?.publicUrl}
+              onPublish={() => { if (currentProjectId) { setPublishProjectId(currentProjectId); setPublishPhase('settings') } }}
+            />
+          )}
 
           {/* Main gallery or empty state */}
           <div className={`app__main ${isSectionsPanelOpen ? 'app__main--sections-open' : ''} ${showDuplicatesPanel ? 'app__main--sidebar-open' : ''}`}>
@@ -660,7 +710,8 @@ export default function App() {
             storyProgress={publishStory}
             error={pubError}
             galleryDir={publishGalleryDir}
-            onOpenGallery={() => { if (publishGalleryDir) window.api.revealInFinder(publishGalleryDir) }}
+            publicUrl={publishGalleryDir.startsWith('http') ? publishGalleryDir : undefined}
+            onOpenGallery={() => { if (publishGalleryDir && !publishGalleryDir.startsWith('http')) window.api.revealInFinder(publishGalleryDir) }}
             onRetry={() => handlePublish(publishProjectId)}
           />
         )
@@ -673,7 +724,7 @@ export default function App() {
       <SocialMode />
       <RenamePreviewModal />
       <RandomizeModal />
-      {(isPublishModalOpen || isPublishing || publishDone || !!publishError) && <PublishModal />}
+      {/* Old PublishModal disabled — replaced by PublishPanel */}
       {showWelcome && <WelcomeModal onClose={handleCloseWelcome} />}
       {demoActive && <DemoMode onDone={handleDemoDone} />}
       <ToastStack />

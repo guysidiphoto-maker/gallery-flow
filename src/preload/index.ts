@@ -37,6 +37,18 @@ const api = {
   readFileBuffer: (filePath: string): Promise<ArrayBuffer | null> =>
     ipcRenderer.invoke('read-file-buffer', filePath),
 
+  compressImageForUpload: (filePath: string): Promise<{
+    web: ArrayBuffer
+    thumb: ArrayBuffer
+    originalSize: number
+    webSize: number
+    thumbSize: number
+  } | null> =>
+    ipcRenderer.invoke('compress-image-for-upload', filePath),
+
+  getFileSize: (filePath: string): Promise<number | null> =>
+    ipcRenderer.invoke('get-file-size', filePath),
+
   getPref: (key: string): Promise<unknown> =>
     ipcRenderer.invoke('get-pref', key),
 
@@ -91,6 +103,9 @@ const api = {
 
   chooseLogoFile: (): Promise<string | null> =>
     ipcRenderer.invoke('choose-logo-file'),
+
+  getTempDir: (): Promise<string> =>
+    ipcRenderer.invoke('get-temp-dir'),
 
   createFolder: (folderPath: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('create-folder', folderPath),

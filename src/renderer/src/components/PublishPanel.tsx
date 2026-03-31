@@ -1,6 +1,14 @@
 import React from 'react'
 import type { DeliverySettings } from '../App'
 
+interface UploadResult {
+  totalImages: number
+  originalsUploaded: number
+  webCopiesUploaded: number
+  thumbsUploaded: number
+  failedFiles: Array<{ filename: string; reason: string }>
+}
+
 interface PublishPanelProps {
   projectName: string
   clientName: string | null
@@ -11,18 +19,29 @@ interface PublishPanelProps {
   onPublish: () => void
   onClose: () => void
   phase: 'settings' | 'publishing' | 'done' | 'error'
-  uploadProgress: { uploaded: number; total: number }
+  uploadProgress: { uploaded: number; total: number; currentFile?: string; phase?: string; result?: UploadResult }
   storyProgress: { completed: number; total: number; currentStyle: string }
   error?: string
   galleryDir?: string
+  publicUrl?: string
   onOpenGallery?: () => void
   onRetry?: () => void
 }
 
-export function PublishPanel({ projectName, clientName, imageCount, topPickCount, settings, onSettingsChange, onPublish, onClose, phase, uploadProgress, storyProgress, error, onOpenGallery, onRetry }: PublishPanelProps) {
+const PHASE_LABELS: Record<string, string> = {
+  originals: 'Uploading originals',
+  web: 'Uploading display copies',
+  thumbnails: 'Uploading thumbnails',
+  finalizing: 'Finalizing',
+}
+
+export function PublishPanel({ projectName, clientName, imageCount, topPickCount, settings, onSettingsChange, onPublish, onClose, phase, uploadProgress, storyProgress, error, publicUrl, onOpenGallery, onRetry }: PublishPanelProps) {
   const update = (partial: Partial<DeliverySettings>) => {
     onSettingsChange({ ...settings, ...partial })
   }
+
+  const uploadPhaseLabel = PHASE_LABELS[uploadProgress.phase || ''] || 'Uploading images'
+  const uploadDone = uploadProgress.uploaded >= uploadProgress.total && uploadProgress.total > 0 && uploadProgress.phase === 'finalizing'
 
   return (
     <div className="pub-overlay" onClick={phase === 'settings' || phase === 'done' || phase === 'error' ? onClose : undefined}>
@@ -67,7 +86,7 @@ export function PublishPanel({ projectName, clientName, imageCount, topPickCount
                 <div className="pub__toggle-row">
                   <div>
                     <div className="pub__toggle-label">Allow downloads</div>
-                    <div className="pub__toggle-sub">Clients can download images</div>
+                    <div className="pub__toggle-sub">Clients can download original images</div>
                   </div>
                   <button
                     className={`pub__toggle ${settings.allowDownloads ? 'pub__toggle--on' : ''}`}
@@ -100,20 +119,28 @@ export function PublishPanel({ projectName, clientName, imageCount, topPickCount
           {phase === 'publishing' && (
             <div className="pub__steps">
               <div className="pub__step">
-                <div className={`pub__step-icon ${uploadProgress.uploaded >= uploadProgress.total && uploadProgress.total > 0 ? 'pub__step-icon--done' : 'pub__step-icon--active'}`}>
-                  {uploadProgress.uploaded >= uploadProgress.total && uploadProgress.total > 0 ? (
+                <div className={`pub__step-icon ${uploadDone ? 'pub__step-icon--done' : 'pub__step-icon--active'}`}>
+                  {uploadDone ? (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   ) : (
                     <div className="pub__spinner" />
                   )}
                 </div>
                 <div className="pub__step-info">
-                  <p className="pub__step-title">Preparing gallery</p>
-                  <p className="pub__step-detail">{uploadProgress.uploaded} / {uploadProgress.total} images</p>
+                  <p className="pub__step-title">{uploadPhaseLabel}</p>
+                  <p className="pub__step-detail">
+                    {uploadProgress.uploaded} / {uploadProgress.total}
+                    {uploadProgress.currentFile && <span style={{ color: 'rgba(255,255,255,.3)', marginLeft: 6 }}>{uploadProgress.currentFile}</span>}
+                  </p>
                   {uploadProgress.total > 0 && (
                     <div className="pub__step-bar">
                       <div className="pub__step-bar-fill" style={{ width: `${Math.round((uploadProgress.uploaded / uploadProgress.total) * 100)}%` }} />
                     </div>
+                  )}
+                  {uploadProgress.result && (
+                    <p style={{ fontSize: '10px', color: 'rgba(255,255,255,.25)', marginTop: 4 }}>
+                      {uploadProgress.result.originalsUploaded} originals · {uploadProgress.result.webCopiesUploaded} web · {uploadProgress.result.thumbsUploaded} thumbs
+                    </p>
                   )}
                 </div>
               </div>
@@ -157,8 +184,29 @@ export function PublishPanel({ projectName, clientName, imageCount, topPickCount
               </svg>
               <h3 className="pub__done-title">Gallery published!</h3>
               <p className="pub__done-sub">{projectName} is ready for your client</p>
+              {uploadProgress.result && (
+                <p style={{ fontSize: '11px', color: 'rgba(255,255,255,.3)', margin: '8px 0 4px' }}>
+                  {uploadProgress.result.totalImages} images — {uploadProgress.result.originalsUploaded} originals, {uploadProgress.result.webCopiesUploaded} web copies
+                </p>
+              )}
+              {publicUrl && (
+                <p className="pub__done-url" style={{ fontSize: '11px', color: 'rgba(255,255,255,.4)', wordBreak: 'break-all', margin: '8px 0 16px', fontFamily: 'monospace' }}>{publicUrl}</p>
+              )}
+              {error && (
+                <p style={{ fontSize: '11px', color: '#f59e0b', margin: '0 0 12px' }}>{error}</p>
+              )}
               <div className="pub__done-actions">
-                {onOpenGallery && (
+                {publicUrl && (
+                  <button className="pub__done-btn pub__done-btn--primary" onClick={() => navigator.clipboard.writeText(publicUrl)}>
+                    Copy Link
+                  </button>
+                )}
+                {publicUrl && (
+                  <button className="pub__done-btn pub__done-btn--primary" onClick={() => window.open(publicUrl, '_blank')}>
+                    Open in Browser
+                  </button>
+                )}
+                {!publicUrl && onOpenGallery && (
                   <button className="pub__done-btn pub__done-btn--primary" onClick={onOpenGallery}>
                     Open Gallery
                   </button>
@@ -179,6 +227,13 @@ export function PublishPanel({ projectName, clientName, imageCount, topPickCount
                 <line x1="9" y1="9" x2="15" y2="15"/>
               </svg>
               <p className="pub__error-msg">{error || 'Something went wrong'}</p>
+              {uploadProgress.result && uploadProgress.result.failedFiles.length > 0 && (
+                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,.4)', margin: '12px 0', textAlign: 'left', maxHeight: 120, overflow: 'auto' }}>
+                  {uploadProgress.result.failedFiles.map((f, i) => (
+                    <p key={i} style={{ margin: '2px 0' }}>{f.filename}: {f.reason}</p>
+                  ))}
+                </div>
+              )}
               {onRetry && <button className="pub__retry" onClick={onRetry}>Retry</button>}
             </div>
           )}

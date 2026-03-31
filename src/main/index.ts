@@ -238,6 +238,59 @@ ipcMain.handle('read-file-buffer', async (_e, filePath: string) => {
   }
 })
 
+// Compress image for cloud upload using nativeImage
+// Returns { web: ArrayBuffer, thumb: ArrayBuffer, originalSize: number, webSize: number, thumbSize: number }
+ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
+  try {
+    const { nativeImage } = await import('electron')
+    const rawBuf = await readFile(filePath)
+    const originalSize = rawBuf.byteLength
+
+    const img = nativeImage.createFromPath(filePath)
+    const size = img.getSize()
+    if (size.width === 0 || size.height === 0) return null
+
+    // Web version: max 2400px on longest side, JPEG quality 85
+    const maxWeb = 2400
+    let webImg = img
+    if (size.width > maxWeb || size.height > maxWeb) {
+      if (size.width >= size.height) {
+        webImg = img.resize({ width: maxWeb, quality: 'good' })
+      } else {
+        webImg = img.resize({ height: maxWeb, quality: 'good' })
+      }
+    }
+    const webJpeg = webImg.toJPEG(85)
+
+    // Thumbnail: max 800px wide, JPEG quality 75
+    let thumbImg = img
+    if (size.width > 800) {
+      thumbImg = img.resize({ width: 800, quality: 'good' })
+    }
+    const thumbJpeg = thumbImg.toJPEG(75)
+
+    return {
+      web: webJpeg.buffer.slice(webJpeg.byteOffset, webJpeg.byteOffset + webJpeg.byteLength),
+      thumb: thumbJpeg.buffer.slice(thumbJpeg.byteOffset, thumbJpeg.byteOffset + thumbJpeg.byteLength),
+      originalSize,
+      webSize: webJpeg.byteLength,
+      thumbSize: thumbJpeg.byteLength,
+    }
+  } catch {
+    return null
+  }
+})
+
+// Get file size without reading the whole file
+ipcMain.handle('get-file-size', async (_e, filePath: string) => {
+  try {
+    const info = await stat(filePath)
+    return info.size
+  } catch {
+    return null
+  }
+})
+
 // Preferences
 ipcMain.handle('get-pref', (_e, key: string) => {
   return loadPrefs()[key] ?? null
@@ -358,6 +411,12 @@ ipcMain.handle('choose-export-dir', async () => {
 
 ipcMain.handle('export-gallery', async (_e, projectName: string, clientName: string, imagePaths: string[], destDir: string, topPickPaths: string[], settings?: { studioName?: string; logoPath?: string | null; allowDownloads?: boolean; autoGenerateStories?: boolean }) => {
   return exportGallery(projectName, clientName, imagePaths, destDir, topPickPaths || [], settings)
+})
+
+ipcMain.handle('get-temp-dir', () => {
+  const dir = join(app.getPath('temp'), 'pixflow-stories')
+  mkdirSync(dir, { recursive: true })
+  return dir
 })
 
 ipcMain.handle('choose-logo-file', async () => {
