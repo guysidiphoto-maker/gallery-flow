@@ -35,7 +35,8 @@ export function Toolbar({ currentProject, projects, onImport, onImportCreate, on
 
   const selectedCount = selectedIds.size
   const hasImages     = images.length > 0
-  const hasPicks      = topPickIds.size > 0
+  const pickCount     = images.filter(img => topPickIds.has(img.id)).length
+  const hasPicks      = pickCount > 0
 
   const handleSort = (mode: SortMode) => {
     setShowSortMenu(false)
@@ -267,7 +268,7 @@ export function Toolbar({ currentProject, projects, onImport, onImportCreate, on
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                 </svg>
                 Picks
-                <span className="tb__badge">{topPickIds.size}</span>
+                <span className="tb__badge">{pickCount}</span>
               </button>
             )}
 
@@ -280,7 +281,7 @@ export function Toolbar({ currentProject, projects, onImport, onImportCreate, on
                 data-demo="story"
                 onClick={hasPicks ? openStoryModal : undefined}
                 disabled={!hasPicks}
-                title={hasPicks ? `Story from ${topPickIds.size} picks` : 'Press T to mark top picks'}
+                title={hasPicks ? `Story from ${pickCount} picks` : 'Press T to mark top picks'}
               >
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                   <polygon points="23 7 16 12 23 17 23 7"/>
@@ -292,7 +293,7 @@ export function Toolbar({ currentProject, projects, onImport, onImportCreate, on
                 className={`tb__btn ${hasPicks ? 'tb__btn--social' : ''}`}
                 onClick={() => { initFromPicks(images, topPickIds); openSocial() }}
                 disabled={!hasPicks}
-                title={hasPicks ? `Export ${topPickIds.size} picks` : 'Press T to mark top picks'}
+                title={hasPicks ? `Export ${pickCount} picks` : 'Press T to mark top picks'}
               >
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                   <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>

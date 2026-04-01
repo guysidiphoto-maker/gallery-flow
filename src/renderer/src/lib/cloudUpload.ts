@@ -307,7 +307,8 @@ export async function uploadGalleryToCloud(
   }
 
   // 8. Generate public URL & mark live
-  const publicUrl = `https://vlyiqfawkrjvqcmkpfvs.supabase.co/gallery/${galleryId}`
+  const GALLERY_BASE = 'https://gallery-web-theta.vercel.app'
+  const publicUrl = `${GALLERY_BASE}/gallery/${galleryId}`
 
   await supabase
     .from('galleries')
