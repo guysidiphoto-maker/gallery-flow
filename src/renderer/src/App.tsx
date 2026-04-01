@@ -39,17 +39,66 @@ export interface ClientData {
 }
 
 export interface DeliverySettings {
+  accessType: 'public' | 'password'
+  password: string | null
+  downloadsEnabled: boolean
+  bulkDownloadEnabled: boolean
+  downloadQuality: 'web' | 'high' | 'original'
   studioName: string
-  logoPath: string | null
-  allowDownloads: boolean
-  autoGenerateStories: boolean
+  logoUrl: string | null
+  showFooterCredit: boolean
+  galleryTitle: string
+  clientName: string
+  coverImageId: string | null
+  layoutMode: '1-col' | '2-col' | '3-col'
+  imageSpacing: 'none' | 'small' | 'medium'
+  cornerStyle: 'sharp' | 'rounded'
+  generateStories: boolean
+  showStories: boolean
+  faceRecognition: 'locked'
+  creditsSystem: 'locked'
+  // Legacy compat
+  allowDownloads?: boolean
+  autoGenerateStories?: boolean
+  logoPath?: string | null
 }
 
 export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
+  accessType: 'public',
+  password: null,
+  downloadsEnabled: true,
+  bulkDownloadEnabled: true,
+  downloadQuality: 'high',
   studioName: '',
-  logoPath: null,
-  allowDownloads: true,
-  autoGenerateStories: true,
+  logoUrl: null,
+  showFooterCredit: true,
+  galleryTitle: '',
+  clientName: '',
+  coverImageId: null,
+  layoutMode: '2-col',
+  imageSpacing: 'small',
+  cornerStyle: 'rounded',
+  generateStories: true,
+  showStories: true,
+  faceRecognition: 'locked',
+  creditsSystem: 'locked',
+}
+
+/** Migrate old settings shape to new */
+function migrateSettings(raw: Record<string, unknown>): DeliverySettings {
+  const d = { ...DEFAULT_DELIVERY_SETTINGS }
+  if (raw.studioName != null) d.studioName = raw.studioName as string
+  if (raw.logoPath != null) d.logoUrl = raw.logoPath as string
+  if (raw.logoUrl != null) d.logoUrl = raw.logoUrl as string
+  if (raw.allowDownloads != null) d.downloadsEnabled = raw.allowDownloads as boolean
+  if (raw.autoGenerateStories != null) d.generateStories = raw.autoGenerateStories as boolean
+  // Copy all new fields if present
+  for (const key of Object.keys(d) as (keyof DeliverySettings)[]) {
+    if (key in raw && raw[key] != null) {
+      (d as Record<string, unknown>)[key] = raw[key]
+    }
+  }
+  return d
 }
 
 export interface GalleryPublishState {
@@ -226,7 +275,7 @@ export default function App() {
     const project = projects.find(p => p.id === projectId)
     if (!project) return
     const imgs = resolveImages(project.imageIds, imageRegistry)
-    const settings = project.deliverySettings || DEFAULT_DELIVERY_SETTINGS
+    const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
 
     setPublishPhase('publishing')
     setPubError('')
@@ -264,7 +313,7 @@ export default function App() {
       // Step 2: Generate & upload stories (each uploaded individually)
       let storiesReady = false
       const storyWarnings: string[] = []
-      if (settings.autoGenerateStories) {
+      if (settings.generateStories) {
         const topPickPaths = imgs.filter(i => topPickIdSet.has(i.id)).map(i => i.path)
 
         if (topPickPaths.length >= 2) {
@@ -692,7 +741,7 @@ export default function App() {
       {publishProjectId && (() => {
         const project = projects.find(p => p.id === publishProjectId)
         if (!project) return null
-        const settings = project.deliverySettings || DEFAULT_DELIVERY_SETTINGS
+        const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
         return (
           <PublishPanel
             projectName={project.name}

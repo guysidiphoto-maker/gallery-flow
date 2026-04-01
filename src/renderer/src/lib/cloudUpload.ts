@@ -134,7 +134,7 @@ export async function uploadGalleryToCloud(
   localGalleryId: string,
   imagePaths: string[],
   topPickIds: Set<string>,
-  deliverySettings: Record<string, unknown>,
+  deliverySettings: Record<string, unknown> & { downloadQuality?: string },
   onProgress: (progress: UploadProgress) => void
 ): Promise<CloudGallery & { result: PublishResult }> {
 
@@ -194,33 +194,37 @@ export async function uploadGalleryToCloud(
   const total = imagePaths.length
   const token = await getSupabaseToken()
 
-  // 3. Upload originals (one at a time — standard or TUS based on size)
-  for (let i = 0; i < imagePaths.length; i++) {
-    const imgPath = imagePaths[i]
-    const filename = imgPath.split('/').pop() || `img_${i}`
-    const originalPath = `${galleryId}/originals/${filename}`
+  // 3. Upload originals (only when downloadQuality is "original")
+  const uploadOriginals = deliverySettings.downloadQuality === 'original'
 
-    report(i, total, filename, 'originals')
+  if (uploadOriginals) {
+    for (let i = 0; i < imagePaths.length; i++) {
+      const imgPath = imagePaths[i]
+      const filename = imgPath.split('/').pop() || `img_${i}`
+      const originalPath = `${galleryId}/originals/${filename}`
 
-    const buffer = await window.api.readFileBuffer(imgPath)
-    if (!buffer) {
-      result.failedFiles.push({ filename, reason: 'Could not read source file' })
-      continue
+      report(i, total, filename, 'originals')
+
+      const buffer = await window.api.readFileBuffer(imgPath)
+      if (!buffer) {
+        result.failedFiles.push({ filename, reason: 'Could not read source file' })
+        continue
+      }
+
+      const ext = filename.split('.').pop()?.toLowerCase() || 'jpg'
+      const mimeType = ext === 'png' ? 'image/png'
+        : ext === 'webp' ? 'image/webp'
+        : ext === 'heic' || ext === 'heif' ? 'image/heic'
+        : 'image/jpeg'
+
+      const { error } = await uploadFile(BUCKET, originalPath, buffer, mimeType, token)
+      if (error) {
+        result.failedFiles.push({ filename, reason: `Original upload failed: ${error}` })
+        continue
+      }
+
+      result.originalsUploaded++
     }
-
-    const ext = filename.split('.').pop()?.toLowerCase() || 'jpg'
-    const mimeType = ext === 'png' ? 'image/png'
-      : ext === 'webp' ? 'image/webp'
-      : ext === 'heic' || ext === 'heif' ? 'image/heic'
-      : 'image/jpeg'
-
-    const { error } = await uploadFile(BUCKET, originalPath, buffer, mimeType, token)
-    if (error) {
-      result.failedFiles.push({ filename, reason: `Original upload failed: ${error}` })
-      continue
-    }
-
-    result.originalsUploaded++
   }
 
   // 4. Upload web-optimized copies (always small — standard upload)
@@ -299,7 +303,7 @@ export async function uploadGalleryToCloud(
         gallery_id: galleryId,
         filename,
         storage_path: `${galleryId}/web/${filename}`,
-        original_path: `${galleryId}/originals/${filename}`,
+        original_path: uploadOriginals ? `${galleryId}/originals/${filename}` : null,
         thumbnail_path: `${galleryId}/thumbs/${filename}`,
         is_top_pick: isTopPick,
         sort_order: i,

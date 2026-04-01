@@ -1,10 +1,32 @@
+export interface DeliverySettings {
+  accessType: 'public' | 'password'
+  password: string | null
+  downloadsEnabled: boolean
+  bulkDownloadEnabled: boolean
+  downloadQuality: 'web' | 'high' | 'original'
+  studioName: string
+  logoUrl: string | null
+  showFooterCredit: boolean
+  galleryTitle: string
+  clientName: string
+  coverImageId: string | null
+  layoutMode: '1-col' | '2-col' | '3-col'
+  imageSpacing: 'none' | 'small' | 'medium'
+  cornerStyle: 'sharp' | 'rounded'
+  generateStories: boolean
+  showStories: boolean
+  // Backward compat fields from old settings
+  allowDownloads?: boolean
+  autoGenerateStories?: boolean
+}
+
 export interface Gallery {
   id: string
   name: string
   client_name: string | null
   status: string
   image_count: number
-  delivery_settings: Record<string, unknown>
+  delivery_settings: DeliverySettings
   published_at: string | null
 }
 

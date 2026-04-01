@@ -5,14 +5,15 @@ interface ViewerProps {
   images: GalleryImage[]
   index: number
   webUrl: (img: GalleryImage) => string
-  originalUrl: (img: GalleryImage) => string
+  downloadUrl: (img: GalleryImage) => string
   allowDownloads: boolean
+  downloadLabel: string
   onClose: () => void
   onNavigate: (index: number) => void
   onDownload: (url: string, filename: string) => void
 }
 
-export function Viewer({ images, index, webUrl, originalUrl, allowDownloads, onClose, onNavigate, onDownload }: ViewerProps) {
+export function Viewer({ images, index, webUrl, downloadUrl, allowDownloads, downloadLabel, onClose, onNavigate, onDownload }: ViewerProps) {
   const img = images[index]
   const total = images.length
 
@@ -77,13 +78,13 @@ export function Viewer({ images, index, webUrl, originalUrl, allowDownloads, onC
         <div className="viewer__bottom">
           <span className="viewer__counter">{index + 1} / {total}</span>
           {allowDownloads && (
-            <button className="viewer__download" onClick={() => onDownload(originalUrl(img), img.filename)}>
+            <button className="viewer__download" onClick={() => onDownload(downloadUrl(img), img.filename)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              Download Original
+              {downloadLabel}
             </button>
           )}
         </div>
