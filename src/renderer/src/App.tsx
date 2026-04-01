@@ -29,6 +29,10 @@ import { ClientGalleryPage } from './components/ClientGalleryPage'
 import { PublishPanel } from './components/PublishPanel'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { uploadGalleryToCloud, uploadStoryToCloud, markGalleryLive, updateGallerySettings } from './lib/cloudUpload'
+import { getAuthState, signInWithGoogle, type Business, type AuthState } from './lib/auth'
+import { WelcomeScreen } from './components/onboarding/WelcomeScreen'
+import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
+import { supabase } from './lib/supabase'
 import type { ImageFile } from './types'
 
 export interface ClientData {
@@ -168,6 +172,76 @@ function GallerySkeleton({ thumbnailSize }: { thumbnailSize: number }) {
 }
 
 export default function App() {
+  // ─── Auth Gate ──────────────────────────────────────────────────────────────
+  const [authState, setAuthState] = useState<AuthState | 'loading'>('loading')
+  const [authUser, setAuthUser] = useState<Record<string, unknown> | null>(null)
+  const [authBusiness, setAuthBusiness] = useState<Business | null>(null)
+  const [authSignInLoading, setAuthSignInLoading] = useState(false)
+  const [authError, setAuthError] = useState<string | undefined>()
+
+  useEffect(() => {
+    getAuthState().then(({ state, user, business }) => {
+      setAuthState(state)
+      setAuthUser(user || null)
+      setAuthBusiness(business || null)
+    })
+
+    // Listen for auth state changes (e.g. after OAuth redirect)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session) {
+        setAuthState('unauthenticated')
+        setAuthUser(null)
+        setAuthBusiness(null)
+        return
+      }
+      const { state, user, business } = await getAuthState()
+      setAuthState(state)
+      setAuthUser(user || null)
+      setAuthBusiness(business || null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const handleGoogleSignIn = async () => {
+    setAuthSignInLoading(true)
+    setAuthError(undefined)
+    const { error } = await signInWithGoogle()
+    if (error) {
+      setAuthError(error)
+      setAuthSignInLoading(false)
+    }
+    // On success, onAuthStateChange will fire
+  }
+
+  const handleOnboardingComplete = (business: Business) => {
+    setAuthBusiness(business)
+    setAuthState('ready')
+  }
+
+  // Render based on auth state
+  if (authState === 'loading') {
+    return (
+      <div style={{ background: '#0a0a0f', width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 24, height: 24, border: '2px solid rgba(255,255,255,.1)', borderTopColor: 'rgba(255,255,255,.5)', borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
+      </div>
+    )
+  }
+
+  if (authState === 'unauthenticated') {
+    return <WelcomeScreen onSignIn={handleGoogleSignIn} loading={authSignInLoading} error={authError} />
+  }
+
+  if (authState === 'needs_onboarding' && authUser) {
+    return <OnboardingFlow user={authUser} onComplete={handleOnboardingComplete} />
+  }
+
+  return <MainApp business={authBusiness} />
+}
+
+// ─── Main App (authenticated + onboarded) ─────────────────────────────────────
+
+function MainApp({ business }: { business: Business | null }) {
   const { showPreviewMode, showDuplicatesPanel, showStoryModal, isLoading, folderPath, reloadFolder, thumbnailSize, images, showTopPicksTray, showExportPanel } = useGallery()
   const { isPanelOpen: isSectionsPanelOpen, isPublishModalOpen, isPublishing, publishDone, publishError, resetForFolder } = useSections()
   const [showWelcome, setShowWelcome] = useState(false)
@@ -271,9 +345,13 @@ export default function App() {
     setExportProgress(null)
   }
 
+  const [isCloudPublishing, setIsCloudPublishing] = useState(false)
+
   const handlePublish = async (projectId: string) => {
+    if (isCloudPublishing) { console.log('[handlePublish] blocked — already in progress'); return }
+    setIsCloudPublishing(true)
     const project = projects.find(p => p.id === projectId)
-    if (!project) return
+    if (!project) { setIsCloudPublishing(false); return }
     const imgs = resolveImages(project.imageIds, imageRegistry)
     const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
 
@@ -377,24 +455,47 @@ export default function App() {
         : p
       ))
     } catch (err: unknown) {
+      console.error('[handlePublish] EXCEPTION:', err)
       setPubError(err instanceof Error ? err.message : 'Unknown error')
       setPublishPhase('error')
       setProjects(prev => prev.map(p => p.id === projectId
         ? { ...p, publishState: { status: 'draft', storiesReady: false } }
         : p
       ))
+    } finally {
+      setIsCloudPublishing(false)
     }
   }
 
   const handleUpdateSettings = async (projectId: string) => {
-    const project = projects.find(p => p.id === projectId)
-    if (!project) return
-    const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
-    const { error } = await updateGallerySettings(project.id, settings as Record<string, unknown>)
-    if (error) {
-      setPubError(`Failed to update: ${error}`)
-    } else {
-      setPublishPhase('done')
+    if (isCloudPublishing) { console.log('[handleUpdateSettings] blocked — already in progress'); return }
+    setIsCloudPublishing(true)
+    try {
+      const project = projects.find(p => p.id === projectId)
+      if (!project) { console.log('[handleUpdateSettings] project not found:', projectId); return }
+
+      console.log('[handleUpdateSettings] projectId:', projectId, 'localId:', project.id)
+      console.log('[handleUpdateSettings] publishState:', project.publishState)
+      console.log('[handleUpdateSettings] raw deliverySettings:', project.deliverySettings)
+
+      const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
+      console.log('[handleUpdateSettings] migrated settings:', settings)
+
+      const { error } = await updateGallerySettings(project.id, settings as Record<string, unknown>)
+      if (error) {
+        console.error('[handleUpdateSettings] FAILED:', error)
+        setPubError(`Failed to update: ${error}`)
+        setPublishPhase('error')
+      } else {
+        console.log('[handleUpdateSettings] SUCCESS')
+        setPublishPhase('done')
+      }
+    } catch (err) {
+      console.error('[handleUpdateSettings] EXCEPTION:', err)
+      setPubError(err instanceof Error ? err.message : String(err))
+      setPublishPhase('error')
+    } finally {
+      setIsCloudPublishing(false)
     }
   }
 

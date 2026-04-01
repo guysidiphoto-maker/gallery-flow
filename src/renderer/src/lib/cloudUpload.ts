@@ -217,22 +217,28 @@ export async function uploadGalleryToCloud(
   }
 
   // 2. Create gallery record
+  const galleryPayload = {
+    local_id: localGalleryId,
+    name: galleryName,
+    client_id: clientDbId,
+    client_name: clientName,
+    status: 'publishing',
+    image_count: imagePaths.length,
+    delivery_settings: deliverySettings,
+  }
+  console.log('[gallery-insert] PAYLOAD:', JSON.stringify(galleryPayload, null, 2))
+
   const { data: gallery, error: galleryError } = await supabase
     .from('galleries')
-    .insert({
-      local_id: localGalleryId,
-      name: galleryName,
-      client_id: clientDbId,
-      client_name: clientName,
-      status: 'publishing',
-      image_count: imagePaths.length,
-      delivery_settings: deliverySettings,
-    })
+    .insert(galleryPayload)
     .select('id')
     .single()
 
+  console.log('[gallery-insert] DATA:', gallery)
+  console.error('[gallery-insert] ERROR:', galleryError)
+
   if (galleryError || !gallery) {
-    throw new Error(`Failed to create gallery: ${galleryError?.message}`)
+    throw new Error(`Failed to create gallery: code=${galleryError?.code} message=${galleryError?.message} details=${galleryError?.details} hint=${galleryError?.hint}`)
   }
 
   const galleryId = gallery.id
@@ -355,17 +361,27 @@ export async function uploadGalleryToCloud(
     const filename = imgPath.split('/').pop() || `img_${i}`
     const isTopPick = topPickIds.has(imgPath)
 
-    await supabase
+    const imgPayload = {
+      gallery_id: galleryId,
+      filename,
+      storage_path: `${galleryId}/web/${filename}`,
+      original_path: uploadOriginals ? `${galleryId}/originals/${filename}` : null,
+      thumbnail_path: `${galleryId}/thumbs/${filename}`,
+      is_top_pick: isTopPick,
+      sort_order: i,
+    }
+
+    const { data: imgData, error: imgError } = await supabase
       .from('images')
-      .insert({
-        gallery_id: galleryId,
-        filename,
-        storage_path: `${galleryId}/web/${filename}`,
-        original_path: uploadOriginals ? `${galleryId}/originals/${filename}` : null,
-        thumbnail_path: `${galleryId}/thumbs/${filename}`,
-        is_top_pick: isTopPick,
-        sort_order: i,
-      })
+      .insert(imgPayload)
+      .select('id')
+
+    if (imgError) {
+      console.error(`[image-insert] FAILED ${filename}:`, { code: imgError.code, message: imgError.message, details: imgError.details, hint: imgError.hint })
+      console.log(`[image-insert] PAYLOAD was:`, imgPayload)
+    } else if (i === 0) {
+      console.log(`[image-insert] first record OK:`, imgData)
+    }
   }
 
   // 8. Generate public URL — gallery is NOT live yet, stories still pending
@@ -431,11 +447,22 @@ export async function uploadStoryToCloud(
 
 /** Call this ONLY after all uploads + stories are complete */
 export async function markGalleryLive(galleryId: string, publicUrl: string): Promise<void> {
-  log('marking-live', galleryId)
-  await supabase
+  const payload = { status: 'live', public_url: publicUrl, published_at: new Date().toISOString() }
+  console.log('[markGalleryLive] galleryId:', galleryId)
+  console.log('[markGalleryLive] PAYLOAD:', JSON.stringify(payload))
+
+  const { data, error } = await supabase
     .from('galleries')
-    .update({ status: 'live', public_url: publicUrl, published_at: new Date().toISOString() })
+    .update(payload)
     .eq('id', galleryId)
+    .select('id')
+
+  console.log('[markGalleryLive] DATA:', data)
+  console.error('[markGalleryLive] ERROR:', error)
+
+  if (error) {
+    throw new Error(`markGalleryLive failed: code=${error.code} message=${error.message} details=${error.details} hint=${error.hint}`)
+  }
 }
 
 // ─── Update Live Gallery Settings ────────────────────────────────────────────
@@ -445,16 +472,51 @@ export async function updateGallerySettings(
   localGalleryId: string,
   deliverySettings: Record<string, unknown>
 ): Promise<{ error: string | null }> {
-  log('update-settings', `local_id=${localGalleryId}`)
-  const { error } = await supabase
+  log('update-settings:start', `local_id=${localGalleryId}`)
+
+  // Validate payload
+  const settingsJson = JSON.stringify(deliverySettings)
+  log('update-settings:payload', `${settingsJson.length} chars`)
+  console.log('[update-settings] payload:', deliverySettings)
+
+  // Check for undefined values
+  for (const [key, val] of Object.entries(deliverySettings)) {
+    if (val === undefined) {
+      log('update-settings:warn', `field "${key}" is undefined — will be stripped by JSON`)
+    }
+  }
+
+  // First, verify the gallery exists
+  const { data: existing, error: findError } = await supabase
+    .from('galleries')
+    .select('id, local_id, status')
+    .eq('local_id', localGalleryId)
+    .eq('status', 'live')
+
+  log('update-settings:find', `found=${existing?.length ?? 0} error=${findError?.message ?? 'none'}`)
+  console.log('[update-settings] found galleries:', existing)
+
+  if (!existing || existing.length === 0) {
+    const msg = findError?.message || `No live gallery found with local_id=${localGalleryId}`
+    log('update-settings:error', msg)
+    return { error: msg }
+  }
+
+  // Perform the update
+  const { data: updateData, error: updateError } = await supabase
     .from('galleries')
     .update({ delivery_settings: deliverySettings })
     .eq('local_id', localGalleryId)
     .eq('status', 'live')
-  if (error) {
-    log('update-settings-error', error.message)
-    return { error: error.message }
+    .select('id')
+
+  log('update-settings:result', `updated=${updateData?.length ?? 0} error=${updateError?.message ?? 'none'} code=${updateError?.code ?? 'none'}`)
+  console.log('[update-settings] update result:', { data: updateData, error: updateError })
+
+  if (updateError) {
+    log('update-settings:error', `${updateError.code}: ${updateError.message} — ${updateError.details}`)
+    return { error: `${updateError.code}: ${updateError.message}` }
   }
-  log('update-settings-done', localGalleryId)
+  log('update-settings:done', localGalleryId)
   return { error: null }
 }

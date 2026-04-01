@@ -74,7 +74,13 @@ function DroppableSectionItem({
   )
 }
 
-export function SectionsPanel() {
+interface SectionsPanelProps {
+  publishStatus?: 'draft' | 'publishing' | 'live'
+  publicUrl?: string
+  onPublish?: () => void
+}
+
+export function SectionsPanel({ publishStatus, publicUrl, onPublish }: SectionsPanelProps = {}) {
   const {
     sections,
     activeSectionFilter,
@@ -191,18 +197,52 @@ export function SectionsPanel() {
 
       {/* Publish */}
       <div className="sections-panel__footer">
-        <button
-          className="btn btn--accent sections-panel__publish-btn"
-          onClick={openPublishModal}
-          disabled={sections.every(s => s.imageIds.length === 0)}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          Publish…
-        </button>
+        {publishStatus === 'live' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="sp__live-indicator" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              Published to cloud
+              {publicUrl && (
+                <button
+                  className="btn btn--ghost"
+                  style={{ fontSize: '11px', padding: '2px 8px', marginLeft: 'auto' }}
+                  onClick={() => navigator.clipboard.writeText(publicUrl)}
+                >
+                  Copy Link
+                </button>
+              )}
+            </div>
+            <button
+              className="btn btn--ghost"
+              style={{ fontSize: '11px', padding: '4px 10px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, color: 'rgba(255,255,255,.5)' }}
+              onClick={onPublish}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+              Edit Gallery Settings
+            </button>
+          </div>
+        ) : publishStatus === 'publishing' ? (
+          <div className="sp__live-indicator sp__live-indicator--pub">
+            <div className="sp__mini-spinner" />
+            Publishing...
+          </div>
+        ) : (
+          <button
+            className="btn btn--accent sections-panel__publish-btn"
+            onClick={onPublish || openPublishModal}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+              <polyline points="16 6 12 2 8 6" />
+              <line x1="12" y1="2" x2="12" y2="15" />
+            </svg>
+            Upload to Cloud
+          </button>
+        )}
       </div>
     </div>
   )

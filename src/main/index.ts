@@ -60,6 +60,7 @@ function createWindow(): void {
 
   if (isDev) {
     win.loadURL('http://localhost:5173')
+    win.webContents.openDevTools({ mode: 'bottom' })
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
