@@ -18,7 +18,7 @@ interface PublishPanelProps {
   onSettingsChange: (settings: DeliverySettings) => void
   onPublish: () => void
   onClose: () => void
-  phase: 'settings' | 'publishing' | 'done' | 'error'
+  phase: 'settings' | 'publishing' | 'done' | 'error' | 'editing'
   uploadProgress: { uploaded: number; total: number; currentFile?: string; phase?: string; result?: UploadResult }
   storyProgress: { completed: number; total: number; currentStyle: string }
   error?: string
@@ -256,17 +256,18 @@ export function PublishPanel({
   }
 
   return (
-    <div className="pub-overlay" onClick={phase === 'settings' || phase === 'done' || phase === 'error' ? onClose : undefined}>
-      <div className="pub" onClick={e => e.stopPropagation()} style={phase === 'settings' ? { maxHeight: '90vh', display: 'flex', flexDirection: 'column' } : undefined}>
+    <div className="pub-overlay" onClick={phase === 'settings' || phase === 'editing' || phase === 'done' || phase === 'error' ? onClose : undefined}>
+      <div className="pub" onClick={e => e.stopPropagation()} style={phase === 'settings' || phase === 'editing' ? { maxHeight: '90vh', display: 'flex', flexDirection: 'column' } : undefined}>
         {/* Header */}
         <div className="pub__header">
           <h2 className="pub__title">
             {phase === 'settings' && 'Delivery Settings'}
+            {phase === 'editing' && 'Gallery Settings'}
             {phase === 'publishing' && 'Publishing...'}
             {phase === 'done' && 'Published!'}
             {phase === 'error' && 'Error'}
           </h2>
-          {(phase === 'settings' || phase === 'done' || phase === 'error') && (
+          {(phase === 'settings' || phase === 'editing' || phase === 'done' || phase === 'error') && (
             <button className="pub__close" onClick={onClose}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -279,10 +280,10 @@ export function PublishPanel({
         {/* Body */}
         <div
           className="pub__body"
-          style={phase === 'settings' ? { overflowY: 'auto', flex: 1, minHeight: 0 } : undefined}
+          style={phase === 'settings' || phase === 'editing' ? { overflowY: 'auto', flex: 1, minHeight: 0 } : undefined}
         >
           {/* ═══════ Settings phase ═══════ */}
-          {phase === 'settings' && (
+          {(phase === 'settings' || phase === 'editing') && (
             <>
               {/* Project info line */}
               <p style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', margin: '0 0 20px' }}>
@@ -485,9 +486,13 @@ export function PublishPanel({
               {/* H. Publish Button */}
               <button className="pub__publish" onClick={onPublish}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="9 18 15 12 9 6" />
+                  {phase === 'editing' ? (
+                    <polyline points="20 6 9 17 4 12" />
+                  ) : (
+                    <polyline points="9 18 15 12 9 6" />
+                  )}
                 </svg>
-                Publish Gallery
+                {phase === 'editing' ? 'Save Settings' : 'Publish Gallery'}
               </button>
             </>
           )}

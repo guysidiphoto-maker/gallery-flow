@@ -28,7 +28,7 @@ import { RenameFab } from './components/RenameFab'
 import { ClientGalleryPage } from './components/ClientGalleryPage'
 import { PublishPanel } from './components/PublishPanel'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { uploadGalleryToCloud, uploadStoryToCloud, markGalleryLive } from './lib/cloudUpload'
+import { uploadGalleryToCloud, uploadStoryToCloud, markGalleryLive, updateGallerySettings } from './lib/cloudUpload'
 import type { ImageFile } from './types'
 
 export interface ClientData {
@@ -196,7 +196,7 @@ export default function App() {
   const [galleryPreviewProjectId, setGalleryPreviewProjectId] = useState<string | null>(null)
   const [exportProgress, setExportProgress] = useState<string | null>(null)
   const [publishProjectId, setPublishProjectId] = useState<string | null>(null)
-  const [publishPhase, setPublishPhase] = useState<'settings' | 'publishing' | 'done' | 'error'>('settings')
+  const [publishPhase, setPublishPhase] = useState<'settings' | 'publishing' | 'done' | 'error' | 'editing'>('settings')
   const [publishUpload, setPublishUpload] = useState<{
     uploaded: number; total: number; percent: number; currentFile: string;
     phase?: string;
@@ -383,6 +383,18 @@ export default function App() {
         ? { ...p, publishState: { status: 'draft', storiesReady: false } }
         : p
       ))
+    }
+  }
+
+  const handleUpdateSettings = async (projectId: string) => {
+    const project = projects.find(p => p.id === projectId)
+    if (!project) return
+    const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
+    const { error } = await updateGallerySettings(project.id, settings as Record<string, unknown>)
+    if (error) {
+      setPubError(`Failed to update: ${error}`)
+    } else {
+      setPublishPhase('done')
     }
   }
 
@@ -684,7 +696,11 @@ export default function App() {
               }}
               onNewGallery={() => { setPrefilledClientId(client.id); setImportInitialView('create'); setIsImportOpen(true) }}
               onPreviewGallery={(id) => setGalleryPreviewProjectId(id)}
-              onPublish={(id) => { setPublishProjectId(id); setPublishPhase('settings') }}
+              onPublish={(id) => {
+                const proj = projects.find(p => p.id === id)
+                setPublishProjectId(id)
+                setPublishPhase(proj?.publishState?.status === 'live' ? 'editing' : 'settings')
+              }}
             />
           )
         })()
@@ -697,7 +713,12 @@ export default function App() {
             <SectionsPanel
               publishStatus={currentProject?.publishState?.status || 'draft'}
               publicUrl={currentProject?.publishState?.publicUrl}
-              onPublish={() => { if (currentProjectId) { setPublishProjectId(currentProjectId); setPublishPhase('settings') } }}
+              onPublish={() => {
+                if (!currentProjectId) return
+                const proj = projects.find(p => p.id === currentProjectId)
+                setPublishProjectId(currentProjectId)
+                setPublishPhase(proj?.publishState?.status === 'live' ? 'editing' : 'settings')
+              }}
             />
           )}
 
@@ -756,7 +777,7 @@ export default function App() {
             onSettingsChange={(s) => {
               setProjects(prev => prev.map(p => p.id === publishProjectId ? { ...p, deliverySettings: s } : p))
             }}
-            onPublish={() => handlePublish(publishProjectId)}
+            onPublish={() => publishPhase === 'editing' ? handleUpdateSettings(publishProjectId) : handlePublish(publishProjectId)}
             onClose={() => { setPublishProjectId(null); setPublishPhase('settings') }}
             phase={publishPhase}
             uploadProgress={publishUpload}

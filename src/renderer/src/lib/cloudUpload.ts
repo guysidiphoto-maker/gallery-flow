@@ -437,3 +437,24 @@ export async function markGalleryLive(galleryId: string, publicUrl: string): Pro
     .update({ status: 'live', public_url: publicUrl, published_at: new Date().toISOString() })
     .eq('id', galleryId)
 }
+
+// ─── Update Live Gallery Settings ────────────────────────────────────────────
+
+/** Update delivery_settings on an already-published gallery. No re-upload needed. */
+export async function updateGallerySettings(
+  localGalleryId: string,
+  deliverySettings: Record<string, unknown>
+): Promise<{ error: string | null }> {
+  log('update-settings', `local_id=${localGalleryId}`)
+  const { error } = await supabase
+    .from('galleries')
+    .update({ delivery_settings: deliverySettings })
+    .eq('local_id', localGalleryId)
+    .eq('status', 'live')
+  if (error) {
+    log('update-settings-error', error.message)
+    return { error: error.message }
+  }
+  log('update-settings-done', localGalleryId)
+  return { error: null }
+}
