@@ -28,7 +28,7 @@ import { RenameFab } from './components/RenameFab'
 import { ClientGalleryPage } from './components/ClientGalleryPage'
 import { PublishPanel } from './components/PublishPanel'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { uploadGalleryToCloud, uploadStoryToCloud } from './lib/cloudUpload'
+import { uploadGalleryToCloud, uploadStoryToCloud, markGalleryLive } from './lib/cloudUpload'
 import type { ImageFile } from './types'
 
 export interface ClientData {
@@ -198,10 +198,10 @@ export default function App() {
   const [publishProjectId, setPublishProjectId] = useState<string | null>(null)
   const [publishPhase, setPublishPhase] = useState<'settings' | 'publishing' | 'done' | 'error'>('settings')
   const [publishUpload, setPublishUpload] = useState<{
-    uploaded: number; total: number; currentFile: string;
+    uploaded: number; total: number; percent: number; currentFile: string;
     phase?: string;
     result?: { totalImages: number; originalsUploaded: number; webCopiesUploaded: number; thumbsUploaded: number; failedFiles: Array<{ filename: string; reason: string }> }
-  }>({ uploaded: 0, total: 0, currentFile: '' })
+  }>({ uploaded: 0, total: 0, percent: 0, currentFile: '' })
   const [publishStory, setPublishStory] = useState({ completed: 0, total: 4, currentStyle: '' })
   const [pubError, setPubError] = useState('')
   const [publishGalleryDir, setPublishGalleryDir] = useState('')
@@ -303,6 +303,7 @@ export default function App() {
           setPublishUpload({
             uploaded: progress.uploaded,
             total: progress.total,
+            percent: progress.percent,
             currentFile: progress.currentFile || '',
             phase: progress.phase,
             result: progress.result,
@@ -362,7 +363,10 @@ export default function App() {
         }
       }
 
-      // Step 3: Update local state — publish succeeded (all images uploaded)
+      // Step 3: Mark gallery live ONLY after uploads + stories are all done
+      await markGalleryLive(cloudGallery.id, cloudGallery.publicUrl)
+
+      // Step 4: Update local state
       setPublishGalleryDir(cloudGallery.publicUrl)
       setPublishPhase('done')
       if (storyWarnings.length > 0) {

@@ -8,17 +8,16 @@ const STANDARD_UPLOAD_LIMIT = 19 * 1024 * 1024 // 19MB — safety margin under 2
 const TUS_CHUNK_SIZE = 6 * 1024 * 1024          // 6MB chunks for resumable upload
 const BUCKET = 'gallery-images'
 const STORY_BUCKET = 'gallery-stories'
+const MAX_RETRIES = 2                            // auto-retry failed uploads
+
+// ─── Debug Logger ────────────────────────────────────────────────────────────
+
+function log(step: string, detail?: string | number) {
+  const ts = new Date().toISOString().slice(11, 23)
+  console.log(`[publish ${ts}] ${step}${detail != null ? ` — ${detail}` : ''}`)
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-export interface ImageUploadStatus {
-  filename: string
-  originalUploaded: boolean
-  webUploaded: boolean
-  thumbUploaded: boolean
-  failed: boolean
-  failReason?: string
-}
 
 export interface PublishResult {
   totalImages: number
@@ -31,6 +30,7 @@ export interface PublishResult {
 export interface UploadProgress {
   uploaded: number
   total: number
+  percent: number
   currentFile?: string
   phase?: 'originals' | 'web' | 'thumbnails' | 'finalizing'
   result: PublishResult
@@ -45,15 +45,10 @@ interface CloudGallery {
 
 async function getSupabaseToken(): Promise<string> {
   const { data } = await supabase.auth.getSession()
-  // For anon access, fall back to the anon key embedded in the client
   return data.session?.access_token
     ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZseWlxZmF3a3JqdnFjbWtwZnZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5ODg3NzksImV4cCI6MjA5MDU2NDc3OX0.ionfOl71NrBO-0iBVBAu6oiTUzkJuIu-drEkY1cmsFY'
 }
 
-/**
- * Upload a file to Supabase Storage using the TUS resumable protocol.
- * Works for any file size — uploads in 6MB chunks with automatic resume.
- */
 function tusUpload(
   bucket: string,
   storagePath: string,
@@ -89,7 +84,6 @@ function tusUpload(
 
 // ─── Upload Helpers ──────────────────────────────────────────────────────────
 
-/** Standard upload for files ≤ 19MB */
 async function standardUpload(
   bucket: string,
   storagePath: string,
@@ -103,7 +97,6 @@ async function standardUpload(
   return { error: error?.message ?? null }
 }
 
-/** Upload a file — picks standard or TUS based on size */
 async function uploadFile(
   bucket: string,
   storagePath: string,
@@ -113,9 +106,10 @@ async function uploadFile(
 ): Promise<{ error: string | null }> {
   try {
     if (data.byteLength <= STANDARD_UPLOAD_LIMIT) {
+      log('upload:standard', `${storagePath} (${(data.byteLength / 1024).toFixed(0)}KB)`)
       return await standardUpload(bucket, storagePath, data, contentType)
     }
-    // Large file → TUS resumable upload
+    log('upload:tus', `${storagePath} (${(data.byteLength / 1024 / 1024).toFixed(1)}MB)`)
     const blob = new Blob([data], { type: contentType })
     await tusUpload(bucket, storagePath, blob, contentType, token)
     return { error: null }
@@ -123,6 +117,49 @@ async function uploadFile(
     const msg = err instanceof Error ? err.message : String(err)
     return { error: msg }
   }
+}
+
+/** Upload with automatic retry on failure */
+async function uploadFileWithRetry(
+  bucket: string,
+  storagePath: string,
+  data: ArrayBuffer,
+  contentType: string,
+  token: string
+): Promise<{ error: string | null }> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const { error } = await uploadFile(bucket, storagePath, data, contentType, token)
+    if (!error) return { error: null }
+    if (attempt < MAX_RETRIES) {
+      log('retry', `${storagePath} attempt ${attempt + 2}/${MAX_RETRIES + 1}`)
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+    } else {
+      return { error }
+    }
+  }
+  return { error: 'Max retries exceeded' }
+}
+
+/** Standard upload with auto-retry for small files */
+async function standardUploadWithRetry(
+  bucket: string,
+  storagePath: string,
+  blob: Blob,
+  contentType: string
+): Promise<{ error: string | null }> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(storagePath, blob, { contentType, upsert: true })
+    if (!error) return { error: null }
+    if (attempt < MAX_RETRIES) {
+      log('retry', `${storagePath} attempt ${attempt + 2}/${MAX_RETRIES + 1}`)
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+    } else {
+      return { error: error.message }
+    }
+  }
+  return { error: 'Max retries exceeded' }
 }
 
 // ─── Main Upload Function ────────────────────────────────────────────────────
@@ -146,9 +183,17 @@ export async function uploadGalleryToCloud(
     failedFiles: [],
   }
 
-  const report = (uploaded: number, total: number, currentFile: string, phase: UploadProgress['phase']) => {
-    onProgress({ uploaded, total, currentFile, phase, result: { ...result } })
+  // Total steps = (originals? + web + thumbs) * imageCount
+  const uploadOriginals = deliverySettings.downloadQuality === 'original'
+  const totalSteps = imagePaths.length * (uploadOriginals ? 3 : 2)
+  let completedSteps = 0
+
+  const report = (currentFile: string, phase: UploadProgress['phase']) => {
+    const percent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0
+    onProgress({ uploaded: completedSteps, total: totalSteps, percent, currentFile, phase, result: { ...result } })
   }
+
+  log('start', `${imagePaths.length} images, quality=${deliverySettings.downloadQuality || 'high'}`)
 
   // 1. Upsert client
   let clientDbId: string | null = null
@@ -191,25 +236,28 @@ export async function uploadGalleryToCloud(
   }
 
   const galleryId = gallery.id
-  const total = imagePaths.length
   const token = await getSupabaseToken()
+  log('gallery-created', galleryId)
 
   // 3. Upload originals (only when downloadQuality is "original")
-  const uploadOriginals = deliverySettings.downloadQuality === 'original'
-
   if (uploadOriginals) {
+    log('phase:originals', `${imagePaths.length} files`)
     for (let i = 0; i < imagePaths.length; i++) {
       const imgPath = imagePaths[i]
       const filename = imgPath.split('/').pop() || `img_${i}`
       const originalPath = `${galleryId}/originals/${filename}`
 
-      report(i, total, filename, 'originals')
+      report(filename, 'originals')
 
       const buffer = await window.api.readFileBuffer(imgPath)
       if (!buffer) {
+        log('skip', `${filename} — could not read`)
         result.failedFiles.push({ filename, reason: 'Could not read source file' })
+        completedSteps++
         continue
       }
+
+      log('original', `${filename} (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB)`)
 
       const ext = filename.split('.').pop()?.toLowerCase() || 'jpg'
       const mimeType = ext === 'png' ? 'image/png'
@@ -217,81 +265,91 @@ export async function uploadGalleryToCloud(
         : ext === 'heic' || ext === 'heif' ? 'image/heic'
         : 'image/jpeg'
 
-      const { error } = await uploadFile(BUCKET, originalPath, buffer, mimeType, token)
+      const { error } = await uploadFileWithRetry(BUCKET, originalPath, buffer, mimeType, token)
       if (error) {
+        log('failed', `${filename} — ${error}`)
         result.failedFiles.push({ filename, reason: `Original upload failed: ${error}` })
-        continue
+      } else {
+        result.originalsUploaded++
       }
-
-      result.originalsUploaded++
+      completedSteps++
     }
   }
 
-  // 4. Upload web-optimized copies (always small — standard upload)
+  // 4. Upload web-optimized copies (always small — standard upload with retry)
+  log('phase:web', `${imagePaths.length} files`)
   for (let i = 0; i < imagePaths.length; i++) {
     const imgPath = imagePaths[i]
     const filename = imgPath.split('/').pop() || `img_${i}`
 
-    // Skip if original already failed to read
-    if (result.failedFiles.some(f => f.filename === filename)) continue
-
-    report(i, total, filename, 'web')
+    report(filename, 'web')
 
     const compressed = await window.api.compressImageForUpload(imgPath)
     if (!compressed) {
+      log('skip', `${filename} — compression failed`)
       result.failedFiles.push({ filename, reason: 'Compression failed' })
+      completedSteps++
       continue
     }
+
+    log('compressed', `${filename} web=${(compressed.webSize / 1024).toFixed(0)}KB thumb=${(compressed.thumbSize / 1024).toFixed(0)}KB`)
 
     const webPath = `${galleryId}/web/${filename}`
     const webBlob = new Blob([compressed.web], { type: 'image/jpeg' })
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(webPath, webBlob, { contentType: 'image/jpeg', upsert: true })
+    const { error } = await standardUploadWithRetry(BUCKET, webPath, webBlob, 'image/jpeg')
 
     if (error) {
-      result.failedFiles.push({ filename, reason: `Web copy upload failed: ${error.message}` })
-      continue
+      log('failed', `${filename} web — ${error}`)
+      result.failedFiles.push({ filename, reason: `Web copy upload failed: ${error}` })
+    } else {
+      result.webCopiesUploaded++
     }
-
-    result.webCopiesUploaded++
+    completedSteps++
   }
 
-  // 5. Upload thumbnails (always small — standard upload)
+  // 5. Upload thumbnails (always small — standard upload with retry)
+  log('phase:thumbnails', `${imagePaths.length} files`)
   for (let i = 0; i < imagePaths.length; i++) {
     const imgPath = imagePaths[i]
     const filename = imgPath.split('/').pop() || `img_${i}`
 
-    if (result.failedFiles.some(f => f.filename === filename)) continue
-
-    report(i, total, filename, 'thumbnails')
+    report(filename, 'thumbnails')
 
     const compressed = await window.api.compressImageForUpload(imgPath)
-    if (!compressed) continue // already tracked in web phase
+    if (!compressed) {
+      completedSteps++
+      continue
+    }
 
     const thumbPath = `${galleryId}/thumbs/${filename}`
     const thumbBlob = new Blob([compressed.thumb], { type: 'image/jpeg' })
-    await supabase.storage
-      .from(BUCKET)
-      .upload(thumbPath, thumbBlob, { contentType: 'image/jpeg', upsert: true })
+    const { error } = await standardUploadWithRetry(BUCKET, thumbPath, thumbBlob, 'image/jpeg')
 
-    result.thumbsUploaded++
+    if (!error) {
+      result.thumbsUploaded++
+    } else {
+      log('failed', `${filename} thumb — ${error}`)
+    }
+    completedSteps++
   }
 
-  report(total, total, '', 'finalizing')
+  report('', 'finalizing')
+  log('uploads-done', `originals=${result.originalsUploaded} web=${result.webCopiesUploaded} thumbs=${result.thumbsUploaded} failed=${result.failedFiles.length}`)
 
-  // 6. Fail the entire publish if any source image failed
-  if (result.failedFiles.length > 0) {
-    // Clean up gallery record — don't leave a half-published gallery
+  // 6. Fail if critical images failed (web copy is required)
+  const criticalFailures = result.failedFiles.filter(f =>
+    f.reason.includes('Compression failed') || f.reason.includes('Web copy')
+  )
+  if (criticalFailures.length > 0) {
     await supabase.from('galleries').update({ status: 'failed' }).eq('id', galleryId)
-    const failedNames = result.failedFiles.map(f => f.filename).join(', ')
-    const reasons = result.failedFiles.map(f => `${f.filename}: ${f.reason}`).join('\n')
+    const reasons = criticalFailures.map(f => `${f.filename}: ${f.reason}`).join('\n')
     throw new Error(
-      `Publish incomplete — ${result.failedFiles.length} image(s) failed:\n${reasons}\n\nFailed: ${failedNames}`
+      `Publish incomplete — ${criticalFailures.length} image(s) failed:\n${reasons}`
     )
   }
 
-  // 7. Insert image records (only after ALL uploads succeeded)
+  // 7. Insert image records (only after uploads succeeded)
+  log('inserting-records', imagePaths.length)
   for (let i = 0; i < imagePaths.length; i++) {
     const imgPath = imagePaths[i]
     const filename = imgPath.split('/').pop() || `img_${i}`
@@ -310,14 +368,13 @@ export async function uploadGalleryToCloud(
       })
   }
 
-  // 8. Generate public URL & mark live
+  // 8. Generate public URL — gallery is NOT live yet, stories still pending
   const GALLERY_BASE = 'https://gallery-web-theta.vercel.app'
   const publicUrl = `${GALLERY_BASE}/gallery/${galleryId}`
 
-  await supabase
-    .from('galleries')
-    .update({ status: 'live', public_url: publicUrl, published_at: new Date().toISOString() })
-    .eq('id', galleryId)
+  // Mark as live only after all uploads + records are done
+  // Stories are handled by the caller — gallery goes live AFTER stories complete
+  log('ready', publicUrl)
 
   return { id: galleryId, publicUrl, result }
 }
@@ -334,6 +391,8 @@ export async function uploadStoryToCloud(
     return { skipped: true, reason: 'Could not read story file' }
   }
 
+  log('story', `${style} (${(fileSize / 1024 / 1024).toFixed(1)}MB)`)
+
   const buffer = await window.api.readFileBuffer(storyFilePath)
   if (!buffer) return { skipped: true, reason: 'Could not read story file' }
 
@@ -347,7 +406,6 @@ export async function uploadStoryToCloud(
         .upload(storagePath, blob, { contentType: 'video/mp4', upsert: true })
       if (error) return { skipped: true, reason: `Upload failed: ${error.message}` }
     } else {
-      // Large story → TUS resumable upload
       const token = await getSupabaseToken()
       const blob = new Blob([buffer], { type: 'video/mp4' })
       await tusUpload(STORY_BUCKET, storagePath, blob, 'video/mp4', token)
@@ -365,5 +423,17 @@ export async function uploadStoryToCloud(
       storage_path: storagePath,
     })
 
+  log('story-done', style)
   return { skipped: false }
+}
+
+// ─── Mark Gallery Live ───────────────────────────────────────────────────────
+
+/** Call this ONLY after all uploads + stories are complete */
+export async function markGalleryLive(galleryId: string, publicUrl: string): Promise<void> {
+  log('marking-live', galleryId)
+  await supabase
+    .from('galleries')
+    .update({ status: 'live', public_url: publicUrl, published_at: new Date().toISOString() })
+    .eq('id', galleryId)
 }

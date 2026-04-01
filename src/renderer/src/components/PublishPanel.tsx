@@ -509,19 +509,24 @@ export function PublishPanel({
                 <div className="pub__step-info">
                   <p className="pub__step-title">{uploadPhaseLabel}</p>
                   <p className="pub__step-detail">
-                    {uploadProgress.uploaded} / {uploadProgress.total}
-                    {uploadProgress.currentFile && (
-                      <span style={{ color: 'rgba(255,255,255,.3)', marginLeft: 6 }}>
-                        {uploadProgress.currentFile}
+                    Uploading {uploadProgress.uploaded} / {uploadProgress.total} files
+                    {(uploadProgress as { percent?: number }).percent != null && (
+                      <span style={{ color: 'rgba(255,255,255,.45)', marginLeft: 6 }}>
+                        {(uploadProgress as { percent?: number }).percent}%
                       </span>
                     )}
                   </p>
+                  {uploadProgress.currentFile && (
+                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,.3)', margin: '2px 0 0' }}>
+                      {uploadProgress.currentFile}
+                    </p>
+                  )}
                   {uploadProgress.total > 0 && (
                     <div className="pub__step-bar">
                       <div
                         className="pub__step-bar-fill"
                         style={{
-                          width: `${Math.round((uploadProgress.uploaded / uploadProgress.total) * 100)}%`,
+                          width: `${(uploadProgress as { percent?: number }).percent ?? Math.round((uploadProgress.uploaded / uploadProgress.total) * 100)}%`,
                         }}
                       />
                     </div>
