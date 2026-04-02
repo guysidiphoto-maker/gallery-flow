@@ -31,6 +31,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { uploadGalleryToCloud, uploadStoryToCloud, markGalleryLive, updateGallerySettings } from './lib/cloudUpload'
 import { getAuthState, signInWithGoogle, type Business, type AuthState } from './lib/auth'
 import { WelcomeScreen } from './components/onboarding/WelcomeScreen'
+import { AuthShell } from './components/auth/AuthShell'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
 import { supabase } from './lib/supabase'
 import type { ImageFile } from './types'
@@ -229,7 +230,7 @@ export default function App() {
   }
 
   if (authState === 'unauthenticated') {
-    return <WelcomeScreen onSignIn={handleGoogleSignIn} loading={authSignInLoading} error={authError} />
+    return <AuthShell />
   }
 
   if (authState === 'needs_onboarding' && authUser) {
