@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/gallery/:path*", "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

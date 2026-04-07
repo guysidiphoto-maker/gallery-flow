@@ -5,6 +5,7 @@ export interface DeliverySettings {
   bulkDownloadEnabled: boolean
   downloadQuality: 'web' | 'high' | 'original'
   studioName: string
+  studioWebsite?: string
   logoUrl: string | null
   showFooterCredit: boolean
   galleryTitle: string
@@ -38,10 +39,17 @@ export interface GalleryImage {
   thumbnail_path: string | null
   is_top_pick: boolean
   sort_order: number
+  section_id?: string | null
 }
 
 export interface Story {
   id: string
   style: string
   storage_path: string
+}
+
+export interface GallerySection {
+  id: string
+  name: string
+  sort_order: number
 }

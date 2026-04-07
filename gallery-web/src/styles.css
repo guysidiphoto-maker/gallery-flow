@@ -234,39 +234,46 @@ body {
   background: rgba(99,102,241,.22);
 }
 
-/* ── Grid ──────────────────────────────────────────────────────────────────── */
+/* ── Grid — Masonry (CSS columns) ─────────────────────────────────────────── */
 
 .grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 3px;
-  padding: 0 3px;
+  column-count: 2;
+  column-gap: 4px;
+  padding: 0 4px;
 }
 
 /* Layout mode: 1-col */
 .grid.grid--1-col {
-  grid-template-columns: 1fr;
+  column-count: 1;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
-/* Layout mode: 2-col — default, uses base .grid columns */
+/* Layout mode: 2-col — default */
 
 /* Layout mode: 3-col */
 .grid.grid--3-col {
-  grid-template-columns: repeat(3, 1fr);
+  column-count: 3;
 }
 
 /* Spacing: none */
 .grid.grid--spacing-none {
-  gap: 0;
+  column-gap: 0;
   padding: 0;
 }
+.grid.grid--spacing-none .grid__img {
+  margin-bottom: 0;
+}
 
-/* Spacing: small — default (gap: 3px) */
+/* Spacing: small — default (gap: 4px) */
 
 /* Spacing: medium */
 .grid.grid--spacing-medium {
-  gap: 8px;
-  padding: 0 8px;
+  column-gap: 10px;
+  padding: 0 10px;
+}
+.grid.grid--spacing-medium .grid__img {
+  margin-bottom: 10px;
 }
 
 /* Corner style: rounded */
@@ -274,38 +281,38 @@ body {
   border-radius: 8px;
 }
 
-/* Responsive: default breakpoints for 2-col layout */
+/* Responsive breakpoints */
 @media (min-width: 480px) {
-  .grid.grid--2-col { grid-template-columns: repeat(3, 1fr); }
-  .grid.grid--3-col { grid-template-columns: repeat(3, 1fr); }
+  .grid.grid--2-col { column-count: 2; }
+  .grid.grid--3-col { column-count: 3; }
 }
 
 @media (min-width: 768px) {
-  .grid.grid--2-col { grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 0 4px; }
-  .grid.grid--3-col { grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 0 4px; }
+  .grid.grid--2-col { column-count: 3; }
+  .grid.grid--3-col { column-count: 4; }
 }
 
 @media (min-width: 1100px) {
-  .grid.grid--2-col { grid-template-columns: repeat(5, 1fr); }
-  .grid.grid--3-col { grid-template-columns: repeat(5, 1fr); }
+  .grid.grid--2-col { column-count: 4; }
+  .grid.grid--3-col { column-count: 5; }
 }
 
-/* 1-col layout stays 1-col on all sizes */
-.grid.grid--1-col {
-  grid-template-columns: 1fr;
-}
+/* 1-col always stays 1-col */
+.grid.grid--1-col { column-count: 1; }
 
-/* On mobile (<480px): 1-col stays 1-col, 2-col and 3-col get 2-col */
+/* Mobile (<480px) */
 @media (max-width: 479px) {
-  .grid.grid--1-col { grid-template-columns: 1fr; }
-  .grid.grid--2-col { grid-template-columns: repeat(2, 1fr); }
-  .grid.grid--3-col { grid-template-columns: repeat(2, 1fr); }
+  .grid.grid--1-col { column-count: 1; }
+  .grid.grid--2-col { column-count: 2; }
+  .grid.grid--3-col { column-count: 2; }
 }
 
 .grid__img {
   width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
+  height: auto;
+  display: block;
+  break-inside: avoid;
+  margin-bottom: 4px;
   cursor: pointer;
   transition: opacity .15s;
   background: rgba(255,255,255,.03);
@@ -313,6 +320,11 @@ body {
 
 .grid__img:hover {
   opacity: .85;
+}
+
+/* Download button appears on hover */
+.grid-item:hover .grid-item__dl {
+  opacity: 1 !important;
 }
 
 /* ── Footer ────────────────────────────────────────────────────────────────── */
@@ -438,3 +450,87 @@ body {
 .viewer__download:hover {
   background: rgba(99,102,241,1);
 }
+
+/* ── Sections (Pixieset-style groups under the All Images masonry) ────── */
+.gallery-section {
+  margin-top: 56px;
+  padding: 0 16px;
+}
+.gallery-section__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  max-width: 1400px;
+  margin: 0 auto 18px;
+  padding: 0 4px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: rgba(255,255,255,.95);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  padding-bottom: 12px;
+}
+.gallery-section__name { flex: 1; }
+.gallery-section__count {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255,255,255,.4);
+  letter-spacing: 0.02em;
+}
+@media (max-width: 640px) {
+  .gallery-section { margin-top: 36px; }
+  .gallery-section__heading { font-size: 18px; }
+}
+
+/* ── Sticky section nav (Pixieset-style anchor + scroll-spy) ───────────── */
+.section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: rgba(10,10,12,.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.section-nav__inner {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 10px 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.section-nav__inner::-webkit-scrollbar { display: none; }
+
+.section-nav__item {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: rgba(255,255,255,.55);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.section-nav__item:hover {
+  color: rgba(255,255,255,.92);
+  background: rgba(255,255,255,.04);
+}
+.section-nav__item--active {
+  color: #fff;
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.12);
+  font-weight: 600;
+}
+
+/* Anchor jumps must land BELOW the sticky nav (and the download toolbar
+   when it's stacked under the nav). */
+.gallery-section { scroll-margin-top: 110px; }
+.gallery-section--all { margin-top: 0; scroll-margin-top: 110px; }
