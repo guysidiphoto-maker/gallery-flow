@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import * as tus from 'tus-js-client'
 import { usePublish } from '../store/publish'
-import { requireBusinessId } from './sessionGuards'
+import { requireBusiness, requireBusinessId } from './sessionGuards'
 import {
   UploadQueueRunner, buildQueueItems,
   persistQueue, clearPersistedQueue,
@@ -75,7 +75,9 @@ export async function publishGallery(
   // never insert an unowned row that RLS will silently reject (or worse,
   // accept and orphan). Throws a clear error when called from a context
   // without an authenticated session + business.
-  const businessId = requireBusinessId()
+  const business = requireBusiness()
+  const businessId = business.id
+  const slug = business.slug
 
   // ── Plan limit check ──────────────────────────────────────────────────
   const { fetchPlanLimits, checkPlanViolations } = await import('./planGuard')
@@ -156,7 +158,7 @@ export async function publishGallery(
   }
 
   const galleryId = gallery.id
-  const publicUrl = `${GALLERY_BASE}/gallery/${galleryId}`
+  const publicUrl = `${GALLERY_BASE}/${slug}/gallery/${galleryId}`
   usePublish.setState({ galleryId })
   store.setPublicUrl(publicUrl)
   log('gallery-created', galleryId)
@@ -254,7 +256,7 @@ export async function publishGallery(
     originalSizeBytes: compressedMap.get(img.filename)!.originalSize,
   }))
 
-  const queueItems = buildQueueItems(galleryId, queueInputs)
+  const queueItems = buildQueueItems(galleryId, queueInputs, slug)
 
   // Fill in sizes for thumb/preview items
   for (const item of queueItems) {
@@ -391,9 +393,9 @@ export async function publishGallery(
     const payload = {
       gallery_id: galleryId,
       filename,
-      storage_path: `${galleryId}/web/${filename}`,
-      original_path: `${galleryId}/originals/${filename}`,
-      thumbnail_path: `${galleryId}/thumbs/${filename}`,
+      storage_path: `${slug}/${galleryId}/web/${filename}`,
+      original_path: `${slug}/${galleryId}/originals/${filename}`,
+      thumbnail_path: `${slug}/${galleryId}/thumbs/${filename}`,
       is_top_pick: isTopPick,
       sort_order: i,
       section_id: sectionPathToDbId.get(imagePaths[i]) ?? null,
@@ -537,7 +539,8 @@ export async function uploadStoryToCloud(
   const buffer = await window.api.readFileBuffer(storyFilePath)
   if (!buffer) return { skipped: true, reason: 'Could not read story file' }
 
-  const storagePath = `${galleryId}/story_${style}.mp4`
+  const businessSlug = requireBusiness().slug
+  const storagePath = `${businessSlug}/${galleryId}/story_${style}.mp4`
 
   try {
     if (fileSize <= STANDARD_UPLOAD_LIMIT) {
@@ -592,16 +595,16 @@ export async function deleteGalleryFromCloud(
     galleryDbId = data.id
   }
 
-  // 1. Get all images to delete from storage
-  const { data: imgs } = await supabase.from('images').select('filename').eq('gallery_id', galleryDbId)
+  // 1. Get all images to delete from storage (paths stored in DB)
+  const { data: imgs } = await supabase.from('images').select('filename, storage_path, original_path, thumbnail_path').eq('gallery_id', galleryDbId)
 
   if (imgs && imgs.length > 0) {
-    // 2. Delete files from storage (thumbs, web, originals)
+    // 2. Delete files from storage using DB-stored paths
     const paths = imgs.flatMap(img => [
-      `${galleryDbId}/thumbs/${img.filename}`,
-      `${galleryDbId}/web/${img.filename}`,
-      `${galleryDbId}/originals/${img.filename}`,
-    ])
+      img.thumbnail_path,
+      img.storage_path,
+      img.original_path,
+    ].filter(Boolean))
     await supabase.storage.from(BUCKET).remove(paths)
     log('delete-gallery:storage', `${paths.length} files`)
   }
@@ -635,12 +638,14 @@ export async function deleteImageFromCloud(
     galleryDbId = data.id
   }
 
-  // Delete from storage
-  await supabase.storage.from(BUCKET).remove([
-    `${galleryDbId}/thumbs/${filename}`,
-    `${galleryDbId}/web/${filename}`,
-    `${galleryDbId}/originals/${filename}`,
-  ])
+  // Delete from storage using DB-stored paths
+  const { data: imgPaths } = await supabase.from('images')
+    .select('storage_path, original_path, thumbnail_path')
+    .eq('gallery_id', galleryDbId).eq('filename', filename).maybeSingle()
+  if (imgPaths) {
+    const paths = [imgPaths.thumbnail_path, imgPaths.storage_path, imgPaths.original_path].filter(Boolean)
+    await supabase.storage.from(BUCKET).remove(paths)
+  }
 
   // Delete from DB
   await supabase.from('images').delete().eq('gallery_id', galleryDbId).eq('filename', filename)
@@ -687,15 +692,15 @@ export async function updateGalleryImages(
 
   if (removed.length > 0) {
     log('update-images:removing', `${removed.length} images`)
-    // Delete from storage
-    const storagePaths = removed.flatMap(f => [
-      `${galleryDbId}/thumbs/${f}`,
-      `${galleryDbId}/web/${f}`,
-      `${galleryDbId}/originals/${f}`,
-    ])
-    await supabase.storage.from(BUCKET).remove(storagePaths)
-    // Delete from DB
+    // Fetch DB-stored paths for removed images, then delete from storage + DB
     for (const filename of removed) {
+      const { data: imgPaths } = await supabase.from('images')
+        .select('storage_path, original_path, thumbnail_path')
+        .eq('gallery_id', galleryDbId).eq('filename', filename).maybeSingle()
+      if (imgPaths) {
+        const paths = [imgPaths.thumbnail_path, imgPaths.storage_path, imgPaths.original_path].filter(Boolean)
+        await supabase.storage.from(BUCKET).remove(paths)
+      }
       const { error } = await supabase
         .from('images')
         .delete()
@@ -828,7 +833,8 @@ export async function fetchCloudClientId(localClientId: string): Promise<string 
 
 /** Public URL for the client landing page on the gallery web host. */
 export function buildClientPageUrl(cloudClientId: string): string {
-  return `${GALLERY_BASE}/client/${cloudClientId}`
+  const businessSlug = requireBusiness().slug
+  return `${GALLERY_BASE}/${businessSlug}/client/${cloudClientId}`
 }
 
 // ─── Update Gallery Settings (unchanged) ────────────────────────────────────

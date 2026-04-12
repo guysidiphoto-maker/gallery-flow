@@ -366,7 +366,15 @@ export function App() {
   // stories block above the photos.
   const [storiesOpen, setStoriesOpen] = useState(false)
 
-  const galleryId = window.location.pathname.replace(/^\/gallery\//, '').replace(/\/$/, '')
+  // Parse gallery ID from URL: /{slug}/gallery/{uuid} or /gallery/{uuid}
+  const galleryId = (() => {
+    const path = window.location.pathname.replace(/\/$/, '')
+    const slugMatch = path.match(/^\/[^/]+\/gallery\/([^/]+)$/)
+    if (slugMatch) return slugMatch[1]
+    const directMatch = path.match(/^\/gallery\/([^/]+)$/)
+    if (directMatch) return directMatch[1]
+    return ''
+  })()
 
   useEffect(() => {
     if (!galleryId || galleryId === '') {

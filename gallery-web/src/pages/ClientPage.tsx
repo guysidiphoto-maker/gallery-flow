@@ -23,7 +23,15 @@ function readString(obj: Record<string, unknown> | null, key: string): string {
 }
 
 export function ClientPage() {
-  const clientId = window.location.pathname.replace(/^\/client\//, '').replace(/\/$/, '')
+  // Parse client ID from URL: /{slug}/client/{uuid} or /client/{uuid}
+  const clientId = (() => {
+    const path = window.location.pathname.replace(/\/$/, '')
+    const slugMatch = path.match(/^\/[^/]+\/client\/([^/]+)$/)
+    if (slugMatch) return slugMatch[1]
+    const directMatch = path.match(/^\/client\/([^/]+)$/)
+    if (directMatch) return directMatch[1]
+    return ''
+  })()
 
   const [galleries, setGalleries] = useState<GalleryRow[]>([])
   const [covers, setCovers] = useState<Map<string, string>>(new Map())

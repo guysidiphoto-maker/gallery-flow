@@ -345,12 +345,13 @@ export function buildQueueItems(
     originalSizeBytes: number
     thumbBlob?: Blob
     webBlob?: Blob
-  }>
+  }>,
+  slug?: string
 ): QueueItem[] {
   const items: QueueItem[] = []
 
   for (const img of images) {
-    const base = `${galleryId}`
+    const base = slug ? `${slug}/${galleryId}` : `${galleryId}`
 
     items.push({
       id: `q_${++queueIdCounter}_thumb_${img.filename}`,
