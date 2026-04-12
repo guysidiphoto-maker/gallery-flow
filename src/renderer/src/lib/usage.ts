@@ -16,9 +16,9 @@ export interface PlanUsage {
  * the `get_my_usage()` RPC (see migration 015). Returns null when no session.
  */
 export async function fetchPlanUsage(): Promise<PlanUsage | null> {
-  const { data, error } = await supabase.rpc('get_my_usage').maybeSingle()
-  if (error || !data) return null
-  const row = data as Record<string, unknown>
+  const { data, error } = await supabase.rpc('get_my_usage')
+  if (error || !data || !Array.isArray(data) || data.length === 0) return null
+  const row = data[0] as Record<string, unknown>
   return {
     storageUsedBytes: Number(row.storage_used_bytes || 0),
     storageLimitBytes: row.storage_limit_bytes != null ? Number(row.storage_limit_bytes) : null,

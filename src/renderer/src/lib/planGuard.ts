@@ -19,9 +19,9 @@ export interface PlanViolation {
 }
 
 export async function fetchPlanLimits(): Promise<PlanLimits | null> {
-  const { data, error } = await supabase.rpc('get_my_usage').maybeSingle()
-  if (error || !data) return null
-  const row = data as Record<string, unknown>
+  const { data, error } = await supabase.rpc('get_my_usage')
+  if (error || !data || !Array.isArray(data) || data.length === 0) return null
+  const row = data[0] as Record<string, unknown>
   return {
     planId: String(row.plan_id || 'starter'),
     planName: String(row.plan_name || 'Starter'),

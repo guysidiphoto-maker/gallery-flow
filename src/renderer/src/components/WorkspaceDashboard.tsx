@@ -176,16 +176,17 @@ export function WorkspaceDashboard({
     return () => window.removeEventListener('click', handler)
   }, [shareMenuId])
 
-  const copyLink = (projectId: string) => {
-    navigator.clipboard.writeText(`pixflow://gallery/${projectId}`).then(() => {
-      setCopiedId(projectId)
+  const copyLink = (p: ProjectData) => {
+    const url = p.publishState?.publicUrl || `pixflow://gallery/${p.id}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedId(p.id)
       setShareMenuId(null)
       setTimeout(() => setCopiedId(null), 1500)
     }).catch(() => setShareMenuId(null))
   }
 
   const emailGallery = (p: ProjectData) => {
-    const link = `pixflow://gallery/${p.id}`
+    const link = p.publishState?.publicUrl || `pixflow://gallery/${p.id}`
     const subject = encodeURIComponent(`Gallery: ${p.name}`)
     const body = encodeURIComponent(`Hi,\n\nHere is your gallery "${p.name}":\n${link}\n\nBest regards`)
     window.open(`mailto:?subject=${subject}&body=${body}`)
@@ -907,7 +908,7 @@ export function WorkspaceDashboard({
                             Send via email
                           </button>
                           <button
-                            onClick={() => copyLink(p.id)}
+                            onClick={() => copyLink(p)}
                             style={{
                               width: '100%',
                               padding: '8px 10px',
