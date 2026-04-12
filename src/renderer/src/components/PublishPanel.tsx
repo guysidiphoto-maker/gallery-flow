@@ -4,6 +4,7 @@ import { usePublish } from '../store/publish'
 import type { PublishStatus } from '../lib/uploadTypes'
 import { pauseOriginals, resumeOriginals, retryFailedOriginals } from '../lib/cloudUpload'
 import { computeByteProgress, computeEtaSeconds, formatEta, formatBytes } from '../lib/eta'
+import { fetchPlanLimits, type PlanLimits } from '../lib/planGuard'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -334,6 +335,14 @@ export function PublishPanel({
   const pub = usePublish()
   const { progress, publishStatus, isPaused, queueItems, startedAt } = pub
 
+  // Plan usage (fetched once when settings phase opens)
+  const [planLimits, setPlanLimits] = useState<PlanLimits | null>(null)
+  useEffect(() => {
+    if (phase === 'settings') {
+      fetchPlanLimits().then(l => setPlanLimits(l))
+    }
+  }, [phase])
+
   // Live ticker so the ETA label updates every second during active uploads
   const [, setTick] = useState(0)
   const isActivePublishPhase = (['preparing_assets', 'uploading_previews', 'uploading_originals'] as PublishStatus[]).includes(publishStatus)
@@ -550,6 +559,52 @@ export function PublishPanel({
                   ))}
                 </div>
               </div>
+
+              {/* Plan quota */}
+              {planLimits && phase === 'settings' && !isAlreadyLive && (
+                <div style={{ marginBottom: 18 }}>
+                  <p style={S.sectionTitle}>Plan Usage</p>
+                  <div style={{ background: 'rgba(255,255,255,.03)', borderRadius: 8, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {planLimits.maxPhotosPerMonth != null && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                        <span style={{ color: 'rgba(255,255,255,.5)' }}>Photos this month</span>
+                        <span style={{
+                          color: planLimits.photosThisMonth + imageCount > planLimits.maxPhotosPerMonth ? '#ef4444' :
+                            planLimits.photosThisMonth + imageCount > planLimits.maxPhotosPerMonth * 0.8 ? '#f59e0b' : 'rgba(255,255,255,.75)',
+                          fontWeight: 600,
+                        }}>
+                          {planLimits.photosThisMonth} / {planLimits.maxPhotosPerMonth}
+                          <span style={{ color: 'rgba(255,255,255,.35)', fontWeight: 400, marginLeft: 6 }}>
+                            (+{imageCount} new)
+                          </span>
+                        </span>
+                      </div>
+                    )}
+                    {planLimits.maxGalleries != null && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                        <span style={{ color: 'rgba(255,255,255,.5)' }}>Galleries</span>
+                        <span style={{
+                          color: planLimits.galleriesCount >= planLimits.maxGalleries ? '#ef4444' : 'rgba(255,255,255,.75)',
+                          fontWeight: 600,
+                        }}>
+                          {planLimits.galleriesCount} / {planLimits.maxGalleries}
+                        </span>
+                      </div>
+                    )}
+                    {planLimits.storageLimitBytes != null && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                        <span style={{ color: 'rgba(255,255,255,.5)' }}>Storage</span>
+                        <span style={{
+                          color: planLimits.storageUsedBytes / planLimits.storageLimitBytes > 0.9 ? '#f59e0b' : 'rgba(255,255,255,.75)',
+                          fontWeight: 600,
+                        }}>
+                          {formatBytes(planLimits.storageUsedBytes)} / {formatBytes(planLimits.storageLimitBytes)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Publish Button */}
               <button className="pub__publish" onClick={onPublish}>
