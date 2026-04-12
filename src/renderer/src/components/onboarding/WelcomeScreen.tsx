@@ -32,16 +32,18 @@ export function WelcomeScreen({ onSignIn, loading, error }: WelcomeScreenProps) 
     >
       <div style={{ maxWidth: 420, textAlign: 'center' }}>
         {/* Logo */}
-        <div
-          style={{
-            fontSize: 36,
-            fontWeight: 800,
-            color: 'rgba(255,255,255,.9)',
-            letterSpacing: '-0.02em',
-            marginBottom: 16,
-          }}
-        >
-          Pixflow
+        <div style={{ marginBottom: 16 }}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 160" width="180" height="48">
+            <defs>
+              <linearGradient id="pxw-dot" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#818cf8"/>
+                <stop offset="50%" stopColor="#38bdf8"/>
+                <stop offset="100%" stopColor="#a78bfa"/>
+              </linearGradient>
+            </defs>
+            <text x="20" y="112" fontFamily="Inter, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif" fontSize="120" fontWeight="800" letterSpacing="-3" fill="#ffffff">Pixflow</text>
+            <circle cx="160" cy="32" r="11" fill="url(#pxw-dot)"/>
+          </svg>
         </div>
 
         {/* Headline */}

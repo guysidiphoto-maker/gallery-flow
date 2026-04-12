@@ -10,7 +10,7 @@ const LEMONSQUEEZY_VARIANTS = {
  * Passes the Supabase business_id + user email as custom data so the
  * webhook can link the payment back to the correct account.
  */
-export async function openCheckout(planId: 'pro' | 'business'): Promise<void> {
+export async function openCheckout(planId: 'pro' | 'business', discountCode?: string): Promise<void> {
   const variantId = LEMONSQUEEZY_VARIANTS[planId]
   if (!variantId) throw new Error(`Unknown plan: ${planId}`)
 
@@ -31,6 +31,8 @@ export async function openCheckout(planId: 'pro' | 'business'): Promise<void> {
   const params = new URLSearchParams()
   if (email) params.set('checkout[email]', email)
   if (businessId) params.set('checkout[custom][business_id]', businessId)
+
+  if (discountCode) params.set('discount', discountCode)
 
   const url = `https://pixflow.lemonsqueezy.com/buy/${variantId}?${params.toString()}`
   window.open(url, '_blank')

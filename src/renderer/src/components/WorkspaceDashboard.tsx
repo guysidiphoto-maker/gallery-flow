@@ -6,6 +6,7 @@ import { getProjectsByClient, getProjectCover } from '../App'
 import { signOut } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { fetchPlanUsage, type PlanUsage } from '../lib/usage'
+import { openCheckout } from '../lib/checkout'
 import { formatBytes } from '../lib/eta'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -92,6 +93,7 @@ export function WorkspaceDashboard({
   const [activeFilter, setActiveFilter] = useState<'all' | 'live' | 'draft'>('all')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+  const [couponCode, setCouponCode] = useState('')
   const accountMenuRef = useRef<HTMLDivElement>(null)
 
   // ── Initial data load ──────────────────────────────────────────────────────
@@ -1146,17 +1148,15 @@ function EmptyState({
 }
 
 // ─── Usage indicator ─────────────────────────────────────────────────────────
-// Shows current storage usage as a compact horizontal pill that expands to a
-// tooltip on hover with plan details and monthly photo counter.
+// Shows current plan, storage bar, galleries, and photos — always visible.
+// Includes upgrade button for Starter/Pro users.
 function UsageIndicator() {
   const [usage, setUsage] = useState<PlanUsage | null>(null)
-  const [hovered, setHovered] = useState(false)
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     fetchPlanUsage().then(u => { if (!cancelled) setUsage(u) })
-    // Refresh every 60 s — usage changes on publish, but a light poll keeps
-    // the indicator honest without plumbing events through the store.
     const id = setInterval(() => {
       fetchPlanUsage().then(u => { if (!cancelled) setUsage(u) })
     }, 60_000)
@@ -1171,31 +1171,41 @@ function UsageIndicator() {
   const isUnlimited = limitBytes == null
   const isNearLimit = !isUnlimited && pct >= 80
   const isOver = !isUnlimited && pct >= 100
-
   const barColor = isOver ? '#ef4444' : isNearLimit ? '#f59e0b' : '#6366f1'
+  const canUpgrade = usage.planId === 'starter' || usage.planId === 'pro'
 
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onClick={() => setExpanded(v => !v)}
       style={{
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
         gap: 8,
         marginLeft: 10,
-        padding: '5px 10px',
+        padding: '5px 12px',
         background: 'rgba(255,255,255,.04)',
         border: '1px solid rgba(255,255,255,.08)',
         borderRadius: 999,
-        cursor: 'default',
+        cursor: 'pointer',
+        userSelect: 'none',
       }}
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.5)" strokeWidth="2">
-        <ellipse cx="12" cy="5" rx="9" ry="3"/>
-        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-        <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
-      </svg>
+      {/* Plan badge */}
+      <span style={{
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '.5px',
+        textTransform: 'uppercase',
+        color: usage.planId === 'business' ? '#34d399' : usage.planId === 'pro' ? '#818cf8' : 'rgba(255,255,255,.5)',
+        background: usage.planId === 'business' ? 'rgba(52,211,153,.12)' : usage.planId === 'pro' ? 'rgba(129,140,248,.12)' : 'rgba(255,255,255,.06)',
+        padding: '2px 7px',
+        borderRadius: 4,
+      }}>
+        {usage.planName}
+      </span>
+
+      {/* Storage summary */}
       <span style={{ fontSize: 11, color: 'rgba(255,255,255,.72)', fontWeight: 500 }}>
         {isUnlimited
           ? `${formatBytes(used)} used`
@@ -1219,38 +1229,114 @@ function UsageIndicator() {
         </div>
       )}
 
-      {hovered && (
-        <div style={{
-          position: 'absolute',
-          top: 'calc(100% + 8px)',
-          right: 0,
-          padding: '12px 14px',
-          background: 'rgba(20,20,28,.98)',
-          backdropFilter: 'blur(14px)',
-          border: '1px solid rgba(255,255,255,.1)',
-          borderRadius: 10,
-          minWidth: 240,
-          zIndex: 200,
-          boxShadow: '0 12px 36px rgba(0,0,0,.5)',
-          fontSize: 11.5,
-          color: 'rgba(255,255,255,.75)',
-          lineHeight: 1.6,
-        }}>
-          <div style={{
-            fontSize: 10,
-            letterSpacing: 1,
-            textTransform: 'uppercase',
-            color: 'rgba(255,255,255,.4)',
-            marginBottom: 8,
-          }}>
-            {usage.planName} Plan
+      {/* Chevron */}
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" strokeWidth="2.5" style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
+
+      {/* Expanded dropdown */}
+      {expanded && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            right: 0,
+            padding: '16px 18px',
+            background: 'rgba(20,20,28,.98)',
+            backdropFilter: 'blur(14px)',
+            border: '1px solid rgba(255,255,255,.1)',
+            borderRadius: 12,
+            minWidth: 280,
+            zIndex: 200,
+            boxShadow: '0 16px 48px rgba(0,0,0,.6)',
+            fontSize: 12,
+            color: 'rgba(255,255,255,.75)',
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <span style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: 'rgba(255,255,255,.92)',
+            }}>
+              {usage.planName} Plan
+            </span>
+            {canUpgrade && (
+              <button
+                onClick={() => openCheckout(usage.planId === 'starter' ? 'pro' : 'business', couponCode || undefined)}
+                style={{
+                  padding: '5px 14px',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: '#fff',
+                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  border: 'none',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Upgrade
+              </button>
+            )}
           </div>
-          <UsageRow
-            label="Storage"
-            value={isUnlimited ? `${formatBytes(used)}` : `${formatBytes(used)} of ${formatBytes(limitBytes!)}`}
-            sub={isUnlimited ? 'Unlimited' : `${Math.round(pct)}% used`}
-            warn={isNearLimit}
-          />
+
+          {/* Coupon code */}
+          {canUpgrade && (
+            <div style={{ marginBottom: 12 }}>
+              <input
+                type="text"
+                placeholder="Coupon code"
+                value={couponCode}
+                onChange={e => setCouponCode(e.target.value.toUpperCase())}
+                style={{
+                  width: '100%',
+                  padding: '7px 10px',
+                  fontSize: 11,
+                  fontFamily: 'inherit',
+                  color: '#fff',
+                  background: 'rgba(255,255,255,.06)',
+                  border: '1px solid rgba(255,255,255,.1)',
+                  borderRadius: 6,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.5)' }}
+                onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)' }}
+              />
+            </div>
+          )}
+
+          {/* Storage bar */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ color: 'rgba(255,255,255,.5)', fontSize: 11 }}>Storage</span>
+              <span style={{ color: isNearLimit ? '#f59e0b' : 'rgba(255,255,255,.9)', fontSize: 11, fontWeight: 600 }}>
+                {isUnlimited ? formatBytes(used) : `${formatBytes(used)} of ${formatBytes(limitBytes!)}`}
+                {isUnlimited && <span style={{ color: 'rgba(255,255,255,.35)', fontWeight: 400, marginLeft: 4 }}>Unlimited</span>}
+              </span>
+            </div>
+            {!isUnlimited && (
+              <div style={{
+                width: '100%',
+                height: 6,
+                borderRadius: 3,
+                background: 'rgba(255,255,255,.08)',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  width: `${pct}%`,
+                  height: '100%',
+                  background: barColor,
+                  borderRadius: 3,
+                  transition: 'width .3s, background .3s',
+                }} />
+              </div>
+            )}
+          </div>
+
           <UsageRow
             label="Galleries"
             value={usage.maxGalleries != null ? `${usage.galleriesCount} / ${usage.maxGalleries}` : `${usage.galleriesCount}`}
@@ -1263,15 +1349,16 @@ function UsageIndicator() {
               : `${usage.photosThisMonth}`}
             sub={usage.maxPhotosPerMonth != null ? undefined : 'Unlimited'}
           />
-          {isNearLimit && (
+
+          {(isNearLimit || isOver) && (
             <div style={{
-              marginTop: 10,
-              paddingTop: 10,
+              marginTop: 12,
+              paddingTop: 12,
               borderTop: '1px solid rgba(255,255,255,.06)',
               color: isOver ? '#ef4444' : '#f59e0b',
               fontSize: 11,
             }}>
-              {isOver ? 'Storage limit reached — upgrade to keep publishing' : 'You\'re approaching your storage limit'}
+              {isOver ? 'Storage limit reached — upgrade to keep publishing' : 'Approaching your storage limit'}
             </div>
           )}
         </div>
@@ -1287,10 +1374,10 @@ function UsageRow({ label, value, sub, warn }: { label: string; value: string; s
       justifyContent: 'space-between',
       alignItems: 'baseline',
       gap: 12,
-      padding: '3px 0',
+      padding: '4px 0',
     }}>
-      <span style={{ color: 'rgba(255,255,255,.45)' }}>{label}</span>
-      <span style={{ color: warn ? '#f59e0b' : 'rgba(255,255,255,.9)', fontWeight: 500 }}>
+      <span style={{ color: 'rgba(255,255,255,.45)', fontSize: 11 }}>{label}</span>
+      <span style={{ color: warn ? '#f59e0b' : 'rgba(255,255,255,.9)', fontWeight: 500, fontSize: 11 }}>
         {value}
         {sub && <span style={{ color: 'rgba(255,255,255,.35)', fontWeight: 400, marginLeft: 6 }}>· {sub}</span>}
       </span>

@@ -76,25 +76,18 @@ export function AuthShell() {
         background: 'linear-gradient(180deg, rgba(99,102,241,.04) 0%, rgba(10,10,15,0) 60%)',
       }}>
         {/* Logo */}
-        <div style={{
-          marginBottom: 36,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-        }}>
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-            <rect x="2" y="2" width="20" height="20" rx="6" fill="#6366f1" fillOpacity="0.15" stroke="#6366f1" strokeWidth="1.5" />
-            <circle cx="12" cy="10" r="3" stroke="#6366f1" strokeWidth="1.5" fill="none" />
-            <path d="M6 18c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="#6366f1" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+        <div style={{ marginBottom: 36 }}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 160" width="160" height="43">
+            <defs>
+              <linearGradient id="auth-dot" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#818cf8"/>
+                <stop offset="50%" stopColor="#38bdf8"/>
+                <stop offset="100%" stopColor="#a78bfa"/>
+              </linearGradient>
+            </defs>
+            <text x="20" y="112" fontFamily="Inter, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif" fontSize="120" fontWeight="800" letterSpacing="-3" fill="#ffffff">Pixflow</text>
+            <circle cx="160" cy="32" r="11" fill="url(#auth-dot)"/>
           </svg>
-          <span style={{
-            fontSize: 24,
-            fontWeight: 800,
-            letterSpacing: '-0.02em',
-            color: 'rgba(255,255,255,.92)',
-          }}>
-            Pixflow
-          </span>
         </div>
 
         <AuthCard />
