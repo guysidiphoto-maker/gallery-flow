@@ -21,7 +21,7 @@ const DEMO_SAMPLE_PHOTOS = [
 const GALLERY_URL =
   'https://pixflow-ai.com/gallery/dfa8f1a5-f558-4800-a09a-272020476da1'
 
-const DOWNLOAD_URL = 'https://github.com/guysidiphoto-maker/gallery-flow/releases/download/v1.0.1/Pixflow-1.0.1-arm64.dmg'
+const DOWNLOAD_URL = 'https://github.com/guysidiphoto-maker/gallery-flow/releases/download/v1.0.2/Pixflow-1.0.2-arm64.dmg'
 
 /* ------------------------------------------------------------------ */
 /*  Translations                                                       */
