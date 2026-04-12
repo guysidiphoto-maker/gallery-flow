@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useGallery } from '../store/gallery'
 import { toLocalURL } from '../utils/imageUtils'
 
@@ -7,7 +7,7 @@ export function PreviewMode() {
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
 
   // Sort images by filename for preview (reflects what client sees after download)
-  const sorted = [...images].sort((a, b) => a.filename.localeCompare(b.filename))
+  const sorted = useMemo(() => [...images].sort((a, b) => a.filename.localeCompare(b.filename)), [images])
 
   const openLightbox = (idx: number) => setLightboxIdx(idx)
   const closeLightbox = () => setLightboxIdx(null)

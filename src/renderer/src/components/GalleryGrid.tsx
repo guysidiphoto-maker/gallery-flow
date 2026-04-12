@@ -83,23 +83,30 @@ export function GalleryGrid() {
   const {
     sections,
     activeSectionFilter,
-    addImagesToSection,
+    assignImagesToSection,
     removeImageFromSection
   } = useSections()
 
   // ── Container width tracking ────────────────────────────────────────────────
-  const containerRef = useRef<HTMLDivElement>(null)
+  // Callback ref instead of useRef + useEffect: the gallery div only mounts on
+  // the non-empty render path, so a one-shot useEffect would miss it after
+  // toggling from an empty section back to "All Images". The callback fires
+  // every time the node attaches/detaches, so the ResizeObserver is always
+  // hooked up to the current node.
   const [containerWidth, setContainerWidth] = useState(0)
-
-  useEffect(() => {
-    if (!containerRef.current) return
+  const observerRef = useRef<ResizeObserver | null>(null)
+  const setContainerRef = useCallback((node: HTMLDivElement | null) => {
+    if (observerRef.current) {
+      observerRef.current.disconnect()
+      observerRef.current = null
+    }
+    if (!node) return
+    setContainerWidth(Math.floor(node.getBoundingClientRect().width))
     const ro = new ResizeObserver(([entry]) => {
       setContainerWidth(Math.floor(entry.contentRect.width))
     })
-    ro.observe(containerRef.current)
-    // Initial measurement
-    setContainerWidth(Math.floor(containerRef.current.getBoundingClientRect().width))
-    return () => ro.disconnect()
+    ro.observe(node)
+    observerRef.current = ro
   }, [])
 
   // ── Aspect ratio map (populated from img onLoad) ────────────────────────────
@@ -114,6 +121,8 @@ export function GalleryGrid() {
   let displayImages: ImageFile[]
 
   if (activeSectionFilter === null) {
+    // All Images is the full gallery view — sections are an additional
+    // grouping layer, not a filter that hides photos from the main view.
     displayImages = images
   } else {
     const sec = sections.find(s => s.id === activeSectionFilter)
@@ -139,6 +148,14 @@ export function GalleryGrid() {
     [displayImages, arMap, containerWidth, thumbnailSize]
   )
 
+  // NOTE: these hooks must run unconditionally on every render. Don't move
+  // them below the empty-state early return — that causes React's
+  // "rendered fewer hooks than expected" crash when the user toggles between
+  // a section with images and an empty one.
+  const { active: dndActive } = useDndContext()
+  const isDragging = dndActive !== null
+  const { setNodeRef: setFirstZoneRef, isOver: isOverFirstZone } = useDroppable({ id: FIRST_POSITION_DROP_ID })
+
   // ── Empty state ─────────────────────────────────────────────────────────────
   if (images.length === 0 || displayImages.length === 0) {
     return (
@@ -156,13 +173,9 @@ export function GalleryGrid() {
     )
   }
 
-  const { active: dndActive } = useDndContext()
-  const isDragging = dndActive !== null
-  const { setNodeRef: setFirstZoneRef, isOver: isOverFirstZone } = useDroppable({ id: FIRST_POSITION_DROP_ID })
-
   return (
     <SortableContext items={displayImages.map(img => img.id)} strategy={rectSortingStrategy}>
-      <div ref={containerRef} className="gallery-justified">
+      <div ref={setContainerRef} className="gallery-justified">
 
         {/* Drop zone: drag here to place image at position 1 */}
         <div
@@ -195,7 +208,7 @@ export function GalleryGrid() {
                 sections={sections}
                 imageSectionIds={imageSectionMap.get(image.id) ?? []}
                 selectedIds={selectedIds}
-                onAddToSection={addImagesToSection}
+                onAddToSection={assignImagesToSection}
                 onRemoveFromSection={removeImageFromSection}
               />
             ))}

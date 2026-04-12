@@ -1,53 +1,487 @@
 import { supabase } from './supabase'
 import * as tus from 'tus-js-client'
+import { usePublish } from '../store/publish'
+import { requireBusinessId } from './sessionGuards'
+import {
+  UploadQueueRunner, buildQueueItems,
+  persistQueue, clearPersistedQueue,
+} from './uploadQueue'
+import type {
+  PublishStatus, ImageUploadRecord, CompressionResult,
+  QueueItem, PersistedQueueState,
+} from './uploadTypes'
+import {
+  BUCKET, STORY_BUCKET, STANDARD_UPLOAD_LIMIT, TUS_CHUNK_SIZE,
+  PREVIEW_FAILURE_THRESHOLD, GALLERY_BASE, DEFAULT_QUEUE_CONFIG,
+} from './uploadTypes'
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
-const STANDARD_UPLOAD_LIMIT = 19 * 1024 * 1024 // 19MB — safety margin under 20MB server limit
-const TUS_CHUNK_SIZE = 6 * 1024 * 1024          // 6MB chunks for resumable upload
-const BUCKET = 'gallery-images'
-const STORY_BUCKET = 'gallery-stories'
-const MAX_RETRIES = 2                            // auto-retry failed uploads
-
-// ─── Debug Logger ────────────────────────────────────────────────────────────
+// ─── Logger ─────────────────────────────────────────────────────────────────
 
 function log(step: string, detail?: string | number) {
   const ts = new Date().toISOString().slice(11, 23)
   console.log(`[publish ${ts}] ${step}${detail != null ? ` — ${detail}` : ''}`)
 }
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Supabase helpers ───────────────────────────────────────────────────────
 
-export interface PublishResult {
-  totalImages: number
-  originalsUploaded: number
-  webCopiesUploaded: number
-  thumbsUploaded: number
-  failedFiles: Array<{ filename: string; reason: string }>
-}
-
-export interface UploadProgress {
-  uploaded: number
-  total: number
-  percent: number
-  currentFile?: string
-  phase?: 'originals' | 'web' | 'thumbnails' | 'finalizing'
-  result: PublishResult
-}
-
-interface CloudGallery {
-  id: string
-  publicUrl: string
-}
-
-// ─── TUS Resumable Upload ────────────────────────────────────────────────────
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
 async function getSupabaseToken(): Promise<string> {
   const { data } = await supabase.auth.getSession()
   return data.session?.access_token
-    ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZseWlxZmF3a3JqdnFjbWtwZnZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5ODg3NzksImV4cCI6MjA5MDU2NDc3OX0.ionfOl71NrBO-0iBVBAu6oiTUzkJuIu-drEkY1cmsFY'
+    ?? import.meta.env.VITE_SUPABASE_ANON_KEY
 }
+
+// ─── Active queue runner (singleton for pause/resume/retry) ─────────────────
+
+let activeRunner: UploadQueueRunner | null = null
+
+export function getActiveRunner(): UploadQueueRunner | null {
+  return activeRunner
+}
+
+// ─── Mime type helper ───────────────────────────────────────────────────────
+
+function mimeFromFilename(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() || 'jpg'
+  if (ext === 'png') return 'image/png'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'heic' || ext === 'heif') return 'image/heic'
+  return 'image/jpeg'
+}
+
+// ─── Main Publish Orchestrator ──────────────────────────────────────────────
+
+export interface PublishSectionInput {
+  /** Local id (nanoid) used by the renderer's sections store. */
+  localId: string
+  name: string
+  sortOrder: number
+  /** Source paths of the images that belong to this section. */
+  imagePaths: string[]
+}
+
+export async function publishGallery(
+  galleryName: string,
+  clientName: string | null,
+  clientLocalId: string | null,
+  localGalleryId: string,
+  imagePaths: string[],
+  topPickIds: Set<string>,
+  deliverySettings: Record<string, unknown> & { downloadQuality?: string },
+  sections: PublishSectionInput[] = [],
+): Promise<{ galleryId: string; publicUrl: string }> {
+  // Resolve the owning business BEFORE any DB writes. This guarantees we
+  // never insert an unowned row that RLS will silently reject (or worse,
+  // accept and orphan). Throws a clear error when called from a context
+  // without an authenticated session + business.
+  const businessId = requireBusinessId()
+
+  // Reset any previous publish state first
+  usePublish.getState().reset()
+  const store = usePublish.getState()
+
+  // Build initial image records
+  const imageRecords: ImageUploadRecord[] = imagePaths.map(p => ({
+    filename: p.split('/').pop() || 'unknown',
+    localPath: p,
+    status: 'pending',
+    thumbnailUploaded: false,
+    webPreviewUploaded: false,
+    originalUploaded: false,
+  }))
+
+  // Initialize store (galleryId set to empty until DB record created)
+  store.startPublish('', galleryName, localGalleryId, imageRecords)
+
+  log('start', `${imagePaths.length} images`)
+
+  // ── Step 1: Upsert client (scoped to business) ────────────────────────
+
+  let clientDbId: string | null = null
+  if (clientLocalId && clientName) {
+    const { data: existing } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('business_id', businessId)
+      .eq('local_id', clientLocalId)
+      .maybeSingle()
+    if (existing) {
+      clientDbId = existing.id
+    } else {
+      const { data: created, error: createErr } = await supabase
+        .from('clients')
+        .insert({ business_id: businessId, local_id: clientLocalId, name: clientName })
+        .select('id')
+        .single()
+      if (createErr) {
+        store.setPublishStatus('failed')
+        throw new Error(`Failed to create client: ${createErr.message}`)
+      }
+      if (created) clientDbId = created.id
+    }
+  }
+
+  // ── Step 2: Create gallery record (owned by business) ────────────────
+
+  const galleryPayload = {
+    business_id: businessId,
+    local_id: localGalleryId,
+    name: galleryName,
+    client_id: clientDbId,
+    client_name: clientName,
+    status: 'publishing',
+    image_count: imagePaths.length,
+    delivery_settings: deliverySettings,
+  }
+
+  const { data: gallery, error: galleryError } = await supabase
+    .from('galleries').insert(galleryPayload).select('id').single()
+
+  if (galleryError || !gallery) {
+    store.setPublishStatus('failed')
+    throw new Error(`Failed to create gallery: ${galleryError?.message}`)
+  }
+
+  const galleryId = gallery.id
+  const publicUrl = `${GALLERY_BASE}/gallery/${galleryId}`
+  usePublish.setState({ galleryId })
+  store.setPublicUrl(publicUrl)
+  log('gallery-created', galleryId)
+
+  // ── Step 2b: Create gallery_sections rows and build path→sectionId map ──
+  // Each image will get its `section_id` set from this map at insert time.
+  const sectionPathToDbId = new Map<string, string>()
+  if (sections.length > 0) {
+    const sectionRows = sections.map(s => ({
+      gallery_id: galleryId,
+      name: s.name,
+      sort_order: s.sortOrder,
+    }))
+    const { data: insertedSections, error: secErr } = await supabase
+      .from('gallery_sections')
+      .insert(sectionRows)
+      .select('id, name, sort_order')
+    if (secErr || !insertedSections) {
+      store.setPublishStatus('failed')
+      throw new Error(`Failed to create gallery sections: ${secErr?.message}`)
+    }
+    // Pair the inserted rows back to their input by sort_order (stable, unique
+    // per gallery during this insert batch).
+    for (const inputSection of sections) {
+      const matched = insertedSections.find(r => r.sort_order === inputSection.sortOrder && r.name === inputSection.name)
+      if (!matched) continue
+      for (const p of inputSection.imagePaths) {
+        sectionPathToDbId.set(p, matched.id)
+      }
+    }
+    log('sections-created', insertedSections.length)
+  }
+
+  // ── Step 3: Compress all images (CPU-safe, sequential) ────────────────
+
+  store.setPublishStatus('preparing_assets')
+
+  const compressedMap = new Map<string, CompressionResult>()
+  const COMPRESS_BATCH = 3 // parallel compression — CPU safe
+
+  for (let batch = 0; batch < imagePaths.length; batch += COMPRESS_BATCH) {
+    const slice = imagePaths.slice(batch, batch + COMPRESS_BATCH)
+    const batchRecords = imageRecords.slice(batch, batch + COMPRESS_BATCH)
+
+    // Mark all in batch as generating
+    for (const rec of batchRecords) store.updateImage(rec.filename, { status: 'generating_assets' })
+
+    // Compress batch in parallel
+    const results = await Promise.all(
+      slice.map((path, j) =>
+        window.api.compressImageForUpload(path).then(r => ({
+          filename: batchRecords[j].filename,
+          result: r as CompressionResult | null,
+        }))
+      )
+    )
+
+    for (const { filename, result } of results) {
+      if (!result) {
+        log('compress:failed', filename)
+        store.updateImage(filename, { status: 'failed' })
+        continue
+      }
+
+      compressedMap.set(filename, result)
+      store.updateImage(filename, {
+        status: 'pending',
+        thumbnailSizeBytes: result.thumbSize,
+        webPreviewSizeBytes: result.webSize,
+        originalSizeBytes: result.originalSize,
+        width: result.width,
+        height: result.height,
+        mimeType: mimeFromFilename(filename),
+      })
+
+      log('compressed', `${filename} ${result.width}x${result.height} orig=${(result.originalSize / 1024 / 1024).toFixed(1)}MB web=${(result.webSize / 1024).toFixed(0)}KB thumb=${(result.thumbSize / 1024).toFixed(0)}KB`)
+    }
+  }
+
+  // Check how many failed compression
+  const compressedImages = imageRecords.filter(img => compressedMap.has(img.filename))
+  if (compressedImages.length === 0) {
+    store.setPublishStatus('failed')
+    await supabase.from('galleries').update({ status: 'failed' }).eq('id', galleryId)
+    throw new Error('All images failed compression')
+  }
+
+  // ── Step 4: Build queue ───────────────────────────────────────────────
+
+  store.setPublishStatus('uploading_previews')
+
+  const queueInputs = compressedImages.map(img => ({
+    filename: img.filename,
+    localPath: img.localPath,
+    originalSizeBytes: compressedMap.get(img.filename)!.originalSize,
+  }))
+
+  const queueItems = buildQueueItems(galleryId, queueInputs)
+
+  // Fill in sizes for thumb/preview items
+  for (const item of queueItems) {
+    const cr = compressedMap.get(item.filename)
+    if (!cr) continue
+    if (item.type === 'thumbnail') item.sizeBytes = cr.thumbSize
+    if (item.type === 'web_preview') item.sizeBytes = cr.webSize
+    if (item.type === 'original') item.sizeBytes = cr.originalSize
+  }
+
+  store.setQueueItems(queueItems)
+
+  // ── Step 5: Run queue ─────────────────────────────────────────────────
+
+  const runner = new UploadQueueRunner(queueItems, {
+    config: DEFAULT_QUEUE_CONFIG,
+
+    getBlob: async (item: QueueItem) => {
+      if (item.type === 'thumbnail') {
+        const cr = compressedMap.get(item.filename)
+        if (!cr) return null
+        return { blob: new Blob([cr.thumb], { type: 'image/jpeg' }), contentType: 'image/jpeg' }
+      }
+      if (item.type === 'web_preview') {
+        const cr = compressedMap.get(item.filename)
+        if (!cr) return null
+        return { blob: new Blob([cr.web], { type: 'image/jpeg' }), contentType: 'image/jpeg' }
+      }
+      // Original: read raw file from disk
+      const buffer = await window.api.readFileBuffer(item.localPath)
+      if (!buffer) return null
+      const contentType = mimeFromFilename(item.filename)
+      return { blob: new Blob([buffer], { type: contentType }), contentType }
+    },
+
+    onItemStart: (item) => {
+      const statusMap = {
+        thumbnail: 'uploading_thumbnail' as const,
+        web_preview: 'uploading_preview' as const,
+        original: 'uploading_original' as const,
+      }
+      store.updateImage(item.filename, { status: statusMap[item.type] })
+    },
+
+    onItemComplete: (item) => {
+      if (item.type === 'thumbnail') {
+        store.updateImage(item.filename, { thumbnailUploaded: true })
+      } else if (item.type === 'web_preview') {
+        store.updateImage(item.filename, { webPreviewUploaded: true, status: 'preview_ready' })
+      } else {
+        store.updateImage(item.filename, {
+          originalUploaded: true,
+          originalUploadMethod: item.uploadMethod,
+          status: 'original_ready',
+        })
+        // Original upload tracked in local store
+      }
+      store.setQueueItems(runner.getItems())
+    },
+
+    onItemFailed: (item, error) => {
+      if (item.type === 'original') {
+        store.updateImage(item.filename, {
+          status: 'original_failed',
+          originalFailedReason: error,
+        })
+        // original_uploaded stays false — can retry later
+      } else {
+        store.updateImage(item.filename, { status: 'failed' })
+      }
+      store.setQueueItems(runner.getItems())
+    },
+
+    onPhaseComplete: (phase) => {
+      if (phase === 'previews') {
+        log('phase:previews-done', `thumbs=${store.progress.thumbsUploaded} previews=${store.progress.previewsUploaded}`)
+      } else {
+        log('phase:originals-done', `uploaded=${store.progress.originalsUploaded} failed=${store.progress.originalsFailed}`)
+      }
+    },
+
+    persist: (items) => {
+      store.setQueueItems(items)
+      // Persist to disk for recovery
+      const persistState: PersistedQueueState = {
+        galleryId,
+        galleryName,
+        localGalleryId,
+        publishStatus: store.publishStatus,
+        items,
+        images: store.images,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      persistQueue(persistState)
+    },
+  })
+
+  activeRunner = runner
+
+  // Start the queue — previews run first (blocking)
+  const runPromise = runner.run()
+
+  // Wait for previews to complete before going live
+  // The runner processes thumbs → previews → originals sequentially by type
+  // We need to intercept after previews are done
+
+  const { previewsDone } = await runPromise
+
+  // ── Step 6: Evaluate preview results ──────────────────────────────────
+
+  const totalPreviewable = compressedImages.length
+  const previewsUploaded = usePublish.getState().progress.previewsUploaded
+  const failureRate = 1 - (previewsUploaded / totalPreviewable)
+
+  if (failureRate > PREVIEW_FAILURE_THRESHOLD) {
+    store.setPublishStatus('failed')
+    await supabase.from('galleries').update({ status: 'failed' }).eq('id', galleryId)
+    activeRunner = null
+    throw new Error(`Too many preview failures (${Math.round(failureRate * 100)}%). Gallery cannot go live.`)
+  }
+
+  // ── Step 7: Insert image records ──────────────────────────────────────
+
+  log('inserting-records', compressedImages.length)
+
+  for (let i = 0; i < imagePaths.length; i++) {
+    const filename = imagePaths[i].split('/').pop() || `img_${i}`
+    const cr = compressedMap.get(filename)
+    if (!cr) continue
+    const isTopPick = topPickIds.has(imagePaths[i])
+    const imgRecord = usePublish.getState().images.find(img => img.filename === filename)
+
+    const payload = {
+      gallery_id: galleryId,
+      filename,
+      storage_path: `${galleryId}/web/${filename}`,
+      original_path: `${galleryId}/originals/${filename}`,
+      thumbnail_path: `${galleryId}/thumbs/${filename}`,
+      is_top_pick: isTopPick,
+      sort_order: i,
+      section_id: sectionPathToDbId.get(imagePaths[i]) ?? null,
+    }
+
+    const { error: imgError } = await supabase.from('images').insert(payload).select('id')
+    if (imgError) {
+      console.error(`[image-insert] FAILED ${filename}:`, imgError.message)
+    }
+  }
+
+  // ── Step 8: Mark preview_live ─────────────────────────────────────────
+
+  store.setPublishStatus('preview_live')
+  await supabase.from('galleries').update({
+    status: 'live',
+    public_url: publicUrl,
+    published_at: new Date().toISOString(),
+  }).eq('id', galleryId)
+
+  log('preview-live', publicUrl)
+
+  // Free compression cache (originals read from disk as needed)
+  compressedMap.clear()
+
+  // ── Step 9: Originals continue in background ─────────────────────────
+
+  // The queue runner already processed originals as part of run().
+  // Evaluate final state.
+  const finalProgress = usePublish.getState().progress
+
+  if (finalProgress.originalsFailed === 0 && finalProgress.originalsUploaded === finalProgress.totalImages) {
+    store.setPublishStatus('fully_live')
+    log('fully-live', galleryId)
+  } else if (finalProgress.originalsFailed > 0) {
+    store.setPublishStatus('partially_failed')
+    log('partially-failed', `${finalProgress.originalsFailed} originals failed`)
+  } else {
+    store.setPublishStatus('uploading_originals')
+  }
+
+  // Clear persisted queue on success
+  if (finalProgress.originalsFailed === 0) {
+    await clearPersistedQueue()
+  }
+
+  activeRunner = null
+  return { galleryId, publicUrl }
+}
+
+// ─── Retry Failed Originals ─────────────────────────────────────────────────
+
+export async function retryFailedOriginals(): Promise<void> {
+  const store = usePublish.getState()
+  if (!store.galleryId) return
+
+  const runner = activeRunner
+  if (!runner) {
+    log('retry:no-runner', 'No active queue runner')
+    return
+  }
+
+  store.setPublishStatus('uploading_originals')
+
+  await runner.retryFailedOriginals()
+
+  const progress = usePublish.getState().progress
+  if (progress.originalsFailed === 0) {
+    store.setPublishStatus('fully_live')
+    // originals all done — tracked in local store only
+    await clearPersistedQueue()
+  } else {
+    store.setPublishStatus('partially_failed')
+  }
+}
+
+// ─── Pause / Resume ─────────────────────────────────────────────────────────
+
+export function pauseOriginals(): void {
+  const runner = activeRunner
+  if (runner) runner.pause()
+  usePublish.getState().setPaused(true)
+}
+
+export function resumeOriginals(): void {
+  const runner = activeRunner
+  if (runner) runner.resume()
+  usePublish.getState().setPaused(false)
+}
+
+export function cancelUpload(): void {
+  const runner = activeRunner
+  if (runner) runner.abort()
+  activeRunner = null
+  usePublish.getState().setPublishStatus('failed')
+  clearPersistedQueue()
+  log('upload:cancelled', '')
+}
+
+// ─── Story Upload (unchanged) ───────────────────────────────────────────────
 
 function tusUpload(
   bucket: string,
@@ -61,17 +495,10 @@ function tusUpload(
       endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
       retryDelays: [0, 1000, 3000, 5000],
       chunkSize: TUS_CHUNK_SIZE,
-      headers: {
-        authorization: `Bearer ${token}`,
-        'x-upsert': 'true',
-      },
+      headers: { authorization: `Bearer ${token}`, 'x-upsert': 'true' },
       uploadDataDuringCreation: true,
       removeFingerprintOnSuccess: true,
-      metadata: {
-        bucketName: bucket,
-        objectName: storagePath,
-        contentType,
-      },
+      metadata: { bucketName: bucket, objectName: storagePath, contentType },
       onError: (error) => reject(error),
       onSuccess: () => resolve(),
     })
@@ -82,330 +509,13 @@ function tusUpload(
   })
 }
 
-// ─── Upload Helpers ──────────────────────────────────────────────────────────
-
-async function standardUpload(
-  bucket: string,
-  storagePath: string,
-  data: ArrayBuffer | Blob,
-  contentType: string
-): Promise<{ error: string | null }> {
-  const blob = data instanceof Blob ? data : new Blob([data], { type: contentType })
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(storagePath, blob, { contentType, upsert: true })
-  return { error: error?.message ?? null }
-}
-
-async function uploadFile(
-  bucket: string,
-  storagePath: string,
-  data: ArrayBuffer,
-  contentType: string,
-  token: string
-): Promise<{ error: string | null }> {
-  try {
-    if (data.byteLength <= STANDARD_UPLOAD_LIMIT) {
-      log('upload:standard', `${storagePath} (${(data.byteLength / 1024).toFixed(0)}KB)`)
-      return await standardUpload(bucket, storagePath, data, contentType)
-    }
-    log('upload:tus', `${storagePath} (${(data.byteLength / 1024 / 1024).toFixed(1)}MB)`)
-    const blob = new Blob([data], { type: contentType })
-    await tusUpload(bucket, storagePath, blob, contentType, token)
-    return { error: null }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { error: msg }
-  }
-}
-
-/** Upload with automatic retry on failure */
-async function uploadFileWithRetry(
-  bucket: string,
-  storagePath: string,
-  data: ArrayBuffer,
-  contentType: string,
-  token: string
-): Promise<{ error: string | null }> {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const { error } = await uploadFile(bucket, storagePath, data, contentType, token)
-    if (!error) return { error: null }
-    if (attempt < MAX_RETRIES) {
-      log('retry', `${storagePath} attempt ${attempt + 2}/${MAX_RETRIES + 1}`)
-      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
-    } else {
-      return { error }
-    }
-  }
-  return { error: 'Max retries exceeded' }
-}
-
-/** Standard upload with auto-retry for small files */
-async function standardUploadWithRetry(
-  bucket: string,
-  storagePath: string,
-  blob: Blob,
-  contentType: string
-): Promise<{ error: string | null }> {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(storagePath, blob, { contentType, upsert: true })
-    if (!error) return { error: null }
-    if (attempt < MAX_RETRIES) {
-      log('retry', `${storagePath} attempt ${attempt + 2}/${MAX_RETRIES + 1}`)
-      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
-    } else {
-      return { error: error.message }
-    }
-  }
-  return { error: 'Max retries exceeded' }
-}
-
-// ─── Main Upload Function ────────────────────────────────────────────────────
-
-export async function uploadGalleryToCloud(
-  galleryName: string,
-  clientName: string | null,
-  clientLocalId: string | null,
-  localGalleryId: string,
-  imagePaths: string[],
-  topPickIds: Set<string>,
-  deliverySettings: Record<string, unknown> & { downloadQuality?: string },
-  onProgress: (progress: UploadProgress) => void
-): Promise<CloudGallery & { result: PublishResult }> {
-
-  const result: PublishResult = {
-    totalImages: imagePaths.length,
-    originalsUploaded: 0,
-    webCopiesUploaded: 0,
-    thumbsUploaded: 0,
-    failedFiles: [],
-  }
-
-  // Total steps = (originals? + web + thumbs) * imageCount
-  const uploadOriginals = deliverySettings.downloadQuality === 'original'
-  const totalSteps = imagePaths.length * (uploadOriginals ? 3 : 2)
-  let completedSteps = 0
-
-  const report = (currentFile: string, phase: UploadProgress['phase']) => {
-    const percent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0
-    onProgress({ uploaded: completedSteps, total: totalSteps, percent, currentFile, phase, result: { ...result } })
-  }
-
-  log('start', `${imagePaths.length} images, quality=${deliverySettings.downloadQuality || 'high'}`)
-
-  // 1. Upsert client
-  let clientDbId: string | null = null
-  if (clientLocalId && clientName) {
-    const { data: existingClient } = await supabase
-      .from('clients')
-      .select('id')
-      .eq('local_id', clientLocalId)
-      .single()
-
-    if (existingClient) {
-      clientDbId = existingClient.id
-    } else {
-      const { data: newClient } = await supabase
-        .from('clients')
-        .insert({ local_id: clientLocalId, name: clientName })
-        .select('id')
-        .single()
-      if (newClient) clientDbId = newClient.id
-    }
-  }
-
-  // 2. Create gallery record
-  const galleryPayload = {
-    local_id: localGalleryId,
-    name: galleryName,
-    client_id: clientDbId,
-    client_name: clientName,
-    status: 'publishing',
-    image_count: imagePaths.length,
-    delivery_settings: deliverySettings,
-  }
-  console.log('[gallery-insert] PAYLOAD:', JSON.stringify(galleryPayload, null, 2))
-
-  const { data: gallery, error: galleryError } = await supabase
-    .from('galleries')
-    .insert(galleryPayload)
-    .select('id')
-    .single()
-
-  console.log('[gallery-insert] DATA:', gallery)
-  console.error('[gallery-insert] ERROR:', galleryError)
-
-  if (galleryError || !gallery) {
-    throw new Error(`Failed to create gallery: code=${galleryError?.code} message=${galleryError?.message} details=${galleryError?.details} hint=${galleryError?.hint}`)
-  }
-
-  const galleryId = gallery.id
-  const token = await getSupabaseToken()
-  log('gallery-created', galleryId)
-
-  // 3. Upload originals (only when downloadQuality is "original")
-  if (uploadOriginals) {
-    log('phase:originals', `${imagePaths.length} files`)
-    for (let i = 0; i < imagePaths.length; i++) {
-      const imgPath = imagePaths[i]
-      const filename = imgPath.split('/').pop() || `img_${i}`
-      const originalPath = `${galleryId}/originals/${filename}`
-
-      report(filename, 'originals')
-
-      const buffer = await window.api.readFileBuffer(imgPath)
-      if (!buffer) {
-        log('skip', `${filename} — could not read`)
-        result.failedFiles.push({ filename, reason: 'Could not read source file' })
-        completedSteps++
-        continue
-      }
-
-      log('original', `${filename} (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB)`)
-
-      const ext = filename.split('.').pop()?.toLowerCase() || 'jpg'
-      const mimeType = ext === 'png' ? 'image/png'
-        : ext === 'webp' ? 'image/webp'
-        : ext === 'heic' || ext === 'heif' ? 'image/heic'
-        : 'image/jpeg'
-
-      const { error } = await uploadFileWithRetry(BUCKET, originalPath, buffer, mimeType, token)
-      if (error) {
-        log('failed', `${filename} — ${error}`)
-        result.failedFiles.push({ filename, reason: `Original upload failed: ${error}` })
-      } else {
-        result.originalsUploaded++
-      }
-      completedSteps++
-    }
-  }
-
-  // 4. Upload web-optimized copies (always small — standard upload with retry)
-  log('phase:web', `${imagePaths.length} files`)
-  for (let i = 0; i < imagePaths.length; i++) {
-    const imgPath = imagePaths[i]
-    const filename = imgPath.split('/').pop() || `img_${i}`
-
-    report(filename, 'web')
-
-    const compressed = await window.api.compressImageForUpload(imgPath)
-    if (!compressed) {
-      log('skip', `${filename} — compression failed`)
-      result.failedFiles.push({ filename, reason: 'Compression failed' })
-      completedSteps++
-      continue
-    }
-
-    log('compressed', `${filename} web=${(compressed.webSize / 1024).toFixed(0)}KB thumb=${(compressed.thumbSize / 1024).toFixed(0)}KB`)
-
-    const webPath = `${galleryId}/web/${filename}`
-    const webBlob = new Blob([compressed.web], { type: 'image/jpeg' })
-    const { error } = await standardUploadWithRetry(BUCKET, webPath, webBlob, 'image/jpeg')
-
-    if (error) {
-      log('failed', `${filename} web — ${error}`)
-      result.failedFiles.push({ filename, reason: `Web copy upload failed: ${error}` })
-    } else {
-      result.webCopiesUploaded++
-    }
-    completedSteps++
-  }
-
-  // 5. Upload thumbnails (always small — standard upload with retry)
-  log('phase:thumbnails', `${imagePaths.length} files`)
-  for (let i = 0; i < imagePaths.length; i++) {
-    const imgPath = imagePaths[i]
-    const filename = imgPath.split('/').pop() || `img_${i}`
-
-    report(filename, 'thumbnails')
-
-    const compressed = await window.api.compressImageForUpload(imgPath)
-    if (!compressed) {
-      completedSteps++
-      continue
-    }
-
-    const thumbPath = `${galleryId}/thumbs/${filename}`
-    const thumbBlob = new Blob([compressed.thumb], { type: 'image/jpeg' })
-    const { error } = await standardUploadWithRetry(BUCKET, thumbPath, thumbBlob, 'image/jpeg')
-
-    if (!error) {
-      result.thumbsUploaded++
-    } else {
-      log('failed', `${filename} thumb — ${error}`)
-    }
-    completedSteps++
-  }
-
-  report('', 'finalizing')
-  log('uploads-done', `originals=${result.originalsUploaded} web=${result.webCopiesUploaded} thumbs=${result.thumbsUploaded} failed=${result.failedFiles.length}`)
-
-  // 6. Fail if critical images failed (web copy is required)
-  const criticalFailures = result.failedFiles.filter(f =>
-    f.reason.includes('Compression failed') || f.reason.includes('Web copy')
-  )
-  if (criticalFailures.length > 0) {
-    await supabase.from('galleries').update({ status: 'failed' }).eq('id', galleryId)
-    const reasons = criticalFailures.map(f => `${f.filename}: ${f.reason}`).join('\n')
-    throw new Error(
-      `Publish incomplete — ${criticalFailures.length} image(s) failed:\n${reasons}`
-    )
-  }
-
-  // 7. Insert image records (only after uploads succeeded)
-  log('inserting-records', imagePaths.length)
-  for (let i = 0; i < imagePaths.length; i++) {
-    const imgPath = imagePaths[i]
-    const filename = imgPath.split('/').pop() || `img_${i}`
-    const isTopPick = topPickIds.has(imgPath)
-
-    const imgPayload = {
-      gallery_id: galleryId,
-      filename,
-      storage_path: `${galleryId}/web/${filename}`,
-      original_path: uploadOriginals ? `${galleryId}/originals/${filename}` : null,
-      thumbnail_path: `${galleryId}/thumbs/${filename}`,
-      is_top_pick: isTopPick,
-      sort_order: i,
-    }
-
-    const { data: imgData, error: imgError } = await supabase
-      .from('images')
-      .insert(imgPayload)
-      .select('id')
-
-    if (imgError) {
-      console.error(`[image-insert] FAILED ${filename}:`, { code: imgError.code, message: imgError.message, details: imgError.details, hint: imgError.hint })
-      console.log(`[image-insert] PAYLOAD was:`, imgPayload)
-    } else if (i === 0) {
-      console.log(`[image-insert] first record OK:`, imgData)
-    }
-  }
-
-  // 8. Generate public URL — gallery is NOT live yet, stories still pending
-  const GALLERY_BASE = 'https://gallery-web-theta.vercel.app'
-  const publicUrl = `${GALLERY_BASE}/gallery/${galleryId}`
-
-  // Mark as live only after all uploads + records are done
-  // Stories are handled by the caller — gallery goes live AFTER stories complete
-  log('ready', publicUrl)
-
-  return { id: galleryId, publicUrl, result }
-}
-
-// ─── Story Upload ────────────────────────────────────────────────────────────
-
 export async function uploadStoryToCloud(
   galleryId: string,
   style: string,
   storyFilePath: string
 ): Promise<{ skipped: boolean; reason?: string }> {
   const fileSize = await window.api.getFileSize(storyFilePath)
-  if (fileSize === null) {
-    return { skipped: true, reason: 'Could not read story file' }
-  }
+  if (fileSize === null) return { skipped: true, reason: 'Could not read story file' }
 
   log('story', `${style} (${(fileSize / 1024 / 1024).toFixed(1)}MB)`)
 
@@ -427,96 +537,312 @@ export async function uploadStoryToCloud(
       await tusUpload(STORY_BUCKET, storagePath, blob, 'video/mp4', token)
     }
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { skipped: true, reason: `Upload failed: ${msg}` }
+    return { skipped: true, reason: `Upload failed: ${err instanceof Error ? err.message : String(err)}` }
   }
 
-  await supabase
-    .from('stories')
-    .insert({
-      gallery_id: galleryId,
-      style,
-      storage_path: storagePath,
-    })
-
+  await supabase.from('stories').insert({ gallery_id: galleryId, style, storage_path: storagePath })
   log('story-done', style)
   return { skipped: false }
 }
 
-// ─── Mark Gallery Live ───────────────────────────────────────────────────────
+// ─── Mark Gallery Live (called after stories complete) ──────────────────────
 
-/** Call this ONLY after all uploads + stories are complete */
 export async function markGalleryLive(galleryId: string, publicUrl: string): Promise<void> {
-  const payload = { status: 'live', public_url: publicUrl, published_at: new Date().toISOString() }
-  console.log('[markGalleryLive] galleryId:', galleryId)
-  console.log('[markGalleryLive] PAYLOAD:', JSON.stringify(payload))
-
-  const { data, error } = await supabase
+  // Gallery is already marked live during preview_live phase.
+  // This is kept for backward compat with story flow.
+  const { error } = await supabase
     .from('galleries')
-    .update(payload)
+    .update({ status: 'live', public_url: publicUrl, published_at: new Date().toISOString() })
     .eq('id', galleryId)
     .select('id')
 
-  console.log('[markGalleryLive] DATA:', data)
-  console.error('[markGalleryLive] ERROR:', error)
-
   if (error) {
-    throw new Error(`markGalleryLive failed: code=${error.code} message=${error.message} details=${error.details} hint=${error.hint}`)
+    throw new Error(`markGalleryLive failed: ${error.message}`)
   }
 }
 
-// ─── Update Live Gallery Settings ────────────────────────────────────────────
+// ─── Delete Gallery from Cloud ──────────────────────────────────────────────
 
-/** Update delivery_settings on an already-published gallery. No re-upload needed. */
+export async function deleteGalleryFromCloud(
+  galleryDbIdOrLocalId: string
+): Promise<{ error: string | null }> {
+  log('delete-gallery:start', galleryDbIdOrLocalId)
+
+  // Resolve gallery DB id
+  let galleryDbId = galleryDbIdOrLocalId
+  const isUuid = /^[0-9a-f]{8}-/.test(galleryDbId)
+  if (!isUuid) {
+    const { data } = await supabase.from('galleries').select('id').eq('local_id', galleryDbId).single()
+    if (!data) return { error: null } // not published — nothing to delete
+    galleryDbId = data.id
+  }
+
+  // 1. Get all images to delete from storage
+  const { data: imgs } = await supabase.from('images').select('filename').eq('gallery_id', galleryDbId)
+
+  if (imgs && imgs.length > 0) {
+    // 2. Delete files from storage (thumbs, web, originals)
+    const paths = imgs.flatMap(img => [
+      `${galleryDbId}/thumbs/${img.filename}`,
+      `${galleryDbId}/web/${img.filename}`,
+      `${galleryDbId}/originals/${img.filename}`,
+    ])
+    await supabase.storage.from(BUCKET).remove(paths)
+    log('delete-gallery:storage', `${paths.length} files`)
+  }
+
+  // 3. Delete stories from storage
+  const { data: stories } = await supabase.from('stories').select('storage_path').eq('gallery_id', galleryDbId)
+  if (stories && stories.length > 0) {
+    await supabase.storage.from(STORY_BUCKET).remove(stories.map(s => s.storage_path))
+  }
+
+  // 4. Delete DB records (images + stories cascade with gallery)
+  await supabase.from('galleries').delete().eq('id', galleryDbId)
+  log('delete-gallery:done', galleryDbId)
+
+  return { error: null }
+}
+
+// ─── Delete Single Image from Cloud ─────────────────────────────────────────
+
+export async function deleteImageFromCloud(
+  galleryDbIdOrLocalId: string,
+  filename: string
+): Promise<{ error: string | null }> {
+  log('delete-image:start', `${galleryDbIdOrLocalId} / ${filename}`)
+
+  let galleryDbId = galleryDbIdOrLocalId
+  const isUuid = /^[0-9a-f]{8}-/.test(galleryDbId)
+  if (!isUuid) {
+    const { data } = await supabase.from('galleries').select('id').eq('local_id', galleryDbId).single()
+    if (!data) return { error: null }
+    galleryDbId = data.id
+  }
+
+  // Delete from storage
+  await supabase.storage.from(BUCKET).remove([
+    `${galleryDbId}/thumbs/${filename}`,
+    `${galleryDbId}/web/${filename}`,
+    `${galleryDbId}/originals/${filename}`,
+  ])
+
+  // Delete from DB
+  await supabase.from('images').delete().eq('gallery_id', galleryDbId).eq('filename', filename)
+
+  // Update count
+  const { count } = await supabase.from('images').select('id', { count: 'exact', head: true }).eq('gallery_id', galleryDbId)
+  await supabase.from('galleries').update({ image_count: count || 0 }).eq('id', galleryDbId)
+
+  log('delete-image:done', filename)
+  return { error: null }
+}
+
+// ─── Update Gallery Images (order + removals, no re-upload) ─────────────────
+
+export async function updateGalleryImages(
+  galleryDbIdOrLocalId: string,
+  currentImagePaths: string[],
+  publishedImageIds: string[],
+  imageRegistry: Record<string, { filename: string; path: string }>
+): Promise<{ error: string | null }> {
+  log('update-images:start', `gallery=${galleryDbIdOrLocalId} current=${currentImagePaths.length} published=${publishedImageIds.length}`)
+
+  // Resolve gallery DB id — could be UUID or local_id
+  let galleryDbId = galleryDbIdOrLocalId
+  const isUuid = /^[0-9a-f]{8}-/.test(galleryDbId)
+  if (!isUuid) {
+    const { data } = await supabase.from('galleries').select('id').eq('local_id', galleryDbId).eq('status', 'live').single()
+    if (!data) return { error: 'Gallery not found' }
+    galleryDbId = data.id
+  }
+
+  // Build current filename list from paths
+  const currentFilenames = currentImagePaths.map(p => p.split('/').pop() || '')
+
+  // Build published filename list from IDs (IDs are paths in this app)
+  const publishedFilenames = publishedImageIds.map(id => {
+    const img = imageRegistry[id]
+    return img?.filename || id.split('/').pop() || ''
+  })
+
+  // 1. Find removed images (in published but not in current)
+  const currentSet = new Set(currentFilenames)
+  const removed = publishedFilenames.filter(f => !currentSet.has(f))
+
+  if (removed.length > 0) {
+    log('update-images:removing', `${removed.length} images`)
+    // Delete from storage
+    const storagePaths = removed.flatMap(f => [
+      `${galleryDbId}/thumbs/${f}`,
+      `${galleryDbId}/web/${f}`,
+      `${galleryDbId}/originals/${f}`,
+    ])
+    await supabase.storage.from(BUCKET).remove(storagePaths)
+    // Delete from DB
+    for (const filename of removed) {
+      const { error } = await supabase
+        .from('images')
+        .delete()
+        .eq('gallery_id', galleryDbId)
+        .eq('filename', filename)
+      if (error) log('update-images:remove-error', `${filename}: ${error.message}`)
+    }
+  }
+
+  // 2. Update sort_order for remaining images
+  log('update-images:reorder', `${currentFilenames.length} images`)
+  for (let i = 0; i < currentFilenames.length; i++) {
+    const filename = currentFilenames[i]
+    await supabase
+      .from('images')
+      .update({ sort_order: i })
+      .eq('gallery_id', galleryDbId)
+      .eq('filename', filename)
+  }
+
+  // 3. Update gallery image_count
+  await supabase
+    .from('galleries')
+    .update({ image_count: currentFilenames.length })
+    .eq('id', galleryDbId)
+
+  log('update-images:done', `${currentFilenames.length} images, ${removed.length} removed`)
+  return { error: null }
+}
+
+// ─── Update Gallery Sections in Cloud ───────────────────────────────────────
+// Used by the "Update Changes" button on a gallery that's already live.
+// Re-creates the gallery_sections rows for the gallery and reassigns each
+// image's section_id by filename. The image rows themselves and their storage
+// objects are not touched.
+export async function updateGallerySectionsInCloud(
+  galleryDbIdOrLocalId: string,
+  sections: PublishSectionInput[],
+): Promise<{ error: string | null }> {
+  // Resolve gallery DB id (UUID or local_id)
+  let galleryDbId = galleryDbIdOrLocalId
+  const isUuid = /^[0-9a-f]{8}-/.test(galleryDbId)
+  if (!isUuid) {
+    const { data } = await supabase.from('galleries').select('id').eq('local_id', galleryDbId).maybeSingle()
+    if (!data) return { error: 'Gallery not found in cloud' }
+    galleryDbId = data.id
+  }
+
+  log('update-sections:start', `${sections.length} sections`)
+
+  // 1. Wipe existing sections (cascade is OK because images.section_id is
+  //    ON DELETE SET NULL, so deleting sections clears the FK without
+  //    deleting the images themselves).
+  const { error: delErr } = await supabase
+    .from('gallery_sections')
+    .delete()
+    .eq('gallery_id', galleryDbId)
+  if (delErr) return { error: `Delete old sections failed: ${delErr.message}` }
+
+  // 2. Insert new sections
+  const sectionPathToDbId = new Map<string, string>()
+  if (sections.length > 0) {
+    const sectionRows = sections.map(s => ({
+      gallery_id: galleryDbId,
+      name: s.name,
+      sort_order: s.sortOrder,
+    }))
+    const { data: insertedSections, error: insErr } = await supabase
+      .from('gallery_sections')
+      .insert(sectionRows)
+      .select('id, name, sort_order')
+    if (insErr || !insertedSections) {
+      return { error: `Insert sections failed: ${insErr?.message}` }
+    }
+    for (const inputSection of sections) {
+      const matched = insertedSections.find(r => r.sort_order === inputSection.sortOrder && r.name === inputSection.name)
+      if (!matched) continue
+      for (const p of inputSection.imagePaths) {
+        sectionPathToDbId.set(p, matched.id)
+      }
+    }
+  }
+
+  // 3. Reassign section_id on each image by filename. Filename is unique
+  //    within a gallery (enforced by the upload pipeline using basename).
+  const filenameToSection = new Map<string, string | null>()
+  for (const [path, sectionId] of sectionPathToDbId) {
+    const filename = path.split('/').pop() || path
+    filenameToSection.set(filename, sectionId)
+  }
+
+  // Pull all current images for the gallery so we can clear stragglers too.
+  const { data: galleryImages } = await supabase
+    .from('images')
+    .select('id, filename')
+    .eq('gallery_id', galleryDbId)
+
+  if (galleryImages) {
+    for (const img of galleryImages) {
+      const newSection = filenameToSection.get(img.filename) ?? null
+      const { error: upErr } = await supabase
+        .from('images')
+        .update({ section_id: newSection })
+        .eq('id', img.id)
+      if (upErr) {
+        log('update-sections:image-error', `${img.filename}: ${upErr.message}`)
+      }
+    }
+  }
+
+  log('update-sections:done', `${sections.length} sections`)
+  return { error: null }
+}
+
+// ─── Resolve cloud client id for a local client ────────────────────────────
+// Returns the Supabase UUID of the `clients` row matching this business +
+// local client id, or null if no gallery has ever been published for that
+// client (in which case no cloud row exists yet).
+export async function fetchCloudClientId(localClientId: string): Promise<string | null> {
+  const businessId = requireBusinessId()
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id')
+    .eq('business_id', businessId)
+    .eq('local_id', localClientId)
+    .maybeSingle()
+  if (error || !data) return null
+  return data.id
+}
+
+/** Public URL for the client landing page on the gallery web host. */
+export function buildClientPageUrl(cloudClientId: string): string {
+  return `${GALLERY_BASE}/client/${cloudClientId}`
+}
+
+// ─── Update Gallery Settings (unchanged) ────────────────────────────────────
+
 export async function updateGallerySettings(
   localGalleryId: string,
   deliverySettings: Record<string, unknown>
 ): Promise<{ error: string | null }> {
   log('update-settings:start', `local_id=${localGalleryId}`)
 
-  // Validate payload
-  const settingsJson = JSON.stringify(deliverySettings)
-  log('update-settings:payload', `${settingsJson.length} chars`)
-  console.log('[update-settings] payload:', deliverySettings)
-
-  // Check for undefined values
-  for (const [key, val] of Object.entries(deliverySettings)) {
-    if (val === undefined) {
-      log('update-settings:warn', `field "${key}" is undefined — will be stripped by JSON`)
-    }
-  }
-
-  // First, verify the gallery exists
   const { data: existing, error: findError } = await supabase
     .from('galleries')
     .select('id, local_id, status')
     .eq('local_id', localGalleryId)
     .eq('status', 'live')
 
-  log('update-settings:find', `found=${existing?.length ?? 0} error=${findError?.message ?? 'none'}`)
-  console.log('[update-settings] found galleries:', existing)
-
   if (!existing || existing.length === 0) {
-    const msg = findError?.message || `No live gallery found with local_id=${localGalleryId}`
-    log('update-settings:error', msg)
-    return { error: msg }
+    return { error: findError?.message || `No live gallery found with local_id=${localGalleryId}` }
   }
 
-  // Perform the update
-  const { data: updateData, error: updateError } = await supabase
+  const { error: updateError } = await supabase
     .from('galleries')
     .update({ delivery_settings: deliverySettings })
     .eq('local_id', localGalleryId)
     .eq('status', 'live')
     .select('id')
 
-  log('update-settings:result', `updated=${updateData?.length ?? 0} error=${updateError?.message ?? 'none'} code=${updateError?.code ?? 'none'}`)
-  console.log('[update-settings] update result:', { data: updateData, error: updateError })
-
   if (updateError) {
-    log('update-settings:error', `${updateError.code}: ${updateError.message} — ${updateError.details}`)
     return { error: `${updateError.code}: ${updateError.message}` }
   }
-  log('update-settings:done', localGalleryId)
   return { error: null }
 }

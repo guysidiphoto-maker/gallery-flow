@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { useSections } from '../store/sections'
 import { useGallery } from '../store/gallery'
@@ -78,9 +78,19 @@ interface SectionsPanelProps {
   publishStatus?: 'draft' | 'publishing' | 'live'
   publicUrl?: string
   onPublish?: () => void
+  hasUnsavedChanges?: boolean
 }
 
-export function SectionsPanel({ publishStatus, publicUrl, onPublish }: SectionsPanelProps = {}) {
+export function SectionsPanel({ publishStatus, publicUrl, onPublish, hasUnsavedChanges }: SectionsPanelProps = {}) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopyLink = useCallback(() => {
+    if (!publicUrl) return
+    navigator.clipboard.writeText(publicUrl).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }).catch(() => {})
+  }, [publicUrl])
   const {
     sections,
     activeSectionFilter,
@@ -199,31 +209,69 @@ export function SectionsPanel({ publishStatus, publicUrl, onPublish }: SectionsP
       <div className="sections-panel__footer">
         {publishStatus === 'live' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div className="sp__live-indicator" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-              Published to cloud
-              {publicUrl && (
+            {hasUnsavedChanges ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5">
+                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <span style={{ color: '#f59e0b', fontSize: 11 }}>Unpublished changes</span>
+                </div>
+                <button
+                  className="btn btn--accent"
+                  style={{ fontSize: 11, padding: '6px 10px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                  onClick={onPublish}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" />
+                  </svg>
+                  Update Changes
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Published state — green check + Copy Link */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                  <span style={{ fontSize: 11, color: '#10b981', fontWeight: 500 }}>Published</span>
+                </div>
+                {publicUrl && (
+                  <button
+                    className="btn btn--ghost"
+                    style={{ fontSize: 11, padding: '6px 10px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, color: copied ? '#10b981' : 'rgba(255,255,255,.55)', transition: 'color .15s' }}
+                    onClick={handleCopyLink}
+                  >
+                    {copied ? (
+                      <>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        Link Copied!
+                      </>
+                    ) : (
+                      <>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                        Copy Link
+                      </>
+                    )}
+                  </button>
+                )}
                 <button
                   className="btn btn--ghost"
-                  style={{ fontSize: '11px', padding: '2px 8px', marginLeft: 'auto' }}
-                  onClick={() => navigator.clipboard.writeText(publicUrl)}
+                  style={{ fontSize: 11, padding: '4px 10px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, color: 'rgba(255,255,255,.35)' }}
+                  onClick={onPublish}
                 >
-                  Copy Link
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                  Edit Settings
                 </button>
-              )}
-            </div>
-            <button
-              className="btn btn--ghost"
-              style={{ fontSize: '11px', padding: '4px 10px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, color: 'rgba(255,255,255,.5)' }}
-              onClick={onPublish}
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
-              </svg>
-              Edit Gallery Settings
-            </button>
+              </>
+            )}
           </div>
         ) : publishStatus === 'publishing' ? (
           <div className="sp__live-indicator sp__live-indicator--pub">

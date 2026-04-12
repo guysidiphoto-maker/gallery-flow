@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, protocol, shell, Menu } from 'electron'
 import { join, dirname } from 'path'
 import { readdir, stat, rename, readFile, mkdir, copyFile } from 'fs/promises'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
@@ -6,6 +6,7 @@ import * as os from 'os'
 import { buildStoryScenes, renderStory } from './storyRenderer'
 import { exportSocialPackage, type SocialExportScene } from './socialExporter'
 import { exportGallery } from './exportGallery'
+import { initAutoUpdater } from './updater'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
@@ -40,7 +41,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    fullscreen: true,
+    fullscreen: !isDev,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#141414',
     vibrancy: 'under-window',
@@ -66,7 +67,39 @@ function createWindow(): void {
   }
 }
 
+app.setAboutPanelOptions({
+  applicationName: 'Pixflow',
+  applicationVersion: app.getVersion(),
+  copyright: '\u00A9 2026 Pixflow',
+  website: 'https://pixflow-ai.com',
+})
+
 app.whenReady().then(() => {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        { label: 'About Pixflow', role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Sign Out',
+          click: () => {
+            mainWindow?.webContents.send('sign-out')
+          },
+        },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
   // Register localfile:// protocol to serve local images
   protocol.registerFileProtocol('localfile', (request, callback) => {
     try {
@@ -80,6 +113,7 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+  initAutoUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -105,7 +139,15 @@ ipcMain.handle('open-folder-dialog', async () => {
 // Scan folder for images
 ipcMain.handle('scan-folder', async (_e, folderPath: string) => {
   const entries = await readdir(folderPath)
-  const images = []
+  const images: Array<{
+    filename: string
+    path: string
+    folderPath: string
+    ext: string
+    size: number
+    mtimeMs: number
+    birthtimeMs: number
+  }> = []
 
   for (const name of entries) {
     const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
@@ -211,6 +253,189 @@ ipcMain.handle('create-folder', async (_e, folderPath: string) => {
   }
 })
 
+// Check which of the supplied absolute file paths no longer exist on disk.
+// Used by the renderer to spot "missing" images after a folder rename/move
+// without rendering N broken <img> tags.
+ipcMain.handle('check-paths-exist', async (_e, paths: string[]) => {
+  const missing: string[] = []
+  await Promise.all(paths.map(async p => {
+    try {
+      await stat(p)
+    } catch {
+      missing.push(p)
+    }
+  }))
+  return missing
+})
+
+// Recursively walk a folder looking for files whose basename appears in the
+// supplied set. Returns a map { basename → absolutePath } using the FIRST
+// match encountered (deterministic enough for relink). The walk is depth-
+// first but limited to common image extensions and skips hidden directories.
+ipcMain.handle('find-files-by-name', async (_e, folderPath: string, basenames: string[]) => {
+  const wanted = new Set(basenames)
+  const found: Record<string, string> = {}
+
+  async function walk(dir: string) {
+    let entries: string[]
+    try {
+      entries = await readdir(dir)
+    } catch {
+      return
+    }
+    for (const name of entries) {
+      if (name.startsWith('.')) continue
+      if (wanted.size === 0) return
+      const full = join(dir, name)
+      let info
+      try { info = await stat(full) } catch { continue }
+      if (info.isDirectory()) {
+        await walk(full)
+      } else if (info.isFile()) {
+        if (wanted.has(name) && !(name in found)) {
+          const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
+          if (IMAGE_EXTS.has(ext)) {
+            found[name] = full
+            wanted.delete(name)
+          }
+        }
+      }
+    }
+  }
+
+  await walk(folderPath)
+  return found
+})
+
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion()
+})
+
+// Returns the approximate timestamp (ms) when the system was last booted.
+// Used by the renderer to invalidate the auth session after a reboot
+// while still persisting it across normal app restarts.
+ipcMain.handle('get-system-boot-time', () => {
+  try {
+    return Math.floor(Date.now() - os.uptime() * 1000)
+  } catch {
+    return null
+  }
+})
+
+// ─── Google OAuth (Electron) ──────────────────────────────────────────────────
+// Opens a child BrowserWindow that walks the user through the Supabase
+// implicit-grant Google flow, then captures the access/refresh tokens from
+// the redirect URL fragment and returns them to the renderer.
+ipcMain.handle('google-oauth', async (_e, authUrl: string, redirectMatch: string) => {
+  return new Promise<{ access_token?: string; refresh_token?: string; code?: string; error?: string }>((resolve) => {
+    // Use a dedicated session partition so the auth window can't pollute the
+    // main app's localStorage with a half-completed OAuth session, and so we
+    // can attach a webRequest filter scoped to just this flow.
+    const partition = `auth-${Date.now()}`
+    const authSession = require('electron').session.fromPartition(partition)
+
+    const authWin = new BrowserWindow({
+      width: 500,
+      height: 680,
+      title: 'Sign in with Google',
+      backgroundColor: '#ffffff',
+      parent: mainWindow ?? undefined,
+      modal: false,
+      autoHideMenuBar: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        partition,
+      }
+    })
+
+    let settled = false
+    const finish = (result: { access_token?: string; refresh_token?: string; code?: string; error?: string }) => {
+      if (settled) return
+      settled = true
+      try { authWin.destroy() } catch { /* noop */ }
+      resolve(result)
+    }
+
+    const tryParseUrl = (url: string): boolean => {
+      if (!url.startsWith(redirectMatch)) return false
+      try {
+        const u = new URL(url)
+        // PKCE flow → ?code=...
+        const code = u.searchParams.get('code') ?? undefined
+        const qErr = u.searchParams.get('error_description') ?? u.searchParams.get('error') ?? undefined
+        if (code) {
+          finish({ code })
+          return true
+        }
+        // Implicit flow → #access_token=...
+        const hash = u.hash.startsWith('#') ? u.hash.slice(1) : u.hash
+        if (hash) {
+          const params = new URLSearchParams(hash)
+          const access_token = params.get('access_token') ?? undefined
+          const refresh_token = params.get('refresh_token') ?? undefined
+          const hErr = params.get('error_description') ?? params.get('error') ?? undefined
+          if (access_token) {
+            finish({ access_token, refresh_token })
+            return true
+          }
+          if (hErr) {
+            finish({ error: hErr })
+            return true
+          }
+        }
+        if (qErr) {
+          finish({ error: qErr })
+          return true
+        }
+      } catch { /* not a parseable URL */ }
+      return false
+    }
+
+    // PRIMARY interception: kill any HTTP request that targets our redirect URL
+    // before it can hit the dev server. We use <all_urls> because Chromium
+    // match patterns don't accept ports in the host, so a more specific
+    // pattern like http://localhost:5173/auth/callback* would silently fail.
+    try {
+      authSession.webRequest.onBeforeRequest(
+        { urls: ['<all_urls>'] },
+        (details, callback) => {
+          if (details.url.startsWith(redirectMatch)) {
+            const handled = tryParseUrl(details.url)
+            callback({ cancel: handled })
+            return
+          }
+          callback({ cancel: false })
+        }
+      )
+    } catch (err) {
+      console.error('[google-oauth] failed to attach webRequest filter:', err)
+    }
+
+    // Belt-and-braces: also listen on navigation events in case the redirect
+    // somehow happens client-side without an HTTP request.
+    authWin.webContents.on('will-redirect', (event, url) => {
+      if (tryParseUrl(url)) event.preventDefault()
+    })
+    authWin.webContents.on('will-navigate', (event, url) => {
+      if (tryParseUrl(url)) event.preventDefault()
+    })
+    authWin.webContents.on('did-navigate', (_event, url) => { tryParseUrl(url) })
+    authWin.webContents.on('did-navigate-in-page', (_event, url) => { tryParseUrl(url) })
+    authWin.webContents.on('render-process-gone', (_event, details) => {
+      console.error('[google-oauth] auth window renderer gone:', details.reason)
+      finish({ error: `auth window crashed: ${details.reason}` })
+    })
+    authWin.on('closed', () => { finish({ error: 'cancelled' }) })
+
+    authWin.loadURL(authUrl).catch((err: unknown) => {
+      console.error('[google-oauth] loadURL failed:', err)
+      finish({ error: err instanceof Error ? err.message : String(err) })
+    })
+  })
+})
+
 ipcMain.handle('get-system-username', () => {
   try {
     const raw = os.userInfo().username ?? ''
@@ -240,7 +465,7 @@ ipcMain.handle('read-file-buffer', async (_e, filePath: string) => {
 })
 
 // Compress image for cloud upload using nativeImage
-// Returns { web: ArrayBuffer, thumb: ArrayBuffer, originalSize: number, webSize: number, thumbSize: number }
+// Returns { web, thumb, originalSize, webSize, thumbSize, width, height }
 ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
   try {
     const { nativeImage } = await import('electron')
@@ -251,8 +476,9 @@ ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
     const size = img.getSize()
     if (size.width === 0 || size.height === 0) return null
 
-    // Web version: max 2400px on longest side, JPEG quality 85
-    const maxWeb = 2400
+    // Web version: max 2000px on longest side, JPEG quality 80
+    // Optimized for fast upload while maintaining visual quality
+    const maxWeb = 2000
     let webImg = img
     if (size.width > maxWeb || size.height > maxWeb) {
       if (size.width >= size.height) {
@@ -261,14 +487,14 @@ ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
         webImg = img.resize({ height: maxWeb, quality: 'good' })
       }
     }
-    const webJpeg = webImg.toJPEG(85)
+    const webJpeg = webImg.toJPEG(80)
 
-    // Thumbnail: max 800px wide, JPEG quality 75
+    // Thumbnail: max 600px wide, JPEG quality 70 — small and fast
     let thumbImg = img
-    if (size.width > 800) {
-      thumbImg = img.resize({ width: 800, quality: 'good' })
+    if (size.width > 600) {
+      thumbImg = img.resize({ width: 600, quality: 'good' })
     }
-    const thumbJpeg = thumbImg.toJPEG(75)
+    const thumbJpeg = thumbImg.toJPEG(70)
 
     return {
       web: webJpeg.buffer.slice(webJpeg.byteOffset, webJpeg.byteOffset + webJpeg.byteLength),
@@ -276,6 +502,8 @@ ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
       originalSize,
       webSize: webJpeg.byteLength,
       thumbSize: thumbJpeg.byteLength,
+      width: size.width,
+      height: size.height,
     }
   } catch {
     return null

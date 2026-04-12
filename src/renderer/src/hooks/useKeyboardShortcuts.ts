@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useGallery } from '../store/gallery'
 import { useSections } from '../store/sections'
 
-export function useKeyboardShortcuts() {
+export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void }) {
   const {
     images,
     selectedIds,
@@ -11,6 +11,7 @@ export function useKeyboardShortcuts() {
     moveToBottom,
     deleteSelected,
     undoLastRename,
+    undo,
     selectAll,
     deselectAll,
     selectImage,
@@ -26,13 +27,20 @@ export function useKeyboardShortcuts() {
     showTopPicksTray,
   } = useGallery()
 
-  const { sections, addSection, addImagesToSection, isPanelOpen, togglePanel } = useSections()
+  const { sections, addSection, assignImagesToSection, isPanelOpen, togglePanel } = useSections()
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Don't fire shortcuts when typing in inputs
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+
+      // ? key (Shift held) — toggle keyboard shortcuts modal
+      if (e.key === '?' && e.shiftKey) {
+        e.preventDefault()
+        options?.onShowShortcuts?.()
+        return
+      }
 
       // Viewer handles its own navigation shortcuts
       if (viewerImageId !== null) return
@@ -46,10 +54,10 @@ export function useKeyboardShortcuts() {
         return
       }
 
-      // Cmd+Z: Undo last rename
+      // Cmd+Z: Unified undo (visual reorder/picks/sort, or filesystem rename)
       if (meta && e.key === 'z' && !e.shiftKey) {
         e.preventDefault()
-        undoLastRename()
+        undo()
         return
       }
 
@@ -137,7 +145,7 @@ export function useKeyboardShortcuts() {
           topPicksSection = updated[updated.length - 1]
         }
         if (topPicksSection) {
-          useSections.getState().addImagesToSection(imageIds, topPicksSection.id)
+          useSections.getState().assignImagesToSection(imageIds, topPicksSection.id)
         }
         // Open sections panel if not open
         if (!useSections.getState().isPanelOpen) {
@@ -244,9 +252,10 @@ export function useKeyboardShortcuts() {
   }, [
     images, selectedIds, topPickIds, viewerImageId, showTopPicksTray, sections,
     openFolder, moveToTop, moveToBottom,
-    deleteSelected, undoLastRename, selectAll, deselectAll, selectImage, selectRange,
+    deleteSelected, undoLastRename, undo, selectAll, deselectAll, selectImage, selectRange,
     togglePreviewMode, prepareApplyOrder,
     toggleTopPickSelected, removeTopPickSelected, openStoryModal, toggleTopPicksTray,
-    addSection, addImagesToSection, isPanelOpen, togglePanel
+    addSection, assignImagesToSection, isPanelOpen, togglePanel,
+    options?.onShowShortcuts
   ])
 }

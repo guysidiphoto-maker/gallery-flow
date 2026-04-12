@@ -43,6 +43,8 @@ const api = {
     originalSize: number
     webSize: number
     thumbSize: number
+    width: number
+    height: number
   } | null> =>
     ipcRenderer.invoke('compress-image-for-upload', filePath),
 
@@ -112,6 +114,30 @@ const api = {
 
   getSystemUsername: (): Promise<string | null> =>
     ipcRenderer.invoke('get-system-username'),
+
+  getAppVersion: (): Promise<string> =>
+    ipcRenderer.invoke('get-app-version'),
+
+  // ── Auth ─────────────────────────────────────────────────────────────────
+  getSystemBootTime: (): Promise<number | null> =>
+    ipcRenderer.invoke('get-system-boot-time'),
+
+  googleOAuth: (authUrl: string, redirectMatch: string): Promise<{ access_token?: string; refresh_token?: string; code?: string; error?: string }> =>
+    ipcRenderer.invoke('google-oauth', authUrl, redirectMatch),
+
+  // ── File relink ──────────────────────────────────────────────────────────
+  checkPathsExist: (paths: string[]): Promise<string[]> =>
+    ipcRenderer.invoke('check-paths-exist', paths),
+
+  findFilesByName: (folderPath: string, basenames: string[]): Promise<Record<string, string>> =>
+    ipcRenderer.invoke('find-files-by-name', folderPath, basenames),
+
+  // ── Sign out (triggered from Mac app menu) ─────────────────────────────
+  onSignOut: (cb: () => void): (() => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('sign-out', handler)
+    return () => ipcRenderer.removeListener('sign-out', handler)
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

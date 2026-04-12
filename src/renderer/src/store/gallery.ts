@@ -33,6 +33,14 @@ declare global {
       createFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
       chooseExportDir: () => Promise<string | null>
       exportGallery: (projectName: string, clientName: string, imagePaths: string[], destDir: string, topPickPaths: string[], settings?: { studioName?: string; logoPath?: string | null; allowDownloads?: boolean; autoGenerateStories?: boolean }) => Promise<{ success: boolean; error?: string; galleryDir?: string }>
+      getTempDir: () => Promise<string>
+      compressImageForUpload: (filePath: string) => Promise<{
+        web: ArrayBuffer; thumb: ArrayBuffer; originalSize: number
+        webSize: number; thumbSize: number; width: number; height: number
+      } | null>
+      getFileSize: (filePath: string) => Promise<number | null>
+      getAppVersion: () => Promise<string>
+      onSignOut: (cb: () => void) => (() => void)
     }
   }
 }
@@ -42,6 +50,14 @@ export interface Toast {
   message: string
   type: 'success' | 'error' | 'info'
   undoId?: string  // if set, clicking Undo reverses this rename history entry
+}
+
+export interface UndoSnapshot {
+  id: string
+  timestamp: number
+  label: string
+  images: ImageFile[]
+  topPickIds: Set<string>
 }
 
 export interface GalleryState {
@@ -71,6 +87,8 @@ export interface GalleryState {
 
   // Undo history
   renameHistory: RenameHistoryEntry[]
+  // Visual undo stack (drag, sort, picks, etc — does not include filesystem changes)
+  undoStack: UndoSnapshot[]
 
   // Toasts
   toasts: Toast[]
@@ -115,6 +133,8 @@ export interface GalleryState {
   randomizeOrder: () => void
   undoRename: (entryId: string) => Promise<void>
   undoLastRename: () => Promise<void>
+  pushUndoSnapshot: (label: string) => void
+  undo: () => Promise<void>
   setFilenamePrefix: (prefix: string) => void
   addToast: (msg: string, type?: Toast['type'], undoId?: string) => void
   dismissToast: (id: string) => void
@@ -168,6 +188,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
   duplicateScanProgress: 0,
   filenamePrefix: '',
   renameHistory: [],
+  undoStack: [],
   toasts: [],
   topPickIds: new Set(),
   viewerImageId: null,
@@ -200,7 +221,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
         ...r
       }))
       // Reset session state on reload — top picks are session-only and must clear
-      set({ images, isLoading: false, topPickIds: new Set(), selectedIds: new Set() })
+      set({ images, isLoading: false, topPickIds: new Set(), selectedIds: new Set(), undoStack: [] })
     } catch (err) {
       set({ isLoading: false, loadError: String(err) })
     }
@@ -217,6 +238,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
     const oldIdx = images.findIndex(img => img.id === activeId)
     const newIdx = images.findIndex(img => img.id === overId)
     if (oldIdx === -1 || newIdx === -1) return
+    get().pushUndoSnapshot('Reorder')
     set({ images: arrayMove(images, oldIdx, newIdx) })
   },
 
@@ -226,6 +248,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
     const { images } = get()
     const idx = images.findIndex(img => img.id === imageId)
     if (idx <= 0) return
+    get().pushUndoSnapshot('Move to top')
     set({ images: arrayMove(images, idx, 0) })
   },
 
@@ -233,6 +256,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
     const { images } = get()
     const idx = images.findIndex(img => img.id === imageId)
     if (idx === -1 || idx === images.length - 1) return
+    get().pushUndoSnapshot('Move to bottom')
     set({ images: arrayMove(images, idx, images.length - 1) })
   },
 
@@ -240,6 +264,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
 
   sortBy: (mode) => {
     const { images } = get()
+    get().pushUndoSnapshot(`Sort: ${mode}`)
     const sorted = [...images]
 
     switch (mode) {
@@ -360,28 +385,43 @@ export const useGallery = create<GalleryState>((set, get) => ({
 
   deleteSelected: async () => {
     const { images, selectedIds } = get()
+    if (selectedIds.size === 0) return
     const toDelete = images.filter(img => selectedIds.has(img.id))
+    const failed: string[] = []
     for (const img of toDelete) {
-      await window.api.deleteFile(img.path)
+      try {
+        const result = await window.api.deleteFile(img.path)
+        if (!result.success) failed.push(img.filename)
+      } catch {
+        failed.push(img.filename)
+      }
     }
+    const deletedIds = new Set(toDelete.filter(img => !failed.includes(img.filename)).map(img => img.id))
     set(state => {
       const nextTopPicks = new Set(state.topPickIds)
-      for (const id of selectedIds) nextTopPicks.delete(id)
+      for (const id of deletedIds) nextTopPicks.delete(id)
       return {
-        images: state.images.filter(img => !selectedIds.has(img.id)),
+        images: state.images.filter(img => !deletedIds.has(img.id)),
         selectedIds: new Set(),
         topPickIds: nextTopPicks
       }
     })
-    get().addToast(`Moved ${toDelete.length} image(s) to Trash`, 'info')
+    const count = deletedIds.size
+    if (count > 0) get().addToast(`Moved ${count} image(s) to Trash`, 'info')
+    if (failed.length > 0) get().addToast(`${failed.length} file(s) could not be deleted`, 'error')
   },
 
   deleteImage: async (id) => {
     const img = get().images.find(i => i.id === id)
     if (!img) return
-    const result = await window.api.deleteFile(img.path)
-    if (!result.success) {
-      get().addToast(`Delete failed: ${result.error}`, 'error')
+    try {
+      const result = await window.api.deleteFile(img.path)
+      if (!result.success) {
+        get().addToast(`Delete failed: ${result.error}`, 'error')
+        return
+      }
+    } catch {
+      get().addToast('Delete failed', 'error')
       return
     }
     set(state => {
@@ -481,6 +521,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
     const desc = mode === 'all'
       ? `Shuffled all (${shuffled.length} images)`
       : `Shuffled non-picks (${shuffled.length} images)`
+    get().pushUndoSnapshot('Shuffle')
     set({ images: shuffled, showRandomizeModal: false })
     get().addToast(`${desc} — click Rename Files to apply to disk`, 'info')
   },
@@ -524,6 +565,46 @@ export const useGallery = create<GalleryState>((set, get) => ({
     await get().undoRename(renameHistory[0].id)
   },
 
+  // Snapshot current visual state. Called BEFORE a mutation so undo restores
+  // the pre-mutation state. Bounded to 50 entries to cap memory.
+  pushUndoSnapshot: (label) => {
+    const { images, topPickIds } = get()
+    const snap: UndoSnapshot = {
+      id: nanoid(),
+      timestamp: Date.now(),
+      label,
+      images: [...images],
+      topPickIds: new Set(topPickIds),
+    }
+    set(state => ({ undoStack: [snap, ...state.undoStack].slice(0, 50) }))
+  },
+
+  // Unified Cmd+Z. If the most recent action was a rename (filesystem),
+  // undo that. Otherwise pop the visual snapshot stack.
+  undo: async () => {
+    const { undoStack, renameHistory } = get()
+    const lastSnap = undoStack[0]
+    const lastRename = renameHistory[0]
+
+    const snapTs = lastSnap?.timestamp ?? -Infinity
+    const renameTs = lastRename?.timestamp ?? -Infinity
+
+    if (renameTs > snapTs && lastRename) {
+      await get().undoRename(lastRename.id)
+      return
+    }
+    if (lastSnap) {
+      set(state => ({
+        images: lastSnap.images,
+        topPickIds: lastSnap.topPickIds,
+        undoStack: state.undoStack.slice(1),
+      }))
+      get().addToast(`Undo: ${lastSnap.label}`, 'info')
+      return
+    }
+    get().addToast('Nothing to undo', 'info')
+  },
+
   setFilenamePrefix: (prefix) => set({ filenamePrefix: prefix }),
 
   // ── Toasts ──────────────────────────────────────────────────────────────
@@ -543,6 +624,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
   toggleTopPick: (id) => {
     const { topPickIds } = get()
     const isNewPick = !topPickIds.has(id)
+    get().pushUndoSnapshot(isNewPick ? 'Add top pick' : 'Remove top pick')
     set(state => {
       const next = new Set(state.topPickIds)
       if (next.has(id)) next.delete(id)
@@ -559,6 +641,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
     const { selectedIds, topPickIds, images } = get()
     if (selectedIds.size === 0) return
 
+    get().pushUndoSnapshot('Toggle top picks')
     const newPickIds = [...selectedIds].filter(id => !topPickIds.has(id))
 
     if (newPickIds.length === 0) {
@@ -599,6 +682,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
       if (next.has(id)) { next.delete(id); removed++ }
     }
     if (removed === 0) return
+    get().pushUndoSnapshot('Remove top picks')
     set({ topPickIds: next })
     get().addToast(
       `${removed} image${removed !== 1 ? 's' : ''} removed from top picks`,
@@ -606,7 +690,11 @@ export const useGallery = create<GalleryState>((set, get) => ({
     )
   },
 
-  clearTopPicks: () => set({ topPickIds: new Set() }),
+  clearTopPicks: () => {
+    if (get().topPickIds.size === 0) return
+    get().pushUndoSnapshot('Clear top picks')
+    set({ topPickIds: new Set() })
+  },
 
   // ── Image Viewer ─────────────────────────────────────────────────────────
 

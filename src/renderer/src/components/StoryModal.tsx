@@ -8,6 +8,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { useGallery } from '../store/gallery'
 import type { StorySceneDef, StoryOptions, StoryDuration, StoryStyle, StoryMotionMode, StoryTransitionStyle, StoryColorMatch } from '../types'
 import { toLocalURL } from '../utils/imageUtils'
+import { computeEtaFromPercent, formatEta } from '../lib/eta'
 
 type Step = 'configure' | 'preview' | 'exporting' | 'done' | 'error'
 
@@ -153,7 +154,9 @@ export function StoryModal({ externalImages, onClose }: StoryModalProps = {}) {
   const [isBuilding, setIsBuilding] = useState(false)
   const [exportProgress, setExportProgress] = useState(0)
   const [exportStage, setExportStage] = useState('')
+  const [exportStartedAt, setExportStartedAt] = useState<number | null>(null)
   const [exportHidden, setExportHidden] = useState(false)
+  const [, setTick] = useState(0)
   const [outputPath, setOutputPath] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -175,6 +178,14 @@ export function StoryModal({ externalImages, onClose }: StoryModalProps = {}) {
     })
     return unsub
   }, [])
+
+  // Tick every 1s while an export is active so the ETA label refreshes smoothly
+  // between progress events from the main process.
+  useEffect(() => {
+    if (step !== 'exporting') return
+    const id = setInterval(() => setTick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [step])
 
   const applyStyle = useCallback((style: StoryStyle) => {
     const preset = STYLE_PRESETS[style]
@@ -220,6 +231,7 @@ export function StoryModal({ externalImages, onClose }: StoryModalProps = {}) {
     setOutputPath(path)
     setExportProgress(0)
     setExportStage('Starting…')
+    setExportStartedAt(Date.now())
     setStep('exporting')
 
     const result = await window.api.renderStory(
@@ -255,6 +267,7 @@ export function StoryModal({ externalImages, onClose }: StoryModalProps = {}) {
 
   // Floating mini indicator when export is hidden
   if (exportHidden && step === 'exporting') {
+    const floaterEta = computeEtaFromPercent(exportStartedAt, exportProgress)
     return (
       <div className="export-float" onClick={() => setExportHidden(false)}>
         <div className="export-float__progress" style={{ width: `${exportProgress}%` }} />
@@ -263,7 +276,10 @@ export function StoryModal({ externalImages, onClose }: StoryModalProps = {}) {
             <polygon points="23 7 16 12 23 17 23 7"/>
             <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
           </svg>
-          <span className="export-float__text">Exporting… {exportProgress}%</span>
+          <span className="export-float__text">
+            Exporting… {exportProgress}%
+            {floaterEta != null && ` · ~${formatEta(floaterEta)} left`}
+          </span>
         </div>
       </div>
     )
@@ -553,7 +569,11 @@ export function StoryModal({ externalImages, onClose }: StoryModalProps = {}) {
 
                 {/* Time estimate */}
                 <p className="sex__estimate">
-                  {exportProgress}% {exportProgress < 100 && `· ~${Math.max(1, Math.round((100 - exportProgress) * 0.4))}s remaining`}
+                  {exportProgress}%
+                  {exportProgress < 100 && (() => {
+                    const etaSec = computeEtaFromPercent(exportStartedAt, exportProgress)
+                    return etaSec != null ? ` · ~${formatEta(etaSec)} remaining` : ''
+                  })()}
                 </p>
                 <p className="sex__hint">You can keep working while we export</p>
 

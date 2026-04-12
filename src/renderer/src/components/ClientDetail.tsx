@@ -3,6 +3,7 @@ import { toLocalURL } from '../utils/imageUtils'
 import type { ClientData, ProjectData } from '../App'
 import type { ImageFile } from '../types'
 import { getProjectsByClient, getTotalImagesForClient, getProjectCover } from '../App'
+import { fetchCloudClientId, buildClientPageUrl } from '../lib/cloudUpload'
 
 function clientColor(name: string): string {
   const colors = ['#6366f1','#ec4899','#8b5cf6','#a855f7','#3b82f6','#d946ef','#818cf8','#f43f5e','#7c3aed','#c084fc']
@@ -42,6 +43,28 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [shareMenuId, setShareMenuId] = useState<string | null>(null)
   const [copiedGalleryId, setCopiedGalleryId] = useState<string | null>(null)
+  const [clientPageStatus, setClientPageStatus] = useState<'idle' | 'loading' | 'copied' | 'empty'>('idle')
+
+  const showClientPageButton = clientProjects.length >= 2
+
+  const handleShareClientPage = async () => {
+    setClientPageStatus('loading')
+    try {
+      const cloudClientId = await fetchCloudClientId(client.id)
+      if (!cloudClientId) {
+        setClientPageStatus('empty')
+        setTimeout(() => setClientPageStatus('idle'), 2500)
+        return
+      }
+      const url = buildClientPageUrl(cloudClientId)
+      await navigator.clipboard.writeText(url)
+      setClientPageStatus('copied')
+      setTimeout(() => setClientPageStatus('idle'), 2000)
+    } catch (err) {
+      console.error('[client-page]', err)
+      setClientPageStatus('idle')
+    }
+  }
 
   const copyGalleryLink = (projectId: string) => {
     navigator.clipboard.writeText(`pixflow://gallery/${projectId}`).then(() => {
@@ -82,7 +105,7 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-    })
+    }).catch(() => { /* clipboard unavailable */ })
   }
 
   // Group projects by year
@@ -137,14 +160,22 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
             <p className="cdv__subtitle">{clientProjects.length} {clientProjects.length === 1 ? 'gallery' : 'galleries'} &middot; {totalImages} {totalImages === 1 ? 'image' : 'images'}</p>
           </div>
           <div className="cdv__header-actions">
-            {clientProjects.length > 0 && (
-              <button className="cdv__btn-primary" onClick={() => onPublish(clientProjects[0].id)}>
+            {showClientPageButton && (
+              <button
+                className="cdv__btn-secondary"
+                onClick={handleShareClientPage}
+                disabled={clientPageStatus === 'loading'}
+                title="Copy a public link that shows all this client's galleries on one page"
+              >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
-                  <polyline points="16 6 12 2 8 6"/>
-                  <line x1="12" y1="2" x2="12" y2="15"/>
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="3" y1="9" x2="21" y2="9"/>
+                  <line x1="9" y1="21" x2="9" y2="9"/>
                 </svg>
-                Publish
+                {clientPageStatus === 'copied' ? 'Link Copied!' :
+                 clientPageStatus === 'loading' ? 'Loading...' :
+                 clientPageStatus === 'empty' ? 'Publish a gallery first' :
+                 'Client Page'}
               </button>
             )}
             <button className="cdv__btn-secondary" onClick={handleShare}>
@@ -187,21 +218,45 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
                       </div>
                       <div className="cdv__card-info">
                         <span className="cdv__card-name">{p.name}</span>
-                        <span className="cdv__card-count">{p.imageIds.length} {p.imageIds.length === 1 ? 'image' : 'images'}</span>
+                        <div className="cdv__card-meta">
+                          <span className="cdv__card-count">{p.imageIds.length} {p.imageIds.length === 1 ? 'image' : 'images'}</span>
+                          {p.publishState?.status === 'live' && (
+                            <span className="cdv__card-badge cdv__card-badge--live">Live</span>
+                          )}
+                          {p.publishState?.status === 'publishing' && (
+                            <span className="cdv__card-badge cdv__card-badge--pub">Publishing...</span>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Live actions bar */}
+                      {p.publishState?.status === 'live' && (
+                        <div className="cdv__card-live-bar">
+                          <button
+                            className="cdv__card-live-btn"
+                            onClick={e => { e.stopPropagation(); if (p.publishState?.galleryDir) window.api.revealInFinder(p.publishState.galleryDir) }}
+                          >View</button>
+                          <button
+                            className="cdv__card-live-btn"
+                            onClick={e => { e.stopPropagation(); copyGalleryLink(p.id) }}
+                          >Copy Link</button>
+                        </div>
+                      )}
                     </div>
                     <div className="wsd__card-actions">
-                      <button
-                        className="wsd__card-action"
-                        title="Publish gallery"
-                        onClick={e => { e.stopPropagation(); onPublish(p.id) }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
-                          <polyline points="16 6 12 2 8 6"/>
-                          <line x1="12" y1="2" x2="12" y2="15"/>
-                        </svg>
-                      </button>
+                      {(!p.publishState || p.publishState.status === 'draft') && (
+                        <button
+                          className="wsd__card-action"
+                          title="Publish gallery"
+                          onClick={e => { e.stopPropagation(); onPublish(p.id) }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                            <polyline points="16 6 12 2 8 6"/>
+                            <line x1="12" y1="2" x2="12" y2="15"/>
+                          </svg>
+                        </button>
+                      )}
                       <button
                         className="wsd__card-action"
                         title="Preview gallery"

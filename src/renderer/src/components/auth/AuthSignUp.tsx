@@ -1,28 +1,43 @@
 import React, { useState } from 'react'
 import { AuthInput } from './AuthInput'
 import { AuthGoogleButton } from './AuthGoogleButton'
+import { signUpWithEmail } from '../../lib/auth'
 
 interface AuthSignUpProps {
   onGoogleClick: () => void
   googleLoading: boolean
+  googleError: string | null
   onSwitchToSignIn: () => void
 }
 
-export function AuthSignUp({ onGoogleClick, googleLoading, onSwitchToSignIn }: AuthSignUpProps) {
+export function AuthSignUp({ onGoogleClick, googleLoading, googleError, onSwitchToSignIn }: AuthSignUpProps) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
 
-  const canSubmit = name && email && password && confirmPassword && password === confirmPassword
+  const passwordsMatch = !password || !confirmPassword || password === confirmPassword
+  const canSubmit = !!(name && email && password.length >= 6 && confirmPassword && passwordsMatch)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!canSubmit) return
+    if (!canSubmit || loading) return
     setLoading(true)
-    setTimeout(() => setLoading(false), 1500)
+    setError(null)
+    setInfo(null)
+    const { error: err } = await signUpWithEmail(email.trim(), password, name.trim())
+    if (err) {
+      setError(err)
+    } else {
+      setInfo('Account created. Check your email to confirm, then sign in.')
+    }
+    setLoading(false)
   }
+
+  const formError = error || googleError
 
   return (
     <div>
@@ -61,7 +76,7 @@ export function AuthSignUp({ onGoogleClick, googleLoading, onSwitchToSignIn }: A
         <AuthInput
           value={password}
           onChange={setPassword}
-          placeholder="Password"
+          placeholder="Password (6+ characters)"
           type="password"
         />
         <AuthInput
@@ -70,8 +85,18 @@ export function AuthSignUp({ onGoogleClick, googleLoading, onSwitchToSignIn }: A
           placeholder="Confirm password"
           type="password"
         />
-        {password && confirmPassword && password !== confirmPassword && (
+        {!passwordsMatch && (
           <p style={{ fontSize: 12, color: '#f87171', margin: '-4px 0 0 2px' }}>Passwords don't match</p>
+        )}
+        {formError && (
+          <p style={{ fontSize: 12, color: '#f87171', margin: '-2px 0 0 2px', lineHeight: 1.4 }}>
+            {formError}
+          </p>
+        )}
+        {info && (
+          <p style={{ fontSize: 12, color: '#6ee7b7', margin: '-2px 0 0 2px', lineHeight: 1.4 }}>
+            {info}
+          </p>
         )}
         <button
           type="submit"

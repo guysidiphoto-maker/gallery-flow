@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useGallery } from '../store/gallery'
 import { toLocalURL } from '../utils/imageUtils'
 
@@ -12,6 +12,7 @@ export function DuplicatesPanel() {
     deleteImage,
     toggleDuplicatesPanel
   } = useGallery()
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   if (!showDuplicatesPanel) return null
 
@@ -68,13 +69,16 @@ export function DuplicatesPanel() {
                           {(img.size / 1024).toFixed(0)} KB
                         </span>
                       </div>
-                      <button
-                        className="btn btn--danger btn--sm"
-                        onClick={() => deleteImage(id)}
-                        title="Move to Trash"
-                      >
-                        Delete
-                      </button>
+                      {pendingDelete === id ? (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button className="btn btn--danger btn--sm" onClick={() => { deleteImage(id); setPendingDelete(null) }}>Confirm</button>
+                          <button className="btn btn--ghost btn--sm" onClick={() => setPendingDelete(null)}>Cancel</button>
+                        </div>
+                      ) : (
+                        <button className="btn btn--ghost btn--sm" onClick={() => setPendingDelete(id)} title="Move to Trash">
+                          Delete
+                        </button>
+                      )}
                     </div>
                   )
                 })}

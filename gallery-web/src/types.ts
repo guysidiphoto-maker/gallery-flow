@@ -29,6 +29,7 @@ export interface Gallery {
   image_count: number
   delivery_settings: DeliverySettings
   published_at: string | null
+  demo_expires_at?: string | null
 }
 
 export interface GalleryImage {

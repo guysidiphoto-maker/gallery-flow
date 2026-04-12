@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pixflow brand preview</title>
+<link href="https://rsms.me/inter/inter.css" rel="stylesheet">
+<style>
+  :root { font-family: Inter, -apple-system, sans-serif; }
+  html, body { margin: 0; padding: 0; background: #0a0a0f; color: #fff; }
+  .row { padding: 48px 60px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .row.light { background: #f5f5f7; color: #0a0a0f; border-color: rgba(0,0,0,.08); }
+  .row h2 {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.2em;
+    text-transform: uppercase; opacity: 0.5; margin: 0 0 24px;
+  }
+  .grid { display: flex; flex-wrap: wrap; gap: 32px; align-items: center; }
+  .item { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .item img { display: block; }
+  .item .label { font-size: 11px; opacity: 0.5; }
+  .icons-row img { display: block; }
+  footer { padding: 60px; text-align: center; opacity: 0.4; font-size: 12px; }
+</style>
+</head>
+<body>
+
+  <div class="row">
+    <h2>Horizontal lockup — light (on dark)</h2>
+    <img src="pixflow-horizontal-light-800.png" alt="" style="max-width: 600px;">
+  </div>
+
+  <div class="row light">
+    <h2>Horizontal lockup — dark (on light)</h2>
+    <img src="pixflow-horizontal-dark-800.png" alt="" style="max-width: 600px;">
+  </div>
+
+  <div class="row">
+    <h2>Wordmark — light</h2>
+    <img src="pixflow-wordmark-light-600.png" alt="" style="max-width: 480px;">
+  </div>
+
+  <div class="row light">
+    <h2>Wordmark — dark</h2>
+    <img src="pixflow-wordmark-dark-600.png" alt="" style="max-width: 480px;">
+  </div>
+
+  <div class="row">
+    <h2>Icon mark — all sizes</h2>
+    <div class="grid">
+      <div class="item"><img src="pixflow-icon-256.png" width="256" height="256"><span class="label">256</span></div>
+      <div class="item"><img src="pixflow-icon-128.png" width="128" height="128"><span class="label">128</span></div>
+      <div class="item"><img src="pixflow-icon-64.png" width="64" height="64"><span class="label">64</span></div>
+      <div class="item"><img src="pixflow-icon-32.png" width="32" height="32"><span class="label">32</span></div>
+    </div>
+  </div>
+
+  <div class="row light">
+    <h2>Icon mark on light background</h2>
+    <div class="grid">
+      <div class="item"><img src="pixflow-icon-256.png" width="256" height="256"><span class="label">256</span></div>
+      <div class="item"><img src="pixflow-icon-128.png" width="128" height="128"><span class="label">128</span></div>
+      <div class="item"><img src="pixflow-icon-64.png" width="64" height="64"><span class="label">64</span></div>
+    </div>
+  </div>
+
+  <footer>Pixflow brand preview · open this file in any browser</footer>
+
+</body>
+</html>

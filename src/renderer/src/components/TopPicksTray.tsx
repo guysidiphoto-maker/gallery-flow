@@ -65,14 +65,17 @@ function PickThumb({
 
   useEffect(() => {
     let cancelled = false
+    let objectUrl: string | null = null
     window.api.readFileBuffer(img.path).then(buf => {
       if (!buf || cancelled) return
       const blob = new Blob([buf])
-      const url = URL.createObjectURL(blob)
-      setSrc(url)
-      return () => URL.revokeObjectURL(url)
+      objectUrl = URL.createObjectURL(blob)
+      setSrc(objectUrl)
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
   }, [img.path])
 
   return (

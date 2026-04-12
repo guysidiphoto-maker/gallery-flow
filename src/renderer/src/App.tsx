@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, Component, type ReactNode, type ErrorInfo } from 'react'
 import { useGallery } from './store/gallery'
 import { useSections } from './store/sections'
 import { Toolbar } from './components/Toolbar'
@@ -27,13 +27,18 @@ import { ExportPanel } from './components/ExportPanel'
 import { RenameFab } from './components/RenameFab'
 import { ClientGalleryPage } from './components/ClientGalleryPage'
 import { PublishPanel } from './components/PublishPanel'
+import { UploadFloater } from './components/UploadFloater'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { uploadGalleryToCloud, uploadStoryToCloud, markGalleryLive, updateGallerySettings } from './lib/cloudUpload'
-import { getAuthState, signInWithGoogle, type Business, type AuthState } from './lib/auth'
+import { KeyboardShortcuts } from './components/KeyboardShortcuts'
+import { publishGallery, uploadStoryToCloud, markGalleryLive, updateGallerySettings, updateGalleryImages, updateGallerySectionsInCloud, cancelUpload, deleteGalleryFromCloud, deleteImageFromCloud } from './lib/cloudUpload'
+import { loadPersistedQueue, clearPersistedQueue } from './lib/uploadQueue'
+import { usePublish } from './store/publish'
+import { type Business } from './lib/auth'
 import { AuthShell } from './components/auth/AuthShell'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
-import { supabase } from './lib/supabase'
-import type { ImageFile } from './types'
+import { useSession } from './store/session'
+import { MissingFilesBanner } from './components/MissingFilesBanner'
+import type { ImageFile, Section } from './types'
 
 export interface ClientData {
   id: string
@@ -49,6 +54,7 @@ export interface DeliverySettings {
   bulkDownloadEnabled: boolean
   downloadQuality: 'web' | 'high' | 'original'
   studioName: string
+  studioWebsite: string
   logoUrl: string | null
   showFooterCredit: boolean
   galleryTitle: string
@@ -74,6 +80,7 @@ export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
   bulkDownloadEnabled: true,
   downloadQuality: 'high',
   studioName: '',
+  studioWebsite: '',
   logoUrl: null,
   showFooterCredit: true,
   galleryTitle: '',
@@ -109,7 +116,12 @@ export interface GalleryPublishState {
   status: 'draft' | 'publishing' | 'live'
   publicUrl?: string
   galleryDir?: string
+  galleryDbId?: string
   storiesReady: boolean
+  originalsReady: boolean
+  publishStatus?: string
+  /** Snapshot of image IDs at publish time — used to detect changes */
+  publishedImageIds?: string[]
 }
 
 export interface ProjectData {
@@ -118,6 +130,12 @@ export interface ProjectData {
   clientId: string | null
   clientName: string | null
   imageIds: string[]
+  /** Per-project Top Picks. Persisted with the project so they survive
+   *  app restarts and project switches. */
+  topPickIds?: string[]
+  /** Per-project sections (gallery groupings). Persisted with the project
+   *  for the same reason as topPickIds. */
+  sections?: Section[]
   createdAt: string
   updatedAt: string
   deliverySettings?: DeliverySettings
@@ -161,6 +179,29 @@ export function getLatestProjectForClient(clientId: string, projects: ProjectDat
   return clientProjects[clientProjects.length - 1]
 }
 
+// ─── Error Boundary (prevents full app crash) ──────────────────────────────
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error('[ErrorBoundary]', error, info) }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,.6)', fontFamily: 'inherit' }}>
+          <h2 style={{ fontSize: 18, color: '#fff', marginBottom: 8 }}>Something went wrong</h2>
+          <p style={{ fontSize: 13, marginBottom: 16, color: 'rgba(255,255,255,.4)' }}>{this.state.error.message}</p>
+          <button onClick={() => this.setState({ error: null })} style={{
+            padding: '8px 24px', borderRadius: 8, border: '1px solid rgba(255,255,255,.15)',
+            background: 'rgba(255,255,255,.06)', color: '#fff', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit'
+          }}>Try Again</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 function GallerySkeleton({ thumbnailSize }: { thumbnailSize: number }) {
   return (
     <div className="gallery-grid" style={{ gridTemplateColumns: `repeat(auto-fill, ${thumbnailSize}px)` }}>
@@ -171,78 +212,67 @@ function GallerySkeleton({ thumbnailSize }: { thumbnailSize: number }) {
   )
 }
 
-export default function App() {
-  // ─── Auth Gate ──────────────────────────────────────────────────────────────
-  const [authState, setAuthState] = useState<AuthState | 'loading'>('loading')
-  const [authUser, setAuthUser] = useState<Record<string, unknown> | null>(null)
-  const [authBusiness, setAuthBusiness] = useState<Business | null>(null)
-  const [authSignInLoading, setAuthSignInLoading] = useState(false)
-  const [authError, setAuthError] = useState<string | undefined>()
+function AppInner() {
+  // ─── Auth Gate (driven by the session store) ───────────────────────────────
+  const status = useSession(s => s.status)
+  const user = useSession(s => s.user)
+  const business = useSession(s => s.business)
+  const errorMessage = useSession(s => s.errorMessage)
 
   useEffect(() => {
-    getAuthState().then(({ state, user, business }) => {
-      setAuthState(state)
-      setAuthUser(user || null)
-      setAuthBusiness(business || null)
+    let cleanup: (() => void) | undefined
+    useSession.getState().init().then(c => { cleanup = c })
+    // Listen for sign-out from the Mac app menu (Pixflow → Sign Out)
+    const removeSignOutListener = window.api.onSignOut?.(() => {
+      useSession.getState().signOut()
     })
-
-    // Listen for auth state changes (e.g. after OAuth redirect)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!session) {
-        setAuthState('unauthenticated')
-        setAuthUser(null)
-        setAuthBusiness(null)
-        return
-      }
-      const { state, user, business } = await getAuthState()
-      setAuthState(state)
-      setAuthUser(user || null)
-      setAuthBusiness(business || null)
-    })
-
-    return () => subscription.unsubscribe()
+    return () => { cleanup?.(); removeSignOutListener?.() }
   }, [])
 
-  const handleGoogleSignIn = async () => {
-    setAuthSignInLoading(true)
-    setAuthError(undefined)
-    const { error } = await signInWithGoogle()
-    if (error) {
-      setAuthError(error)
-      setAuthSignInLoading(false)
-    }
-    // On success, onAuthStateChange will fire
+  const handleOnboardingComplete = async (_business: Business) => {
+    // OnboardingFlow already calls createBusiness, which refreshes the session
+    // store. We re-trigger here as a safety net so MainApp renders even if the
+    // refresh inside lib/auth.ts failed for any reason.
+    await useSession.getState().refreshBusiness()
   }
 
-  const handleOnboardingComplete = (business: Business) => {
-    setAuthBusiness(business)
-    setAuthState('ready')
-  }
-
-  // Render based on auth state
-  if (authState === 'loading') {
+  if (status === 'loading') {
     return (
-      <div style={{ background: '#0a0a0f', width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#0a0a0f', width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
         <div style={{ width: 24, height: 24, border: '2px solid rgba(255,255,255,.1)', borderTopColor: 'rgba(255,255,255,.5)', borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
+        <p style={{ color: 'rgba(255,255,255,.3)', fontSize: 12, fontFamily: '-apple-system,sans-serif' }}>Checking session…</p>
       </div>
     )
   }
-
-  if (authState === 'unauthenticated') {
+  if (status === 'error') {
+    return (
+      <div style={{ background: '#0a0a0f', width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, padding: 40, fontFamily: '-apple-system,sans-serif' }}>
+        <p style={{ color: '#f87171', fontSize: 14, maxWidth: 520, textAlign: 'center', lineHeight: 1.5 }}>
+          Auth check failed: {errorMessage ?? 'unknown error'}
+        </p>
+        <button
+          onClick={() => useSession.getState().signOut()}
+          style={{ padding: '10px 22px', background: '#6366f1', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+        >
+          Continue to sign in
+        </button>
+      </div>
+    )
+  }
+  if (status === 'unauthenticated') {
     return <AuthShell />
   }
-
-  if (authState === 'needs_onboarding' && authUser) {
-    return <OnboardingFlow user={authUser} onComplete={handleOnboardingComplete} />
+  if (status === 'needs_onboarding' && user) {
+    return <OnboardingFlow user={user} onComplete={handleOnboardingComplete} />
   }
 
-  return <MainApp business={authBusiness} />
+  return <MainApp business={business} />
 }
 
 // ─── Main App (authenticated + onboarded) ─────────────────────────────────────
 
 function MainApp({ business }: { business: Business | null }) {
-  const { showPreviewMode, showDuplicatesPanel, showStoryModal, isLoading, folderPath, reloadFolder, thumbnailSize, images, showTopPicksTray, showExportPanel } = useGallery()
+  const { showPreviewMode, showDuplicatesPanel, showStoryModal, isLoading, folderPath, reloadFolder, thumbnailSize, images, showTopPicksTray, showExportPanel, topPickIds: galleryTopPickIds } = useGallery()
   const { isPanelOpen: isSectionsPanelOpen, isPublishModalOpen, isPublishing, publishDone, publishError, resetForFolder } = useSections()
   const [showWelcome, setShowWelcome] = useState(false)
   const [welcomed, setWelcomed] = useState(false)
@@ -271,16 +301,13 @@ function MainApp({ business }: { business: Business | null }) {
   const [exportProgress, setExportProgress] = useState<string | null>(null)
   const [publishProjectId, setPublishProjectId] = useState<string | null>(null)
   const [publishPhase, setPublishPhase] = useState<'settings' | 'publishing' | 'done' | 'error' | 'editing'>('settings')
-  const [publishUpload, setPublishUpload] = useState<{
-    uploaded: number; total: number; percent: number; currentFile: string;
-    phase?: string;
-    result?: { totalImages: number; originalsUploaded: number; webCopiesUploaded: number; thumbsUploaded: number; failedFiles: Array<{ filename: string; reason: string }> }
-  }>({ uploaded: 0, total: 0, percent: 0, currentFile: '' })
-  const [publishStory, setPublishStory] = useState({ completed: 0, total: 4, currentStyle: '' })
+  const [publishStory, setPublishStory] = useState({ completed: 0, total: 3, currentStyle: '' })
   const [pubError, setPubError] = useState('')
   const [publishGalleryDir, setPublishGalleryDir] = useState('')
+  const [isPublishHidden, setIsPublishHidden] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
   // Register keyboard shortcuts
-  useKeyboardShortcuts()
+  useKeyboardShortcuts({ onShowShortcuts: () => setShowShortcuts(s => !s) })
 
   const currentProject = projects.find(p => p.id === currentProjectId) || null
 
@@ -293,62 +320,138 @@ function MainApp({ business }: { business: Business | null }) {
 
     setExportProgress('Exporting gallery...')
 
-    // Get top pick paths
-    const topPickIds = useGallery.getState().topPickIds
-    const topPickPaths = imgs.filter(i => topPickIds.has(i.id)).map(i => i.path)
+    try {
+      // Get top pick paths
+      const topPickIds = useGallery.getState().topPickIds
+      const topPickPaths = imgs.filter(i => topPickIds.has(i.id)).map(i => i.path)
 
-    // Export images + HTML
-    const result = await window.api.exportGallery(project.name, project.clientName || '', imgs.map(i => i.path), destDir, topPickPaths)
+      // Export images + HTML
+      const result = await window.api.exportGallery(project.name, project.clientName || '', imgs.map(i => i.path), destDir, topPickPaths)
 
-    if (!result.success) {
-      setExportProgress(null)
-      return
-    }
+      if (!result.success) {
+        setExportProgress(null)
+        useGallery.getState().addToast(`Export failed: ${result.error || 'Unknown error'}`, 'error')
+        return
+      }
 
-    // Generate stories if we have enough top picks
-    if (topPickPaths.length >= 2) {
-      const picks = topPickPaths.length > 25 ? topPickPaths.slice(0, 25) : topPickPaths
-      const duration = topPickPaths.length <= 25 ? 15 : 20
-      const galleryDir = result.galleryDir || `${destDir}/${project.name.replace(/[/\\?%*:|"<>]/g, '-')}`
+      // Generate stories if we have enough top picks
+      if (topPickPaths.length >= 2) {
+        const picks = topPickPaths.length > 25 ? topPickPaths.slice(0, 25) : topPickPaths
+        const duration = topPickPaths.length <= 25 ? 15 : 20
+        const galleryDir = result.galleryDir || `${destDir}/${project.name.replace(/[/\\?%*:|"<>]/g, '-')}`
 
-      const styles = [
-        { name: 'minimal', motionMode: 'subtle', transitionStyle: 'clean', colorMatch: 'off' },
-        { name: 'bold', motionMode: 'dynamic', transitionStyle: 'cinematic', colorMatch: 'subtle' },
-        { name: 'cinematic', motionMode: 'dynamic', transitionStyle: 'cinematic', colorMatch: 'subtle' },
-        { name: 'fast', motionMode: 'subtle', transitionStyle: 'energetic', colorMatch: 'off' },
-      ]
+        const styles = [
+          { name: 'clean', motionMode: 'subtle', transitionStyle: 'clean', colorMatch: 'off' },
+          { name: 'fast-social', motionMode: 'dynamic', transitionStyle: 'energetic', colorMatch: 'off' },
+          { name: 'vintage', motionMode: 'subtle', transitionStyle: 'soft-fade', colorMatch: 'subtle' },
+        ]
 
-      for (let i = 0; i < styles.length; i++) {
-        const style = styles[i]
-        setExportProgress(`Generating stories (${i + 1}/4) \u2014 ${style.name}...`)
+        for (let i = 0; i < styles.length; i++) {
+          const style = styles[i]
+          setExportProgress(`Generating stories (${i + 1}/4) \u2014 ${style.name}...`)
 
-        try {
-          const buildResult = await window.api.buildStoryScenes(picks, duration, style.motionMode) as {
-            error?: string
-            scenes: Array<{ type: string; imagePaths: string[]; duration: number; motionType: string }>
-            totalDuration: number
+          try {
+            const buildResult = await window.api.buildStoryScenes(picks, duration, style.motionMode) as {
+              error?: string
+              scenes: Array<{ type: string; imagePaths: string[]; duration: number; motionType: string }>
+              totalDuration: number
+            }
+            if (buildResult.error) continue
+
+            const outputPath = `${galleryDir}/stories/story_${style.name}.mp4`
+            await window.api.renderStory(
+              buildResult.scenes.map((s) => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })),
+              { totalDuration: buildResult.totalDuration, resolution: '1080x1920', fps: 30, motionMode: style.motionMode, transitionStyle: style.transitionStyle, colorMatch: style.colorMatch === 'subtle' },
+              outputPath
+            )
+          } catch {
+            // Skip failed story
           }
-          if (buildResult.error) continue
-
-          const outputPath = `${galleryDir}/stories/story_${style.name}.mp4`
-          await window.api.renderStory(
-            buildResult.scenes.map((s) => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })),
-            { totalDuration: buildResult.totalDuration, resolution: '1080x1920', fps: 30, motionMode: style.motionMode, transitionStyle: style.transitionStyle, colorMatch: style.colorMatch === 'subtle' },
-            outputPath
-          )
-        } catch {
-          // Skip failed story
         }
       }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      console.error('[handleExportGallery] EXCEPTION:', err)
+      useGallery.getState().addToast(`Export failed: ${msg}`, 'error')
+    } finally {
+      setExportProgress(null)
     }
-
-    setExportProgress(null)
   }
 
   const [isCloudPublishing, setIsCloudPublishing] = useState(false)
 
+  /**
+   * "Update Changes" handler — lightweight resync for an already-live gallery.
+   * Reuses the existing updateGalleryImages flow for image add/remove/order
+   * and the new updateGallerySectionsInCloud for section structure. Does NOT
+   * re-upload thumbnails/previews/originals.
+   */
+  const handleUpdateChanges = async (projectId: string) => {
+    if (isCloudPublishing) { return }
+    setIsCloudPublishing(true)
+    const project = projects.find(p => p.id === projectId)
+    if (!project || !project.publishState?.galleryDbId) {
+      setIsCloudPublishing(false)
+      useGallery.getState().addToast('Gallery is not published — use Publish first', 'error')
+      return
+    }
+
+    setPublishPhase('publishing')
+    setPubError('')
+
+    try {
+      const imgs = resolveImages(project.imageIds, imageRegistry)
+
+      // 1) Sync image set + sort order with the cloud
+      const imgResult = await updateGalleryImages(
+        project.publishState.galleryDbId,
+        imgs.map(i => i.path),
+        project.publishState.publishedImageIds || imgs.map(i => i.id),
+        imageRegistry as Record<string, { filename: string; path: string }>,
+      )
+      if (imgResult.error) throw new Error(imgResult.error)
+
+      // 2) Sync sections — wipes and recreates gallery_sections + reassigns
+      //    section_id on each image by filename.
+      const sectionsState = useSections.getState()
+      const idToPath = new Map(imgs.map(i => [i.id, i.path]))
+      const sectionsInput = sectionsState.sections
+        .filter(sec => sec.imageIds.length > 0)
+        .map((sec, idx) => ({
+          localId: sec.id,
+          name: sec.name,
+          sortOrder: idx,
+          imagePaths: sec.imageIds
+            .map(id => idToPath.get(id))
+            .filter((p): p is string => !!p),
+        }))
+      const secResult = await updateGallerySectionsInCloud(project.publishState.galleryDbId, sectionsInput)
+      if (secResult.error) throw new Error(secResult.error)
+
+      // 3) Sync delivery settings (cheap, idempotent)
+      const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
+      await updateGallerySettings(project.id, settings as Record<string, unknown>)
+
+      // 4) Update local snapshot of published image ids so the next diff is empty
+      setProjects(prev => prev.map(p => p.id === projectId
+        ? { ...p, publishState: { ...p.publishState!, publishedImageIds: imgs.map(i => i.id) } }
+        : p
+      ))
+      sectionsState.markSectionsClean()
+
+      setPublishPhase('done')
+      useGallery.getState().addToast('Changes synced to cloud', 'success')
+    } catch (err) {
+      console.error('[handleUpdateChanges] failed', err)
+      setPubError(err instanceof Error ? err.message : String(err))
+      setPublishPhase('error')
+    } finally {
+      setIsCloudPublishing(false)
+    }
+  }
+
   const handlePublish = async (projectId: string) => {
-    if (isCloudPublishing) { console.log('[handlePublish] blocked — already in progress'); return }
+    if (isCloudPublishing) { return }
     setIsCloudPublishing(true)
     const project = projects.find(p => p.id === projectId)
     if (!project) { setIsCloudPublishing(false); return }
@@ -357,19 +460,35 @@ function MainApp({ business }: { business: Business | null }) {
 
     setPublishPhase('publishing')
     setPubError('')
-    setPublishUpload({ uploaded: 0, total: imgs.length, currentFile: '' })
-    setPublishStory({ completed: 0, total: 4, currentStyle: '' })
+    setIsPublishHidden(false)
+    setPublishStory({ completed: 0, total: 3, currentStyle: '' })
 
     // Mark as publishing
     setProjects(prev => prev.map(p => p.id === projectId
-      ? { ...p, publishState: { status: 'publishing', storiesReady: false } }
+      ? { ...p, publishState: { status: 'publishing', storiesReady: false, originalsReady: false } }
       : p
     ))
 
     try {
-      // Step 1: Upload originals + web copies + thumbnails to cloud (individually)
+      // Phases 1-3: Compress → upload previews → upload originals (all via queue engine)
       const topPickIdSet = useGallery.getState().topPickIds
-      const cloudGallery = await uploadGalleryToCloud(
+
+      // Snapshot the current sections so the publish flow can attach
+      // section_id to each image and create gallery_sections rows.
+      const sectionsState = useSections.getState()
+      const idToPath = new Map(imgs.map(i => [i.id, i.path]))
+      const sectionsInput = sectionsState.sections
+        .filter(sec => sec.imageIds.length > 0)
+        .map((sec, idx) => ({
+          localId: sec.id,
+          name: sec.name,
+          sortOrder: idx,
+          imagePaths: sec.imageIds
+            .map(id => idToPath.get(id))
+            .filter((p): p is string => !!p),
+        }))
+
+      const { galleryId, publicUrl } = await publishGallery(
         project.name,
         project.clientName,
         project.clientId,
@@ -377,89 +496,70 @@ function MainApp({ business }: { business: Business | null }) {
         imgs.map(i => i.path),
         topPickIdSet,
         settings as Record<string, unknown>,
-        (progress) => {
-          setPublishUpload({
-            uploaded: progress.uploaded,
-            total: progress.total,
-            percent: progress.percent,
-            currentFile: progress.currentFile || '',
-            phase: progress.phase,
-            result: progress.result,
-          })
-        }
+        sectionsInput,
       )
 
-      // Step 2: Generate & upload stories (each uploaded individually)
-      let storiesReady = false
-      const storyWarnings: string[] = []
+      // Sections are now in sync with the cloud — clear the dirty marker.
+      sectionsState.markSectionsClean()
+
+      // Mark gallery live immediately (images are uploaded)
+      await markGalleryLive(galleryId, publicUrl)
+
+      // Show done state NOW — don't wait for stories
+      const pubStore = usePublish.getState()
+      const originalsReady = pubStore.publishStatus === 'fully_live'
+      setPublishGalleryDir(publicUrl)
+      setPublishPhase('done')
+      setProjects(prev => prev.map(p => p.id === projectId
+        ? { ...p, publishState: { status: 'live', publicUrl, galleryDbId: galleryId, storiesReady: false, originalsReady, publishStatus: pubStore.publishStatus, publishedImageIds: imgs.map(i => i.id) } }
+        : p
+      ))
+
+      // Generate stories in BACKGROUND (don't block the done screen)
       if (settings.generateStories) {
         const topPickPaths = imgs.filter(i => topPickIdSet.has(i.id)).map(i => i.path)
-
         if (topPickPaths.length >= 2) {
-          const picks = topPickPaths.length > 25 ? topPickPaths.slice(0, 25) : topPickPaths
-          const duration = topPickPaths.length <= 25 ? 15 : 20
-          const tempDir = await window.api.getTempDir()
-
-          const styles = [
-            { name: 'minimal', motionMode: 'subtle', transitionStyle: 'clean', colorMatch: 'off' },
-            { name: 'bold', motionMode: 'dynamic', transitionStyle: 'cinematic', colorMatch: 'subtle' },
-            { name: 'cinematic', motionMode: 'dynamic', transitionStyle: 'cinematic', colorMatch: 'subtle' },
-            { name: 'fast', motionMode: 'subtle', transitionStyle: 'energetic', colorMatch: 'off' },
-          ]
-
-          let storiesUploaded = 0
-          for (let i = 0; i < styles.length; i++) {
-            const style = styles[i]
-            setPublishStory({ completed: i, total: 4, currentStyle: style.name })
-
+          ;(async () => {
             try {
-              const buildResult = await window.api.buildStoryScenes(picks, duration, style.motionMode) as {
-                error?: string
-                scenes: Array<{ type: string; imagePaths: string[]; duration: number; motionType: string }>
-                totalDuration: number
-              }
-              if (!buildResult.error) {
-                const outputPath = `${tempDir}/story_${style.name}.mp4`
-                const renderResult = await window.api.renderStory(
-                  buildResult.scenes.map((s) => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })),
-                  { totalDuration: buildResult.totalDuration, resolution: '1080x1920', fps: 30, motionMode: style.motionMode, transitionStyle: style.transitionStyle, colorMatch: style.colorMatch === 'subtle' },
-                  outputPath
-                )
-                if (renderResult.success) {
-                  const uploadResult = await uploadStoryToCloud(cloudGallery.id, style.name, outputPath)
-                  if (uploadResult.skipped) {
-                    storyWarnings.push(uploadResult.reason || `Story "${style.name}" skipped`)
-                  } else {
-                    storiesUploaded++
+              const picks = topPickPaths.length > 25 ? topPickPaths.slice(0, 25) : topPickPaths
+              const duration = topPickPaths.length <= 25 ? 15 : 20
+              const tempDir = await window.api.getTempDir()
+              const styles = [
+                { name: 'clean', motionMode: 'subtle', transitionStyle: 'clean', colorMatch: 'off' },
+                { name: 'fast-social', motionMode: 'dynamic', transitionStyle: 'energetic', colorMatch: 'off' },
+                { name: 'vintage', motionMode: 'subtle', transitionStyle: 'soft-fade', colorMatch: 'subtle' },
+              ]
+              for (const style of styles) {
+                try {
+                  const buildResult = await window.api.buildStoryScenes(picks, duration, style.motionMode) as {
+                    error?: string; scenes: Array<{ type: string; imagePaths: string[]; duration: number; motionType: string }>; totalDuration: number
                   }
-                }
+                  if (!buildResult.error) {
+                    const outputPath = `${tempDir}/story_${style.name}.mp4`
+                    const renderResult = await window.api.renderStory(
+                      buildResult.scenes.map(s => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })),
+                      { totalDuration: buildResult.totalDuration, resolution: '1080x1920', fps: 30, motionMode: style.motionMode, transitionStyle: style.transitionStyle, colorMatch: style.colorMatch === 'subtle', brandedOutro: !!settings.logoUrl, logoPath: settings.logoUrl || null },
+                      outputPath
+                    )
+                    if (renderResult.success) await uploadStoryToCloud(galleryId, style.name, outputPath)
+                  }
+                } catch { /* skip story */ }
               }
-            } catch { /* skip */ }
-          }
-          setPublishStory({ completed: 4, total: 4, currentStyle: '' })
-          storiesReady = storiesUploaded > 0
+              setProjects(prev => prev.map(p => p.id === projectId
+                ? { ...p, publishState: { ...p.publishState!, storiesReady: true } }
+                : p
+              ))
+            } catch { /* stories failed silently */ }
+          })()
         }
       }
 
-      // Step 3: Mark gallery live ONLY after uploads + stories are all done
-      await markGalleryLive(cloudGallery.id, cloudGallery.publicUrl)
-
-      // Step 4: Update local state
-      setPublishGalleryDir(cloudGallery.publicUrl)
-      setPublishPhase('done')
-      if (storyWarnings.length > 0) {
-        setPubError(storyWarnings.join('; '))
-      }
-      setProjects(prev => prev.map(p => p.id === projectId
-        ? { ...p, publishState: { status: 'live', publicUrl: cloudGallery.publicUrl, storiesReady } }
-        : p
-      ))
     } catch (err: unknown) {
       console.error('[handlePublish] EXCEPTION:', err)
       setPubError(err instanceof Error ? err.message : 'Unknown error')
       setPublishPhase('error')
       setProjects(prev => prev.map(p => p.id === projectId
-        ? { ...p, publishState: { status: 'draft', storiesReady: false } }
+        ? { ...p, publishState: { status: 'draft', storiesReady: false, originalsReady: false } }
         : p
       ))
     } finally {
@@ -468,18 +568,13 @@ function MainApp({ business }: { business: Business | null }) {
   }
 
   const handleUpdateSettings = async (projectId: string) => {
-    if (isCloudPublishing) { console.log('[handleUpdateSettings] blocked — already in progress'); return }
+    if (isCloudPublishing) { return }
     setIsCloudPublishing(true)
     try {
       const project = projects.find(p => p.id === projectId)
-      if (!project) { console.log('[handleUpdateSettings] project not found:', projectId); return }
-
-      console.log('[handleUpdateSettings] projectId:', projectId, 'localId:', project.id)
-      console.log('[handleUpdateSettings] publishState:', project.publishState)
-      console.log('[handleUpdateSettings] raw deliverySettings:', project.deliverySettings)
+      if (!project) { return }
 
       const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
-      console.log('[handleUpdateSettings] migrated settings:', settings)
 
       const { error } = await updateGallerySettings(project.id, settings as Record<string, unknown>)
       if (error) {
@@ -487,7 +582,6 @@ function MainApp({ business }: { business: Business | null }) {
         setPubError(`Failed to update: ${error}`)
         setPublishPhase('error')
       } else {
-        console.log('[handleUpdateSettings] SUCCESS')
         setPublishPhase('done')
       }
     } catch (err) {
@@ -550,6 +644,14 @@ function MainApp({ business }: { business: Business | null }) {
               updatedAt: p.updatedAt ?? '',
             }
           }
+          // Fix stuck 'publishing' status from crashed/interrupted sessions
+          let publishState = p.publishState?.status === 'publishing'
+            ? { ...p.publishState, status: 'draft' }
+            : p.publishState
+          // Auto-populate publishedImageIds for galleries published before this feature
+          if (publishState?.status === 'live' && !publishState.publishedImageIds) {
+            publishState = { ...publishState, publishedImageIds: [...(p.imageIds || [])] }
+          }
           return {
             ...p,
             imageIds: p.imageIds || [],
@@ -557,6 +659,7 @@ function MainApp({ business }: { business: Business | null }) {
             clientName: p.clientName ?? null,
             createdAt: p.createdAt ?? '',
             updatedAt: p.updatedAt ?? '',
+            publishState,
           }
         })
         setProjects(migrated)
@@ -570,6 +673,78 @@ function MainApp({ business }: { business: Business | null }) {
     })()
   }, [])
 
+  // ─── Missing-files detection (Lightroom-style "Locate Folder") ───────────
+  const [missingPaths, setMissingPaths] = useState<Set<string>>(new Set())
+  const [missingDismissed, setMissingDismissed] = useState(false)
+
+  // Re-check existence whenever the registry changes (load, relink, import).
+  useEffect(() => {
+    if (!registryLoaded.current) return
+    const all = Object.values(imageRegistry).map(img => img.path).filter(Boolean) as string[]
+    if (all.length === 0) {
+      setMissingPaths(new Set())
+      return
+    }
+    const api = window.api as unknown as { checkPathsExist?: (paths: string[]) => Promise<string[]> }
+    if (!api.checkPathsExist) return
+    api.checkPathsExist(all).then(missing => {
+      setMissingPaths(new Set(missing))
+      if (missing.length > 0) setMissingDismissed(false)
+    }).catch(err => console.warn('[relink] check-paths-exist failed', err))
+  }, [imageRegistry])
+
+  const handleRelinkFolder = async () => {
+    const api = window.api as unknown as {
+      openFolderDialog?: () => Promise<string | null>
+      findFilesByName?: (folder: string, names: string[]) => Promise<Record<string, string>>
+    }
+    if (!api.openFolderDialog || !api.findFilesByName) {
+      return { relinked: 0, stillMissing: missingPaths.size, cancelled: true }
+    }
+    const folder = await api.openFolderDialog()
+    if (!folder) return { relinked: 0, stillMissing: missingPaths.size, cancelled: true }
+
+    // Build the set of basenames we're looking for.
+    const wantedBasenames = new Set<string>()
+    const idsByBasename: Record<string, string[]> = {}
+    for (const [id, img] of Object.entries(imageRegistry)) {
+      if (!img.path || !missingPaths.has(img.path)) continue
+      const base = img.path.split(/[\\/]/).pop() || img.path
+      wantedBasenames.add(base)
+      ;(idsByBasename[base] = idsByBasename[base] || []).push(id)
+    }
+
+    if (wantedBasenames.size === 0) {
+      return { relinked: 0, stillMissing: 0 }
+    }
+
+    const found = await api.findFilesByName(folder, Array.from(wantedBasenames))
+
+    // Apply the new paths to the registry.
+    let relinked = 0
+    const updatedRegistry: Record<string, ImageFile> = { ...imageRegistry }
+    for (const [base, newPath] of Object.entries(found)) {
+      const ids = idsByBasename[base] || []
+      for (const id of ids) {
+        const old = updatedRegistry[id]
+        if (!old) continue
+        updatedRegistry[id] = { ...old, path: newPath }
+        relinked++
+      }
+    }
+    setImageRegistry(updatedRegistry)
+
+    // Recompute the still-missing set immediately so the banner can update
+    // without waiting for the next existence check.
+    const stillMissing = new Set<string>()
+    for (const img of Object.values(updatedRegistry)) {
+      if (img.path && missingPaths.has(img.path)) stillMissing.add(img.path)
+    }
+    setMissingPaths(stillMissing)
+
+    return { relinked, stillMissing: stillMissing.size }
+  }
+
   // Load clients from prefs on startup
   useEffect(() => {
     window.api.getPref('clients').then(val => {
@@ -577,6 +752,19 @@ function MainApp({ business }: { business: Business | null }) {
         setClients(val as ClientData[])
       }
       clientsLoaded.current = true
+    })
+  }, [])
+
+  // Check for interrupted publish queue on startup (recovery)
+  useEffect(() => {
+    loadPersistedQueue().then(state => {
+      if (state && state.items.some(i => i.status === 'pending' || i.status === 'in_progress')) {
+        usePublish.getState().setRecovery(state)
+
+      } else if (state) {
+        // Stale completed queue — clear it
+        clearPersistedQueue()
+      }
     })
   }, [])
 
@@ -598,16 +786,50 @@ function MainApp({ business }: { business: Business | null }) {
     window.api.setPref('clients', clients)
   }, [clients])
 
+  // Live-mirror top picks + sections from their zustand stores into the
+  // current project so they persist on every change (not just on switch /
+  // close). Without this, an unexpected crash loses any picks/sections the
+  // user made during the session.
+  useEffect(() => {
+    if (!currentProjectId) return
+    const unsubGallery = useGallery.subscribe(state => {
+      if (isHydratingProject.current) return
+      const ids = Array.from(state.topPickIds)
+      setProjects(prev => prev.map(p => {
+        if (p.id !== currentProjectId) return p
+        // Skip if unchanged to avoid unnecessary re-renders / disk writes
+        const cur = p.topPickIds ?? []
+        if (cur.length === ids.length && cur.every((v, i) => v === ids[i])) return p
+        return { ...p, topPickIds: ids }
+      }))
+    })
+    const unsubSections = useSections.subscribe(state => {
+      if (isHydratingProject.current) return
+      const secs = state.sections
+      setProjects(prev => prev.map(p => {
+        if (p.id !== currentProjectId) return p
+        // Cheap structural check — section count + each id+imageIds length
+        const cur = p.sections ?? []
+        const same = cur.length === secs.length && cur.every((c, i) =>
+          c.id === secs[i].id && c.imageIds.length === secs[i].imageIds.length
+        )
+        if (same) return p
+        return { ...p, sections: secs }
+      }))
+    })
+    return () => { unsubGallery(); unsubSections() }
+  }, [currentProjectId])
+
   // Save current project on app close
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (currentProjectId) {
+        const snapshot = snapshotCurrentProject(currentProjectId)
         const galleryImages = useGallery.getState().images
-        const ids = galleryImages.map(i => i.id)
         const updatedRegistry = { ...imageRegistry }
         for (const img of galleryImages) updatedRegistry[img.id] = img
         const updatedProjects = projects.map(p =>
-          p.id === currentProjectId ? { ...p, imageIds: ids } : p
+          p.id === currentProjectId ? { ...p, ...snapshot } : p
         )
         window.api.setPref('projects', updatedProjects)
         window.api.setPref('imageRegistry', updatedRegistry)
@@ -617,49 +839,132 @@ function MainApp({ business }: { business: Business | null }) {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [currentProjectId, projects, imageRegistry])
 
+  // While we're loading a project's state INTO the stores we don't want the
+  // live-mirror subscription to fire and write the new project's data back
+  // onto the OLD currentProjectId (which still points to the outgoing one
+  // until React re-renders). This ref is checked by the subscription.
+  const isHydratingProject = useRef(false)
+
+  // Snapshot the per-project state from the live stores. Used when switching
+  // projects or closing the app — top picks and sections live in their own
+  // zustand stores at runtime but must be persisted on the project itself so
+  // they survive a restart.
+  const snapshotCurrentProject = (_id: string): Partial<ProjectData> => {
+    const galleryState = useGallery.getState()
+    const sectionsState = useSections.getState()
+    const currentImages = galleryState.images
+    const ids = currentImages.map(i => i.id)
+    return {
+      imageIds: ids,
+      topPickIds: Array.from(galleryState.topPickIds),
+      sections: sectionsState.sections,
+    }
+  }
+
+  // Hydrate the live stores from a project's persisted state. Called when
+  // switching INTO a project, so the user sees their previous picks/sections.
+  const hydrateProjectIntoStores = (target: ProjectData) => {
+    isHydratingProject.current = true
+    try {
+      const resolved = resolveImages(target.imageIds, imageRegistry)
+      useGallery.setState({
+        images: resolved,
+        folderPath: '',
+        topPickIds: new Set(target.topPickIds ?? []),
+        selectedIds: new Set(),
+      })
+      useSections.setState({
+        sections: target.sections ?? [],
+        activeSectionFilter: null,
+        sectionsDirtyAt: 0,
+      })
+    } finally {
+      isHydratingProject.current = false
+    }
+  }
+
   // Switch to a project: load its images into gallery
   const switchToProject = (projectId: string) => {
-    console.log('SWITCH_TO_PROJECT', projectId, 'projects count:', projects.length)
-    // Save current project first
+    // Save current project first (images + top picks + sections)
     if (currentProjectId) {
+      const snapshot = snapshotCurrentProject(currentProjectId)
       const currentImages = useGallery.getState().images
-      const ids = currentImages.map(i => i.id)
       setImageRegistry(prev => {
         const updated = { ...prev }
         for (const img of currentImages) updated[img.id] = img
         return updated
       })
       setProjects(prev => prev.map(p =>
-        p.id === currentProjectId ? { ...p, imageIds: ids } : p
+        p.id === currentProjectId ? { ...p, ...snapshot } : p
       ))
     }
     const target = projects.find(p => p.id === projectId)
-    console.log('FOUND_TARGET', !!target, target?.name, 'imageIds:', target?.imageIds.length)
     if (target) {
-      const resolved = resolveImages(target.imageIds, imageRegistry)
-      useGallery.setState({ images: resolved, folderPath: '' })
+      hydrateProjectIntoStores(target)
     }
     setCurrentProjectId(projectId)
     setWelcomed(true)
   }
 
+  // Delete a client and cascade-delete all its galleries (local + cloud)
+  const deleteClientCascade = (clientId: string) => {
+    const clientProjects = projects.filter(p => p.clientId === clientId)
+
+    for (const p of clientProjects) {
+      if (p.publishState?.status === 'live') {
+        const dbId = p.publishState.galleryDbId || p.id
+        deleteGalleryFromCloud(dbId).then(({ error }) => {
+          if (error) console.error('[delete-cloud]', error)
+        })
+      }
+    }
+
+    const deletedIds = new Set(clientProjects.map(p => p.id))
+    setProjects(prev => {
+      const updated = prev.filter(p => !deletedIds.has(p.id))
+      const allUsedIds = new Set(updated.flatMap(p => p.imageIds))
+      const orphanedImageIds = clientProjects.flatMap(p => p.imageIds).filter(id => !allUsedIds.has(id))
+      if (orphanedImageIds.length > 0) {
+        setImageRegistry(regPrev => {
+          const cleaned = { ...regPrev }
+          for (const imgId of orphanedImageIds) delete cleaned[imgId]
+          return cleaned
+        })
+      }
+      return updated
+    })
+
+    setClients(prev => prev.filter(c => c.id !== clientId))
+
+    if (selectedClientId === clientId) {
+      setSelectedClientId(null)
+      setView('clients')
+    }
+    if (currentProjectId && deletedIds.has(currentProjectId)) {
+      setCurrentProjectId(null)
+      useGallery.setState({ images: [], folderPath: '', topPickIds: new Set() })
+      useSections.setState({ sections: [], activeSectionFilter: null })
+    }
+  }
+
   // Go back to workspace
   const goWorkspace = () => {
     if (currentProjectId) {
+      const snapshot = snapshotCurrentProject(currentProjectId)
       const currentImages = useGallery.getState().images
-      const ids = currentImages.map(i => i.id)
       setImageRegistry(prev => {
         const updated = { ...prev }
         for (const img of currentImages) updated[img.id] = img
         return updated
       })
       setProjects(prev => prev.map(p =>
-        p.id === currentProjectId ? { ...p, imageIds: ids } : p
+        p.id === currentProjectId ? { ...p, ...snapshot } : p
       ))
     }
     setCurrentProjectId(null)
     setView('workspace')
-    useGallery.setState({ images: [], folderPath: '' })
+    useGallery.setState({ images: [], folderPath: '', topPickIds: new Set() })
+    useSections.setState({ sections: [], activeSectionFilter: null })
   }
 
   // Restore last folder on launch + show welcome on first run
@@ -692,23 +997,36 @@ function MainApp({ business }: { business: Business | null }) {
     localStorage.setItem('pickflow_demo_seen', '1')
   }
 
-  // Reset sections when folder changes
+  // Reset sections only when the user opens a brand-new folder (real path
+  // → real path). Skip on hydration / clearing (folderPath transitions to or
+  // from ''), otherwise switching back into a project would wipe its
+  // persisted sections seconds after we hydrate them.
+  const prevFolderPath = useRef<string | null>(null)
   useEffect(() => {
-    resetForFolder()
+    const prev = prevFolderPath.current
+    prevFolderPath.current = folderPath
+    if (prev && folderPath && prev !== folderPath) {
+      resetForFolder()
+    }
   }, [folderPath])
 
   return (
     <div className="app">
+      {missingPaths.size > 0 && !missingDismissed && (
+        <MissingFilesBanner
+          missingCount={missingPaths.size}
+          onLocate={handleRelinkFolder}
+          onDismiss={() => setMissingDismissed(true)}
+        />
+      )}
       {!welcomed && (
         <WelcomeScreen
           onDismiss={() => setWelcomed(true)}
           onNewProject={() => {
-            console.log('OPEN_NEW_PROJECT_MODAL')
             setIsImportOpen(false)
             setIsNewProjectModalOpen(true)
           }}
           onOpenExisting={() => {
-            console.log('OPEN_EXISTING_PROJECT_MODAL')
             setIsNewProjectModalOpen(false)
             setWelcomed(true)
           }}
@@ -735,9 +1053,15 @@ function MainApp({ business }: { business: Business | null }) {
           onSelectClient={(id) => { setSelectedClientId(id); setView('clientDetail') }}
           onDeleteProject={(id) => {
             const project = projects.find(p => p.id === id)
+            // Delete from cloud if published
+            if (project?.publishState?.status === 'live') {
+              const dbId = project.publishState.galleryDbId || project.id
+              deleteGalleryFromCloud(dbId).then(({ error }) => {
+                if (error) console.error('[delete-cloud]', error)
+              })
+            }
             setProjects(prev => {
               const updated = prev.filter(p => p.id !== id)
-              // Clean orphan registry entries
               if (project) {
                 const allUsedIds = new Set(updated.flatMap(p => p.imageIds))
                 setImageRegistry(prev => {
@@ -761,6 +1085,7 @@ function MainApp({ business }: { business: Business | null }) {
           projects={projects}
           imageRegistry={imageRegistry}
           onSelectClient={(id) => { setSelectedClientId(id); setView('clientDetail') }}
+          onDeleteClient={(id) => deleteClientCascade(id)}
           onBack={() => setView('workspace')}
         />
       ) : welcomed && !currentProjectId && view === 'clientDetail' ? (
@@ -775,6 +1100,12 @@ function MainApp({ business }: { business: Business | null }) {
               onSelectProject={(id) => switchToProject(id)}
               onDeleteProject={(id) => {
                 const project = projects.find(p => p.id === id)
+                if (project?.publishState?.status === 'live') {
+                  const dbId = project.publishState.galleryDbId || project.id
+                  deleteGalleryFromCloud(dbId).then(({ error }) => {
+                    if (error) console.error('[delete-cloud]', error)
+                  })
+                }
                 setProjects(prev => {
                   const updated = prev.filter(p => p.id !== id)
                   if (project) {
@@ -814,9 +1145,44 @@ function MainApp({ business }: { business: Business | null }) {
             <SectionsPanel
               publishStatus={currentProject?.publishState?.status || 'draft'}
               publicUrl={currentProject?.publishState?.publicUrl}
-              onPublish={() => {
+              hasUnsavedChanges={
+                currentProject?.publishState?.status === 'live' &&
+                !!currentProject?.publishState?.publishedImageIds &&
+                JSON.stringify(currentProject.imageIds) !== JSON.stringify(currentProject.publishState.publishedImageIds)
+              }
+              onPublish={async () => {
                 if (!currentProjectId) return
                 const proj = projects.find(p => p.id === currentProjectId)
+                if (!proj) return
+
+                // If gallery is live and has unsaved changes → quick sync (no re-upload)
+                const hasChanges = proj.publishState?.status === 'live' &&
+                  !!proj.publishState?.publishedImageIds &&
+                  JSON.stringify(proj.imageIds) !== JSON.stringify(proj.publishState.publishedImageIds)
+
+                if (hasChanges) {
+                  const dbId = proj.publishState?.galleryDbId || proj.id
+                  const imgs = resolveImages(proj.imageIds, imageRegistry)
+                  const { error } = await updateGalleryImages(
+                    dbId,
+                    imgs.map(i => i.path),
+                    proj.publishState!.publishedImageIds!,
+                    imageRegistry
+                  )
+                  if (error) {
+                    useGallery.getState().addToast(`Update failed: ${error}`, 'error')
+                  } else {
+                    // Update snapshot
+                    setProjects(prev => prev.map(p => p.id === currentProjectId
+                      ? { ...p, publishState: { ...p.publishState!, publishedImageIds: [...p.imageIds] } }
+                      : p
+                    ))
+                    useGallery.getState().addToast('Gallery updated', 'success')
+                  }
+                  return
+                }
+
+                // Otherwise open publish/edit settings panel
                 setPublishProjectId(currentProjectId)
                 setPublishPhase(proj?.publishState?.status === 'live' ? 'editing' : 'settings')
               }}
@@ -864,7 +1230,7 @@ function MainApp({ business }: { business: Business | null }) {
       })()}
 
       {/* Publish Panel */}
-      {publishProjectId && (() => {
+      {publishProjectId && !isPublishHidden && (() => {
         const project = projects.find(p => p.id === publishProjectId)
         if (!project) return null
         const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
@@ -873,24 +1239,40 @@ function MainApp({ business }: { business: Business | null }) {
             projectName={project.name}
             clientName={project.clientName}
             imageCount={project.imageIds.length}
-            topPickCount={useGallery.getState().topPickIds.size}
+            topPickCount={galleryTopPickIds.size}
             settings={settings}
+            isAlreadyLive={project.publishState?.status === 'live'}
             onSettingsChange={(s) => {
               setProjects(prev => prev.map(p => p.id === publishProjectId ? { ...p, deliverySettings: s } : p))
             }}
-            onPublish={() => publishPhase === 'editing' ? handleUpdateSettings(publishProjectId) : handlePublish(publishProjectId)}
-            onClose={() => { setPublishProjectId(null); setPublishPhase('settings') }}
+            onPublish={() => {
+              if (publishPhase === 'editing') return handleUpdateSettings(publishProjectId)
+              if (project.publishState?.status === 'live') return handleUpdateChanges(publishProjectId)
+              return handlePublish(publishProjectId)
+            }}
+            onClose={() => { setPublishProjectId(null); setPublishPhase('settings'); setIsPublishHidden(false) }}
             phase={publishPhase}
-            uploadProgress={publishUpload}
-            storyProgress={publishStory}
             error={pubError}
-            galleryDir={publishGalleryDir}
-            publicUrl={publishGalleryDir.startsWith('http') ? publishGalleryDir : undefined}
-            onOpenGallery={() => { if (publishGalleryDir && !publishGalleryDir.startsWith('http')) window.api.revealInFinder(publishGalleryDir) }}
+            publicUrl={publishGalleryDir.startsWith('http') ? publishGalleryDir : project?.publishState?.publicUrl}
             onRetry={() => handlePublish(publishProjectId)}
+            onHide={publishPhase === 'publishing' ? () => setIsPublishHidden(true) : undefined}
+            onCancel={publishPhase === 'publishing' ? () => {
+              cancelUpload()
+              setPublishPhase('error')
+              setPubError('Upload cancelled')
+              setProjects(prev => prev.map(p => p.id === publishProjectId
+                ? { ...p, publishState: { ...p.publishState!, status: 'draft' } }
+                : p
+              ))
+            } : undefined}
           />
         )
       })()}
+
+      {/* Upload progress floater (shown when publish panel is hidden) */}
+      {isPublishHidden && publishProjectId && (
+        <UploadFloater onExpand={() => setIsPublishHidden(false)} />
+      )}
 
       {/* Overlays */}
       {showPreviewMode && <PreviewMode />}
@@ -902,6 +1284,7 @@ function MainApp({ business }: { business: Business | null }) {
       {/* Old PublishModal disabled — replaced by PublishPanel */}
       {showWelcome && <WelcomeModal onClose={handleCloseWelcome} />}
       {demoActive && <DemoMode onDone={handleDemoDone} />}
+      {showShortcuts && <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />}
       <ToastStack />
       <StatusBar />
 
@@ -941,7 +1324,7 @@ function MainApp({ business }: { business: Business | null }) {
             const { addSection } = useSections.getState()
             addSection(folderName)
             const newSection = useSections.getState().sections[useSections.getState().sections.length - 1]
-            useSections.getState().addImagesToSection(toAdd.map(i => i.id), newSection.id)
+            useSections.getState().assignImagesToSection(toAdd.map(i => i.id), newSection.id)
             if (!useSections.getState().isPanelOpen) useSections.getState().togglePanel()
           }}
           onCreateProject={async (name, clientName) => {
@@ -1001,7 +1384,7 @@ function MainApp({ business }: { business: Business | null }) {
             const { addSection, sections } = useSections.getState()
             addSection(folderName)
             const newSection = useSections.getState().sections[useSections.getState().sections.length - 1]
-            useSections.getState().addImagesToSection(toAdd.map(i => i.id), newSection.id)
+            useSections.getState().assignImagesToSection(toAdd.map(i => i.id), newSection.id)
             if (!useSections.getState().isPanelOpen) useSections.getState().togglePanel()
           }}
         />
@@ -1191,4 +1574,8 @@ function MainApp({ business }: { business: Business | null }) {
 
     </div>
   )
+}
+
+export default function App() {
+  return <ErrorBoundary><AppInner /></ErrorBoundary>
 }

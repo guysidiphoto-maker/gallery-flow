@@ -291,36 +291,58 @@ function s<K extends keyof DeliverySettings>(settings: Partial<DeliverySettings>
 }
 
 // ─── Sticky section nav (Pixieset-style) ───────────────────────────────────
+// Three-column sticky bar: gallery section pills (left), the Stories toggle
+// (center), and the download / select toolbar (right). Each slot is optional;
+// the grid template keeps the layout balanced even when one slot is empty.
 function SectionNav({
   sections,
+  sectionCounts,
+  totalCount,
   activeId,
   onJump,
+  centerToolbar,
+  toolbar,
 }: {
   sections: GallerySection[]
+  sectionCounts: Record<string, number>
+  totalCount: number
   activeId: string
   onJump: (id: string) => void
+  centerToolbar?: React.ReactNode
+  toolbar?: React.ReactNode
 }) {
+  const hasSections = sections.length > 0
   return (
     <nav className="section-nav">
       <div className="section-nav__inner">
-        <button
-          className={`section-nav__item ${activeId === 'all-images' ? 'section-nav__item--active' : ''}`}
-          onClick={() => onJump('all-images')}
-        >
-          All Images
-        </button>
-        {sections.map(sec => {
-          const id = `section-${sec.id}`
-          return (
-            <button
-              key={sec.id}
-              className={`section-nav__item ${activeId === id ? 'section-nav__item--active' : ''}`}
-              onClick={() => onJump(id)}
-            >
-              {sec.name}
-            </button>
-          )
-        })}
+        <div className="section-nav__items">
+          {hasSections && (
+            <>
+              <button
+                className={`section-nav__item ${activeId === 'all-images' ? 'section-nav__item--active' : ''}`}
+                onClick={() => onJump('all-images')}
+              >
+                <span className="section-nav__label">All Images</span>
+                <span className="section-nav__count">{totalCount}</span>
+              </button>
+              {sections.map(sec => {
+                const id = `section-${sec.id}`
+                return (
+                  <button
+                    key={sec.id}
+                    className={`section-nav__item ${activeId === id ? 'section-nav__item--active' : ''}`}
+                    onClick={() => onJump(id)}
+                  >
+                    <span className="section-nav__label">{sec.name}</span>
+                    <span className="section-nav__count">{sectionCounts[sec.id] ?? 0}</span>
+                  </button>
+                )
+              })}
+            </>
+          )}
+        </div>
+        <div className="section-nav__center">{centerToolbar}</div>
+        <div className="section-nav__toolbar">{toolbar}</div>
       </div>
     </nav>
   )
@@ -339,6 +361,10 @@ export function App() {
   const [selectMode, setSelectMode] = useState(false)
   const [dlProgress, setDlProgress] = useState<string | null>(null)
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<string>('all-images')
+  // Stories are collapsed by default. The viewer surfaces them via a toggle
+  // button in the section-nav toolbar so the gallery doesn't open with a big
+  // stories block above the photos.
+  const [storiesOpen, setStoriesOpen] = useState(false)
 
   const galleryId = window.location.pathname.replace(/^\/gallery\//, '').replace(/\/$/, '')
 
@@ -510,6 +536,12 @@ export function App() {
   const topPicks = images.filter(img => img.is_top_pick)
   const welcomeImages = topPicks.length >= 3 ? topPicks.slice(0, 6) : images.slice(0, 6)
 
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  // Demo galleries store their images in the 'demo-uploads' bucket instead
+  // of the regular 'gallery-images' bucket. Detect by checking demo_expires_at.
+  const isDemoGallery = !!gallery?.demo_expires_at
+  const imgBucket = isDemoGallery ? 'demo-uploads' : 'gallery-images'
+
   if (showWelcome && images.length > 0) {
     return (
       <WelcomeScreen
@@ -518,26 +550,25 @@ export function App() {
         studioName={studioName}
         studioWebsite={studioWebsite}
         images={welcomeImages}
-        storageUrl={(path: string) => storageUrl('gallery-images', path)}
+        storageUrl={(path: string) => storageUrl(imgBucket, path)}
         onEnter={() => setShowWelcome(false)}
       />
     )
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────
   function thumbUrl(img: GalleryImage) {
-    return storageUrl('gallery-images', img.thumbnail_path || img.storage_path)
+    return storageUrl(imgBucket, img.thumbnail_path || img.storage_path)
   }
 
   function webUrl(img: GalleryImage) {
-    return storageUrl('gallery-images', img.storage_path)
+    return storageUrl(imgBucket, img.storage_path)
   }
 
   function originalUrl(img: GalleryImage) {
     if (img.original_path) {
-      return storageUrl('gallery-images', img.original_path)
+      return storageUrl(imgBucket, img.original_path)
     }
-    return storageUrl('gallery-images', img.storage_path)
+    return storageUrl(imgBucket, img.storage_path)
   }
 
   function downloadUrl(img: GalleryImage) {
@@ -589,7 +620,7 @@ export function App() {
 
   // ── Cover image ─────────────────────────────────────────────────────────
   const coverImage = coverImageId ? images.find(img => img.id === coverImageId) : null
-  const coverUrl = coverImage ? storageUrl('gallery-images', coverImage.storage_path) : null
+  const coverUrl = coverImage ? storageUrl(imgBucket, coverImage.storage_path) : null
 
   // ── Grid classes ────────────────────────────────────────────────────────
   const gridClasses = [
@@ -612,22 +643,118 @@ export function App() {
     ? (downloadQuality === 'original' && someOriginalsReady ? 'Save Original' : 'Save')
     : (downloadQuality === 'original' && someOriginalsReady ? 'Download Original' : 'Download')
 
+  // Hero background image: prefer the photographer's chosen cover; otherwise
+  // fall back to the first photo of the gallery (heavily blurred + dimmed)
+  // so the page never opens as a flat black rectangle.
+  const heroFallbackImage = images[0]
+  const heroBgUrl = coverUrl
+    || (heroFallbackImage ? webUrl(heroFallbackImage) : null)
+  const hasCustomCover = !!coverUrl
+
   return (
     <>
       {/* Hero */}
-      <header className={coverUrl ? 'hero hero--cover' : 'hero'} style={coverUrl ? { backgroundImage: `url(${coverUrl})` } : undefined}>
-        {coverUrl && <div className="hero__overlay" />}
-        <h1 className="hero__title">{galleryTitle}</h1>
-        {clientName && (
-          <p className="hero__sub">{clientName}</p>
+      <header className={`hero ${heroBgUrl ? 'hero--has-bg' : ''} ${hasCustomCover ? 'hero--cover' : 'hero--blurred'}`}>
+        {heroBgUrl && (
+          <div
+            className="hero__bg"
+            style={{ backgroundImage: `url(${heroBgUrl})` }}
+            aria-hidden="true"
+          />
         )}
-        <p className="hero__meta">{images.length} photos</p>
+        {heroBgUrl && <div className="hero__overlay" />}
+        <div className="hero__content">
+          {studioName && (
+            <p className="hero__eyebrow">{studioName}</p>
+          )}
+          <h1 className="hero__title">{galleryTitle}</h1>
+          {clientName && (
+            <p className="hero__sub">{clientName}</p>
+          )}
+          <div className="hero__meta">
+            <span className="hero__count">{images.length} {images.length === 1 ? 'photo' : 'photos'}</span>
+          </div>
+        </div>
       </header>
 
-      {/* Stories */}
-      {showStoriesSection && (
-        <section className="stories">
-          <h2 className="stories__heading">Your Stories</h2>
+      {/* Unified sticky bar: section pills (left) + download/select toolbar (right) */}
+      {(sections.length > 0 || downloadsEnabled || showStoriesSection) && (
+        <SectionNav
+          sections={sections.filter(sec => images.some(im => im.section_id === sec.id))}
+          sectionCounts={sections.reduce<Record<string, number>>((acc, sec) => {
+            acc[sec.id] = images.filter(im => im.section_id === sec.id).length
+            return acc
+          }, {})}
+          totalCount={images.length}
+          activeId={activeSectionAnchor}
+          onJump={(id) => {
+            const el = document.getElementById(id)
+            if (!el) return
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            history.replaceState(null, '', '#' + id)
+          }}
+          centerToolbar={showStoriesSection ? (
+            <button
+              className={`gallery-toolbar__btn ${storiesOpen ? 'gallery-toolbar__btn--active' : ''}`}
+              onClick={() => setStoriesOpen(v => !v)}
+              aria-expanded={storiesOpen}
+              aria-controls="gallery-stories"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              Stories
+              <span className="gallery-toolbar__count">{stories.length}</span>
+            </button>
+          ) : null}
+          toolbar={downloadsEnabled ? (
+            <>
+              <button
+                className={`gallery-toolbar__btn ${selectMode ? 'gallery-toolbar__btn--active' : ''}`}
+                onClick={() => { setSelectMode(!selectMode); setSelectedIds(new Set()) }}
+              >
+                {selectMode ? `${selectedIds.size} selected` : 'Select'}
+              </button>
+              {selectMode && selectedIds.size > 0 && (
+                <button
+                  className="gallery-toolbar__btn gallery-toolbar__btn--primary"
+                  onClick={() => {
+                    handleBatchDownload(images.filter(img => selectedIds.has(img.id)))
+                    setSelectMode(false); setSelectedIds(new Set())
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  {isMobile ? 'Save' : 'Download'} {selectedIds.size}
+                </button>
+              )}
+              {!selectMode && (
+                <button
+                  className="gallery-toolbar__btn"
+                  onClick={() => handleBatchDownload(images)}
+                  disabled={!!dlProgress}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  {dlProgress || (isMobile ? 'Save All' : 'Download all')}
+                </button>
+              )}
+              {selectMode && (
+                <button
+                  className="gallery-toolbar__btn gallery-toolbar__btn--ghost"
+                  onClick={() => { setSelectMode(false); setSelectedIds(new Set()) }}
+                >Cancel</button>
+              )}
+            </>
+          ) : null}
+        />
+      )}
+
+      {/* Stories — collapsible. Hidden by default; opened from the toolbar. */}
+      {showStoriesSection && storiesOpen && (
+        <section id="gallery-stories" className="stories">
           <div className="stories__row">
             {stories.map((st) => (
               <div key={st.id} className="story-card">
@@ -650,99 +777,9 @@ export function App() {
         </section>
       )}
 
-      {/* Sticky section nav — placed BEFORE the download toolbar so the
-          toolbar stacks below it without z-index conflict. */}
-      {sections.length > 0 && (
-        <SectionNav
-          sections={sections.filter(sec => images.some(im => im.section_id === sec.id))}
-          activeId={activeSectionAnchor}
-          onJump={(id) => {
-            const el = document.getElementById(id)
-            if (!el) return
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-            history.replaceState(null, '', '#' + id)
-          }}
-        />
-      )}
-
-      {/* Download / Select toolbar */}
-      {downloadsEnabled && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-          padding: '12px 16px', position: 'sticky', top: sections.length > 0 ? 48 : 0, zIndex: 50,
-          background: 'rgba(10,10,12,.85)', backdropFilter: 'blur(10px)',
-        }}>
-          <button
-            onClick={() => { setSelectMode(!selectMode); setSelectedIds(new Set()) }}
-            style={{
-              padding: '6px 16px', borderRadius: 8,
-              border: selectMode ? '1px solid #6366f1' : '1px solid rgba(255,255,255,.12)',
-              background: selectMode ? 'rgba(99,102,241,.15)' : 'transparent',
-              color: selectMode ? '#a5b4fc' : 'rgba(255,255,255,.6)',
-              fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            {selectMode ? `${selectedIds.size} selected` : 'Select Photos'}
-          </button>
-          {selectMode && selectedIds.size > 0 && (
-            <button
-              onClick={() => {
-                handleBatchDownload(images.filter(img => selectedIds.has(img.id)))
-                setSelectMode(false); setSelectedIds(new Set())
-              }}
-              style={{
-                padding: '6px 16px', borderRadius: 8, border: 'none',
-                background: '#6366f1', color: '#fff',
-                fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              {isMobile ? 'Save' : 'Download'} {selectedIds.size}
-            </button>
-          )}
-          {!selectMode && (
-            <button
-              onClick={() => handleBatchDownload(images)}
-              disabled={!!dlProgress}
-              style={{
-                padding: '6px 16px', borderRadius: 8,
-                border: '1px solid rgba(255,255,255,.12)',
-                background: 'transparent', color: 'rgba(255,255,255,.6)',
-                fontSize: 12, fontWeight: 500, cursor: dlProgress ? 'wait' : 'pointer', fontFamily: 'inherit',
-                display: 'flex', alignItems: 'center', gap: 6,
-                opacity: dlProgress ? 0.5 : 1,
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              {dlProgress || (isMobile ? 'Save All' : 'Download All')}
-            </button>
-          )}
-          {selectMode && (
-            <button
-              onClick={() => { setSelectMode(false); setSelectedIds(new Set()) }}
-              style={{
-                padding: '6px 12px', borderRadius: 8, border: 'none',
-                background: 'transparent', color: 'rgba(255,255,255,.35)',
-                fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >Cancel</button>
-          )}
-        </div>
-      )}
-
-      {/* All Images section */}
+      {/* All Images section — heading suppressed because the sticky nav
+          already labels and counts it. */}
       <section id="all-images" className="gallery-section gallery-section--all">
-        {sections.length > 0 && (
-          <h2 className="gallery-section__heading">
-            <span className="gallery-section__name">All Images</span>
-            <span className="gallery-section__count">{images.length} {images.length === 1 ? 'photo' : 'photos'}</span>
-          </h2>
-        )}
         <MasonryGrid
           images={images}
           thumbUrl={thumbUrl}

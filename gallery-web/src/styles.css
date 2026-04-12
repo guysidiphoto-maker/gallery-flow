@@ -10,6 +10,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Shared content rhythm — every major content block (hero text, stories,
+   section nav, section headings, masonry grid) caps at this width and uses
+   the same horizontal padding. Keeps the page composed instead of letting
+   wide laptops stretch sections to different widths. */
+:root {
+  --content-max: 1280px;
+  --content-px: clamp(20px, 3vw, 40px);
+}
+
 /* ── Loading / Error ──────────────────────────────────────────────────────── */
 
 .center-msg {
@@ -116,69 +125,171 @@ body {
 /* ── Hero ─────────────────────────────────────────────────────────────────── */
 
 .hero {
-  padding: 56px 24px 32px;
-  text-align: center;
   position: relative;
-}
-
-.hero--cover {
-  min-height: 320px;
+  min-height: clamp(180px, 30vh, 280px);
+  max-height: 40vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background-size: cover;
-  background-position: center;
+  padding: clamp(24px, 3vw, 36px) var(--content-px) clamp(12px, 1.4vw, 18px);
+  text-align: center;
+  overflow: hidden;
 }
 
-.hero--cover .hero__overlay {
+/* Soft radial light at the top of the hero when there's no background image
+   at all (rare — only happens for empty galleries). */
+.hero:not(.hero--has-bg)::before {
+  content: '';
+  position: absolute;
+  top: -40%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120%;
+  height: 100%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(99, 102, 241, 0.08) 0%,
+    rgba(99, 102, 241, 0.025) 35%,
+    transparent 65%
+  );
+  pointer-events: none;
+}
+
+/* Background image layer — applied for both an explicit cover AND the
+   blurred-first-image fallback. The blurred variant adds a heavy filter so
+   the title remains the focal point. */
+.hero__bg {
+  position: absolute;
+  inset: -8% -8% -8% -8%;  /* over-extend so blur edges don't crop the frame */
+  background-size: cover;
+  background-position: center;
+  z-index: 0;
+  transform: scale(1.08);
+}
+
+.hero--blurred .hero__bg {
+  filter: blur(25px) saturate(120%) brightness(0.65);
+}
+
+.hero--cover .hero__bg {
+  filter: brightness(0.85);
+}
+
+.hero__overlay {
   position: absolute;
   inset: 0;
+  z-index: 0;
   background: linear-gradient(
     to bottom,
-    rgba(10,10,15,.55) 0%,
-    rgba(10,10,15,.85) 100%
+    rgba(10, 10, 15, 0.55) 0%,
+    rgba(10, 10, 15, 0.72) 55%,
+    rgba(10, 10, 15, 0.96) 100%
   );
 }
 
-.hero--cover .hero__title,
-.hero--cover .hero__sub,
-.hero--cover .hero__meta {
+.hero__content {
   position: relative;
   z-index: 1;
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hero__eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+  margin-bottom: clamp(8px, 0.9vw, 12px);
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
 }
 
 .hero__title {
-  font-size: 32px;
+  font-size: clamp(28px, 4.6vw, 52px);
   font-weight: 800;
-  letter-spacing: -0.02em;
-  color: rgba(255,255,255,.92);
+  letter-spacing: -0.028em;
+  line-height: 1.04;
+  color: #ffffff;
+  text-shadow: 0 2px 30px rgba(0, 0, 0, 0.4);
 }
 
 .hero__sub {
-  margin-top: 6px;
-  font-size: 15px;
-  color: rgba(255,255,255,.4);
+  margin-top: clamp(4px, 0.6vw, 8px);
+  font-size: clamp(13px, 1.4vw, 16px);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.78);
+  letter-spacing: 0.005em;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.35);
 }
 
 .hero__meta {
-  margin-top: 4px;
-  font-size: 13px;
-  color: rgba(255,255,255,.2);
+  margin-top: clamp(10px, 1.2vw, 14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero__count {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 /* ── Stories ───────────────────────────────────────────────────────────────── */
+/* Stories live in their own visually-distinct band: a darker strip with a
+   tinted gradient and clear top/bottom borders so it reads as a separate
+   section, not part of the hero or the gallery grid. */
 
 .stories {
-  padding: 0 16px 32px;
+  position: relative;
+  padding: clamp(14px, 1.8vw, 22px) var(--content-px) clamp(14px, 1.8vw, 22px);
   text-align: center;
+  background:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.014) 0%, rgba(255, 255, 255, 0.022) 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  animation: stories-slide .25s cubic-bezier(.2, .8, .2, 1);
+}
+
+@keyframes stories-slide {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .stories__heading {
-  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
   font-weight: 700;
-  color: rgba(255,255,255,.85);
-  margin-bottom: 16px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: clamp(10px, 1.2vw, 14px);
+}
+
+/* Decorative lines flanking the stories heading. */
+.stories__heading::before,
+.stories__heading::after {
+  content: '';
+  display: inline-block;
+  width: 22px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .stories__row {
@@ -186,31 +297,46 @@ body {
   gap: 12px;
   justify-content: center;
   flex-wrap: wrap;
+  max-width: var(--content-max);
+  margin: 0 auto;
 }
 
 .story-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  width: 110px;
+  gap: 6px;
+  width: 86px;
 }
 
 .story-card__preview {
-  width: 110px;
-  height: 196px;
-  border-radius: 14px;
+  width: 86px;
+  height: 152px;
+  border-radius: 11px;
   object-fit: cover;
-  background: linear-gradient(135deg, rgba(99,102,241,.15), rgba(168,85,247,.1));
-  border: 1px solid rgba(255,255,255,.06);
+  background: linear-gradient(135deg, rgba(99,102,241,.18), rgba(168,85,247,.12));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 32px -18px rgba(0, 0, 0, 0.6),
+              0 6px 14px -10px rgba(99, 102, 241, 0.22);
   cursor: pointer;
+  transition: transform .35s cubic-bezier(.2, .8, .2, 1),
+              box-shadow .35s ease,
+              border-color .25s ease;
+}
+
+.story-card__preview:hover {
+  transform: translateY(-3px) scale(1.012);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 22px 40px -18px rgba(0, 0, 0, 0.7),
+              0 10px 20px -12px rgba(99, 102, 241, 0.32);
 }
 
 .story-card__name {
-  font-size: 12px;
+  font-size: 9.5px;
   font-weight: 600;
-  color: rgba(255,255,255,.6);
-  text-transform: capitalize;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .story-card__dl {
@@ -218,20 +344,23 @@ body {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  border-radius: 6px;
-  background: rgba(99,102,241,.12);
-  color: #a5b4fc;
-  font-size: 11px;
-  font-weight: 600;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-decoration: none;
-  transition: background .12s;
-  border: none;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
   cursor: pointer;
   font-family: inherit;
 }
 
 .story-card__dl:hover {
-  background: rgba(99,102,241,.22);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 /* ── Grid — Masonry (CSS columns) ─────────────────────────────────────────── */
@@ -240,6 +369,10 @@ body {
   column-count: 2;
   column-gap: 4px;
   padding: 0 4px;
+  /* Match the rest of the layout so the grid never grows wider than the
+     hero text, stories row, section nav, or section headings. */
+  max-width: var(--content-max);
+  margin: 0 auto;
 }
 
 /* Layout mode: 1-col */
@@ -453,33 +586,55 @@ body {
 
 /* ── Sections (Pixieset-style groups under the All Images masonry) ────── */
 .gallery-section {
-  margin-top: 56px;
-  padding: 0 16px;
+  margin-top: clamp(40px, 5.5vw, 64px);
+  padding: 0 var(--content-px);
 }
+
 .gallery-section__heading {
   display: flex;
   align-items: baseline;
+  justify-content: space-between;
   gap: 14px;
-  max-width: 1400px;
-  margin: 0 auto 18px;
-  padding: 0 4px;
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: rgba(255,255,255,.95);
-  border-bottom: 1px solid rgba(255,255,255,.08);
+  max-width: var(--content-max);
+  margin: 0 auto clamp(16px, 2.2vw, 24px);
   padding-bottom: 12px;
+  position: relative;
 }
-.gallery-section__name { flex: 1; }
+
+/* Subtle gradient underline that fades to nothing instead of a hard rule. */
+.gallery-section__heading::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.04) 60%,
+    transparent 100%
+  );
+}
+
+.gallery-section__name {
+  font-size: clamp(18px, 2vw, 24px);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: rgba(255, 255, 255, 0.96);
+  flex: 1;
+}
+
 .gallery-section__count {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
-  color: rgba(255,255,255,.4);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
 }
+
 @media (max-width: 640px) {
   .gallery-section { margin-top: 36px; }
-  .gallery-section__heading { font-size: 18px; }
 }
 
 /* ── Sticky section nav (Pixieset-style anchor + scroll-spy) ───────────── */
@@ -487,50 +642,188 @@ body {
   position: sticky;
   top: 0;
   z-index: 60;
-  background: rgba(10,10,12,.88);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(255,255,255,.06);
+  background: rgba(10, 10, 14, 0.82);
+  backdrop-filter: saturate(140%) blur(20px);
+  -webkit-backdrop-filter: saturate(140%) blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
+
 .section-nav__inner {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 10px var(--content-px);
+}
+
+.section-nav__items {
   display: flex;
   align-items: center;
-  gap: 4px;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 10px 16px;
+  gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
+  min-width: 0;
+  justify-self: start;
 }
-.section-nav__inner::-webkit-scrollbar { display: none; }
+.section-nav__items::-webkit-scrollbar { display: none; }
+
+.section-nav__center {
+  display: flex;
+  align-items: center;
+  justify-self: center;
+}
 
 .section-nav__item {
   flex-shrink: 0;
-  padding: 7px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
   font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.01em;
-  color: rgba(255,255,255,.55);
+  letter-spacing: 0.005em;
+  color: rgba(255, 255, 255, 0.55);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 999px;
   cursor: pointer;
   font-family: inherit;
   white-space: nowrap;
-  transition: color .15s, background .15s, border-color .15s;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
 }
+
 .section-nav__item:hover {
-  color: rgba(255,255,255,.92);
-  background: rgba(255,255,255,.04);
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.05);
 }
+
 .section-nav__item--active {
   color: #fff;
-  background: rgba(255,255,255,.08);
-  border-color: rgba(255,255,255,.12);
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.18);
   font-weight: 600;
 }
 
-/* Anchor jumps must land BELOW the sticky nav (and the download toolbar
-   when it's stacked under the nav). */
-.gallery-section { scroll-margin-top: 110px; }
-.gallery-section--all { margin-top: 0; scroll-margin-top: 110px; }
+.section-nav__label { display: inline-block; }
+
+.section-nav__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+}
+
+.section-nav__item--active .section-nav__count {
+  background: rgba(255, 255, 255, 0.13);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.section-nav__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  justify-self: end;
+}
+
+/* ── Gallery toolbar buttons (used inside section-nav__toolbar) ────────── */
+.gallery-toolbar__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease;
+  white-space: nowrap;
+}
+
+.gallery-toolbar__btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.gallery-toolbar__btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.gallery-toolbar__btn--active {
+  color: #c7d2fe;
+  border-color: rgba(99, 102, 241, 0.55);
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.gallery-toolbar__btn--primary {
+  color: #fff;
+  background: #6366f1;
+  border-color: #6366f1;
+  font-weight: 600;
+}
+.gallery-toolbar__btn--primary:hover {
+  background: #5658e6;
+  border-color: #5658e6;
+  color: #fff;
+}
+
+.gallery-toolbar__btn--ghost {
+  border-color: transparent;
+  color: rgba(255, 255, 255, 0.4);
+}
+.gallery-toolbar__btn--ghost:hover {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Numeric badge inside a toolbar button (e.g. Stories count). */
+.gallery-toolbar__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 1px 6px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.gallery-toolbar__btn--active .gallery-toolbar__count {
+  background: rgba(99, 102, 241, 0.28);
+  color: #c7d2fe;
+}
+
+@media (max-width: 640px) {
+  .section-nav__inner { padding: 10px 14px; gap: 10px; }
+  .gallery-toolbar__btn { padding: 6px 11px; font-size: 11.5px; }
+  .section-nav__item { padding: 7px 11px; font-size: 12px; }
+}
+
+/* Anchor jumps must land BELOW the sticky nav. */
+.gallery-section { scroll-margin-top: 64px; }
+.gallery-section--all {
+  /* Tight gap between the sticky tabs and the first row of photos. */
+  margin-top: clamp(4px, 0.6vw, 8px);
+  scroll-margin-top: 64px;
+}

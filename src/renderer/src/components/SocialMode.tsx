@@ -9,6 +9,7 @@ import { useSocial } from '../store/social'
 import { useGallery } from '../store/gallery'
 import type { SocialPost, SplitLayout } from '../types'
 import { toLocalURL } from '../utils/imageUtils'
+import { computeEtaFromPercent, formatEta } from '../lib/eta'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -473,6 +474,27 @@ function Handoff() {
     includeOrderOverlay, setIncludeOrderOverlay, posts
   } = useSocial()
 
+  const [exportStartedAt, setExportStartedAt] = useState<number | null>(null)
+  const [, setTick] = useState(0)
+
+  // Stamp startedAt when an export begins; clear when it ends
+  useEffect(() => {
+    if (isExporting) {
+      setExportStartedAt(prev => prev ?? Date.now())
+    } else {
+      setExportStartedAt(null)
+    }
+  }, [isExporting])
+
+  // Live ticker so the ETA label refreshes while exporting
+  useEffect(() => {
+    if (!isExporting) return
+    const id = setInterval(() => setTick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [isExporting])
+
+  const etaSec = isExporting ? computeEtaFromPercent(exportStartedAt, exportProgress) : null
+
   const handleCopyPath = () => {
     if (exportDir) navigator.clipboard.writeText(exportDir)
   }
@@ -514,7 +536,14 @@ function Handoff() {
           <div className="progress-bar" style={{ width: 280 }}>
             <div className="progress-bar__fill" style={{ width: `${exportProgress}%` }} />
           </div>
-          <p className="social-handoff__pct">{exportProgress}%</p>
+          <p className="social-handoff__pct">
+            {exportProgress}%
+            {etaSec != null && (
+              <span style={{ marginLeft: 8, color: 'rgba(255,255,255,.5)', fontSize: 12, fontWeight: 400 }}>
+                · ~{formatEta(etaSec)} left
+              </span>
+            )}
+          </p>
         </div>
       )}
 

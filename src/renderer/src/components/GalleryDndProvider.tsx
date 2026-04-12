@@ -18,53 +18,16 @@ import { useSections } from '../store/sections'
 import { DragOverlayCard } from './ImageCard'
 import { FIRST_POSITION_DROP_ID } from './GalleryGrid'
 
-interface PendingDrop {
-  imageIds: string[]
-  sectionId: string
-  sectionName: string
-}
-
-function SectionDropDialog({
-  imageCount,
-  sectionName,
-  onMove,
-  onCopy,
-  onCancel
-}: {
-  imageCount: number
-  sectionName: string
-  onMove: () => void
-  onCopy: () => void
-  onCancel: () => void
-}) {
-  return (
-    <div className="section-drop-overlay" onClick={onCancel}>
-      <div className="section-drop-dialog" onClick={e => e.stopPropagation()}>
-        <p className="section-drop-dialog__title">
-          Add {imageCount} image{imageCount !== 1 ? 's' : ''} to &ldquo;{sectionName}&rdquo;?
-        </p>
-        <div className="section-drop-dialog__actions">
-          <button className="btn btn--accent" onClick={onMove}>Move here</button>
-          <button className="btn btn--ghost" onClick={onCopy}>Copy here</button>
-          <button className="btn btn--ghost" onClick={onCancel}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export function GalleryDndProvider({ children }: { children: React.ReactNode }) {
   const { images, selectedIds, thumbnailSize, handleDrop, moveToTop } = useGallery()
   const {
     sections,
     activeSectionFilter,
-    addImagesToSection,
-    moveImagesToSection,
+    assignImagesToSection,
     reorderSectionImages
   } = useSections()
 
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null)
 
   const imgMap = new Map(images.map(i => [i.id, i]))
   const activeImage = activeId ? (imgMap.get(activeId) ?? null) : null
@@ -116,7 +79,7 @@ export function GalleryDndProvider({ children }: { children: React.ReactNode }) 
       return
     }
 
-    // Dropped on a section drop zone
+    // Dropped on a section drop zone — single-section assign, no dialog.
     if (overId.startsWith('section-drop-')) {
       const sectionId = overId.replace('section-drop-', '')
       const sec = sections.find(s => s.id === sectionId)
@@ -127,7 +90,7 @@ export function GalleryDndProvider({ children }: { children: React.ReactNode }) 
         ? Array.from(selectedIds)
         : [draggedId]
 
-      setPendingDrop({ imageIds, sectionId, sectionName: sec.name })
+      assignImagesToSection(imageIds, sectionId)
       return
     }
 
@@ -138,7 +101,7 @@ export function GalleryDndProvider({ children }: { children: React.ReactNode }) 
     } else {
       handleDrop(String(active.id), overId)
     }
-  }, [sections, selectedIds, activeSectionFilter, reorderSectionImages, handleDrop, moveToTop])
+  }, [sections, selectedIds, activeSectionFilter, assignImagesToSection, reorderSectionImages, handleDrop, moveToTop, images])
 
   return (
     <DndContext
@@ -155,22 +118,6 @@ export function GalleryDndProvider({ children }: { children: React.ReactNode }) 
           <DragOverlayCard image={activeImage} thumbnailSize={thumbnailSize} />
         ) : null}
       </DragOverlay>
-
-      {pendingDrop && (
-        <SectionDropDialog
-          imageCount={pendingDrop.imageIds.length}
-          sectionName={pendingDrop.sectionName}
-          onMove={() => {
-            moveImagesToSection(pendingDrop.imageIds, pendingDrop.sectionId)
-            setPendingDrop(null)
-          }}
-          onCopy={() => {
-            addImagesToSection(pendingDrop.imageIds, pendingDrop.sectionId)
-            setPendingDrop(null)
-          }}
-          onCancel={() => setPendingDrop(null)}
-        />
-      )}
     </DndContext>
   )
 }

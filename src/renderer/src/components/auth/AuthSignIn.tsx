@@ -1,23 +1,33 @@
 import React, { useState } from 'react'
 import { AuthInput } from './AuthInput'
 import { AuthGoogleButton } from './AuthGoogleButton'
+import { signInWithEmail } from '../../lib/auth'
 
 interface AuthSignInProps {
   onGoogleClick: () => void
   googleLoading: boolean
+  googleError: string | null
   onSwitchToSignUp: () => void
 }
 
-export function AuthSignIn({ onGoogleClick, googleLoading, onSwitchToSignUp }: AuthSignInProps) {
+export function AuthSignIn({ onGoogleClick, googleLoading, googleError, onSwitchToSignUp }: AuthSignInProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (loading) return
     setLoading(true)
-    setTimeout(() => setLoading(false), 1500)
+    setError(null)
+    const { error: err } = await signInWithEmail(email.trim(), password)
+    if (err) setError(err)
+    setLoading(false)
+    // Successful sign-in is handled by supabase.auth.onAuthStateChange in App.tsx.
   }
+
+  const formError = error || googleError
 
   return (
     <div>
@@ -46,6 +56,7 @@ export function AuthSignIn({ onGoogleClick, googleLoading, onSwitchToSignUp }: A
           onChange={setEmail}
           placeholder="Email address"
           type="email"
+          autoFocus
         />
         <AuthInput
           value={password}
@@ -53,6 +64,11 @@ export function AuthSignIn({ onGoogleClick, googleLoading, onSwitchToSignUp }: A
           placeholder="Password"
           type="password"
         />
+        {formError && (
+          <p style={{ fontSize: 12, color: '#f87171', margin: '-2px 0 0 2px', lineHeight: 1.4 }}>
+            {formError}
+          </p>
+        )}
         <button
           type="submit"
           disabled={loading || !email || !password}

@@ -1,16 +1,28 @@
 import React, { useState } from 'react'
 import { AuthSignIn } from './AuthSignIn'
 import { AuthSignUp } from './AuthSignUp'
+import { signInWithGoogle } from '../../lib/auth'
 
 type Mode = 'signin' | 'signup'
 
 export function AuthCard() {
   const [mode, setMode] = useState<Mode>('signin')
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [googleError, setGoogleError] = useState<string | null>(null)
 
-  const handleGoogleClick = () => {
+  const handleGoogleClick = async () => {
     setGoogleLoading(true)
-    setTimeout(() => setGoogleLoading(false), 2000)
+    setGoogleError(null)
+    try {
+      const { error } = await signInWithGoogle()
+      if (error) setGoogleError(error)
+    } catch (err) {
+      console.error('[AuthCard] signInWithGoogle threw:', err)
+      setGoogleError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setGoogleLoading(false)
+    }
+    // On success, supabase.auth.onAuthStateChange in App.tsx flips the gate.
   }
 
   return (
@@ -65,12 +77,14 @@ export function AuthCard() {
           <AuthSignIn
             onGoogleClick={handleGoogleClick}
             googleLoading={googleLoading}
+            googleError={googleError}
             onSwitchToSignUp={() => setMode('signup')}
           />
         ) : (
           <AuthSignUp
             onGoogleClick={handleGoogleClick}
             googleLoading={googleLoading}
+            googleError={googleError}
             onSwitchToSignIn={() => setMode('signin')}
           />
         )}
