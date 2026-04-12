@@ -127,11 +127,9 @@ export async function signInWithGoogle(): Promise<{ error: string | null }> {
     const { error: exErr } = await supabase.auth.exchangeCodeForSession(result.code)
     console.log('[google-auth] step 3a result:', { error: exErr?.message ?? null })
     if (exErr) return { error: exErr.message }
-    await new Promise(r => setTimeout(r, 1500))
-    try {
-      const { useSession } = await import('../store/session')
-      await useSession.getState().refreshBusiness()
-    } catch { /* best effort */ }
+    // Don't await refreshBusiness here — the onAuthStateChange listener
+    // handles the transition. Awaiting here caused the auth screen to freeze
+    // when getSession() hung during post-OAuth session settlement.
     return { error: null }
   }
 
@@ -144,18 +142,7 @@ export async function signInWithGoogle(): Promise<{ error: string | null }> {
     })
     console.log('[google-auth] step 3b result:', { error: setErr?.message ?? null })
     if (setErr) return { error: setErr.message }
-    // Give Supabase a moment to settle the new session, then explicitly
-    // refresh the business. The onAuthStateChange listener races the token
-    // propagation and often times out — this direct call is more reliable.
-    await new Promise(r => setTimeout(r, 1500))
-    try {
-      const { useSession } = await import('../store/session')
-      console.log('[google-auth] step 4: explicit refreshBusiness after setSession...')
-      await useSession.getState().refreshBusiness()
-      console.log('[google-auth] step 4 result: status =', useSession.getState().status)
-    } catch (e) {
-      console.warn('[google-auth] step 4 refreshBusiness failed:', e)
-    }
+    // Don't await refreshBusiness — the auth listener handles the transition.
     return { error: null }
   }
 

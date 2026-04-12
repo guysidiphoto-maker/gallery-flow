@@ -116,9 +116,16 @@ export const useSession = create<SessionState>((set, get) => ({
     // the fetch interceptor may not have the new access token yet, causing
     // the businesses query to hang indefinitely (sent without auth → RLS
     // blocks → PostgREST returns nothing → our timeout fires).
+    // Race against a 3s timeout — getSession() can hang if called while the
+    // client is still processing exchangeCodeForSession internally.
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
+      const sessionResult = await Promise.race([
+        supabase.auth.getSession().then(r => ({ kind: 'ok' as const, ...r })),
+        new Promise<{ kind: 'timeout' }>(resolve => setTimeout(() => resolve({ kind: 'timeout' }), 3000)),
+      ])
+      if (sessionResult.kind === 'timeout') {
+        console.warn('[session] getSession() timed out in refreshBusiness — proceeding with query')
+      } else if (!sessionResult.data?.session) {
         set({ status: 'unauthenticated', business: null })
         return
       }

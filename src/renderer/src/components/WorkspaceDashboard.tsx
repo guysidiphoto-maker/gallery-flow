@@ -93,7 +93,6 @@ export function WorkspaceDashboard({
   const [activeFilter, setActiveFilter] = useState<'all' | 'live' | 'draft'>('all')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
-  const [couponCode, setCouponCode] = useState('')
   const accountMenuRef = useRef<HTMLDivElement>(null)
 
   // ── Initial data load ──────────────────────────────────────────────────────
@@ -1153,6 +1152,7 @@ function EmptyState({
 function UsageIndicator() {
   const [usage, setUsage] = useState<PlanUsage | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [couponCode, setCouponCode] = useState('')
 
   useEffect(() => {
     let cancelled = false
