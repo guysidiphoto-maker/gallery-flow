@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixflow — ניתוח תמחור</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    padding: 48px 24px;
+    line-height: 1.7;
+    direction: rtl;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .subtitle {
+    font-size: 14px;
+    color: rgba(255,255,255,.4);
+    margin-bottom: 48px;
+  }
+  h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #fff;
+    margin: 48px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  h2 .num {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    text-align: center;
+    background: #6366f1;
+    color: #fff;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    margin-left: 10px;
+  }
+  p { margin: 12px 0; font-size: 14.5px; color: rgba(255,255,255,.7); }
+  .highlight { color: #6366f1; font-weight: 600; }
+  .green { color: #10b981; font-weight: 600; }
+  .yellow { color: #f59e0b; font-weight: 600; }
+  .red { color: #ef4444; font-weight: 600; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 13.5px;
+  }
+  th {
+    text-align: right;
+    padding: 10px 14px;
+    background: rgba(99,102,241,.1);
+    color: #a5b4fc;
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(99,102,241,.2);
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+    color: rgba(255,255,255,.75);
+  }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .td-label { color: rgba(255,255,255,.5); font-weight: 500; }
+  .td-money { font-weight: 600; direction: ltr; text-align: right; }
+  .td-green { color: #10b981; font-weight: 700; }
+  .td-red { color: #ef4444; font-weight: 600; }
+
+  /* Cards */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 24px 0; }
+  .card {
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 14px;
+    padding: 24px 20px;
+    text-align: center;
+  }
+  .card.pop { border-color: rgba(99,102,241,.4); background: rgba(99,102,241,.06); }
+  .card-name { font-size: 12px; color: rgba(255,255,255,.45); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .card-price { font-size: 32px; font-weight: 700; color: #fff; direction: ltr; }
+  .card-price span { font-size: 14px; color: rgba(255,255,255,.4); font-weight: 400; }
+  .card-annual { font-size: 12px; color: rgba(255,255,255,.35); margin-top: 4px; }
+  .card-features { list-style: none; margin-top: 16px; font-size: 13px; color: rgba(255,255,255,.6); }
+  .card-features li { padding: 4px 0; }
+  .card-features li::before { content: '✓ '; color: #6366f1; font-weight: 700; }
+  .card-margin { margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.06); }
+  .card-margin-label { font-size: 11px; color: rgba(255,255,255,.35); }
+  .card-margin-value { font-size: 24px; font-weight: 700; color: #10b981; }
+
+  /* Callout */
+  .callout {
+    background: rgba(99,102,241,.08);
+    border: 1px solid rgba(99,102,241,.2);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin: 24px 0;
+  }
+  .callout-title { font-weight: 700; color: #a5b4fc; font-size: 14px; margin-bottom: 6px; }
+  .callout p { margin: 6px 0; font-size: 13.5px; }
+
+  .callout.warn {
+    background: rgba(245,158,11,.08);
+    border-color: rgba(245,158,11,.2);
+  }
+  .callout.warn .callout-title { color: #fbbf24; }
+
+  .callout.success {
+    background: rgba(16,185,129,.08);
+    border-color: rgba(16,185,129,.2);
+  }
+  .callout.success .callout-title { color: #34d399; }
+
+  /* Recommendations */
+  .rec-list { margin: 16px 0; }
+  .rec-item {
+    display: flex;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    align-items: flex-start;
+  }
+  .rec-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(99,102,241,.15);
+    color: #818cf8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .rec-text { font-size: 14px; color: rgba(255,255,255,.7); }
+  .rec-text strong { color: #fff; }
+
+  @media (max-width: 700px) {
+    .cards { grid-template-columns: 1fr; }
+    body { padding: 24px 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>ניתוח תמחור — Pixflow</h1>
+<p class="subtitle">מסמך פנימי · אפריל 2026 · נוצר אוטומטית</p>
+
+<!-- ─── 1. SUPABASE COSTS ─── -->
+<h2><span class="num">1</span> העלויות שלך (Supabase Pro)</h2>
+
+<p>את כל התמונות, הגלריות והנתונים אתה מאחסן ב-Supabase. תוכנית Pro עולה <span class="highlight">$25 לחודש</span> וכוללת:</p>
+
+<table>
+  <tr><th>סעיף</th><th>כלול בחינם</th><th>מחיר חריגה</th></tr>
+  <tr><td class="td-label">אחסון קבצים</td><td>100 GB</td><td class="td-money">$0.021 / GB</td></tr>
+  <tr><td class="td-label">Bandwidth (העברת נתונים)</td><td>250 GB</td><td class="td-money">$0.09 / GB</td></tr>
+  <tr><td class="td-label">Database</td><td>8 GB</td><td class="td-money">$0.125 / GB</td></tr>
+  <tr><td class="td-label">משתמשים (Auth)</td><td>100,000</td><td class="td-money">$0.00325 / user</td></tr>
+</table>
+
+<div class="callout">
+  <div class="callout-title">💡 מה זה אומר בפועל?</div>
+  <p>כל עוד יש לך פחות מ-100GB אחסון ו-250GB תעבורה בחודש — אתה משלם רק $25 קבוע. זה מספיק בערך ל-<strong>6,500 תמונות</strong> (כולל originals, web previews ו-thumbnails).</p>
+</div>
+
+<!-- ─── 2. COST PER USER ─── -->
+<h2><span class="num">2</span> כמה עולה לך כל משתמש?</h2>
+
+<p>תמונה ממוצעת של צלם שוקלת בערך 15MB (original) + 500KB (web) + 50KB (thumbnail) = <span class="highlight">~15.5MB סך הכל</span>.</p>
+
+<table>
+  <tr><th></th><th>Starter (חינם)</th><th>Pro ($19)</th><th>Business ($39)</th></tr>
+  <tr><td class="td-label">מקסימום גלריות</td><td>3</td><td>ללא הגבלה</td><td>ללא הגבלה</td></tr>
+  <tr><td class="td-label">תמונות פעילות (ממוצע)</td><td>500</td><td>3,000</td><td>10,000</td></tr>
+  <tr><td class="td-label">אחסון שנצרך</td><td>7.75 GB</td><td>46.5 GB</td><td>155 GB</td></tr>
+  <tr><td class="td-label">תעבורה בחודש</td><td>~0.2 GB</td><td>~10 GB</td><td>~100 GB</td></tr>
+  <tr><td class="td-label">עלות שולית לך</td><td class="td-money">~$0</td><td class="td-money">~$0</td><td class="td-money">~$1.16</td></tr>
+  <tr><td class="td-label"><strong>הכנסה ממנו</strong></td><td class="td-red">$0</td><td class="td-green">$19</td><td class="td-green">$39</td></tr>
+</table>
+
+<div class="callout success">
+  <div class="callout-title">✅ שורה תחתונה</div>
+  <p>העלות השולית של כל משתמש <strong>כמעט אפסית</strong> כל עוד לא חרגת מ-100GB אחסון כולל. המרווח שלך הוא 85-95% על כל משתמש משלם.</p>
+</div>
+
+<!-- ─── 3. BREAK-EVEN ─── -->
+<h2><span class="num">3</span> נקודת איזון — מתי מתחילים להרוויח?</h2>
+
+<table>
+  <tr><th>תרחיש</th><th>הכנסה</th><th>עלות Supabase</th><th>רווח נקי</th><th>מרווח</th></tr>
+  <tr>
+    <td class="td-label">2 משתמשי Pro</td>
+    <td class="td-money">$38</td><td class="td-money">~$25</td>
+    <td class="td-green">$13</td><td>34%</td>
+  </tr>
+  <tr>
+    <td class="td-label">5 משתמשי Pro</td>
+    <td class="td-money">$95</td><td class="td-money">~$27</td>
+    <td class="td-green">$68</td><td>72%</td>
+  </tr>
+  <tr>
+    <td class="td-label">10 Pro + 2 Business</td>
+    <td class="td-money">$268</td><td class="td-money">~$35</td>
+    <td class="td-green">$233</td><td><strong>87%</strong></td>
+  </tr>
+  <tr>
+    <td class="td-label">50 Pro + 10 Business</td>
+    <td class="td-money">$1,340</td><td class="td-money">~$80</td>
+    <td class="td-green">$1,260</td><td><strong>94%</strong></td>
+  </tr>
+</table>
+
+<div class="callout warn">
+  <div class="callout-title">⚠️ חשוב</div>
+  <p>נקודת האיזון היא <strong>2 משתמשים משלמים</strong> בלבד. אחרי זה, כמעט כל דולר שנכנס הוא רווח נקי.</p>
+</div>
+
+<!-- ─── 4. COMPETITORS ─── -->
+<h2><span class="num">4</span> השוואה למתחרים</h2>
+
+<table>
+  <tr><th>פלטפורמה</th><th>חינם</th><th>Mid</th><th>Top</th></tr>
+  <tr>
+    <td class="td-label" style="color:#818cf8; font-weight:700">Pixflow (אתה) 🎯</td>
+    <td>3 גלריות, 2GB</td><td class="td-money">$19/חודש</td><td class="td-money">$39/חודש</td>
+  </tr>
+  <tr>
+    <td class="td-label">Pixieset</td>
+    <td>1 collection, 3GB</td><td class="td-money">$13-23/חודש</td><td class="td-money">$40/חודש</td>
+  </tr>
+  <tr>
+    <td class="td-label">Pic-Time</td>
+    <td>מוגבל</td><td class="td-money">$18/חודש</td><td class="td-money">$30-45/חודש</td>
+  </tr>
+  <tr>
+    <td class="td-label">ShootProof</td>
+    <td>100 תמונות</td><td class="td-money">$15-23/חודש</td><td class="td-money">$35/חודש</td>
+  </tr>
+  <tr>
+    <td class="td-label">CloudSpot</td>
+    <td>3 גלריות, 1GB</td><td class="td-money">$18/חודש</td><td class="td-money">$30/חודש</td>
+  </tr>
+</table>
+
+<div class="callout success">
+  <div class="callout-title">✅ המיקום שלך מצוין</div>
+  <p>$19 ל-Pro זה בדיוק באמצע השוק. אתה מציע יותר ערך מ-Pixieset Plus ($13) ופחות מ-Pic-Time Pro ($30). ה-Business ב-$39 תואם ל-Pixieset Ultimate ($40).</p>
+</div>
+
+<!-- ─── 5. PLAN CARDS ─── -->
+<h2><span class="num">5</span> התוכניות המומלצות</h2>
+
+<div class="cards">
+  <!-- Starter -->
+  <div class="card">
+    <div class="card-name">Starter</div>
+    <div class="card-price">חינם</div>
+    <div class="card-annual">&nbsp;</div>
+    <ul class="card-features">
+      <li>3 גלריות</li>
+      <li>500 תמונות לחודש</li>
+      <li>2 GB אחסון</li>
+      <li>סקשנים + מועדפים</li>
+      <li>Watermark של Pixflow</li>
+    </ul>
+    <div class="card-margin">
+      <div class="card-margin-label">עלות לך</div>
+      <div class="card-margin-value" style="color:rgba(255,255,255,.4)">~$0</div>
+    </div>
+  </div>
+
+  <!-- Pro -->
+  <div class="card pop">
+    <div class="card-name">Pro · הכי פופולרי</div>
+    <div class="card-price">$19<span>/חודש</span></div>
+    <div class="card-annual">או $16/חודש בתשלום שנתי ($192/שנה)</div>
+    <ul class="card-features">
+      <li>גלריות ללא הגבלה</li>
+      <li>5,000 תמונות לחודש</li>
+      <li>50 GB אחסון</li>
+      <li>AI Stories</li>
+      <li>מיתוג מותאם אישית</li>
+      <li>ללא Watermark</li>
+    </ul>
+    <div class="card-margin">
+      <div class="card-margin-label">מרווח רווח</div>
+      <div class="card-margin-value">~95%</div>
+    </div>
+  </div>
+
+  <!-- Business -->
+  <div class="card">
+    <div class="card-name">Business</div>
+    <div class="card-price">$39<span>/חודש</span></div>
+    <div class="card-annual">או $33/חודש בתשלום שנתי ($396/שנה)</div>
+    <ul class="card-features">
+      <li>הכל ב-Pro</li>
+      <li>אחסון עד 500 GB</li>
+      <li>תמיכה בעדיפות</li>
+      <li>חשבונות צוות</li>
+      <li>אנליטיקס מתקדם</li>
+      <li>דומיין מותאם אישית</li>
+    </ul>
+    <div class="card-margin">
+      <div class="card-margin-label">מרווח רווח</div>
+      <div class="card-margin-value">~90%</div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── 6. RECOMMENDATIONS ─── -->
+<h2><span class="num">6</span> המלצות</h2>
+
+<div class="rec-list">
+  <div class="rec-item">
+    <div class="rec-icon">✓</div>
+    <div class="rec-text"><strong>להשאיר את המחירים כמו שהם</strong> — $19 ל-Pro ו-$39 ל-Business. המחירים מדויקים לשוק ונותנים לך מרווח רווח של 85-95%.</div>
+  </div>
+  <div class="rec-item">
+    <div class="rec-icon">⚠</div>
+    <div class="rec-text"><strong>להוסיף soft cap של 500GB ל-Business</strong> — "ללא הגבלה" באחסון זה סיכון. משתמש אחד כבד עם 1TB עולה לך $21/חודש. 500GB מספיק ל-32,000 תמונות — אף צלם רגיל לא מגיע לשם.</div>
+  </div>
+  <div class="rec-item">
+    <div class="rec-icon">🎁</div>
+    <div class="rec-text"><strong>להוסיף 14 יום trial חינם ל-Pro</strong> — סטנדרט בתעשייה. צלם שמנסה ורואה את ה-AI Stories וה-branding לא חוזר ל-Starter.</div>
+  </div>
+  <div class="rec-item">
+    <div class="rec-icon">💰</div>
+    <div class="rec-text"><strong>הנחת שנתי — כבר קיימת</strong> — $16/חודש שנתי ל-Pro (15% הנחה) ו-$33 ל-Business. מצוין, תשאיר ככה.</div>
+  </div>
+</div>
+
+<!-- ─── FOOTER ─── -->
+<div style="margin-top:64px; padding-top:24px; border-top:1px solid rgba(255,255,255,.06); text-align:center; font-size:11px; color:rgba(255,255,255,.25);">
+  Pixflow Pricing Analysis · Generated April 2026 · Internal Document
+</div>
+
+</div>
+</body>
+</html>

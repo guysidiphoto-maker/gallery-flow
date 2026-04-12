@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixflow — מדריך הקמת סליקה</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    padding: 48px 24px;
+    line-height: 1.8;
+    direction: rtl;
+  }
+  .container { max-width: 700px; margin: 0 auto; }
+  h1 { font-size: 28px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .subtitle { font-size: 14px; color: rgba(255,255,255,.4); margin-bottom: 40px; }
+
+  .info-box {
+    background: rgba(99,102,241,.08);
+    border: 1px solid rgba(99,102,241,.2);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+  }
+  .info-box h3 { color: #a5b4fc; font-size: 15px; margin-bottom: 8px; }
+  .info-box p { font-size: 13.5px; color: rgba(255,255,255,.65); margin: 6px 0; }
+
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 24px 0;
+  }
+  .compare-card {
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .compare-card.recommended {
+    border-color: rgba(99,102,241,.4);
+    background: rgba(99,102,241,.06);
+  }
+  .compare-card h4 { color: #fff; font-size: 16px; margin-bottom: 4px; }
+  .compare-card .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #6366f1;
+    color: #fff;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .compare-card p { font-size: 13px; color: rgba(255,255,255,.55); margin: 4px 0; }
+  .compare-card .fee { color: #fbbf24; font-weight: 600; font-size: 14px; }
+  .pro { color: #34d399; }
+  .con { color: #ef4444; }
+
+  .step {
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 16px;
+    padding: 28px 24px;
+    margin-bottom: 20px;
+    position: relative;
+  }
+  .step.active {
+    border-color: rgba(99,102,241,.4);
+    background: rgba(99,102,241,.04);
+  }
+  .step-num {
+    position: absolute;
+    top: -14px;
+    right: 20px;
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    text-align: center;
+    background: #6366f1;
+    color: #fff;
+    border-radius: 50%;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .step h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 12px;
+  }
+  .step p {
+    font-size: 14px;
+    color: rgba(255,255,255,.65);
+    margin: 8px 0;
+  }
+  .step .link {
+    display: inline-block;
+    margin: 12px 0;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    transition: opacity .15s;
+  }
+  .step .link:hover { opacity: 0.85; }
+  .step .link.yellow {
+    background: linear-gradient(135deg, #f59e0b, #f97316);
+  }
+
+  .field-box {
+    background: rgba(0,0,0,.3);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 10px;
+    padding: 16px;
+    margin: 12px 0;
+    direction: ltr;
+    text-align: left;
+  }
+  .field-label {
+    font-size: 11px;
+    color: rgba(255,255,255,.4);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .field-example {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    color: #a5b4fc;
+    word-break: break-all;
+  }
+
+  .arrow {
+    text-align: center;
+    font-size: 24px;
+    color: rgba(99,102,241,.4);
+    margin: 8px 0;
+  }
+
+  .warning {
+    background: rgba(245,158,11,.08);
+    border: 1px solid rgba(245,158,11,.2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: rgba(255,255,255,.7);
+  }
+  .warning strong { color: #fbbf24; }
+
+  .success-box {
+    background: rgba(16,185,129,.08);
+    border: 1px solid rgba(16,185,129,.2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: rgba(255,255,255,.7);
+  }
+  .success-box strong { color: #34d399; }
+
+  .time-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    background: rgba(99,102,241,.12);
+    border-radius: 20px;
+    font-size: 11px;
+    color: #a5b4fc;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+
+  .screenshot {
+    background: #1a1a24;
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0;
+  }
+  .screenshot-label {
+    font-size: 12px;
+    color: rgba(255,255,255,.35);
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .nav-path {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    direction: ltr;
+    font-size: 13px;
+    color: rgba(255,255,255,.5);
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .nav-path span {
+    padding: 4px 12px;
+    background: rgba(255,255,255,.06);
+    border-radius: 6px;
+  }
+  .nav-path .current {
+    background: rgba(99,102,241,.2);
+    color: #a5b4fc;
+    font-weight: 600;
+  }
+  .nav-path .arrow-r { color: rgba(255,255,255,.25); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>💳 חיבור סליקה ל-Pixflow</h1>
+<p class="subtitle">מדריך צעד אחר צעד · 5 דקות</p>
+
+<!-- Why LemonSqueezy -->
+<div class="info-box">
+  <h3>למה LemonSqueezy ולא Stripe?</h3>
+  <p>Stripe לא תומך בישראל. LemonSqueezy כן, ויש להם יתרון גדול — <strong>הם מטפלים בכל המיסים בשבילך</strong>. אתה לא צריך להתעסק עם VAT, מע"מ, או חשבוניות. הם גובים מהלקוח, מנכים את העמלה שלהם, ומעבירים לך את הכסף.</p>
+</div>
+
+<div class="compare">
+  <div class="compare-card">
+    <h4>Stripe</h4>
+    <p class="fee">2.9% + $0.30</p>
+    <p class="con">✗ לא תומך בישראל</p>
+    <p class="pro">✓ עמלה נמוכה יותר</p>
+    <p>צריך לטפל במיסים לבד</p>
+  </div>
+  <div class="compare-card recommended">
+    <h4>LemonSqueezy</h4>
+    <span class="badge">מומלץ ✓</span>
+    <p class="fee">5% + $0.50</p>
+    <p class="pro">✓ תומך בישראל</p>
+    <p class="pro">✓ מטפל בכל המיסים</p>
+    <p class="pro">✓ דף תשלום מוכן</p>
+    <p class="pro">✓ PayPal או העברה בנקאית</p>
+  </div>
+</div>
+
+<!-- STEP 1 -->
+<div class="step active">
+  <div class="step-num">1</div>
+  <h2>פתח חשבון LemonSqueezy</h2>
+  <span class="time-badge">⏱ דקה אחת</span>
+
+  <p>לחץ על הכפתור הזה:</p>
+
+  <a href="https://app.lemonsqueezy.com/register" target="_blank" class="link yellow">
+    → פתח חשבון LemonSqueezy
+  </a>
+
+  <p>מלא:</p>
+  <p>• <strong>Name</strong> — השם שלך</p>
+  <p>• <strong>Email</strong> — המייל שלך</p>
+  <p>• <strong>Password</strong> — סיסמה</p>
+  <p>• לחץ <strong>"Create account"</strong></p>
+  <p>• אשר את המייל שישלחו לך</p>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- STEP 2 -->
+<div class="step">
+  <div class="step-num">2</div>
+  <h2>צור חנות (Store)</h2>
+  <span class="time-badge">⏱ דקה</span>
+
+  <p>אחרי ההרשמה, LemonSqueezy יבקש ממך ליצור חנות.</p>
+  <p>• <strong>Store name</strong> — כתוב <strong>Pixflow</strong></p>
+  <p>• <strong>Store URL</strong> — יתמלא אוטומטית (pixflow.lemonsqueezy.com)</p>
+  <p>• לחץ <strong>"Create store"</strong></p>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- STEP 3 -->
+<div class="step">
+  <div class="step-num">3</div>
+  <h2>העתק את ה-API Key</h2>
+  <span class="time-badge">⏱ 30 שניות</span>
+
+  <p>לחץ על הקישור הזה:</p>
+
+  <a href="https://app.lemonsqueezy.com/settings/api" target="_blank" class="link">
+    → פתח את דף ה-API Keys
+  </a>
+
+  <p>בדף שנפתח:</p>
+  <p>1. לחץ על הכפתור <strong>"+"</strong> (או "Create API key")</p>
+  <p>2. תן שם: <strong>Pixflow</strong></p>
+  <p>3. לחץ <strong>"Create"</strong></p>
+  <p>4. <strong>תעתיק את ה-key שמופיע</strong> (הוא ארוך מאוד)</p>
+
+  <div class="warning">
+    <strong>⚠️ חשוב מאוד:</strong> ה-key מוצג פעם אחת בלבד! תעתיק אותו מיד. אם שכחת — פשוט תמחק ותיצור חדש.
+  </div>
+
+  <p>ה-key נראה ככה:</p>
+  <div class="field-box">
+    <div class="field-label">API Key</div>
+    <div class="field-example">eyJ0eXAiOiJKV1QiLCJhbGciOi...מחרוזת ארוכה מאוד...</div>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- STEP 4 -->
+<div class="step">
+  <div class="step-num">4</div>
+  <h2>העתק את ה-Store ID</h2>
+  <span class="time-badge">⏱ 10 שניות</span>
+
+  <p>לחץ על הקישור הזה:</p>
+
+  <a href="https://app.lemonsqueezy.com/settings/stores" target="_blank" class="link">
+    → פתח את דף החנות
+  </a>
+
+  <p>תראה את החנות "Pixflow" ולידה מספר ID (לדוגמה: <strong>12345</strong>).</p>
+  <p>העתק את המספר הזה.</p>
+
+  <div class="field-box">
+    <div class="field-label">Store ID</div>
+    <div class="field-example">12345</div>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- STEP 5 -->
+<div class="step">
+  <div class="step-num">5</div>
+  <h2>שלח לי הכל</h2>
+  <span class="time-badge">⏱ 10 שניות</span>
+
+  <p>חזור לצ'אט שלנו והדבק שני דברים:</p>
+  <p>1. <strong>API Key</strong> — המחרוזת הארוכה</p>
+  <p>2. <strong>Store ID</strong> — המספר</p>
+
+  <div class="success-box">
+    <strong>✅ אחרי זה אני עושה את הכל:</strong>
+    <p>• יוצר 4 מוצרים (Pro חודשי, Pro שנתי, Business חודשי, Business שנתי)</p>
+    <p>• מחבר את ה-Webhook שמקבל הודעות על תשלומים</p>
+    <p>• מעדכן את האפליקציה כדי שכפתור "Upgrade" יפתח דף תשלום</p>
+    <p>• בודק שהכל עובד</p>
+  </div>
+</div>
+
+<div style="margin-top:48px; padding-top:24px; border-top:1px solid rgba(255,255,255,.06); text-align:center;">
+  <p style="font-size: 13px; color: rgba(255,255,255,.35);">
+    💡 הכל עכשיו במצב בדיקה (Test mode). אפשר לבדוק תשלומים בלי כסף אמיתי.<br>
+    כשתהיה מוכן לגבות כסף אמיתי — רק צריך למלא פרטי עסק/בנק ב-LemonSqueezy.
+  </p>
+</div>
+
+</div>
+</body>
+</html>

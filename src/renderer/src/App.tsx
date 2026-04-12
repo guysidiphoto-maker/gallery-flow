@@ -38,6 +38,7 @@ import { AuthShell } from './components/auth/AuthShell'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
 import { useSession } from './store/session'
 import { MissingFilesBanner } from './components/MissingFilesBanner'
+import { UpgradeModal } from './components/UpgradeModal'
 import type { ImageFile, Section } from './types'
 
 export interface ClientData {
@@ -306,6 +307,7 @@ function MainApp({ business }: { business: Business | null }) {
   const [publishGalleryDir, setPublishGalleryDir] = useState('')
   const [isPublishHidden, setIsPublishHidden] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [upgradeInfo, setUpgradeInfo] = useState<{ planName: string; violations: string[] } | null>(null)
   // Register keyboard shortcuts
   useKeyboardShortcuts({ onShowShortcuts: () => setShowShortcuts(s => !s) })
 
@@ -556,8 +558,19 @@ function MainApp({ business }: { business: Business | null }) {
 
     } catch (err: unknown) {
       console.error('[handlePublish] EXCEPTION:', err)
-      setPubError(err instanceof Error ? err.message : 'Unknown error')
-      setPublishPhase('error')
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+
+      if (msg.startsWith('PLAN_LIMIT')) {
+        const lines = msg.split('\n')
+        const planName = lines[1] || 'Starter'
+        const violations = lines.slice(2)
+        setUpgradeInfo({ planName, violations })
+        setPublishPhase('settings')
+      } else {
+        setPubError(msg)
+        setPublishPhase('error')
+      }
+
       setProjects(prev => prev.map(p => p.id === projectId
         ? { ...p, publishState: { status: 'draft', storiesReady: false, originalsReady: false } }
         : p
@@ -1285,6 +1298,23 @@ function MainApp({ business }: { business: Business | null }) {
       {showWelcome && <WelcomeModal onClose={handleCloseWelcome} />}
       {demoActive && <DemoMode onDone={handleDemoDone} />}
       {showShortcuts && <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />}
+      {upgradeInfo && (
+        <UpgradeModal
+          planName={upgradeInfo.planName}
+          violations={upgradeInfo.violations}
+          onUpgrade={async () => {
+            setUpgradeInfo(null)
+            try {
+              const { openCheckout } = await import('./lib/checkout')
+              await openCheckout('pro')
+            } catch (err) {
+              console.error('[upgrade]', err)
+              window.open('https://pixflow-ai.com/#pricing', '_blank')
+            }
+          }}
+          onClose={() => setUpgradeInfo(null)}
+        />
+      )}
       <ToastStack />
       <StatusBar />
 

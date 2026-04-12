@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixflow — יצירת מוצרים ב-LemonSqueezy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0a0f; color: #e0e0e0;
+    padding: 48px 24px; line-height: 1.8; direction: rtl;
+  }
+  .container { max-width: 700px; margin: 0 auto; }
+  h1 { font-size: 26px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .subtitle { font-size: 14px; color: rgba(255,255,255,.4); margin-bottom: 40px; }
+
+  .product-block {
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 16px;
+    padding: 28px 24px;
+    margin-bottom: 28px;
+  }
+  .product-block.pro { border-color: rgba(99,102,241,.3); background: rgba(99,102,241,.04); }
+  .product-block.biz { border-color: rgba(168,85,247,.3); background: rgba(168,85,247,.04); }
+
+  .product-header {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+  }
+  .product-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .product-icon.pro { background: rgba(99,102,241,.2); }
+  .product-icon.biz { background: rgba(168,85,247,.2); }
+  .product-title { font-size: 18px; font-weight: 700; color: #fff; }
+  .product-price { font-size: 13px; color: rgba(255,255,255,.45); }
+
+  .link-btn {
+    display: inline-block; margin: 16px 0 20px; padding: 12px 24px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff; text-decoration: none; border-radius: 10px;
+    font-weight: 600; font-size: 14px; transition: opacity .15s;
+  }
+  .link-btn:hover { opacity: 0.85; }
+
+  .field {
+    background: rgba(0,0,0,.25);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: 10px 0;
+    display: flex; gap: 12px; align-items: baseline;
+  }
+  .field-name {
+    min-width: 140px;
+    font-size: 12px;
+    color: rgba(255,255,255,.4);
+    font-weight: 600;
+  }
+  .field-value {
+    font-size: 14px;
+    color: #fff;
+    font-weight: 500;
+    direction: ltr;
+  }
+  .field-value.copy {
+    color: #a5b4fc;
+    font-family: monospace;
+    user-select: all;
+    cursor: text;
+  }
+
+  .step-label {
+    display: inline-block;
+    padding: 3px 10px;
+    background: rgba(99,102,241,.15);
+    border-radius: 20px;
+    font-size: 11px;
+    color: #a5b4fc;
+    font-weight: 600;
+    margin: 16px 0 8px;
+  }
+
+  .instruction {
+    font-size: 14px;
+    color: rgba(255,255,255,.65);
+    margin: 6px 0;
+    padding-right: 8px;
+  }
+  .instruction strong { color: #fff; }
+  .instruction .click { color: #a5b4fc; font-weight: 600; }
+
+  .warning {
+    background: rgba(245,158,11,.08);
+    border: 1px solid rgba(245,158,11,.2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: rgba(255,255,255,.7);
+  }
+  .warning strong { color: #fbbf24; }
+
+  .success-box {
+    background: rgba(16,185,129,.08);
+    border: 1px solid rgba(16,185,129,.2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: rgba(255,255,255,.7);
+  }
+  .success-box strong { color: #34d399; }
+
+  .arrow { text-align: center; font-size: 24px; color: rgba(99,102,241,.3); margin: 4px 0; }
+
+  .final {
+    background: rgba(16,185,129,.06);
+    border: 2px solid rgba(16,185,129,.2);
+    border-radius: 16px;
+    padding: 28px 24px;
+    margin-top: 32px;
+    text-align: center;
+  }
+  .final h2 { color: #34d399; font-size: 20px; margin-bottom: 12px; }
+  .final p { font-size: 14px; color: rgba(255,255,255,.6); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>📦 יצירת המוצרים ב-LemonSqueezy</h1>
+<p class="subtitle">צריך ליצור 2 מוצרים · לוקח 3 דקות</p>
+
+<!-- ═══════ PRODUCT 1: PRO ═══════ -->
+<div class="product-block pro">
+  <div class="product-header">
+    <div class="product-icon pro">⭐</div>
+    <div>
+      <div class="product-title">מוצר ראשון: Pixflow Pro</div>
+      <div class="product-price">$19 לחודש / $192 לשנה</div>
+    </div>
+  </div>
+
+  <a href="https://app.lemonsqueezy.com/products/new" target="_blank" class="link-btn">
+    → לחץ כאן ליצור מוצר חדש
+  </a>
+
+  <div class="step-label">דף General</div>
+  <p class="instruction">מלא את השדות הבאים <strong>בדיוק</strong> ככה:</p>
+
+  <div class="field">
+    <span class="field-name">Product name</span>
+    <span class="field-value copy">Pixflow Pro</span>
+  </div>
+  <div class="field">
+    <span class="field-name">Description</span>
+    <span class="field-value copy">Unlimited galleries, 5000 photos/month, 50GB storage, AI Stories, custom branding, no watermark</span>
+  </div>
+  <div class="field">
+    <span class="field-name">Status</span>
+    <span class="field-value">Published ✅ (וודא שזה מסומן)</span>
+  </div>
+
+  <div class="step-label">דף Pricing</div>
+
+  <div class="field">
+    <span class="field-name">Pricing type</span>
+    <span class="field-value">בחר: <strong class="click">Subscription</strong></span>
+  </div>
+  <div class="field">
+    <span class="field-name">Price</span>
+    <span class="field-value copy">$19.00</span>
+  </div>
+  <div class="field">
+    <span class="field-name">Billing period</span>
+    <span class="field-value">בחר: <strong class="click">Monthly</strong></span>
+  </div>
+
+  <div class="warning">
+    <strong>⚠️ עכשיו לחץ "Save product" (כפתור ירוק למעלה)</strong>
+  </div>
+
+  <div class="success-box">
+    <strong>✅ מוצר Pro נוצר!</strong> עכשיו תמשיך למוצר השני ↓
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- ═══════ PRODUCT 2: BUSINESS ═══════ -->
+<div class="product-block biz">
+  <div class="product-header">
+    <div class="product-icon biz">💎</div>
+    <div>
+      <div class="product-title">מוצר שני: Pixflow Business</div>
+      <div class="product-price">$39 לחודש / $396 לשנה</div>
+    </div>
+  </div>
+
+  <a href="https://app.lemonsqueezy.com/products/new" target="_blank" class="link-btn">
+    → לחץ כאן ליצור מוצר חדש (נוסף)
+  </a>
+
+  <div class="step-label">דף General</div>
+
+  <div class="field">
+    <span class="field-name">Product name</span>
+    <span class="field-value copy">Pixflow Business</span>
+  </div>
+  <div class="field">
+    <span class="field-name">Description</span>
+    <span class="field-value copy">Everything in Pro plus 500GB storage, priority support, team accounts, advanced analytics, custom domain</span>
+  </div>
+  <div class="field">
+    <span class="field-name">Status</span>
+    <span class="field-value">Published ✅</span>
+  </div>
+
+  <div class="step-label">דף Pricing</div>
+
+  <div class="field">
+    <span class="field-name">Pricing type</span>
+    <span class="field-value">בחר: <strong class="click">Subscription</strong></span>
+  </div>
+  <div class="field">
+    <span class="field-name">Price</span>
+    <span class="field-value copy">$39.00</span>
+  </div>
+  <div class="field">
+    <span class="field-name">Billing period</span>
+    <span class="field-value">בחר: <strong class="click">Monthly</strong></span>
+  </div>
+
+  <div class="warning">
+    <strong>⚠️ לחץ "Save product"</strong>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<!-- ═══════ FINAL STEP ═══════ -->
+<div class="final">
+  <h2>✅ סיימת!</h2>
+  <p>עכשיו חזור לצ'אט שלנו ותגיד לי <strong>"סיימתי"</strong>.</p>
+  <p style="margin-top:12px;">אני אמשוך את כל הפרטים אוטומטית מ-LemonSqueezy ואחבר הכל.</p>
+</div>
+
+</div>
+</body>
+</html>

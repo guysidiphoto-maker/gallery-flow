@@ -77,6 +77,18 @@ export async function publishGallery(
   // without an authenticated session + business.
   const businessId = requireBusinessId()
 
+  // ── Plan limit check ──────────────────────────────────────────────────
+  const { fetchPlanLimits, checkPlanViolations } = await import('./planGuard')
+  const limits = await fetchPlanLimits()
+  if (limits) {
+    const AVG_BYTES_PER_IMAGE = 15.5 * 1024 * 1024
+    const violations = checkPlanViolations(limits, imagePaths.length, imagePaths.length * AVG_BYTES_PER_IMAGE)
+    if (violations.length > 0) {
+      const msg = violations.map(v => v.label).join('\n')
+      throw new Error(`PLAN_LIMIT\n${limits.planName}\n${msg}`)
+    }
+  }
+
   // Reset any previous publish state first
   usePublish.getState().reset()
   const store = usePublish.getState()
@@ -403,6 +415,9 @@ export async function publishGallery(
   }).eq('id', galleryId)
 
   log('preview-live', publicUrl)
+
+  // Bump monthly usage counters now that the gallery is live
+  import('./planGuard').then(({ bumpUsage }) => bumpUsage(imagePaths.length)).catch(() => {})
 
   // Free compression cache (originals read from disk as needed)
   compressedMap.clear()
