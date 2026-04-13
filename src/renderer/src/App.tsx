@@ -116,20 +116,67 @@ export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
 }
 
 /** Migrate old settings shape to new */
-function migrateSettings(raw: Record<string, unknown>): DeliverySettings {
+// Fields that persist across galleries (branding, preferences)
+const PERSISTENT_SETTINGS: (keyof DeliverySettings)[] = [
+  'studioName', 'studioWebsite', 'logoUrl', 'showFooterCredit',
+  'downloadsEnabled', 'bulkDownloadEnabled', 'downloadQuality',
+  'layoutMode', 'imageSpacing', 'cornerStyle',
+  'generateStories', 'showStories',
+  'accessType',
+  'clientSelectionEnabled',
+]
+
+// Fields that reset per gallery (event-specific)
+const PER_GALLERY_SETTINGS: (keyof DeliverySettings)[] = [
+  'galleryTitle', 'clientName', 'eventDate', 'eventLocation',
+  'coverImageId', 'coverImageUrl', 'coverCrop',
+  'galleryDescription', 'password', 'clientCode',
+]
+
+let lastUsedSettings: Partial<DeliverySettings> | null = null
+
+function migrateSettings(raw: Record<string, unknown>, projectEventType?: string): DeliverySettings {
   const d = { ...DEFAULT_DELIVERY_SETTINGS }
+
+  // If no existing settings, inherit persistent fields from last used
+  const hasExisting = Object.keys(raw).length > 3 // more than just defaults
+  if (!hasExisting && lastUsedSettings) {
+    for (const key of PERSISTENT_SETTINGS) {
+      if (key in lastUsedSettings && lastUsedSettings[key] != null) {
+        (d as Record<string, unknown>)[key] = lastUsedSettings[key]
+      }
+    }
+  }
+
+  // Legacy migrations
   if (raw.studioName != null) d.studioName = raw.studioName as string
   if (raw.logoPath != null) d.logoUrl = raw.logoPath as string
   if (raw.logoUrl != null) d.logoUrl = raw.logoUrl as string
   if (raw.allowDownloads != null) d.downloadsEnabled = raw.allowDownloads as boolean
   if (raw.autoGenerateStories != null) d.generateStories = raw.autoGenerateStories as boolean
+
   // Copy all new fields if present
   for (const key of Object.keys(d) as (keyof DeliverySettings)[]) {
     if (key in raw && raw[key] != null) {
       (d as Record<string, unknown>)[key] = raw[key]
     }
   }
+
+  // Inherit eventType from project if not set in settings
+  if (!d.eventType && projectEventType) {
+    d.eventType = projectEventType
+  }
+
   return d
+}
+
+function saveLastUsedSettings(settings: DeliverySettings) {
+  lastUsedSettings = {}
+  for (const key of PERSISTENT_SETTINGS) {
+    (lastUsedSettings as Record<string, unknown>)[key] = settings[key]
+  }
+  // Also persist to prefs for next app launch
+  window.api.setPref('lastDeliverySettings', lastUsedSettings)
 }
 
 export interface GalleryPublishState {
@@ -788,13 +835,18 @@ function MainApp({ business }: { business: Business | null }) {
     return { relinked, stillMissing: stillMissing.size }
   }
 
-  // Load clients from prefs on startup
+  // Load clients + last delivery settings from prefs on startup
   useEffect(() => {
     window.api.getPref('clients').then(val => {
       if (val && Array.isArray(val)) {
         setClients(val as ClientData[])
       }
       setClientsLoaded(true)
+    })
+    window.api.getPref('lastDeliverySettings').then(val => {
+      if (val && typeof val === 'object') {
+        lastUsedSettings = val as Partial<DeliverySettings>
+      }
     })
   }, [])
 
@@ -1301,7 +1353,7 @@ function MainApp({ business }: { business: Business | null }) {
       {publishProjectId && !isPublishHidden && (() => {
         const project = projects.find(p => p.id === publishProjectId)
         if (!project) return null
-        const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
+        const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>, project.eventType)
         return (
           <PublishPanel
             projectName={project.name}
@@ -1313,6 +1365,7 @@ function MainApp({ business }: { business: Business | null }) {
             isAlreadyLive={project.publishState?.status === 'live'}
             onSettingsChange={(s) => {
               setProjects(prev => prev.map(p => p.id === publishProjectId ? { ...p, deliverySettings: s } : p))
+              saveLastUsedSettings(s)
             }}
             onPublish={() => {
               if (publishPhase === 'editing') return handleUpdateSettings(publishProjectId)
