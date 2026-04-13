@@ -194,46 +194,52 @@ const STATUS_LABELS: Record<PublishStatus, string> = {
 
 const S = {
   sectionTitle: {
-    fontSize: 11,
-    fontWeight: 600 as const,
+    fontSize: 10,
+    fontWeight: 700 as const,
     textTransform: 'uppercase' as const,
-    letterSpacing: '0.08em',
-    color: 'rgba(255,255,255,.35)',
-    margin: '0 0 10px',
+    letterSpacing: '0.12em',
+    color: 'rgba(255,255,255,.3)',
+    margin: '0 0 12px',
+    padding: '0 2px',
   },
   section: {
-    paddingBottom: 18,
-    marginBottom: 18,
-    borderBottom: '1px solid rgba(255,255,255,.06)',
+    background: 'rgba(255,255,255,.025)',
+    border: '1px solid rgba(255,255,255,.06)',
+    borderRadius: 12,
+    padding: '16px',
+    marginBottom: 12,
   },
   input: {
     width: '100%',
-    background: 'rgba(255,255,255,.06)',
-    border: '1px solid rgba(255,255,255,.08)',
-    borderRadius: 8,
-    padding: '9px 12px',
+    background: 'rgba(255,255,255,.04)',
+    border: '1px solid rgba(255,255,255,.07)',
+    borderRadius: 10,
+    padding: '10px 14px',
     fontSize: 13,
-    color: 'rgba(255,255,255,.88)',
+    color: 'rgba(255,255,255,.9)',
     outline: 'none',
     fontFamily: 'inherit',
     boxSizing: 'border-box' as const,
+    transition: 'border-color .2s, background .2s',
   },
-  inputFocusColor: 'rgba(99,102,241,.4)',
+  inputFocusColor: 'rgba(99,102,241,.5)',
   row: {
     display: 'flex',
     alignItems: 'center' as const,
     justifyContent: 'space-between' as const,
-    marginBottom: 10,
+    marginBottom: 12,
+    gap: 12,
   },
   label: {
     fontSize: 13,
-    color: 'rgba(255,255,255,.7)',
+    color: 'rgba(255,255,255,.75)',
     fontWeight: 500 as const,
   },
   sublabel: {
     fontSize: 11,
-    color: 'rgba(255,255,255,.28)',
+    color: 'rgba(255,255,255,.25)',
     marginTop: 2,
+    lineHeight: 1.4,
   },
   accent: '#6366f1',
 }
@@ -457,15 +463,22 @@ function Toggle({ value, onChange, disabled }: { value: boolean; onChange: (v: b
       onClick={() => !disabled && onChange(!value)}
       disabled={disabled}
       style={{
-        position: 'relative', width: 36, height: 20, borderRadius: 10, border: 'none',
-        background: value ? S.accent : 'rgba(255,255,255,.1)',
-        cursor: disabled ? 'not-allowed' : 'pointer', transition: 'background .15s',
-        flexShrink: 0, opacity: disabled ? 0.4 : 1, padding: 0,
+        position: 'relative', width: 40, height: 22, borderRadius: 11, border: 'none',
+        background: value
+          ? 'linear-gradient(135deg, #6366f1, #818cf8)'
+          : 'rgba(255,255,255,.08)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background .2s, box-shadow .2s',
+        flexShrink: 0, opacity: disabled ? 0.35 : 1, padding: 0,
+        boxShadow: value ? '0 2px 8px rgba(99,102,241,.3)' : 'none',
       }}
     >
       <span style={{
-        position: 'absolute', top: 2, left: value ? 18 : 2,
-        width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left .15s',
+        position: 'absolute', top: 2, left: value ? 20 : 2,
+        width: 18, height: 18, borderRadius: '50%',
+        background: '#fff',
+        boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+        transition: 'left .2s cubic-bezier(.4,0,.2,1)',
       }} />
     </button>
   )
@@ -477,18 +490,21 @@ function SegmentedControl<T extends string>({
   return (
     <div style={{
       display: 'inline-flex', background: 'rgba(255,255,255,.04)',
-      borderRadius: 8, padding: 2, gap: 1, opacity: disabled ? 0.4 : 1,
+      border: '1px solid rgba(255,255,255,.06)',
+      borderRadius: 10, padding: 3, gap: 2, opacity: disabled ? 0.35 : 1,
       pointerEvents: disabled ? 'none' : 'auto',
     }}>
       {options.map(opt => {
         const active = opt.value === value
         return (
           <button key={opt.value} onClick={() => onChange(opt.value)} style={{
-            padding: '5px 12px', fontSize: 12, fontWeight: active ? 600 : 400,
+            padding: '6px 14px', fontSize: 11, fontWeight: active ? 600 : 400,
             color: active ? '#fff' : 'rgba(255,255,255,.4)',
-            background: active ? S.accent : 'transparent',
-            border: 'none', borderRadius: 6, cursor: 'pointer',
-            transition: 'all .15s', fontFamily: 'inherit', whiteSpace: 'nowrap',
+            background: active ? 'linear-gradient(135deg, #6366f1, #818cf8)' : 'transparent',
+            border: 'none', borderRadius: 7, cursor: 'pointer',
+            transition: 'all .2s', fontFamily: 'inherit', whiteSpace: 'nowrap',
+            boxShadow: active ? '0 2px 8px rgba(99,102,241,.25)' : 'none',
+            letterSpacing: active ? '0.01em' : '0',
           }}>{opt.label}</button>
         )
       })}
@@ -640,16 +656,115 @@ export function PublishPanel({
           {/* ═══ Settings phase ═══ */}
           {(phase === 'settings' || phase === 'editing') && (
             <>
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', margin: '0 0 20px' }}>
-                {projectName}{clientName ? ` -- ${clientName}` : ''} · {imageCount} images
-                {topPickCount > 0 ? ` · ${topPickCount} top picks` : ''}
-              </p>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 14px', marginBottom: 16,
+                background: 'rgba(99,102,241,.06)', border: '1px solid rgba(99,102,241,.12)',
+                borderRadius: 10,
+              }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: 'linear-gradient(135deg, rgba(99,102,241,.2), rgba(139,92,246,.2))',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" />
+                  </svg>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.85)' }}>
+                    {projectName}{clientName ? ` \u00B7 ${clientName}` : ''}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.35)' }}>
+                    {imageCount} images{topPickCount > 0 ? ` \u00B7 ${topPickCount} top picks` : ''}
+                  </div>
+                </div>
+              </div>
 
               {/* Gallery Info */}
               <div style={S.section}>
                 <p style={S.sectionTitle}>Gallery Info</p>
                 <InputField value={settings.galleryTitle} onChange={v => update({ galleryTitle: v })} placeholder={projectName || 'Gallery title'} style={{ marginBottom: 8 }} />
-                <InputField value={settings.clientName} onChange={v => update({ clientName: v })} placeholder={clientName || 'Client name'} />
+                <InputField value={settings.clientName} onChange={v => update({ clientName: v })} placeholder={clientName || 'Client name'} style={{ marginBottom: 8 }} />
+
+                {/* Event date + location row */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="2"
+                      style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+                      <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    <input
+                      type="text"
+                      value={settings.eventDate}
+                      onChange={e => update({ eventDate: e.target.value })}
+                      placeholder="Event date"
+                      style={{ ...S.input, paddingLeft: 30, fontSize: 12 }}
+                      onFocus={e => { e.currentTarget.style.borderColor = S.inputFocusColor }}
+                      onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.07)' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="2"
+                      style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <input
+                      type="text"
+                      value={settings.eventLocation}
+                      onChange={e => update({ eventLocation: e.target.value })}
+                      placeholder="Location"
+                      style={{ ...S.input, paddingLeft: 30, fontSize: 12 }}
+                      onFocus={e => { e.currentTarget.style.borderColor = S.inputFocusColor }}
+                      onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.07)' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Auto-fill from EXIF */}
+                <button
+                  onClick={async () => {
+                    if (!projectImages || projectImages.length === 0) return
+                    try {
+                      const exifr = await import('exifr')
+                      const firstPath = projectImages[0].id
+                      const exif = await exifr.parse(firstPath, { tiff: true, exif: true, gps: true })
+                      const updates: Partial<DeliverySettings> = {}
+                      const dt = exif?.DateTimeOriginal ?? exif?.DateTime ?? exif?.CreateDate
+                      if (dt instanceof Date && !settings.eventDate) {
+                        updates.eventDate = dt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+                      }
+                      if (exif?.latitude && exif?.longitude && !settings.eventLocation) {
+                        try {
+                          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${exif.latitude}&lon=${exif.longitude}&format=json&zoom=10`)
+                          const geo = await res.json()
+                          const city = geo?.address?.city || geo?.address?.town || geo?.address?.village || ''
+                          const country = geo?.address?.country || ''
+                          if (city) updates.eventLocation = city + (country ? `, ${country}` : '')
+                          else if (country) updates.eventLocation = country
+                        } catch { /* skip geocoding */ }
+                      }
+                      // Build description from parts
+                      const descParts = [updates.eventDate || settings.eventDate, updates.eventLocation || settings.eventLocation].filter(Boolean)
+                      if (descParts.length > 0) updates.galleryDescription = descParts.join(' · ')
+                      if (Object.keys(updates).length > 0) update(updates)
+                    } catch { /* exif read failed */ }
+                  }}
+                  style={{
+                    width: '100%', padding: '7px 12px',
+                    background: 'rgba(99,102,241,.08)', border: '1px solid rgba(99,102,241,.15)',
+                    borderRadius: 8, color: '#818cf8', fontSize: 11, fontWeight: 500,
+                    fontFamily: 'inherit', cursor: 'pointer', transition: 'all .15s',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,.15)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,.08)' }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2v4m0 12v4M2 12h4m12 0h4" /><circle cx="12" cy="12" r="3" />
+                  </svg>
+                  Auto-fill from photos
+                </button>
               </div>
 
               {/* Access */}

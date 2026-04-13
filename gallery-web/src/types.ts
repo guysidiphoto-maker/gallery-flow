@@ -13,6 +13,9 @@ export interface DeliverySettings {
   coverImageId: string | null
   coverImageUrl: string | null
   coverCrop: { zoom: number; x: number; y: number } | null
+  galleryDescription: string
+  eventDate: string
+  eventLocation: string
   clientSelectionEnabled: boolean
   clientCode: string
   layoutMode: '1-col' | '2-col' | '3-col'

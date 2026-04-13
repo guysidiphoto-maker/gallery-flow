@@ -182,8 +182,11 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
 
 // ─── Welcome Screen ─────────────────────────────────────────────────────────
 
-function WelcomeScreen({ galleryTitle, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter }: {
+function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter }: {
   galleryTitle: string
+  galleryDescription?: string
+  eventDate?: string
+  eventLocation?: string
   clientName: string
   studioName: string
   studioWebsite?: string
@@ -311,11 +314,48 @@ function WelcomeScreen({ galleryTitle, clientName, studioName, studioWebsite, im
         {clientName && (
           <p style={{
             fontSize: 'clamp(14px, 2vw, 18px)', color: 'rgba(255,255,255,.5)',
-            margin: '0 0 40px', fontWeight: 400,
+            margin: '0 0 8px', fontWeight: 400,
           }}>
             {clientName}
           </p>
         )}
+
+        {(eventDate || eventLocation) && (
+          <p style={{
+            fontSize: 'clamp(11px, 1.3vw, 13px)', color: 'rgba(255,255,255,.3)',
+            margin: '0 0 8px', fontWeight: 400, letterSpacing: '0.04em',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}>
+            {eventDate && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.5 }}>
+                  <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+                {eventDate}
+              </span>
+            )}
+            {eventDate && eventLocation && <span style={{ opacity: 0.3 }}>·</span>}
+            {eventLocation && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.5 }}>
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                </svg>
+                {eventLocation}
+              </span>
+            )}
+          </p>
+        )}
+
+        {galleryDescription && (
+          <p style={{
+            fontSize: 'clamp(12px, 1.5vw, 14px)', color: 'rgba(255,255,255,.35)',
+            margin: '0 0 8px', fontWeight: 400, letterSpacing: '0.02em',
+          }}>
+            {galleryDescription}
+          </p>
+        )}
+
+        <div style={{ marginBottom: (eventDate || eventLocation || galleryDescription || clientName) ? 32 : 40 }} />
 
         <button
           onClick={handleEnter}
@@ -560,6 +600,40 @@ export function App() {
 
   const handleUnlock = useCallback(() => setUnlocked(true), [])
 
+  // Resolve client selection settings (safe even when gallery is null)
+  const rawSettings: Partial<DeliverySettings> = (gallery?.delivery_settings || {}) as Partial<DeliverySettings>
+  const clientSelectionEnabled = rawSettings.clientSelectionEnabled ?? false
+  const clientCode = rawSettings.clientCode ?? ''
+
+  // Auto-skip role selection if client selection is not enabled,
+  // or restore client role from session
+  useEffect(() => {
+    if (!gallery) return
+    if (!clientSelectionEnabled) {
+      setViewerRole('guest')
+      return
+    }
+    const saved = sessionStorage.getItem(`client-role-${gallery.id}`)
+    if (saved === 'client') setViewerRole('client')
+  }, [gallery, clientSelectionEnabled])
+
+  // Toggle hidden state for an image (client mode)
+  const toggleHideImage = useCallback(async (imageId: string) => {
+    if (!gallery) return
+    const isHidden = hiddenImageIds.has(imageId)
+    if (isHidden) {
+      await supabase.from('gallery_hidden_images').delete()
+        .eq('gallery_id', gallery.id).eq('image_id', imageId)
+      setHiddenImageIds(prev => { const next = new Set(prev); next.delete(imageId); return next })
+    } else {
+      await supabase.from('gallery_hidden_images').insert({ gallery_id: gallery.id, image_id: imageId })
+      setHiddenImageIds(prev => new Set(prev).add(imageId))
+    }
+  }, [gallery, hiddenImageIds])
+
+  // Visible images: guests see only non-hidden, clients see all
+  const visibleImages = viewerRole === 'client' ? images : images.filter(img => !hiddenImageIds.has(img.id))
+
   if (error) {
     return (
       <div className="center-msg">
@@ -592,38 +666,6 @@ export function App() {
   const showFooterCredit = s(raw, 'showFooterCredit', true)
   const showStories      = s(raw, 'showStories', true)
   const downloadQuality  = s(raw, 'downloadQuality', 'original')
-  const clientSelectionEnabled = s(raw, 'clientSelectionEnabled', false)
-  const clientCode       = s(raw, 'clientCode', '')
-
-  // Auto-skip role selection if client selection is not enabled,
-  // or restore client role from session
-  useEffect(() => {
-    if (!gallery) return
-    if (!clientSelectionEnabled) {
-      setViewerRole('guest')
-      return
-    }
-    const saved = sessionStorage.getItem(`client-role-${gallery.id}`)
-    if (saved === 'client') setViewerRole('client')
-  }, [gallery, clientSelectionEnabled])
-
-  // Toggle hidden state for an image (client mode)
-  const toggleHideImage = async (imageId: string) => {
-    if (!gallery) return
-    const isHidden = hiddenImageIds.has(imageId)
-    if (isHidden) {
-      await supabase.from('gallery_hidden_images').delete()
-        .eq('gallery_id', gallery.id).eq('image_id', imageId)
-      setHiddenImageIds(prev => { const next = new Set(prev); next.delete(imageId); return next })
-    } else {
-      await supabase.from('gallery_hidden_images').insert({ gallery_id: gallery.id, image_id: imageId })
-      setHiddenImageIds(prev => new Set(prev).add(imageId))
-    }
-  }
-
-  // Visible images: guests see only non-hidden, clients see all
-  const visibleImages = viewerRole === 'client' ? images : images.filter(img => !hiddenImageIds.has(img.id))
-
   // Backward compat: new downloadsEnabled falls back to old allowDownloads
   const downloadsEnabled = raw.downloadsEnabled !== undefined
     ? raw.downloadsEnabled
@@ -670,6 +712,9 @@ export function App() {
     return (
       <WelcomeScreen
         galleryTitle={galleryTitle}
+        galleryDescription={rawSettings.galleryDescription || ''}
+        eventDate={rawSettings.eventDate || ''}
+        eventLocation={rawSettings.eventLocation || ''}
         clientName={clientName || ''}
         studioName={studioName}
         studioWebsite={studioWebsite}
