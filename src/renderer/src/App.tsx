@@ -1413,7 +1413,7 @@ function MainApp({ business }: { business: Business | null }) {
             useSections.getState().assignImagesToSection(toAdd.map(i => i.id), newSection.id)
             if (!useSections.getState().isPanelOpen) useSections.getState().togglePanel()
           }}
-          onCreateProject={async (name, clientName) => {
+          onCreateProject={async (name, clientName, eventType) => {
             setIsImportOpen(false)
             const now = new Date().toISOString()
             let clientId: string | null = null
@@ -1442,7 +1442,7 @@ function MainApp({ business }: { business: Business | null }) {
             }
             const id = String(nextId)
             setNextId(n => n + 1)
-            const newProject: ProjectData = { id, name, clientId, clientName: resolvedClientName, imageIds: [], createdAt: now, updatedAt: now }
+            const newProject: ProjectData = { id, name, clientId, clientName: resolvedClientName, imageIds: [], eventType: eventType || undefined, createdAt: now, updatedAt: now }
             setProjects(prev => [...prev, newProject])
             setCurrentProjectId(id)
             useGallery.setState({ images: [], folderPath: '' })

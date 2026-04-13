@@ -10,7 +10,7 @@ interface ImportModalProps {
   initialView?: 'menu' | 'create'
   onClose: () => void
   onSetProject: (id: string) => void
-  onCreateProject: (name: string, clientName?: string) => void
+  onCreateProject: (name: string, clientName?: string, eventType?: string) => void
   onImportToCurrent: () => void
 }
 
@@ -28,6 +28,7 @@ function clientColor(name: string): string {
 export function ImportModal({ currentProject, projects, clients, prefilledClientId, initialView = 'menu', onClose, onSetProject, onCreateProject, onImportToCurrent }: ImportModalProps) {
   const [view, setView] = useState<View>(initialView)
   const [newName, setNewName] = useState('')
+  const [newEventType, setNewEventType] = useState('')
   const [newClientName, setNewClientName] = useState('')
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -53,9 +54,9 @@ export function ImportModal({ currentProject, projects, clients, prefilledClient
     // The parent handler will do normalized matching
     if (selectedClientId) {
       const c = clients.find(cl => cl.id === selectedClientId)
-      onCreateProject(name, c?.name || newClientName)
+      onCreateProject(name, c?.name || newClientName, newEventType || undefined)
     } else {
-      onCreateProject(name, newClientName)
+      onCreateProject(name, newClientName, newEventType || undefined)
     }
   }
 
@@ -232,6 +233,43 @@ export function ImportModal({ currentProject, projects, clients, prefilledClient
                 )}
               </>
             )}
+            {/* Event type */}
+            <label className="im__field-label" style={{ marginTop: 6 }}>Event type</label>
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4,
+              marginBottom: 12,
+            }}>
+              {[
+                { value: 'conference', label: 'כנס', icon: '🎤' },
+                { value: 'corporate-event', label: 'אירוע חברה', icon: '🏢' },
+                { value: 'government', label: 'ממשלתי', icon: '🏛️' },
+                { value: 'retreat-abroad', label: 'נופש בחו״ל', icon: '✈️' },
+                { value: 'retreat-local', label: 'נופש בארץ', icon: '🏖️' },
+                { value: 'pre-event', label: 'קדם', icon: '📋' },
+                { value: 'other', label: 'Other', icon: '📸' },
+              ].map(opt => {
+                const active = newEventType === opt.value
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setNewEventType(active ? '' : opt.value)}
+                    style={{
+                      padding: '5px 8px', borderRadius: 6, fontSize: 11, fontWeight: active ? 600 : 400,
+                      background: active ? 'rgba(99,102,241,.15)' : 'rgba(255,255,255,.03)',
+                      border: active ? '1px solid rgba(99,102,241,.3)' : '1px solid rgba(255,255,255,.06)',
+                      color: active ? '#818cf8' : 'rgba(255,255,255,.4)',
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      transition: 'all .15s',
+                    }}
+                  >
+                    <span style={{ fontSize: 11 }}>{opt.icon}</span>
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+
             <button
               className={`im__create-btn ${!newName.trim() ? 'im__create-btn--disabled' : ''}`}
               onClick={handleCreate}
