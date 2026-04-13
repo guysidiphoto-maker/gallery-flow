@@ -206,41 +206,53 @@ export function WorkspaceDashboard({
       flexDirection: 'column',
     }}>
       <style>{`
-        @keyframes wsd-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-        .wsd-card { transition: transform .15s, border-color .2s; }
-        .wsd-card:hover { transform: translateY(-2px); border-color: rgba(99,102,241,.4); }
-        .wsd-card:hover .wsd-card-img { transform: scale(1.05); }
+        @keyframes wsd-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .wsd-card {
+          transition: transform .25s cubic-bezier(.4,0,.2,1), border-color .25s, box-shadow .25s;
+          border: 1px solid rgba(255,255,255,.05) !important;
+        }
+        .wsd-card:hover {
+          transform: translateY(-4px);
+          border-color: rgba(99,102,241,.25) !important;
+          box-shadow: 0 12px 40px rgba(0,0,0,.3), 0 0 0 1px rgba(99,102,241,.1);
+        }
+        .wsd-card:hover .wsd-card-img { transform: scale(1.06); filter: brightness(1.05); }
         .wsd-card:hover .wsd-card-actions { opacity: 1; }
-        .wsd-card-actions { opacity: 0; transition: opacity .15s; }
-        .wsd-card-img { transition: transform .5s ease; }
-        .wsd-client-row { transition: background .12s, border-left-color .12s; }
-        .wsd-client-row:hover { background: rgba(255,255,255,.04); }
+        .wsd-card-actions { opacity: 0; transition: opacity .2s; }
+        .wsd-card-img { transition: transform .6s cubic-bezier(.4,0,.2,1), filter .3s; }
+        .wsd-client-row { transition: background .15s, border-left-color .15s; border-radius: 10px; }
+        .wsd-client-row:hover { background: rgba(99,102,241,.06) !important; }
         .wsd-client-row:hover .wsd-client-arrow { opacity: 1; transform: translateX(0); }
         .wsd-client-arrow { opacity: 0; transform: translateX(-4px); transition: opacity .15s, transform .15s; }
-        .wsd-cta { transition: background .15s, box-shadow .15s, transform .1s; }
-        .wsd-cta:hover { background: #5558e3; box-shadow: 0 8px 24px rgba(99,102,241,.4); }
+        .wsd-cta {
+          transition: background .2s, box-shadow .2s, transform .12s;
+          background: linear-gradient(135deg, #6366f1, #818cf8) !important;
+          box-shadow: 0 4px 16px rgba(99,102,241,.3);
+        }
+        .wsd-cta:hover { box-shadow: 0 8px 28px rgba(99,102,241,.45); transform: translateY(-1px); }
         .wsd-cta:active { transform: scale(.97); }
-        .wsd-secondary { transition: background .12s, border-color .12s; }
-        .wsd-secondary:hover { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.18); }
-        .wsd-icon-btn { transition: background .12s; }
-        .wsd-icon-btn:hover { background: rgba(255,255,255,.12) !important; }
-        .wsd-filter-btn { transition: background .12s, color .12s; }
-        .wsd-filter-btn:hover { color: rgba(255,255,255,.85); }
-        .wsd-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+        .wsd-secondary { transition: all .15s; }
+        .wsd-secondary:hover { background: rgba(255,255,255,.08) !important; border-color: rgba(255,255,255,.15) !important; }
+        .wsd-icon-btn { transition: all .15s; }
+        .wsd-icon-btn:hover { background: rgba(255,255,255,.1) !important; }
+        .wsd-filter-btn { transition: all .15s; }
+        .wsd-filter-btn:hover { color: rgba(255,255,255,.85); background: rgba(255,255,255,.06); }
+        .wsd-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
         .wsd-scroll::-webkit-scrollbar-track { background: transparent; }
-        .wsd-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.06); border-radius: 4px; }
-        .wsd-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.12); }
+        .wsd-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.05); border-radius: 3px; }
+        .wsd-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.1); }
       `}</style>
 
       {/* ─── Compact top hero strip ──────────────────────────────────────── */}
       <div style={{
         flexShrink: 0,
-        padding: '20px 32px 18px',
-        borderBottom: '1px solid rgba(255,255,255,.05)',
+        padding: '18px 28px 16px',
+        borderBottom: '1px solid rgba(255,255,255,.04)',
+        background: 'rgba(255,255,255,.01)',
         display: 'flex',
         alignItems: 'center',
-        gap: 24,
-        animation: 'wsd-fade .35s ease both',
+        gap: 20,
+        animation: 'wsd-fade .3s ease both',
         position: 'relative',
         zIndex: 20,
       }}>
@@ -687,7 +699,7 @@ export function WorkspaceDashboard({
             ) : (
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
                 gap: 14,
               }}>
                 {filteredProjects.map(p => {
@@ -699,9 +711,9 @@ export function WorkspaceDashboard({
                         className="wsd-card"
                         onClick={() => onSelectProject(p.id)}
                         style={{
-                          background: 'rgba(255,255,255,.025)',
-                          border: '1px solid rgba(255,255,255,.06)',
-                          borderRadius: 11,
+                          background: 'rgba(255,255,255,.02)',
+                          border: '1px solid rgba(255,255,255,.05)',
+                          borderRadius: 14,
                           overflow: 'hidden',
                           cursor: 'pointer',
                         }}
@@ -709,8 +721,8 @@ export function WorkspaceDashboard({
                         <div style={{
                           position: 'relative',
                           width: '100%',
-                          aspectRatio: '1/1',
-                          background: 'linear-gradient(135deg, rgba(99,102,241,.1), rgba(168,85,247,.05))',
+                          aspectRatio: '4/3',
+                          background: 'linear-gradient(135deg, rgba(99,102,241,.06), rgba(168,85,247,.03))',
                           overflow: 'hidden',
                         }}>
                           {cover ? (
@@ -812,26 +824,26 @@ export function WorkspaceDashboard({
                           </div>
                         </div>
 
-                        {/* Card body — compact */}
-                        <div style={{ padding: '10px 12px 12px' }}>
+                        {/* Card body */}
+                        <div style={{ padding: '12px 14px 14px' }}>
                           <div style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 6,
-                            marginBottom: 3,
+                            gap: 7,
+                            marginBottom: 6,
                           }}>
                             <div style={{
-                              width: 6,
-                              height: 6,
+                              width: 7,
+                              height: 7,
                               borderRadius: '50%',
                               background: dotColor,
                               flexShrink: 0,
-                              boxShadow: p.publishState?.status === 'live' ? '0 0 8px rgba(52,211,153,.6)' : 'none',
+                              boxShadow: p.publishState?.status === 'live' ? '0 0 10px rgba(52,211,153,.5)' : 'none',
                             }} />
                             <div style={{
-                              fontSize: 12.5,
+                              fontSize: 13,
                               fontWeight: 600,
-                              color: 'rgba(255,255,255,.92)',
+                              color: 'rgba(255,255,255,.9)',
                               whiteSpace: 'nowrap',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
@@ -842,24 +854,38 @@ export function WorkspaceDashboard({
                             </div>
                           </div>
                           <div style={{
-                            fontSize: 10.5,
-                            color: 'rgba(255,255,255,.4)',
+                            fontSize: 11,
+                            color: 'rgba(255,255,255,.35)',
                             display: 'flex',
+                            alignItems: 'center',
                             justifyContent: 'space-between',
-                            paddingLeft: 12,
+                            paddingLeft: 14,
                           }}>
                             <span style={{
                               whiteSpace: 'nowrap',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
-                              maxWidth: '60%',
+                              maxWidth: '55%',
                             }}>
-                              {p.clientName || 'Unassigned'}
+                              {p.clientName || ''}
                             </span>
-                            <span style={{ whiteSpace: 'nowrap' }}>
-                              {p.imageIds.length} · {relativeTime(p.updatedAt || p.createdAt)}
+                            <span style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              {p.imageIds.length} photos · {relativeTime(p.updatedAt || p.createdAt)}
                             </span>
                           </div>
+                          {p.eventType && (
+                            <div style={{
+                              marginTop: 8, paddingLeft: 14,
+                            }}>
+                              <span style={{
+                                fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 50,
+                                background: 'rgba(99,102,241,.08)', color: 'rgba(129,140,248,.7)',
+                                border: '1px solid rgba(99,102,241,.12)',
+                              }}>
+                                {p.eventType.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1025,36 +1051,35 @@ export function WorkspaceDashboard({
 function StatPill({ value, label, accent }: { value: string; label: string; accent?: string }) {
   return (
     <div style={{
-      padding: '6px 11px',
-      background: 'rgba(255,255,255,.04)',
-      border: '1px solid rgba(255,255,255,.06)',
-      borderRadius: 8,
+      padding: '5px 12px',
+      background: accent ? `${accent}10` : 'rgba(255,255,255,.03)',
+      border: `1px solid ${accent ? `${accent}20` : 'rgba(255,255,255,.05)'}`,
+      borderRadius: 50,
       display: 'flex',
-      alignItems: 'baseline',
-      gap: 5,
+      alignItems: 'center',
+      gap: 6,
       whiteSpace: 'nowrap',
     }}>
       {accent && (
         <span style={{
-          width: 5,
-          height: 5,
+          width: 6,
+          height: 6,
           borderRadius: '50%',
           background: accent,
-          alignSelf: 'center',
-          boxShadow: `0 0 6px ${accent}88`,
+          boxShadow: `0 0 8px ${accent}66`,
         }} />
       )}
       <span style={{
         fontSize: 13,
         fontWeight: 700,
-        color: 'rgba(255,255,255,.95)',
+        color: accent || 'rgba(255,255,255,.9)',
         letterSpacing: '-0.01em',
       }}>
         {value}
       </span>
       <span style={{
-        fontSize: 10.5,
-        color: 'rgba(255,255,255,.42)',
+        fontSize: 10,
+        color: 'rgba(255,255,255,.35)',
         fontWeight: 500,
       }}>
         {label}
