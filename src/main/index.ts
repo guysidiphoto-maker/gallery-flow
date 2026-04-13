@@ -16,12 +16,42 @@ const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp'])
 // Preferences file path
 const prefsPath = join(app.getPath('userData'), 'preferences.json')
 
+const BACKUP_PATH = prefsPath + '.backup'
+const BACKUP_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
+let lastBackupTime = 0
+
 function loadPrefs(): Record<string, unknown> {
+  // Try main file first
   try {
     if (existsSync(prefsPath)) {
-      return JSON.parse(readFileSync(prefsPath, 'utf-8'))
+      const raw = readFileSync(prefsPath, 'utf-8')
+      if (raw.trim().length > 2) {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object') return parsed
+      }
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    console.error('[prefs] main file corrupt:', err)
+  }
+
+  // Fallback to backup
+  try {
+    if (existsSync(BACKUP_PATH)) {
+      console.warn('[prefs] loading from backup file')
+      const raw = readFileSync(BACKUP_PATH, 'utf-8')
+      if (raw.trim().length > 2) {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object') {
+          // Restore main file from backup
+          try { writeFileSync(prefsPath, raw) } catch { /* best effort */ }
+          return parsed
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[prefs] backup file also corrupt:', err)
+  }
+
   return {}
 }
 
@@ -29,8 +59,39 @@ function savePrefs(prefs: Record<string, unknown>): void {
   try {
     const dir = dirname(prefsPath)
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    writeFileSync(prefsPath, JSON.stringify(prefs, null, 2))
-  } catch { /* ignore */ }
+
+    const json = JSON.stringify(prefs, null, 2)
+
+    // Sanity check: never write empty/tiny data if existing file is large
+    if (existsSync(prefsPath)) {
+      try {
+        const existing = readFileSync(prefsPath, 'utf-8')
+        if (existing.length > 500 && json.length < 100) {
+          console.error('[prefs] BLOCKED write: new data suspiciously small', json.length, 'vs existing', existing.length)
+          return
+        }
+      } catch { /* can't read existing — proceed with write */ }
+    }
+
+    // Atomic write: temp file → rename
+    const tmpPath = prefsPath + '.tmp'
+    writeFileSync(tmpPath, json)
+    const { renameSync } = require('fs')
+    renameSync(tmpPath, prefsPath)
+
+    // Periodic backup (every 5 minutes, only if data looks healthy)
+    const now = Date.now()
+    const projectCount = Array.isArray(prefs.projects) ? prefs.projects.length : 0
+    const registryCount = prefs.imageRegistry ? Object.keys(prefs.imageRegistry as object).length : 0
+    if (now - lastBackupTime > BACKUP_INTERVAL_MS && (projectCount > 0 || registryCount > 0)) {
+      try {
+        writeFileSync(BACKUP_PATH, json)
+        lastBackupTime = now
+      } catch { /* best effort */ }
+    }
+  } catch (err) {
+    console.error('[prefs] save failed:', err)
+  }
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -75,6 +136,17 @@ app.setAboutPanelOptions({
 })
 
 app.whenReady().then(() => {
+  // Create initial backup on startup if prefs file has real data
+  try {
+    if (existsSync(prefsPath)) {
+      const raw = readFileSync(prefsPath, 'utf-8')
+      if (raw.length > 500) {
+        writeFileSync(BACKUP_PATH, raw)
+        lastBackupTime = Date.now()
+      }
+    }
+  } catch { /* best effort */ }
+
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: app.name,

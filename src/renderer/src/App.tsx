@@ -299,6 +299,9 @@ function MainApp({ business }: { business: Business | null }) {
   const [nextId, setNextId] = useState(1)
   const [projectsLoaded, setProjectsLoaded] = useState(false)
   const [clientsLoaded, setClientsLoaded] = useState(false)
+  // Track what was on disk at load time — prevents saving empty over non-empty
+  const loadedProjectCount = useRef(-1)
+  const loadedRegistryCount = useRef(-1)
   const [imageRegistry, setImageRegistry] = useState<Record<string, ImageFile>>({})
   const [registryLoaded, setRegistryLoaded] = useState(false)
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null)
@@ -696,6 +699,8 @@ function MainApp({ business }: { business: Business | null }) {
       }
 
       setImageRegistry(registry)
+      loadedProjectCount.current = rawProjects && Array.isArray(rawProjects) ? rawProjects.length : 0
+      loadedRegistryCount.current = Object.keys(registry).length
       setProjectsLoaded(true)
       setRegistryLoaded(true)
     })()
@@ -796,16 +801,25 @@ function MainApp({ business }: { business: Business | null }) {
     })
   }, [])
 
-  // Persist projects to prefs — depends on projectsLoaded so it only fires
-  // on renders AFTER the loaded data is in state (not the initial [] render).
+  // Persist projects to prefs — guards against saving empty over non-empty.
   useEffect(() => {
     if (!projectsLoaded) return
+    // Safety: never overwrite non-empty disk data with empty state
+    if (projects.length === 0 && loadedProjectCount.current > 0) {
+      console.warn('[persist] BLOCKED saving 0 projects (disk had', loadedProjectCount.current, ')')
+      return
+    }
     window.api.setPref('projects', projects)
   }, [projects, projectsLoaded])
 
-  // Persist image registry to prefs
+  // Persist image registry to prefs — guards against saving empty over non-empty.
   useEffect(() => {
     if (!registryLoaded) return
+    const count = Object.keys(imageRegistry).length
+    if (count === 0 && loadedRegistryCount.current > 0) {
+      console.warn('[persist] BLOCKED saving empty registry (disk had', loadedRegistryCount.current, 'images)')
+      return
+    }
     window.api.setPref('imageRegistry', imageRegistry)
   }, [imageRegistry, registryLoaded])
 
