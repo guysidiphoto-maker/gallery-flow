@@ -79,10 +79,11 @@ function StoryPlayer({ url, onClose }: { url: string; onClose: () => void }) {
 export function ClientDashboard() {
   // Parse URL
   const { clientId, slug } = (() => {
-    const path = window.location.pathname.replace(/\/$/, '')
-    const m = path.match(/^\/([^/]+)\/client\/([^/]+)$/) || path.match(/^\/client\/([^/]+)$/)
-    if (m && m.length === 3) return { slug: m[1], clientId: m[2] }
-    if (m && m.length === 2) return { slug: '', clientId: m[1] }
+    const path = window.location.pathname.replace(/\/dashboard\/?$/, '').replace(/\/$/, '')
+    const slugMatch = path.match(/^\/([^/]+)\/client\/([^/]+)$/)
+    if (slugMatch) return { slug: slugMatch[1], clientId: slugMatch[2] }
+    const directMatch = path.match(/^\/client\/([^/]+)$/)
+    if (directMatch) return { slug: '', clientId: directMatch[1] }
     return { slug: '', clientId: '' }
   })()
 
