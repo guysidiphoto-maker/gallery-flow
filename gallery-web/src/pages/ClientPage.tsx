@@ -125,6 +125,7 @@ export function ClientPage() {
   const [activeSection, setActiveSection] = useState('galleries')
   const [feedLimit, setFeedLimit] = useState(30)
   const [playingStory, setPlayingStory] = useState<string | null>(null)
+  const [eventFilter, setEventFilter] = useState<string>('')
 
   const reveal = useScrollReveal()
 
@@ -240,10 +241,35 @@ export function ClientPage() {
   const clientName = first.client_name || readString(settings, 'clientName') || 'Your Galleries'
   const showFooterCredit = settings.showFooterCredit !== false
 
+  // ── Event type helpers ──────────────────────────────────────────────────
+
+  const EVENT_TYPES: Record<string, { label: string; icon: string }> = {
+    'conference': { label: 'כנס', icon: '🎤' },
+    'corporate-event': { label: 'אירוע חברה', icon: '🏢' },
+    'government': { label: 'אירוע ממשלתי', icon: '🏛️' },
+    'retreat-abroad': { label: 'נופש בחו״ל', icon: '✈️' },
+    'retreat-local': { label: 'נופש חברה בארץ', icon: '🏖️' },
+    'pre-event': { label: 'קדם', icon: '📋' },
+    'other': { label: 'Other', icon: '📸' },
+  }
+
+  const getEventType = (g: GalleryRow): string => {
+    const s = (g.delivery_settings || {}) as Record<string, unknown>
+    return typeof s.eventType === 'string' ? s.eventType : ''
+  }
+
+  // Collect unique event types from galleries
+  const availableTypes = [...new Set(galleries.map(getEventType).filter(Boolean))]
+
+  // Filter galleries
+  const filteredGalleries = eventFilter
+    ? galleries.filter(g => getEventType(g) === eventFilter)
+    : galleries
+
   // ── Group galleries by year + month ────────────────────────────────────
 
   const timeline = new Map<string, Map<number, GalleryRow[]>>()
-  galleries.forEach(g => {
+  filteredGalleries.forEach(g => {
     const d = g.published_at ? new Date(g.published_at) : null
     const year = d ? String(d.getFullYear()) : 'Other'
     const month = d ? d.getMonth() : -1
@@ -396,7 +422,50 @@ export function ClientPage() {
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px 96px' }}>
 
         {/* ── Galleries Timeline ───────────────────────────────────────── */}
-        <section id="section-galleries" style={{ paddingTop: 32 }}>
+        {/* Event type filter chips */}
+        {availableTypes.length > 1 && (
+          <div style={{
+            display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center',
+            marginBottom: 32, paddingTop: 16,
+          }}>
+            <button
+              onClick={() => setEventFilter('')}
+              style={{
+                padding: '7px 16px', borderRadius: 50, fontSize: 12, fontWeight: eventFilter === '' ? 600 : 400,
+                background: eventFilter === '' ? 'rgba(255,255,255,.1)' : 'transparent',
+                border: eventFilter === '' ? '1px solid rgba(255,255,255,.15)' : '1px solid rgba(255,255,255,.06)',
+                color: eventFilter === '' ? '#fff' : 'rgba(255,255,255,.4)',
+                cursor: 'pointer', fontFamily: 'inherit', transition: 'all .2s',
+              }}
+            >
+              All ({galleries.length})
+            </button>
+            {availableTypes.map(type => {
+              const info = EVENT_TYPES[type] || { label: type, icon: '📸' }
+              const count = galleries.filter(g => getEventType(g) === type).length
+              const active = eventFilter === type
+              return (
+                <button
+                  key={type}
+                  onClick={() => setEventFilter(active ? '' : type)}
+                  style={{
+                    padding: '7px 16px', borderRadius: 50, fontSize: 12, fontWeight: active ? 600 : 400,
+                    background: active ? 'rgba(99,102,241,.15)' : 'transparent',
+                    border: active ? '1px solid rgba(99,102,241,.3)' : '1px solid rgba(255,255,255,.06)',
+                    color: active ? '#818cf8' : 'rgba(255,255,255,.4)',
+                    cursor: 'pointer', fontFamily: 'inherit', transition: 'all .2s',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}
+                >
+                  <span style={{ fontSize: 13 }}>{info.icon}</span>
+                  {info.label} ({count})
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        <section id="section-galleries" style={{ paddingTop: 0 }}>
           {sortedYears.map(year => {
             const yearMap = timeline.get(year)!
             const sortedMonths = Array.from(yearMap.keys()).sort((a, b) => b - a)

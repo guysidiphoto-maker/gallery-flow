@@ -16,6 +16,7 @@ export interface DeliverySettings {
   galleryDescription: string
   eventDate: string
   eventLocation: string
+  eventType: string
   clientSelectionEnabled: boolean
   clientCode: string
   layoutMode: '1-col' | '2-col' | '3-col'

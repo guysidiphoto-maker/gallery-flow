@@ -767,6 +767,45 @@ export function PublishPanel({
                 </button>
               </div>
 
+              {/* Event Type */}
+              <div style={S.section}>
+                <p style={S.sectionTitle}>Event Type</p>
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6,
+                }}>
+                  {[
+                    { value: 'conference', label: 'כנס', icon: '🎤' },
+                    { value: 'corporate-event', label: 'אירוע חברה', icon: '🏢' },
+                    { value: 'government', label: 'אירוע ממשלתי', icon: '🏛️' },
+                    { value: 'retreat-abroad', label: 'נופש בחו״ל', icon: '✈️' },
+                    { value: 'retreat-local', label: 'נופש חברה בארץ', icon: '🏖️' },
+                    { value: 'pre-event', label: 'קדם', icon: '📋' },
+                    { value: 'other', label: 'Other', icon: '📸' },
+                  ].map(opt => {
+                    const active = settings.eventType === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => update({ eventType: active ? '' : opt.value })}
+                        style={{
+                          padding: '8px 10px', borderRadius: 8,
+                          background: active ? 'rgba(99,102,241,.15)' : 'rgba(255,255,255,.03)',
+                          border: active ? '1px solid rgba(99,102,241,.3)' : '1px solid rgba(255,255,255,.06)',
+                          color: active ? '#818cf8' : 'rgba(255,255,255,.5)',
+                          fontSize: 12, fontWeight: active ? 600 : 400,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          transition: 'all .15s',
+                        }}
+                      >
+                        <span style={{ fontSize: 14 }}>{opt.icon}</span>
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               {/* Access */}
               <div style={S.section}>
                 <p style={S.sectionTitle}>Access</p>

@@ -69,6 +69,7 @@ export interface DeliverySettings {
   galleryDescription: string
   eventDate: string
   eventLocation: string
+  eventType: string
   clientSelectionEnabled: boolean
   clientCode: string
   layoutMode: '1-col' | '2-col' | '3-col'
@@ -102,6 +103,7 @@ export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
   galleryDescription: '',
   eventDate: '',
   eventLocation: '',
+  eventType: '',
   clientSelectionEnabled: false,
   clientCode: '',
   layoutMode: '2-col',
@@ -157,6 +159,8 @@ export interface ProjectData {
   /** Per-project vendors + image-vendor tags */
   vendors?: Array<{ id: string; name: string; category: string; email: string; instagram: string; accessCode: string }>
   vendorTags?: Array<{ imageId: string; vendorId: string }>
+  /** Event type for filtering on client page */
+  eventType?: string
   createdAt: string
   updatedAt: string
   deliverySettings?: DeliverySettings
