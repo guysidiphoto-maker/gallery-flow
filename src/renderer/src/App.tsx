@@ -1647,35 +1647,24 @@ function MainApp({ business }: { business: Business | null }) {
 
               {/* Event type */}
               <label className="npm__label" style={{ marginTop: 12 }}>Event type</label>
-              <div style={{
-                display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 5,
-                marginBottom: 4,
-              }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
                 {[
-                  { value: 'conference', label: 'כנס', icon: '🎤' },
-                  { value: 'corporate-event', label: 'אירוע חברה', icon: '🏢' },
-                  { value: 'government', label: 'ממשלתי', icon: '🏛️' },
-                  { value: 'retreat-abroad', label: 'נופש בחו״ל', icon: '✈️' },
-                  { value: 'retreat-local', label: 'נופש בארץ', icon: '🏖️' },
-                  { value: 'pre-event', label: 'קדם', icon: '📋' },
-                  { value: 'other', label: 'Other', icon: '📸' },
+                  { value: 'conference', label: 'Conference' },
+                  { value: 'corporate-event', label: 'Corporate Event' },
+                  { value: 'government', label: 'Government' },
+                  { value: 'retreat-abroad', label: 'Retreat Abroad' },
+                  { value: 'retreat-local', label: 'Local Retreat' },
+                  { value: 'pre-event', label: 'Pre-Event' },
+                  { value: 'other', label: 'Other' },
                 ].map(opt => {
                   const active = newProjectEventType === opt.value
                   return (
                     <button
                       key={opt.value}
                       onClick={() => setNewProjectEventType(active ? '' : opt.value)}
-                      style={{
-                        padding: '6px 8px', borderRadius: 7, fontSize: 11, fontWeight: active ? 600 : 400,
-                        background: active ? 'rgba(99,102,241,.15)' : 'rgba(255,255,255,.03)',
-                        border: active ? '1px solid rgba(99,102,241,.3)' : '1px solid rgba(255,255,255,.06)',
-                        color: active ? '#818cf8' : 'rgba(255,255,255,.45)',
-                        cursor: 'pointer', fontFamily: 'inherit',
-                        display: 'flex', alignItems: 'center', gap: 5,
-                        transition: 'all .15s',
-                      }}
+                      className={`npm__chip ${active ? 'npm__chip--active' : ''}`}
+                      style={{ padding: '6px 12px', fontSize: 11, borderRadius: 50 }}
                     >
-                      <span style={{ fontSize: 12 }}>{opt.icon}</span>
                       {opt.label}
                     </button>
                   )

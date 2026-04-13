@@ -770,17 +770,15 @@ export function PublishPanel({
               {/* Event Type */}
               <div style={S.section}>
                 <p style={S.sectionTitle}>Event Type</p>
-                <div style={{
-                  display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6,
-                }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {[
-                    { value: 'conference', label: 'כנס', icon: '🎤' },
-                    { value: 'corporate-event', label: 'אירוע חברה', icon: '🏢' },
-                    { value: 'government', label: 'אירוע ממשלתי', icon: '🏛️' },
-                    { value: 'retreat-abroad', label: 'נופש בחו״ל', icon: '✈️' },
-                    { value: 'retreat-local', label: 'נופש חברה בארץ', icon: '🏖️' },
-                    { value: 'pre-event', label: 'קדם', icon: '📋' },
-                    { value: 'other', label: 'Other', icon: '📸' },
+                    { value: 'conference', label: 'Conference' },
+                    { value: 'corporate-event', label: 'Corporate Event' },
+                    { value: 'government', label: 'Government' },
+                    { value: 'retreat-abroad', label: 'Retreat Abroad' },
+                    { value: 'retreat-local', label: 'Local Retreat' },
+                    { value: 'pre-event', label: 'Pre-Event' },
+                    { value: 'other', label: 'Other' },
                   ].map(opt => {
                     const active = settings.eventType === opt.value
                     return (
@@ -788,17 +786,15 @@ export function PublishPanel({
                         key={opt.value}
                         onClick={() => update({ eventType: active ? '' : opt.value })}
                         style={{
-                          padding: '8px 10px', borderRadius: 8,
+                          padding: '7px 14px', borderRadius: 50,
                           background: active ? 'rgba(99,102,241,.15)' : 'rgba(255,255,255,.03)',
                           border: active ? '1px solid rgba(99,102,241,.3)' : '1px solid rgba(255,255,255,.06)',
-                          color: active ? '#818cf8' : 'rgba(255,255,255,.5)',
+                          color: active ? '#818cf8' : 'rgba(255,255,255,.45)',
                           fontSize: 12, fontWeight: active ? 600 : 400,
                           cursor: 'pointer', fontFamily: 'inherit',
-                          display: 'flex', alignItems: 'center', gap: 6,
                           transition: 'all .15s',
                         }}
                       >
-                        <span style={{ fontSize: 14 }}>{opt.icon}</span>
                         {opt.label}
                       </button>
                     )
