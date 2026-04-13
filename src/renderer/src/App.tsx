@@ -324,6 +324,7 @@ function MainApp({ business }: { business: Business | null }) {
   const [newProjectShowSuggestions, setNewProjectShowSuggestions] = useState(false)
   const [newProjectHighlight, setNewProjectHighlight] = useState(-1)
   const [newProjectSaveClient, setNewProjectSaveClient] = useState(false)
+  const [newProjectEventType, setNewProjectEventType] = useState('')
   const [prefilledClientId, setPrefilledClientId] = useState<string | null>(null)
   const [galleryPreviewProjectId, setGalleryPreviewProjectId] = useState<string | null>(null)
   const [exportProgress, setExportProgress] = useState<string | null>(null)
@@ -1511,9 +1512,9 @@ function MainApp({ business }: { business: Business | null }) {
           }
 
           setIsNewProjectModalOpen(false)
-          setNewProjectClientName(''); setNewProjectSelectedClientId(null); setNewProjectShowSuggestions(false); setNewProjectSaveClient(false)
+          setNewProjectClientName(''); setNewProjectSelectedClientId(null); setNewProjectShowSuggestions(false); setNewProjectSaveClient(false); setNewProjectEventType('')
           const id = String(nextId); setNextId(n => n + 1)
-          const newProject: ProjectData = { id, name, clientId, clientName: resolvedClientName, imageIds: [], createdAt: now, updatedAt: now }
+          const newProject: ProjectData = { id, name, clientId, clientName: resolvedClientName, imageIds: [], eventType: newProjectEventType || undefined, createdAt: now, updatedAt: now }
           setProjects(prev => [...prev, newProject])
           setCurrentProjectId(id); setWelcomed(true)
           useGallery.setState({ images: [], folderPath: '' })
@@ -1541,7 +1542,7 @@ function MainApp({ business }: { business: Business | null }) {
         }
 
         const isNewClient = !newProjectSelectedClientId && newProjectClientName.trim() && !cExactMatch
-        const closeModal = () => { setIsNewProjectModalOpen(false); setNewProjectClientName(''); setNewProjectSelectedClientId(null); setNewProjectShowSuggestions(false); setNewProjectSaveClient(false) }
+        const closeModal = () => { setIsNewProjectModalOpen(false); setNewProjectClientName(''); setNewProjectSelectedClientId(null); setNewProjectShowSuggestions(false); setNewProjectSaveClient(false); setNewProjectEventType('') }
 
         return (
         <div className="npm-overlay" style={{ zIndex: 10000 }} onClick={closeModal}>
@@ -1644,8 +1645,45 @@ function MainApp({ business }: { business: Business | null }) {
                 id="welcome-new-project-input"
               />
 
+              {/* Event type */}
+              <label className="npm__label" style={{ marginTop: 12 }}>Event type</label>
+              <div style={{
+                display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 5,
+                marginBottom: 4,
+              }}>
+                {[
+                  { value: 'conference', label: 'כנס', icon: '🎤' },
+                  { value: 'corporate-event', label: 'אירוע חברה', icon: '🏢' },
+                  { value: 'government', label: 'ממשלתי', icon: '🏛️' },
+                  { value: 'retreat-abroad', label: 'נופש בחו״ל', icon: '✈️' },
+                  { value: 'retreat-local', label: 'נופש בארץ', icon: '🏖️' },
+                  { value: 'pre-event', label: 'קדם', icon: '📋' },
+                  { value: 'other', label: 'Other', icon: '📸' },
+                ].map(opt => {
+                  const active = newProjectEventType === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => setNewProjectEventType(active ? '' : opt.value)}
+                      style={{
+                        padding: '6px 8px', borderRadius: 7, fontSize: 11, fontWeight: active ? 600 : 400,
+                        background: active ? 'rgba(99,102,241,.15)' : 'rgba(255,255,255,.03)',
+                        border: active ? '1px solid rgba(99,102,241,.3)' : '1px solid rgba(255,255,255,.06)',
+                        color: active ? '#818cf8' : 'rgba(255,255,255,.45)',
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        transition: 'all .15s',
+                      }}
+                    >
+                      <span style={{ fontSize: 12 }}>{opt.icon}</span>
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+
               {/* Create */}
-              <button className="npm__create" onClick={doCreate}>
+              <button className="npm__create" onClick={doCreate} style={{ marginTop: 12 }}>
                 Create Gallery
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="9 18 15 12 9 6"/>
