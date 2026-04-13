@@ -80,20 +80,42 @@ export const useSession = create<SessionState>((set, get) => ({
         // caused the app to bounce the user back to onboarding whenever that
         // request stalled or hit a transient error.
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-          // On fresh sign-in, PostgREST may not immediately recognize the new
-          // session tokens. Give it a beat, then try twice with a generous
-          // timeout. This avoids the "businesses lookup timed out → onboarding
-          // screen" false positive that happened after Google OAuth.
-          if (event === 'SIGNED_IN') {
-            await new Promise(r => setTimeout(r, 600))
+          // Use the token from the callback directly — avoids deadlock with
+          // getSession() which hangs when called inside onAuthStateChange.
+          const token = session.access_token
+          const userId = session.user.id
+
+          // Direct fetch bypasses the Supabase client's interceptor which
+          // may not have the token settled yet after exchangeCodeForSession.
+          const fetchBusiness = async (): Promise<Business | null> => {
+            try {
+              const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/businesses?user_id=eq.${userId}&select=*&limit=1`
+              const res = await fetch(url, {
+                headers: {
+                  'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+                  'Authorization': `Bearer ${token}`,
+                  'Accept': 'application/json',
+                },
+              })
+              if (!res.ok) return null
+              const rows = await res.json()
+              return Array.isArray(rows) && rows.length > 0 ? rows[0] as Business : null
+            } catch { return null }
           }
-          await get().refreshBusiness()
-          // If we landed on needs_onboarding after a SIGNED_IN but have no
-          // business yet, retry once — the first attempt may have raced the
-          // session propagation.
-          if (event === 'SIGNED_IN' && get().status === 'needs_onboarding' && !get().business) {
-            await new Promise(r => setTimeout(r, 2000))
-            await get().refreshBusiness()
+
+          // Retry with delays — PostgREST may need a moment after new session
+          const delays = event === 'SIGNED_IN' ? [0, 1500, 3000] : [0]
+          for (const delay of delays) {
+            if (delay > 0) await new Promise(r => setTimeout(r, delay))
+            const biz = await fetchBusiness()
+            if (biz) {
+              set({ status: 'ready', business: biz })
+              break
+            }
+            if (delay === delays[delays.length - 1]) {
+              // Last attempt, no business found
+              set({ status: 'needs_onboarding', business: null })
+            }
           }
         }
       })
@@ -111,35 +133,62 @@ export const useSession = create<SessionState>((set, get) => ({
       return
     }
 
-    // Force the Supabase JS client to settle its internal auth state before
-    // we fire a PostgREST query. Right after setSession (e.g. Google OAuth),
-    // the fetch interceptor may not have the new access token yet, causing
-    // the businesses query to hang indefinitely (sent without auth → RLS
-    // blocks → PostgREST returns nothing → our timeout fires).
-    // Race against a 3s timeout — getSession() can hang if called while the
-    // client is still processing exchangeCodeForSession internally.
+    // After OAuth, the Supabase client's fetch interceptor may not have the
+    // auth token yet. Try getSession first; if it works, also try a direct
+    // fetch with the token as a fallback for the businesses query.
+    let accessToken: string | null = null
     try {
       const sessionResult = await Promise.race([
         supabase.auth.getSession().then(r => ({ kind: 'ok' as const, ...r })),
         new Promise<{ kind: 'timeout' }>(resolve => setTimeout(() => resolve({ kind: 'timeout' }), 3000)),
       ])
       if (sessionResult.kind === 'timeout') {
-        console.warn('[session] getSession() timed out in refreshBusiness — proceeding with query')
+        console.warn('[session] getSession() timed out in refreshBusiness')
       } else if (!sessionResult.data?.session) {
         set({ status: 'unauthenticated', business: null })
         return
+      } else {
+        accessToken = sessionResult.data.session.access_token
       }
     } catch {
-      // getSession failed — fall through to the query which has its own timeout
+      // getSession failed
     }
 
-    // Race the businesses lookup against a timeout so a network stall
-    // can't strand the user on a black loading screen.
-    const result = await Promise.race([
-      supabase.from('businesses').select('*').eq('user_id', user.id).maybeSingle()
-        .then(r => ({ kind: 'ok' as const, data: r.data, error: r.error })),
-      new Promise<{ kind: 'timeout' }>(resolve => setTimeout(() => resolve({ kind: 'timeout' }), 8000)),
+    // Try the businesses query. If the normal query hangs (auth not settled),
+    // fall back to a direct fetch with the access token.
+    let result: { kind: 'ok'; data: any; error: any } | { kind: 'timeout' }
+
+    const normalQuery = supabase.from('businesses').select('*').eq('user_id', user.id).maybeSingle()
+      .then(r => ({ kind: 'ok' as const, data: r.data, error: r.error }))
+
+    result = await Promise.race([
+      normalQuery,
+      new Promise<{ kind: 'timeout' }>(resolve => setTimeout(() => resolve({ kind: 'timeout' }), 5000)),
     ])
+
+    // If timed out and we have a token, try direct fetch as fallback
+    if (result.kind === 'timeout' && accessToken) {
+      console.warn('[session] normal query timed out, trying direct fetch with token')
+      try {
+        const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/businesses?user_id=eq.${user.id}&select=*&limit=1`
+        const res = await Promise.race([
+          fetch(url, {
+            headers: {
+              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${accessToken}`,
+              'Accept': 'application/json',
+            },
+          }).then(async r => {
+            const data = await r.json()
+            return { kind: 'ok' as const, data: Array.isArray(data) && data.length > 0 ? data[0] : null, error: null }
+          }),
+          new Promise<{ kind: 'timeout' }>(resolve => setTimeout(() => resolve({ kind: 'timeout' }), 5000)),
+        ])
+        result = res
+      } catch (e) {
+        console.warn('[session] direct fetch also failed:', e)
+      }
+    }
 
     // Transient failures must NOT bounce an already-onboarded user back to
     // the onboarding screen. If we already have a business cached, keep it
