@@ -138,9 +138,11 @@ export function Toolbar({ currentProject, projects, onImport, onImportCreate, on
           </nav>
         )}
 
-        <button className="tb__import" onClick={onImport}>
-          Import
-        </button>
+        {hasImages && (
+          <button className="tb__import" onClick={onImport}>
+            Import
+          </button>
+        )}
       </div>
 
     </div>
