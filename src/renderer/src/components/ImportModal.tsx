@@ -122,7 +122,7 @@ export function ImportModal({ currentProject, projects, clients, prefilledClient
           ) : null}
           <h2 className="im__title">
             {view === 'menu' && 'Import images'}
-            {view === 'create' && 'New project'}
+            {view === 'create' && 'New Gallery'}
             {view === 'existing' && 'Choose project'}
           </h2>
           <button className="im__close" onClick={onClose}>
