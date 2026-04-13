@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixflow — Partner Deck</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Inter', -apple-system, sans-serif; background: #0a0a0f; color: #fff; line-height: 1.6; }
+.section { padding: 80px 24px; max-width: 1100px; margin: 0 auto; }
+.section--hero { padding: 120px 24px 100px; text-align: center; position: relative; }
+.section--dark { background: rgba(255,255,255,.02); }
+.section--accent { background: linear-gradient(135deg, rgba(99,102,241,.08), rgba(139,92,246,.05)); }
+
+/* Typography */
+h1 { font-size: clamp(48px, 7vw, 80px); font-weight: 200; letter-spacing: -0.04em; line-height: 1.05; }
+h2 { font-size: clamp(28px, 4vw, 42px); font-weight: 300; letter-spacing: -0.02em; margin-bottom: 16px; }
+h3 { font-size: 20px; font-weight: 600; margin-bottom: 12px; color: rgba(255,255,255,.9); }
+.subtitle { font-size: clamp(16px, 2vw, 20px); color: rgba(255,255,255,.4); font-weight: 300; }
+.label { font-size: 11px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: #818cf8; margin-bottom: 16px; }
+p { color: rgba(255,255,255,.55); font-size: 16px; line-height: 1.7; }
+.highlight { color: #818cf8; }
+.text-gradient { background: linear-gradient(135deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+/* Hero decoration */
+.hero-glow { position: absolute; top: -20%; left: 50%; transform: translateX(-50%); width: 800px; height: 600px; background: radial-gradient(ellipse, rgba(99,102,241,.1) 0%, transparent 60%); pointer-events: none; }
+.hero-line { width: 60px; height: 2px; background: linear-gradient(90deg, #6366f1, #a78bfa); margin: 24px auto; border-radius: 1px; }
+.hero-badge { display: inline-block; padding: 6px 16px; border-radius: 50px; background: rgba(99,102,241,.1); border: 1px solid rgba(99,102,241,.2); font-size: 12px; font-weight: 600; color: #818cf8; margin-bottom: 32px; }
+
+/* Cards */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 32px; }
+.card { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; padding: 28px; transition: border-color .3s, transform .3s; }
+.card:hover { border-color: rgba(99,102,241,.3); transform: translateY(-4px); }
+.card-icon { width: 44px; height: 44px; border-radius: 12px; background: rgba(99,102,241,.1); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; font-size: 20px; }
+.card p { font-size: 14px; color: rgba(255,255,255,.4); }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin: 48px 0; }
+.stat { text-align: center; }
+.stat-number { font-size: 48px; font-weight: 800; background: linear-gradient(135deg, #6366f1, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.stat-label { font-size: 13px; color: rgba(255,255,255,.35); margin-top: 4px; }
+
+/* Problem/Solution */
+.problem-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; }
+.problem-icon { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 13px; margin-top: 2px; }
+.problem-icon--red { background: rgba(239,68,68,.15); color: #f87171; }
+.problem-icon--green { background: rgba(16,185,129,.15); color: #34d399; }
+
+/* Table */
+.table-wrap { overflow-x: auto; margin-top: 24px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: right; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,.3); padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
+td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 14px; color: rgba(255,255,255,.6); }
+tr:hover td { background: rgba(255,255,255,.02); }
+.check { color: #818cf8; font-weight: 700; }
+.cross { color: rgba(255,255,255,.15); }
+
+/* Pricing */
+.pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 32px; }
+.price-card { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; padding: 28px; text-align: center; }
+.price-card--featured { background: linear-gradient(180deg, rgba(99,102,241,.12), rgba(99,102,241,.04)); border-color: rgba(99,102,241,.3); position: relative; }
+.price-card--featured::before { content: 'RECOMMENDED'; position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #6366f1; color: #fff; font-size: 9px; font-weight: 700; letter-spacing: 0.1em; padding: 4px 12px; border-radius: 50px; }
+.price-amount { font-size: 42px; font-weight: 800; color: #fff; margin: 12px 0 4px; }
+.price-period { font-size: 13px; color: rgba(255,255,255,.3); }
+.price-features { list-style: none; margin-top: 20px; text-align: right; }
+.price-features li { padding: 6px 0; font-size: 13px; color: rgba(255,255,255,.5); display: flex; align-items: center; gap: 8px; }
+.price-features li::before { content: '✓'; color: #818cf8; font-weight: 700; }
+
+/* Flow */
+.flow { display: flex; flex-direction: column; gap: 0; margin: 32px 0; }
+.flow-step { display: flex; gap: 20px; padding: 20px 0; }
+.flow-dot { width: 40px; height: 40px; border-radius: 50%; background: rgba(99,102,241,.15); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: #818cf8; flex-shrink: 0; position: relative; }
+.flow-dot::after { content: ''; position: absolute; top: 40px; left: 50%; width: 1px; height: calc(100% + 0px); background: rgba(99,102,241,.15); }
+.flow-step:last-child .flow-dot::after { display: none; }
+.flow-content h4 { font-size: 15px; font-weight: 600; color: rgba(255,255,255,.85); margin-bottom: 4px; }
+.flow-content p { font-size: 13px; color: rgba(255,255,255,.4); }
+
+/* CTA */
+.cta-box { background: linear-gradient(135deg, rgba(99,102,241,.12), rgba(139,92,246,.08)); border: 1px solid rgba(99,102,241,.2); border-radius: 20px; padding: 48px; text-align: center; margin-top: 48px; }
+.cta-box h2 { font-weight: 600; font-size: 28px; margin-bottom: 8px; }
+.cta-box p { font-size: 16px; color: rgba(255,255,255,.45); margin-bottom: 24px; }
+
+/* Segments */
+.segment-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 24px; }
+.segment { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.06); border-radius: 14px; padding: 24px; }
+.segment-icon { font-size: 28px; margin-bottom: 12px; }
+.segment h4 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.segment p { font-size: 12px; color: rgba(255,255,255,.35); }
+.segment .revenue { font-size: 18px; font-weight: 700; color: #818cf8; margin-top: 10px; }
+
+/* Divider */
+.divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent); margin: 0 auto; max-width: 600px; }
+
+/* Math */
+.math-box { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); border-radius: 14px; padding: 24px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 14px; direction: ltr; text-align: left; margin-top: 24px; line-height: 2; }
+.math-box .result { font-size: 20px; font-weight: 800; color: #818cf8; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .card-grid { grid-template-columns: 1fr; }
+  .pricing-grid { grid-template-columns: 1fr; }
+  .segment-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ HERO ═══ -->
+<div class="section section--hero">
+  <div class="hero-glow"></div>
+  <div class="hero-badge">Partner Deck · April 2026</div>
+  <h1>PIXFLOW</h1>
+  <div class="hero-line"></div>
+  <p class="subtitle">הפלטפורמה שהופכת צלם לשותף קריאטיבי — עם הכנסה חודשית קבועה</p>
+</div>
+
+<div class="divider"></div>
+
+<!-- ═══ THE PROBLEM ═══ -->
+<div class="section">
+  <div class="label">הבעיה</div>
+  <h2>חברות הפקה מאבדות עסקאות כי <span class="text-gradient">העבודה שלהן בלתי נראית</span></h2>
+  <p style="margin-bottom: 32px;">חברת הפקה מפיקה 2-4 אירועים בשבוע. מה קורה אחרי כל אירוע?</p>
+
+  <div class="problem-item">
+    <div class="problem-icon problem-icon--red">✕</div>
+    <div><strong style="color: rgba(255,255,255,.7);">תמונות יושבות בתיקייה</strong><br><span style="font-size: 14px; color: rgba(255,255,255,.35);">הצלם שולח WeTransfer. התמונות נשכחות.</span></div>
+  </div>
+  <div class="problem-item">
+    <div class="problem-icon problem-icon--red">✕</div>
+    <div><strong style="color: rgba(255,255,255,.7);">הסושיאל ריק</strong><br><span style="font-size: 14px; color: rgba(255,255,255,.35);">מעלים 2-3 תמונות חודש אחרי האירוע. אין זמן לעצב, לכתוב, לתכנן.</span></div>
+  </div>
+  <div class="problem-item">
+    <div class="problem-icon problem-icon--red">✕</div>
+    <div><strong style="color: rgba(255,255,255,.7);">האתר לא מעודכן</strong><br><span style="font-size: 14px; color: rgba(255,255,255,.35);">לקוח פוטנציאלי נכנס לאתר ורואה אירועים מ-2023.</span></div>
+  </div>
+  <div class="problem-item">
+    <div class="problem-icon problem-icon--red">✕</div>
+    <div><strong style="color: rgba(255,255,255,.7);">מכרזים לוקחים שעות</strong><br><span style="font-size: 14px; color: rgba(255,255,255,.35);">כל מכרז = חיפוש ידני בתיקיות ישנות.</span></div>
+  </div>
+  <div class="problem-item">
+    <div class="problem-icon problem-icon--red">✕</div>
+    <div><strong style="color: rgba(255,255,255,.7);">ספקים מתלוננים</strong><br><span style="font-size: 14px; color: rgba(255,255,255,.35);">"איפה התמונות שלי?" — DJ, קייטרינג, מקום, כולם רוצים.</span></div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ═══ THE SOLUTION ═══ -->
+<div class="section">
+  <div class="label">הפתרון</div>
+  <h2>צלם מעלה תמונות. <span class="text-gradient">הכל השאר קורה לבד.</span></h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">🌐</div>
+      <h3>אתר שמתעדכן לבד</h3>
+      <p>כל גלריה חדשה מופיעה באתר מיד. מקובצת לפי סוג אירוע. עם טקסטים שנכתבים ע"י AI. עיצוב premium שנראה כאילו עלה $10,000.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📱</div>
+      <h3>סושיאל מוכן כל שבוע</h3>
+      <p>AI מייצר פוסטים לאינסטגרם, לינקדאין, פייסבוק — עם captions מותאמים לכל פלטפורמה. הפיד מעוצב לפי צבעים. הלקוח רק מאשר.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <h3>Pitch Deck ב-2 דקות</h3>
+      <p>מדביקים מכרז → AI מזהה סוג אירוע → מושך תמונות מאירועים דומים → מייצר מצגת PDF מעוצבת. לא שעות של חיפוש.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔗</div>
+      <h3>ספקים מקבלים לינק</h3>
+      <p>כל ספק מקבל קוד ייחודי. נכנס, רואה רק את התמונות שלו, מוריד. בלי מיילים, בלי WeTransfer.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔔</div>
+      <h3>תזכורות חכמות</h3>
+      <p>"לא פרסמת 5 ימים — הנה 3 פוסטים מוכנים." "יום שנה לאירוע — זמן לthrowback." "הדוח החודשי מוכן."</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📈</div>
+      <h3>אנליטיקס שמניע החלטות</h3>
+      <p>לא מספרים סתם. תובנות: "תוכן כנסים מקבל 3x יותר צפיות מנופשים." "יום ג׳ הוא הזמן הטוב ביותר לפרסם."</p>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ═══ HOW IT WORKS ═══ -->
+<div class="section section--dark">
+  <div class="label">איך זה עובד</div>
+  <h2>מהרגע שהצלם מעלה — <span class="text-gradient">הכל אוטומטי</span></h2>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="flow-dot">1</div>
+      <div class="flow-content">
+        <h4>צלם מעלה גלריה</h4>
+        <p>בוחר Top Picks (לחיצה אחת), מתייג סוג אירוע, מתייג ספקים</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-dot">2</div>
+      <div class="flow-content">
+        <h4>המערכת עושה הכל</h4>
+        <p>האתר מתעדכן. תוכן סושיאל נוצר. ספקים מקבלים לינק. הכל תוך דקות.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-dot">3</div>
+      <div class="flow-content">
+        <h4>הלקוח מאשר</h4>
+        <p>נכנס לדשבורד → רואה פוסטים מוכנים → מאשר → מוריד → מפרסם</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-dot">4</div>
+      <div class="flow-content">
+        <h4>הנתונים עובדים</h4>
+        <p>אנליטיקס מראה מה עובד. המערכת לומדת ומשתפרת. הלקוח מקבל דוח חודשי.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ═══ AI ═══ -->
+<div class="section">
+  <div class="label">AI Engine</div>
+  <h2>AI לא מחליף — <span class="text-gradient">AI מגביר</span></h2>
+  <p style="margin-bottom: 24px;">הבינה המלאכותית לא מצלמת. היא עושה את כל מה שאף אחד לא מספיק לעשות.</p>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>מה</th><th>איך</th><th>עלות</th></tr>
+      <tr><td>כתיבת About לאתר</td><td>מנתח שם חברה, מספר אירועים, סוגים → כותב פסקה מקצועית</td><td>$0.003</td></tr>
+      <tr><td>תיאור סקשן באתר</td><td>"כנסים שלנו מארחים מאות משתתפים..." — מותאם לדאטה</td><td>$0.003</td></tr>
+      <tr><td>Caption לאינסטגרם</td><td>קצר, אימוג׳ים, hashtags — טון אינסטגרמי</td><td>$0.003</td></tr>
+      <tr><td>פוסט ללינקדאין</td><td>אותה תמונה, טון מקצועי לגמרי שונה</td><td>$0.003</td></tr>
+      <tr><td>ניתוח מכרז</td><td>מזהה סוג אירוע, גודל, סגנון → מושך תמונות מתאימות</td><td>$0.01</td></tr>
+      <tr><td>עיצוב האתר בצ׳אט</td><td>"תשנה לצבע זהב" → האתר משתנה</td><td>$0.005</td></tr>
+      <tr><td>עיצוב פיד</td><td>מנתח צבעים ומסדר תמונות לפי הרמוניה</td><td>$0.01</td></tr>
+      <tr><td style="font-weight: 700; color: #818cf8;">סה"כ חודשי למשתמש</td><td></td><td style="font-weight: 700; color: #818cf8;">~$2.50</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ═══ PRICING ═══ -->
+<div class="section">
+  <div class="label">תמחור לצלם</div>
+  <h2>כמה עולה ל<span class="text-gradient">צלם</span></h2>
+
+  <div class="pricing-grid">
+    <div class="price-card">
+      <div style="font-size: 13px; font-weight: 600; color: rgba(255,255,255,.4);">Starter</div>
+      <div class="price-amount">Free</div>
+      <div class="price-period">לנצח</div>
+      <ul class="price-features">
+        <li>3 גלריות</li>
+        <li>משלוח בסיסי</li>
+        <li>דף לקוח</li>
+      </ul>
+    </div>
+    <div class="price-card">
+      <div style="font-size: 13px; font-weight: 600; color: rgba(255,255,255,.4);">Pro</div>
+      <div class="price-amount">$19</div>
+      <div class="price-period">לחודש</div>
+      <ul class="price-features">
+        <li>גלריות ללא הגבלה</li>
+        <li>דפי לקוח + סטוריז</li>
+        <li>פורטל ספקים</li>
+        <li>Client proofing</li>
+      </ul>
+    </div>
+    <div class="price-card">
+      <div style="font-size: 13px; font-weight: 600; color: rgba(255,255,255,.4);">Business</div>
+      <div class="price-amount">$39</div>
+      <div class="price-period">לחודש</div>
+      <ul class="price-features">
+        <li>הכל ב-Pro</li>
+        <li>Content Calendar</li>
+        <li>AI טקסטים</li>
+        <li>אנליטיקס</li>
+      </ul>
+    </div>
+    <div class="price-card price-card--featured">
+      <div style="font-size: 13px; font-weight: 600; color: #818cf8;">Retainer</div>
+      <div class="price-amount">$79</div>
+      <div class="price-period">לחודש</div>
+      <ul class="price-features">
+        <li>הכל ב-Business</li>
+        <li>אתר אוטומטי</li>
+        <li>Pitch Builder</li>
+        <li>סושיאל מולטי-פלטפורמה</li>
+        <li>AI Design Assistant</li>
+        <li>Custom domain</li>
+        <li>דוח חודשי</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ═══ THE MATH ═══ -->
+<div class="section section--accent">
+  <div class="label">החשבון</div>
+  <h2>כמה הצלם <span class="text-gradient">מרוויח</span></h2>
+
+  <div class="math-box">
+    Photographer charges client: &nbsp;&nbsp;&nbsp; <strong style="color: #fff;">$2,000/month</strong><br>
+    Pixflow subscription: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <strong style="color: rgba(255,255,255,.4);">-$79/month</strong><br>
+    Photography costs (time): &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <strong style="color: rgba(255,255,255,.4);">-$400/month</strong><br>
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━<br>
+    <span class="result">Net profit: $1,521/month per client</span><br><br>
+    With 3 retainer clients: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span class="result">$4,563/month</span><br>
+    With 5 retainer clients: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span class="result">$7,605/month</span><br>
+    Annual (5 clients): &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span class="result">$91,260/year</span>
+  </div>
+
+  <p style="margin-top: 24px; text-align: center; font-size: 18px; color: rgba(255,255,255,.5);">
+    צלם עם <strong style="color: #fff;">5 לקוחות ריטיינר</strong> מרוויח <strong style="color: #818cf8;">$91K בשנה</strong> — הכנסה חודשית קבועה.
+  </p>
+</div>
+
+<div class="divider"></div>
+
+<!-- ═══ TARGET SEGMENTS ═══ -->
+<div class="section">
+  <div class="label">שווקי יעד</div>
+  <h2>מי הלקוחות <span class="text-gradient">הפוטנציאליים</span></h2>
+  <p style="margin-bottom: 8px;">Pixflow רלוונטי לכל מי שמצלם באופן קבוע ומספק תוכן ויזואלי:</p>
+
+  <div class="segment-grid">
+    <div class="segment">
+      <div class="segment-icon">🎪</div>
+      <h4>חברות הפקה</h4>
+      <p>כנסים, אירועי חברה, נופשים. 2-4 אירועים בשבוע. צריכים אתר מעודכן + סושיאל + מכרזים.</p>
+      <div class="revenue">ריטיינר: $2,000-3,000/חודש</div>
+    </div>
+    <div class="segment">
+      <div class="segment-icon">🏨</div>
+      <h4>מלונות ורשתות אירוח</h4>
+      <p>צריכים תמונות לאתר, Booking.com, סושיאל. כל אירוע במלון = תוכן חדש. עשרות אירועים בחודש.</p>
+      <div class="revenue">ריטיינר: $1,500-2,500/חודש</div>
+    </div>
+    <div class="segment">
+      <div class="segment-icon">🏢</div>
+      <h4>חברות היי-טק</h4>
+      <p>האקאתונים, כנסים פנימיים, ימי גיבוש, השקות מוצר. צריכים תוכן לLinkedIn + אתר קריירה + PR.</p>
+      <div class="revenue">ריטיינר: $1,500-3,000/חודש</div>
+    </div>
+    <div class="segment">
+      <div class="segment-icon">🎓</div>
+      <h4>מוסדות אקדמיים</h4>
+      <p>טקסים, כנסים אקדמיים, אירועי סטודנטים. תקציב שנתי קבוע. צריכים אתר + דוחות.</p>
+      <div class="revenue">ריטיינר: $1,000-2,000/חודש</div>
+    </div>
+    <div class="segment">
+      <div class="segment-icon">🏛️</div>
+      <h4>גופים ממשלתיים ועירוניים</h4>
+      <p>אירועי עירייה, ימי עיון, טקסים. מכרזים קבועים. צריכים תיעוד + אתר + דוחות שנתיים.</p>
+      <div class="revenue">ריטיינר: $1,500-2,500/חודש</div>
+    </div>
+    <div class="segment">
+      <div class="segment-icon">💍</div>
+      <h4>צלמי חתונות (volume)</h4>
+      <p>צלם עם 50+ חתונות בשנה. כל חתן וכלה מקבלים דף אישי עם גלריה, סטוריז, והורדות.</p>
+      <div class="revenue">Pro plan: $19/חודש × אלפי צלמים</div>
+    </div>
+    <div class="segment">
+      <div class="segment-icon">🍽️</div>
+      <h4>מסעדות ושפים</h4>
+      <p>צילום מנות, אירועים פרטיים, שף טייבל. צריכים פיד אינסטגרם מעוצב + תפריט ויזואלי.</p>
+      <div class="revenue">ריטיינר: $800-1,500/חודש</div>
+    </div>
+    <div class="segment">
+      <div class="segment-icon">🏋️</div>
+      <h4>מותגי ספורט ולייפסטייל</h4>
+      <p>אירועי ריצה, פסטיבלים, תחרויות. תוכן לסושיאל + אתר + ספונסרים שרוצים תמונות.</p>
+      <div class="revenue">ריטיינר: $1,500-2,500/חודש</div>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ═══ COMPETITION ═══ -->
+<div class="section section--dark">
+  <div class="label">נוף תחרותי</div>
+  <h2>אין מתחרה <span class="text-gradient">שעושה את זה</span></h2>
+
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>פיצ׳ר</th>
+        <th style="color: #818cf8;">Pixflow</th>
+        <th>Pixieset</th>
+        <th>ShootProof</th>
+        <th>Pic-Time</th>
+      </tr>
+      <tr><td>משלוח גלריות</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
+      <tr><td>Client proofing</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
+      <tr><td>אתר אוטומטי</td><td class="check">✓</td><td class="cross">✕</td><td class="cross">✕</td><td class="cross">✕</td></tr>
+      <tr><td>AI יצירת תוכן</td><td class="check">✓</td><td class="cross">✕</td><td class="cross">✕</td><td class="cross">✕</td></tr>
+      <tr><td>ניהול סושיאל</td><td class="check">✓</td><td class="cross">✕</td><td class="cross">✕</td><td class="cross">✕</td></tr>
+      <tr><td>Content Calendar</td><td class="check">✓</td><td class="cross">✕</td><td class="cross">✕</td><td class="cross">✕</td></tr>
+      <tr><td>Vendor Portal</td><td class="check">✓</td><td class="cross">✕</td><td class="cross">✕</td><td class="cross">✕</td></tr>
+      <tr><td>Pitch Builder</td><td class="check">✓</td><td class="cross">✕</td><td class="cross">✕</td><td class="cross">✕</td></tr>
+      <tr><td>קטלוג סוגי אירועים</td><td class="check">✓</td><td class="cross">✕</td><td class="cross">✕</td><td class="cross">✕</td></tr>
+      <tr><td>AI Design Assistant</td><td class="check">✓</td><td class="cross">✕</td><td class="cross">✕</td><td class="cross">✕</td></tr>
+      <tr><td>אנליטיקס מתקדם</td><td class="check">✓</td><td style="color: rgba(255,255,255,.25);">בסיסי</td><td style="color: rgba(255,255,255,.25);">בסיסי</td><td style="color: rgba(255,255,255,.25);">בסיסי</td></tr>
+      <tr><td>דוח חודשי</td><td class="check">✓</td><td class="cross">✕</td><td class="cross">✕</td><td class="cross">✕</td></tr>
+    </table>
+  </div>
+
+  <p style="margin-top: 24px; text-align: center; font-size: 15px;">
+    <strong style="color: rgba(255,255,255,.7);">המתחרים תקועים ב-"משלוח גלריות". Pixflow הוא <span class="text-gradient">פלטפורמת creative operations</span>.</strong>
+  </p>
+</div>
+
+<div class="divider"></div>
+
+<!-- ═══ TIMELINE ═══ -->
+<div class="section">
+  <div class="label">Timeline</div>
+  <h2>כמה זמן <span class="text-gradient">לבנות</span></h2>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>ספרינט</th><th>זמן</th><th>מה יוצא</th></tr>
+      <tr><td style="color: #818cf8; font-weight: 600;">Sprint 1</td><td>שבוע</td><td>אתר אוטומטי premium</td></tr>
+      <tr><td style="color: #818cf8; font-weight: 600;">Sprint 2</td><td>3 ימים</td><td>AI יצירת טקסטים</td></tr>
+      <tr><td style="color: #818cf8; font-weight: 600;">Sprint 3</td><td>3 ימים</td><td>אנליטיקס (צפיות, הורדות, תובנות)</td></tr>
+      <tr><td style="color: #818cf8; font-weight: 600;">Sprint 4</td><td>שבוע</td><td>Content Calendar מתקדם + פורמטים לסושיאל</td></tr>
+      <tr><td style="color: #818cf8; font-weight: 600;">Sprint 5</td><td>שבוע</td><td>Pitch Builder + PDF</td></tr>
+      <tr><td style="color: #818cf8; font-weight: 600;">Sprint 6</td><td>3 ימים</td><td>AI Design Assistant (עיצוב בצ׳אט)</td></tr>
+      <tr><td style="color: #818cf8; font-weight: 600;">Sprint 7</td><td>3 ימים</td><td>Notifications + דוח חודשי</td></tr>
+      <tr><td style="font-weight: 700; color: #fff;">סה"כ</td><td style="font-weight: 700; color: #818cf8;">5-6 שבועות</td><td style="font-weight: 700; color: #fff;">פלטפורמה מלאה</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ═══ CTA ═══ -->
+<div class="section">
+  <div class="cta-box">
+    <h2 style="color: #fff;">The Bottom Line</h2>
+    <div class="hero-line" style="margin: 16px auto 24px;"></div>
+    <p style="font-size: 18px; max-width: 700px; margin: 0 auto 16px; line-height: 1.8;">
+      Pixflow לא מתחרה עם פלטפורמות משלוח גלריות.<br>
+      <strong style="color: #fff;">Pixflow הופך את הצלם לכזה שחברת ההפקה משלמת לו כל חודש — גם אם אין אירוע.</strong>
+    </p>
+    <p style="font-size: 22px; color: #818cf8; font-weight: 600; margin-top: 24px;">
+      זה הריטיינר. זה העסק.
+    </p>
+  </div>
+
+  <div style="text-align: center; margin-top: 48px; color: rgba(255,255,255,.2); font-size: 12px;">
+    PIXFLOW · From Photos to Platform · 2026
+  </div>
+</div>
+
+</body>
+</html>
