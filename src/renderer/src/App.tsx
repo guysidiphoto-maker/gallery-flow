@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, Component, type ReactNode, type ErrorInfo } from 'react'
 import { useGallery } from './store/gallery'
 import { useSections } from './store/sections'
+import { useVendors } from './store/vendors'
 import { Toolbar } from './components/Toolbar'
 import { GalleryGrid } from './components/GalleryGrid'
 import { PreviewMode } from './components/PreviewMode'
@@ -11,6 +12,7 @@ import { StoryModal } from './components/StoryModal'
 import { ImageViewer } from './components/ImageViewer'
 import { SocialMode } from './components/SocialMode'
 import { SectionsPanel } from './components/SectionsPanel'
+import { VendorsPanel } from './components/VendorsPanel'
 import { PublishModal } from './components/PublishModal'
 import { GalleryDndProvider } from './components/GalleryDndProvider'
 import { RandomizeModal } from './components/RandomizeModal'
@@ -152,6 +154,9 @@ export interface ProjectData {
   /** Per-project sections (gallery groupings). Persisted with the project
    *  for the same reason as topPickIds. */
   sections?: Section[]
+  /** Per-project vendors + image-vendor tags */
+  vendors?: Array<{ id: string; name: string; category: string; email: string; instagram: string; accessCode: string }>
+  vendorTags?: Array<{ imageId: string; vendorId: string }>
   createdAt: string
   updatedAt: string
   deliverySettings?: DeliverySettings
@@ -860,7 +865,14 @@ function MainApp({ business }: { business: Business | null }) {
         return { ...p, sections: secs }
       }))
     })
-    return () => { unsubGallery(); unsubSections() }
+    const unsubVendors = useVendors.subscribe(state => {
+      if (isHydratingProject.current) return
+      setProjects(prev => prev.map(p => {
+        if (p.id !== currentProjectId) return p
+        return { ...p, vendors: state.vendors, vendorTags: state.tags }
+      }))
+    })
+    return () => { unsubGallery(); unsubSections(); unsubVendors() }
   }, [currentProjectId])
 
   // Save current project on app close
@@ -920,6 +932,12 @@ function MainApp({ business }: { business: Business | null }) {
         sections: target.sections ?? [],
         activeSectionFilter: null,
         sectionsDirtyAt: 0,
+      })
+      useVendors.setState({
+        vendors: target.vendors ?? [],
+        tags: target.vendorTags ?? [],
+        activeVendorFilter: null,
+        editingVendorId: null,
       })
     } finally {
       isHydratingProject.current = false
@@ -1231,6 +1249,8 @@ function MainApp({ business }: { business: Business | null }) {
               }}
             />
           )}
+
+          <VendorsPanel />
 
           {/* Main gallery or empty state */}
           <div className={`app__main ${isSectionsPanelOpen ? 'app__main--sections-open' : ''} ${showDuplicatesPanel ? 'app__main--sidebar-open' : ''}`}>

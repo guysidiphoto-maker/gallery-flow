@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useGallery } from '../store/gallery'
 import { useSocial } from '../store/social'
 import { useSections } from '../store/sections'
+import { useVendors } from '../store/vendors'
 import type { SortMode } from '../types'
 import type { ProjectData } from '../App'
 
@@ -26,6 +27,7 @@ export function Toolbar({ currentProject, projects, onImport, onImportCreate, on
   } = useGallery()
   const { openSocial, initFromPicks } = useSocial()
   const { isPanelOpen: isSectionsPanelOpen, togglePanel: toggleSectionsPanel, sections } = useSections()
+  const { isPanelOpen: isVendorsPanelOpen, togglePanel: toggleVendorsPanel } = useVendors()
 
   const [showSwitcher, setShowSwitcher] = useState(false)
   const [userName, setUserName] = useState('')
@@ -126,6 +128,12 @@ export function Toolbar({ currentProject, projects, onImport, onImportCreate, on
               onClick={hasPicks ? () => { initFromPicks(images, topPickIds); openSocial() } : undefined}
             >
               Post
+            </button>
+            <button
+              className={`tb__nav-item ${isVendorsPanelOpen ? 'tb__nav-item--active' : ''}`}
+              onClick={toggleVendorsPanel}
+            >
+              Vendors
             </button>
           </nav>
         )}
