@@ -45,7 +45,7 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
   const [copiedGalleryId, setCopiedGalleryId] = useState<string | null>(null)
   const [clientPageStatus, setClientPageStatus] = useState<'idle' | 'loading' | 'copied' | 'empty'>('idle')
 
-  const showClientPageButton = clientProjects.length >= 2
+  const showClientPageButton = clientProjects.some(p => p.publishState?.status === 'live')
 
   const handleShareClientPage = async () => {
     setClientPageStatus('loading')
@@ -66,9 +66,10 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
     }
   }
 
-  const copyGalleryLink = (projectId: string) => {
-    navigator.clipboard.writeText(`pixflow://gallery/${projectId}`).then(() => {
-      setCopiedGalleryId(projectId)
+  const copyGalleryLink = (project: typeof clientProjects[0]) => {
+    const url = project.publishState?.publicUrl || `pixflow://gallery/${project.id}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedGalleryId(project.id)
       setShareMenuId(null)
       setTimeout(() => setCopiedGalleryId(null), 1500)
     })
@@ -238,7 +239,7 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
                           >View</button>
                           <button
                             className="cdv__card-live-btn"
-                            onClick={e => { e.stopPropagation(); copyGalleryLink(p.id) }}
+                            onClick={e => { e.stopPropagation(); copyGalleryLink(p) }}
                           >Copy Link</button>
                         </div>
                       )}
@@ -302,7 +303,7 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
                           </svg>
                           Send via Email
                         </button>
-                        <button className="share-popup__item" onClick={() => copyGalleryLink(p.id)}>
+                        <button className="share-popup__item" onClick={() => copyGalleryLink(p)}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
                             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>

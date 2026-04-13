@@ -23,14 +23,14 @@ function readString(obj: Record<string, unknown> | null, key: string): string {
 }
 
 export function ClientPage() {
-  // Parse client ID from URL: /{slug}/client/{uuid} or /client/{uuid}
-  const clientId = (() => {
+  // Parse client ID and optional slug from URL: /{slug}/client/{uuid} or /client/{uuid}
+  const { clientId, slug } = (() => {
     const path = window.location.pathname.replace(/\/$/, '')
-    const slugMatch = path.match(/^\/[^/]+\/client\/([^/]+)$/)
-    if (slugMatch) return slugMatch[1]
+    const slugMatch = path.match(/^\/([^/]+)\/client\/([^/]+)$/)
+    if (slugMatch) return { clientId: slugMatch[2], slug: slugMatch[1] }
     const directMatch = path.match(/^\/client\/([^/]+)$/)
-    if (directMatch) return directMatch[1]
-    return ''
+    if (directMatch) return { clientId: directMatch[1], slug: '' }
+    return { clientId: '', slug: '' }
   })()
 
   const [galleries, setGalleries] = useState<GalleryRow[]>([])
@@ -161,7 +161,7 @@ export function ClientPage() {
             return (
               <a
                 key={g.id}
-                href={`/gallery/${g.id}`}
+                href={slug ? `/${slug}/gallery/${g.id}` : `/gallery/${g.id}`}
                 style={{
                   display: 'block',
                   textDecoration: 'none',
