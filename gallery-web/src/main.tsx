@@ -6,6 +6,7 @@ import { DemoPage } from './pages/DemoPage'
 import { TermsPage } from './pages/TermsPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { ClientPage } from './pages/ClientPage'
+import { ClientDashboard } from './pages/ClientDashboard'
 import './styles.css'
 
 function Router() {
@@ -15,6 +16,9 @@ function Router() {
   if (path === '/demo') return <DemoPage />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
+  // Client dashboard (authenticated)
+  if (/\/client\/[^/]+\/dashboard/.test(path)) return <ClientDashboard />
+  // Client public page
   if (path.startsWith('/client/') || /^\/[^/]+\/client\//.test(path)) return <ClientPage />
   if (path.startsWith('/gallery') || /^\/[^/]+\/gallery\//.test(path)) return <App />
 

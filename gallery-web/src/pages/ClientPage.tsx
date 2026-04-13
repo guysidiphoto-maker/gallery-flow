@@ -307,6 +307,20 @@ export function ClientPage() {
               {item.label}
             </button>
           ))}
+          {/* Client login button */}
+          <a
+            href={slug ? `/${slug}/client/${clientId}/dashboard` : `/client/${clientId}/dashboard`}
+            style={{
+              marginLeft: 16, padding: '6px 14px', borderRadius: 7,
+              background: 'rgba(99,102,241,.1)', border: '1px solid rgba(99,102,241,.2)',
+              color: '#818cf8', fontSize: 11, fontWeight: 600,
+              textDecoration: 'none', transition: 'all .2s', whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,.2)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,.1)' }}
+          >
+            Client Login
+          </a>
         </div>
       </nav>
 
