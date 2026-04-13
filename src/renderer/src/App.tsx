@@ -27,6 +27,7 @@ import { ExportPanel } from './components/ExportPanel'
 import { RenameFab } from './components/RenameFab'
 import { ClientGalleryPage } from './components/ClientGalleryPage'
 import { PublishPanel } from './components/PublishPanel'
+import { toLocalURL } from './utils/imageUtils'
 import { UploadFloater } from './components/UploadFloater'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { KeyboardShortcuts } from './components/KeyboardShortcuts'
@@ -61,6 +62,10 @@ export interface DeliverySettings {
   galleryTitle: string
   clientName: string
   coverImageId: string | null
+  coverImageUrl: string | null
+  coverCrop: { zoom: number; x: number; y: number } | null
+  clientSelectionEnabled: boolean
+  clientCode: string
   layoutMode: '1-col' | '2-col' | '3-col'
   imageSpacing: 'none' | 'small' | 'medium'
   cornerStyle: 'sharp' | 'rounded'
@@ -87,6 +92,10 @@ export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
   galleryTitle: '',
   clientName: '',
   coverImageId: null,
+  coverImageUrl: null,
+  coverCrop: null,
+  clientSelectionEnabled: false,
+  clientCode: '',
   layoutMode: '2-col',
   imageSpacing: 'small',
   cornerStyle: 'rounded',
@@ -282,10 +291,10 @@ function MainApp({ business }: { business: Business | null }) {
   const [projects, setProjects] = useState<ProjectData[]>([])
   const [clients, setClients] = useState<ClientData[]>([])
   const [nextId, setNextId] = useState(1)
-  const projectsLoaded = useRef(false)
-  const clientsLoaded = useRef(false)
+  const [projectsLoaded, setProjectsLoaded] = useState(false)
+  const [clientsLoaded, setClientsLoaded] = useState(false)
   const [imageRegistry, setImageRegistry] = useState<Record<string, ImageFile>>({})
-  const registryLoaded = useRef(false)
+  const [registryLoaded, setRegistryLoaded] = useState(false)
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null)
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [importInitialView, setImportInitialView] = useState<'menu' | 'create'>('menu')
@@ -681,8 +690,8 @@ function MainApp({ business }: { business: Business | null }) {
       }
 
       setImageRegistry(registry)
-      projectsLoaded.current = true
-      registryLoaded.current = true
+      setProjectsLoaded(true)
+      setRegistryLoaded(true)
     })()
   }, [])
 
@@ -692,7 +701,7 @@ function MainApp({ business }: { business: Business | null }) {
 
   // Re-check existence whenever the registry changes (load, relink, import).
   useEffect(() => {
-    if (!registryLoaded.current) return
+    if (!registryLoaded) return
     const all = Object.values(imageRegistry).map(img => img.path).filter(Boolean) as string[]
     if (all.length === 0) {
       setMissingPaths(new Set())
@@ -764,7 +773,7 @@ function MainApp({ business }: { business: Business | null }) {
       if (val && Array.isArray(val)) {
         setClients(val as ClientData[])
       }
-      clientsLoaded.current = true
+      setClientsLoaded(true)
     })
   }, [])
 
@@ -781,23 +790,24 @@ function MainApp({ business }: { business: Business | null }) {
     })
   }, [])
 
-  // Persist projects to prefs
+  // Persist projects to prefs — depends on projectsLoaded so it only fires
+  // on renders AFTER the loaded data is in state (not the initial [] render).
   useEffect(() => {
-    if (!projectsLoaded.current) return
+    if (!projectsLoaded) return
     window.api.setPref('projects', projects)
-  }, [projects])
+  }, [projects, projectsLoaded])
 
   // Persist image registry to prefs
   useEffect(() => {
-    if (!registryLoaded.current) return
+    if (!registryLoaded) return
     window.api.setPref('imageRegistry', imageRegistry)
-  }, [imageRegistry])
+  }, [imageRegistry, registryLoaded])
 
   // Persist clients to prefs
   useEffect(() => {
-    if (!clientsLoaded.current) return
+    if (!clientsLoaded) return
     window.api.setPref('clients', clients)
-  }, [clients])
+  }, [clients, clientsLoaded])
 
   // Live-mirror top picks + sections from their zustand stores into the
   // current project so they persist on every change (not just on switch /
@@ -1254,6 +1264,7 @@ function MainApp({ business }: { business: Business | null }) {
             imageCount={project.imageIds.length}
             topPickCount={galleryTopPickIds.size}
             settings={settings}
+            projectImages={project.imageIds.map(id => imageRegistry[id]).filter(Boolean).map(img => ({ id: img.id, path: toLocalURL(img.path) }))}
             isAlreadyLive={project.publishState?.status === 'live'}
             onSettingsChange={(s) => {
               setProjects(prev => prev.map(p => p.id === publishProjectId ? { ...p, deliverySettings: s } : p))

@@ -593,6 +593,15 @@ ipcMain.handle('export-social-package', async (_e, scenes: SocialExportScene[], 
   }
 })
 
+ipcMain.handle('select-file', async (_e, options: { filters?: Array<{ name: string; extensions: string[] }> }) => {
+  const result = await dialog.showOpenDialog({
+    title: 'Choose File',
+    properties: ['openFile'],
+    filters: options?.filters,
+  })
+  return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+})
+
 // ─── Sections / Publish ───────────────────────────────────────────────────────
 
 ipcMain.handle('choose-publish-dir', async () => {

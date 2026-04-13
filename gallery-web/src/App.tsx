@@ -25,7 +25,7 @@ function useColumnCount(layoutMode: string): number {
   return cols
 }
 
-function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect }: {
+function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide }: {
   images: GalleryImage[]
   thumbUrl: (img: GalleryImage) => string
   layoutMode: string
@@ -36,6 +36,9 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
   selectMode?: boolean
   selectedIds?: Set<string>
   onToggleSelect?: (id: string) => void
+  clientMode?: boolean
+  hiddenIds?: Set<string>
+  onToggleHide?: (id: string) => void
 }) {
   const cols = useColumnCount(layoutMode)
   const [heights, setHeights] = useState<number[]>([])
@@ -99,7 +102,7 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                     cursor: selectMode ? 'pointer' : 'pointer',
                     background: 'rgba(255,255,255,.03)',
                     transition: 'opacity .15s',
-                    opacity: selectMode && !isSelected ? 0.6 : 1,
+                    opacity: selectMode && !isSelected ? 0.6 : (clientMode && hiddenIds?.has(img.id)) ? 0.35 : 1,
                   }}
                   onLoad={e => handleLoad(index, e.currentTarget)}
                   onClick={() => selectMode ? onToggleSelect?.(img.id) : onImageClick(index)}
@@ -118,6 +121,36 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                     }}
                   >
                     {isSelected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                  </button>
+                )}
+                {/* Client hide/unhide button */}
+                {clientMode && onToggleHide && (
+                  <button
+                    className="grid-item__dl"
+                    onClick={e => { e.stopPropagation(); onToggleHide(img.id) }}
+                    style={{
+                      position: 'absolute', top: 8, right: 8,
+                      width: 32, height: 32, borderRadius: '50%',
+                      border: 'none',
+                      background: hiddenIds?.has(img.id) ? 'rgba(239,68,68,.8)' : 'rgba(0,0,0,.5)',
+                      backdropFilter: 'blur(8px)',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: hiddenIds?.has(img.id) ? 1 : undefined,
+                      transition: 'opacity .15s, background .15s',
+                    }}
+                  >
+                    {hiddenIds?.has(img.id) ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    )}
                   </button>
                 )}
                 {/* Download button on hover */}
@@ -149,13 +182,15 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
 
 // ─── Welcome Screen ─────────────────────────────────────────────────────────
 
-function WelcomeScreen({ galleryTitle, clientName, studioName, studioWebsite, images, storageUrl: getUrl, onEnter }: {
+function WelcomeScreen({ galleryTitle, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter }: {
   galleryTitle: string
   clientName: string
   studioName: string
   studioWebsite?: string
   images: GalleryImage[]
   storageUrl: (path: string) => string
+  coverImageUrl?: string | null
+  coverCrop?: { zoom: number; x: number; y: number } | null
   onEnter: () => void
 }) {
   const [visible, setVisible] = useState(false)
@@ -177,35 +212,54 @@ function WelcomeScreen({ galleryTitle, clientName, studioName, studioWebsite, im
       opacity: entered ? 0 : 1, transition: 'opacity .6s ease',
       overflow: 'hidden',
     }}>
-      {/* Background collage */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        display: 'grid',
-        gridTemplateColumns: images.length >= 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
-        gridTemplateRows: images.length >= 4 ? 'repeat(2, 1fr)' : '1fr',
-        gap: 3, padding: 0,
-        opacity: visible ? 0.25 : 0,
-        transition: 'opacity 1.5s ease',
-        filter: 'blur(1px)',
-      }}>
-        {images.map((img, i) => (
-          <div key={img.id} style={{
-            overflow: 'hidden',
-            opacity: visible ? 1 : 0,
-            transition: `opacity .8s ease ${0.1 + i * 0.15}s`,
-          }}>
-            <img
-              src={getUrl(img.thumbnail_path || img.storage_path)}
-              alt=""
-              style={{
-                width: '100%', height: '100%', objectFit: 'cover',
-                transform: visible ? 'scale(1.05)' : 'scale(1.15)',
-                transition: 'transform 8s ease',
-              }}
-            />
-          </div>
-        ))}
-      </div>
+      {/* Background: single cover image or collage */}
+      {coverImageUrl ? (
+        <div style={{
+          position: 'absolute', inset: 0,
+          opacity: visible ? 0.35 : 0,
+          transition: 'opacity 1.5s ease',
+        }}>
+          <img
+            src={coverImageUrl}
+            alt=""
+            style={{
+              width: '100%', height: '100%', objectFit: 'cover',
+              objectPosition: coverCrop ? `${coverCrop.x}% ${coverCrop.y}%` : 'center',
+              transform: `scale(${coverCrop ? coverCrop.zoom + (visible ? 0.02 : 0.08) : (visible ? 1.02 : 1.08)})`,
+              transition: 'transform 8s ease',
+            }}
+          />
+        </div>
+      ) : (
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'grid',
+          gridTemplateColumns: images.length >= 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
+          gridTemplateRows: images.length >= 4 ? 'repeat(2, 1fr)' : '1fr',
+          gap: 3, padding: 0,
+          opacity: visible ? 0.25 : 0,
+          transition: 'opacity 1.5s ease',
+          filter: 'blur(1px)',
+        }}>
+          {images.map((img, i) => (
+            <div key={img.id} style={{
+              overflow: 'hidden',
+              opacity: visible ? 1 : 0,
+              transition: `opacity .8s ease ${0.1 + i * 0.15}s`,
+            }}>
+              <img
+                src={getUrl(img.thumbnail_path || img.storage_path)}
+                alt=""
+                style={{
+                  width: '100%', height: '100%', objectFit: 'cover',
+                  transform: visible ? 'scale(1.05)' : 'scale(1.15)',
+                  transition: 'transform 8s ease',
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Gradient overlay */}
       <div style={{
@@ -361,6 +415,10 @@ export function App() {
   const [selectMode, setSelectMode] = useState(false)
   const [dlProgress, setDlProgress] = useState<string | null>(null)
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<string>('all-images')
+  const [viewerRole, setViewerRole] = useState<'none' | 'client' | 'guest'>('none')
+  const [clientCodeInput, setClientCodeInput] = useState('')
+  const [clientCodeError, setClientCodeError] = useState(false)
+  const [hiddenImageIds, setHiddenImageIds] = useState<Set<string>>(new Set())
   // Stories are collapsed by default. The viewer surfaces them via a toggle
   // button in the section-nav toolbar so the gallery doesn't open with a big
   // stories block above the photos.
@@ -418,6 +476,18 @@ export function App() {
     elements.forEach(el => observer.observe(el))
     return () => observer.disconnect()
   }, [sections, showWelcome, images])
+
+  // Load hidden images for this gallery
+  useEffect(() => {
+    if (!gallery) return
+    supabase
+      .from('gallery_hidden_images')
+      .select('image_id')
+      .eq('gallery_id', gallery.id)
+      .then(({ data }) => {
+        if (data) setHiddenImageIds(new Set(data.map(r => r.image_id)))
+      })
+  }, [gallery?.id])
 
   // On first load, if the URL has a hash (e.g. #section-abc), scroll to it
   // once the masonry has rendered.
@@ -522,6 +592,37 @@ export function App() {
   const showFooterCredit = s(raw, 'showFooterCredit', true)
   const showStories      = s(raw, 'showStories', true)
   const downloadQuality  = s(raw, 'downloadQuality', 'original')
+  const clientSelectionEnabled = s(raw, 'clientSelectionEnabled', false)
+  const clientCode       = s(raw, 'clientCode', '')
+
+  // Auto-skip role selection if client selection is not enabled,
+  // or restore client role from session
+  useEffect(() => {
+    if (!gallery) return
+    if (!clientSelectionEnabled) {
+      setViewerRole('guest')
+      return
+    }
+    const saved = sessionStorage.getItem(`client-role-${gallery.id}`)
+    if (saved === 'client') setViewerRole('client')
+  }, [gallery, clientSelectionEnabled])
+
+  // Toggle hidden state for an image (client mode)
+  const toggleHideImage = async (imageId: string) => {
+    if (!gallery) return
+    const isHidden = hiddenImageIds.has(imageId)
+    if (isHidden) {
+      await supabase.from('gallery_hidden_images').delete()
+        .eq('gallery_id', gallery.id).eq('image_id', imageId)
+      setHiddenImageIds(prev => { const next = new Set(prev); next.delete(imageId); return next })
+    } else {
+      await supabase.from('gallery_hidden_images').insert({ gallery_id: gallery.id, image_id: imageId })
+      setHiddenImageIds(prev => new Set(prev).add(imageId))
+    }
+  }
+
+  // Visible images: guests see only non-hidden, clients see all
+  const visibleImages = viewerRole === 'client' ? images : images.filter(img => !hiddenImageIds.has(img.id))
 
   // Backward compat: new downloadsEnabled falls back to old allowDownloads
   const downloadsEnabled = raw.downloadsEnabled !== undefined
@@ -550,6 +651,21 @@ export function App() {
   const isDemoGallery = !!gallery?.demo_expires_at
   const imgBucket = isDemoGallery ? 'demo-uploads' : 'gallery-images'
 
+  // Resolve cover image URL from settings
+  const resolvedCoverUrl = (() => {
+    const raw: Partial<DeliverySettings> = (gallery?.delivery_settings || {}) as Partial<DeliverySettings>
+    // Custom uploaded cover image (full URL stored in settings)
+    if (raw.coverImageUrl) return raw.coverImageUrl
+    // Cover from gallery image by ID
+    if (raw.coverImageId) {
+      const coverId = raw.coverImageId
+      const coverFilename = coverId.includes('/') ? coverId.split('/').pop() : coverId
+      const coverImg = images.find(i => i.id === coverId || i.filename === coverId || i.filename === coverFilename)
+      if (coverImg) return storageUrl(imgBucket, coverImg.storage_path)
+    }
+    return null
+  })()
+
   if (showWelcome && images.length > 0) {
     return (
       <WelcomeScreen
@@ -558,9 +674,115 @@ export function App() {
         studioName={studioName}
         studioWebsite={studioWebsite}
         images={welcomeImages}
+        coverImageUrl={resolvedCoverUrl}
+        coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
         storageUrl={(path: string) => storageUrl(imgBucket, path)}
         onEnter={() => setShowWelcome(false)}
       />
+    )
+  }
+
+  // ── Role selection (Client / Guest) ─────────────────────────────────────
+  if (clientSelectionEnabled && viewerRole === 'none') {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 999, background: '#0a0a0c',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      }}>
+        {studioName && (
+          <p style={{ fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginBottom: 8 }}>
+            {studioName}
+          </p>
+        )}
+        <h2 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: '0 0 8px' }}>{galleryTitle}</h2>
+        <p style={{ fontSize: 14, color: 'rgba(255,255,255,.4)', margin: '0 0 36px' }}>How would you like to view this gallery?</p>
+
+        <div style={{ display: 'flex', gap: 14, marginBottom: 24 }}>
+          <button
+            onClick={() => setViewerRole('guest')}
+            style={{
+              padding: '14px 36px', borderRadius: 10,
+              border: '1px solid rgba(255,255,255,.15)', background: 'rgba(255,255,255,.05)',
+              color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer',
+              fontFamily: 'inherit', transition: 'all .2s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.1)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.05)' }}
+          >
+            Guest
+          </button>
+          <button
+            onClick={() => {
+              // Show code input
+              const el = document.getElementById('client-code-section')
+              if (el) el.style.display = 'block'
+            }}
+            style={{
+              padding: '14px 36px', borderRadius: 10,
+              border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              fontFamily: 'inherit', transition: 'all .2s',
+              boxShadow: '0 4px 20px rgba(99,102,241,.3)',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.9' }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+          >
+            I'm the Client
+          </button>
+        </div>
+
+        {/* Client code input */}
+        <div id="client-code-section" style={{ display: 'none', textAlign: 'center' }}>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', marginBottom: 10 }}>Enter your client code</p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="text"
+              value={clientCodeInput}
+              onChange={e => { setClientCodeInput(e.target.value.toUpperCase()); setClientCodeError(false) }}
+              placeholder="CODE"
+              style={{
+                padding: '10px 14px', fontSize: 14, fontFamily: 'inherit',
+                color: '#fff', background: 'rgba(255,255,255,.06)',
+                border: clientCodeError ? '1px solid #ef4444' : '1px solid rgba(255,255,255,.15)',
+                borderRadius: 8, outline: 'none', letterSpacing: '0.1em',
+                width: 160, textAlign: 'center',
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  if (clientCodeInput === clientCode) {
+                    setViewerRole('client')
+                    sessionStorage.setItem(`client-role-${gallery.id}`, 'client')
+                  } else {
+                    setClientCodeError(true)
+                  }
+                }
+              }}
+              autoFocus
+            />
+            <button
+              onClick={() => {
+                if (clientCodeInput === clientCode) {
+                  setViewerRole('client')
+                  sessionStorage.setItem(`client-role-${gallery.id}`, 'client')
+                } else {
+                  setClientCodeError(true)
+                }
+              }}
+              style={{
+                padding: '10px 20px', borderRadius: 8, border: 'none',
+                background: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Enter
+            </button>
+          </div>
+          {clientCodeError && (
+            <p style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>Invalid code</p>
+          )}
+        </div>
+      </div>
     )
   }
 
@@ -789,7 +1011,7 @@ export function App() {
           already labels and counts it. */}
       <section id="all-images" className="gallery-section gallery-section--all">
         <MasonryGrid
-          images={images}
+          images={viewerRole === 'client' ? images : visibleImages}
           thumbUrl={thumbUrl}
           layoutMode={layoutMode}
           imageSpacing={imageSpacing}
@@ -803,11 +1025,14 @@ export function App() {
             if (next.has(id)) next.delete(id); else next.add(id)
             return next
           })}
+          clientMode={viewerRole === 'client'}
+          hiddenIds={hiddenImageIds}
+          onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
         />
       </section>
 
       {sections.length > 0 && sections.map(sec => {
-        const sectionImages = images.filter(img => img.section_id === sec.id)
+        const sectionImages = visibleImages.filter(img => img.section_id === sec.id)
         if (sectionImages.length === 0) return null
         return (
           <section key={sec.id} id={`section-${sec.id}`} className="gallery-section">
@@ -836,6 +1061,9 @@ export function App() {
                 if (next.has(id)) next.delete(id); else next.add(id)
                 return next
               })}
+              clientMode={viewerRole === 'client'}
+              hiddenIds={hiddenImageIds}
+              onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
             />
           </section>
         )

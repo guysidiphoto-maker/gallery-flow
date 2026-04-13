@@ -11,6 +11,10 @@ export interface DeliverySettings {
   galleryTitle: string
   clientName: string
   coverImageId: string | null
+  coverImageUrl: string | null
+  coverCrop: { zoom: number; x: number; y: number } | null
+  clientSelectionEnabled: boolean
+  clientCode: string
   layoutMode: '1-col' | '2-col' | '3-col'
   imageSpacing: 'none' | 'small' | 'medium'
   cornerStyle: 'sharp' | 'rounded'

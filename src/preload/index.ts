@@ -132,6 +132,10 @@ const api = {
   findFilesByName: (folderPath: string, basenames: string[]): Promise<Record<string, string>> =>
     ipcRenderer.invoke('find-files-by-name', folderPath, basenames),
 
+  // ── File picker ────────────────────────────────────────────────────────
+  selectFile: (options: { filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null> =>
+    ipcRenderer.invoke('select-file', options),
+
   // ── Sign out (triggered from Mac app menu) ─────────────────────────────
   onSignOut: (cb: () => void): (() => void) => {
     const handler = () => cb()

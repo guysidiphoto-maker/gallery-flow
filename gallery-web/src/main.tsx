@@ -15,8 +15,8 @@ function Router() {
   if (path === '/demo') return <DemoPage />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
-  if (path.startsWith('/client/')) return <ClientPage />
-  if (path.startsWith('/gallery')) return <App />
+  if (path.startsWith('/client/') || /^\/[^/]+\/client\//.test(path)) return <ClientPage />
+  if (path.startsWith('/gallery') || /^\/[^/]+\/gallery\//.test(path)) return <App />
 
   // Fallback: redirect to landing
   window.location.replace('/')

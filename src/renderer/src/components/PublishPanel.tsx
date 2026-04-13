@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import type { DeliverySettings } from '../App'
 import { usePublish } from '../store/publish'
 import type { PublishStatus } from '../lib/uploadTypes'
 import { pauseOriginals, resumeOriginals, retryFailedOriginals } from '../lib/cloudUpload'
 import { computeByteProgress, computeEtaSeconds, formatEta, formatBytes } from '../lib/eta'
 import { fetchPlanLimits, type PlanLimits } from '../lib/planGuard'
+import { toLocalURL } from '../utils/imageUtils'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -237,6 +238,217 @@ const S = {
   accent: '#6366f1',
 }
 
+// ─── Cover Image Picker with Preview ───────────────────────────────────────
+
+function CoverImagePicker({ settings, projectImages, onUpdate }: {
+  settings: DeliverySettings
+  projectImages?: Array<{ id: string; path: string }>
+  onUpdate: (partial: Partial<DeliverySettings>) => void
+}) {
+  const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
+  const [dragging, setDragging] = useState(false)
+  const dragStart = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null)
+
+  const hasCover = !!(settings.coverImageId || settings.coverImageUrl)
+  const crop = settings.coverCrop || { zoom: 1, x: 50, y: 50 }
+
+  const coverSrc = settings.coverImageUrl
+    ? (settings.coverImageUrl.startsWith('http') ? settings.coverImageUrl : toLocalURL(settings.coverImageUrl))
+    : projectImages?.find(i => i.id === settings.coverImageId)?.path || ''
+
+  const setCrop = (partial: Partial<typeof crop>) => {
+    const next = { ...crop, ...partial }
+    next.x = Math.max(0, Math.min(100, next.x))
+    next.y = Math.max(0, Math.min(100, next.y))
+    next.zoom = Math.max(1, Math.min(3, next.zoom))
+    onUpdate({ coverCrop: next })
+  }
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!hasCover) return
+    e.preventDefault()
+    setDragging(true)
+    dragStart.current = { x: e.clientX, y: e.clientY, startX: crop.x, startY: crop.y }
+  }
+
+  useEffect(() => {
+    if (!dragging) return
+    const handleMove = (e: MouseEvent) => {
+      if (!dragStart.current) return
+      const dx = (e.clientX - dragStart.current.x) * 0.15
+      const dy = (e.clientY - dragStart.current.y) * 0.15
+      setCrop({
+        x: dragStart.current.startX - dx,
+        y: dragStart.current.startY - dy,
+      })
+    }
+    const handleUp = () => {
+      setDragging(false)
+      dragStart.current = null
+    }
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [dragging])
+
+  const previewAspect = previewMode === 'desktop' ? '16 / 9' : '9 / 16'
+  const previewHeight = previewMode === 'desktop' ? 160 : 280
+
+  return (
+    <div style={S.section}>
+      <p style={S.sectionTitle}>Welcome Screen</p>
+      <p style={{ fontSize: 11, color: 'rgba(255,255,255,.4)', margin: '0 0 10px' }}>
+        Choose a cover image for the gallery welcome screen
+      </p>
+
+      {/* Preview with device toggle */}
+      {hasCover && (
+        <div style={{ marginBottom: 10 }}>
+          {/* Device toggle */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+            {(['desktop', 'mobile'] as const).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setPreviewMode(mode)}
+                style={{
+                  flex: 1, padding: '5px 0', fontSize: 10, fontWeight: 600,
+                  fontFamily: 'inherit', border: 'none', borderRadius: 5, cursor: 'pointer',
+                  background: previewMode === mode ? 'rgba(99,102,241,.8)' : 'rgba(255,255,255,.06)',
+                  color: previewMode === mode ? '#fff' : 'rgba(255,255,255,.5)',
+                  transition: 'all .15s',
+                }}
+              >
+                {mode === 'desktop' ? 'Desktop' : 'Mobile'}
+              </button>
+            ))}
+          </div>
+
+          {/* Preview frame */}
+          <div
+            onMouseDown={handleMouseDown}
+            style={{
+              position: 'relative', borderRadius: 8, overflow: 'hidden',
+              aspectRatio: previewAspect, maxHeight: previewHeight,
+              cursor: dragging ? 'grabbing' : 'grab',
+              border: '1px solid rgba(255,255,255,.1)',
+              background: '#0a0a0c',
+            }}
+          >
+            <img
+              src={coverSrc}
+              alt="Cover preview"
+              draggable={false}
+              style={{
+                position: 'absolute', inset: 0,
+                width: '100%', height: '100%', objectFit: 'cover',
+                objectPosition: `${crop.x}% ${crop.y}%`,
+                transform: `scale(${crop.zoom})`,
+                transition: dragging ? 'none' : 'transform .2s',
+                opacity: 0.35,
+              }}
+            />
+            {/* Simulated overlay text */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'radial-gradient(ellipse at center, rgba(10,10,12,.3) 0%, rgba(10,10,12,.8) 100%)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ fontSize: 8, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginBottom: 4 }}>
+                {settings.studioName || 'Studio Name'}
+              </span>
+              <span style={{ fontSize: previewMode === 'desktop' ? 18 : 14, fontWeight: 700, color: '#fff' }}>
+                {settings.galleryTitle || 'Gallery Title'}
+              </span>
+            </div>
+            {/* Drag hint */}
+            <div style={{
+              position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)',
+              fontSize: 9, color: 'rgba(255,255,255,.3)', pointerEvents: 'none',
+            }}>
+              Drag to reposition
+            </div>
+            {/* Clear button */}
+            <button
+              onClick={(e) => { e.stopPropagation(); onUpdate({ coverImageId: null, coverImageUrl: null, coverCrop: null }) }}
+              style={{
+                position: 'absolute', top: 6, right: 6,
+                width: 20, height: 20, borderRadius: '50%',
+                background: 'rgba(0,0,0,.6)', border: 'none',
+                color: '#fff', fontSize: 11, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Zoom slider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,.4)' }}>Zoom</span>
+            <input
+              type="range" min="100" max="300" value={Math.round(crop.zoom * 100)}
+              onChange={e => setCrop({ zoom: Number(e.target.value) / 100 })}
+              style={{ flex: 1, accentColor: '#6366f1', height: 3 }}
+            />
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,.5)', minWidth: 28, textAlign: 'right' }}>
+              {Math.round(crop.zoom * 100)}%
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Pick from gallery */}
+      {projectImages && projectImages.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ ...S.label, marginBottom: 6, fontSize: 11 }}>From gallery</div>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4,
+            maxHeight: 160, overflowY: 'auto', borderRadius: 6,
+          }}>
+            {projectImages.map(img => (
+              <div
+                key={img.id}
+                onClick={() => onUpdate({ coverImageId: img.id, coverImageUrl: null, coverCrop: { zoom: 1, x: 50, y: 50 } })}
+                style={{
+                  aspectRatio: '1', borderRadius: 4, overflow: 'hidden', cursor: 'pointer',
+                  border: settings.coverImageId === img.id ? '2px solid #6366f1' : '2px solid transparent',
+                  opacity: settings.coverImageId === img.id ? 1 : 0.7,
+                  transition: 'opacity .15s, border-color .15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '1' }}
+                onMouseLeave={e => { if (settings.coverImageId !== img.id) e.currentTarget.style.opacity = '0.7' }}
+              >
+                <img src={img.path} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Upload custom image */}
+      <button
+        onClick={async () => {
+          const result = await window.api?.selectFile?.({ filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }] })
+          if (result) onUpdate({ coverImageId: null, coverImageUrl: result, coverCrop: { zoom: 1, x: 50, y: 50 } })
+        }}
+        style={{
+          width: '100%', padding: '8px 12px',
+          background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)',
+          borderRadius: 6, color: 'rgba(255,255,255,.6)', fontSize: 11,
+          fontFamily: 'inherit', cursor: 'pointer', transition: 'background .15s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.04)' }}
+      >
+        Upload custom image…
+      </button>
+    </div>
+  )
+}
+
 // ─── Reusable Components ────────────────────────────────────────────────────
 
 function Toggle({ value, onChange, disabled }: { value: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -330,7 +542,7 @@ function PublishStep({ title, detail, state, percent }: {
 export function PublishPanel({
   projectName, clientName, imageCount, topPickCount,
   settings, onSettingsChange, onPublish, onClose, phase,
-  error, publicUrl, onRetry, onHide, onCancel, isAlreadyLive,
+  error, publicUrl, onRetry, onHide, onCancel, projectImages, isAlreadyLive,
 }: PublishPanelProps) {
   const pub = usePublish()
   const { progress, publishStatus, isPaused, queueItems, startedAt } = pub
@@ -507,6 +719,48 @@ export function PublishPanel({
                     { label: 'Sharp', value: 'sharp' as const }, { label: 'Rounded', value: 'rounded' as const },
                   ]} value={settings.cornerStyle} onChange={v => update({ cornerStyle: v })} />
                 </div>
+              </div>
+
+              {/* Welcome Screen Cover Image */}
+              <CoverImagePicker
+                settings={settings}
+                projectImages={projectImages}
+                onUpdate={update}
+              />
+
+              {/* Client Selection */}
+              <div style={S.section}>
+                <p style={S.sectionTitle}>Client Selection</p>
+                <div style={S.row}>
+                  <div>
+                    <div style={S.label}>Enable client proofing</div>
+                    <div style={S.sublabel}>Client can hide photos from the gallery</div>
+                  </div>
+                  <Toggle value={settings.clientSelectionEnabled} onChange={v => update({ clientSelectionEnabled: v })} />
+                </div>
+                {settings.clientSelectionEnabled && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ ...S.label, marginBottom: 6, fontSize: 11 }}>Client code</div>
+                    <input
+                      type="text"
+                      value={settings.clientCode}
+                      onChange={e => update({ clientCode: e.target.value.toUpperCase() })}
+                      placeholder="e.g. SARAH2026"
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        padding: '8px 10px', fontSize: 12, fontFamily: 'inherit',
+                        color: '#fff', background: 'rgba(255,255,255,.06)',
+                        border: '1px solid rgba(255,255,255,.1)', borderRadius: 6,
+                        outline: 'none', letterSpacing: '0.05em',
+                      }}
+                      onFocus={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.5)' }}
+                      onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)' }}
+                    />
+                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', marginTop: 4 }}>
+                      Share this code with your client so they can curate the gallery
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Stories */}

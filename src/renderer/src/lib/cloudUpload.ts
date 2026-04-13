@@ -163,6 +163,33 @@ export async function publishGallery(
   store.setPublicUrl(publicUrl)
   log('gallery-created', galleryId)
 
+  // ── Step 2a: Upload custom cover image if provided ────────────────────
+  const coverImageUrl = deliverySettings.coverImageUrl as string | null
+  if (coverImageUrl && typeof coverImageUrl === 'string' && !coverImageUrl.startsWith('http')) {
+    // It's a local file path — upload to storage
+    try {
+      const buffer = await window.api.readFileBuffer(coverImageUrl)
+      if (buffer) {
+        const coverPath = `${slug}/${galleryId}/cover.jpg`
+        const blob = new Blob([buffer], { type: 'image/jpeg' })
+        const { error: coverErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(coverPath, blob, { contentType: 'image/jpeg', upsert: true })
+        if (!coverErr) {
+          // Update delivery_settings with the storage URL
+          const coverStorageUrl = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${coverPath}`
+          deliverySettings.coverImageUrl = coverStorageUrl
+          await supabase.from('galleries').update({
+            delivery_settings: deliverySettings,
+          }).eq('id', galleryId)
+          log('cover-uploaded', coverPath)
+        }
+      }
+    } catch (e) {
+      console.warn('[publish] cover image upload failed:', e)
+    }
+  }
+
   // ── Step 2b: Create gallery_sections rows and build path→sectionId map ──
   // Each image will get its `section_id` set from this map at insert time.
   const sectionPathToDbId = new Map<string, string>()
