@@ -7,6 +7,7 @@ import { TermsPage } from './pages/TermsPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { ClientPage } from './pages/ClientPage'
 import { ClientDashboard } from './pages/ClientDashboard'
+import { VendorPortal } from './pages/VendorPortal'
 import './styles.css'
 
 function Router() {
@@ -16,6 +17,8 @@ function Router() {
   if (path === '/demo') return <DemoPage />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
+  // Vendor portal
+  if (path.startsWith('/vendor/') || /^\/[^/]+\/vendor\//.test(path)) return <VendorPortal />
   // Client dashboard (authenticated)
   if (/\/client\/[^/]+\/dashboard/.test(path)) return <ClientDashboard />
   // Client public page

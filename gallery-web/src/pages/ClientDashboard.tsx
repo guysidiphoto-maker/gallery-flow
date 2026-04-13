@@ -102,7 +102,7 @@ export function ClientDashboard() {
   const [stories, setStories] = useState<Map<string, StoryRow[]>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'content' | 'galleries' | 'stories' | 'page'>('content')
+  const [tab, setTab] = useState<'content' | 'calendar' | 'galleries' | 'stories' | 'page'>('content')
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(new Set())
   const [playingStory, setPlayingStory] = useState<string | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
@@ -264,6 +264,7 @@ export function ClientDashboard() {
 
   const tabs = [
     { id: 'content' as const, label: 'Content Studio', icon: '◈' },
+    { id: 'calendar' as const, label: 'Content Calendar', icon: '◫' },
     { id: 'galleries' as const, label: 'Galleries', icon: '▦' },
     ...(hasStories ? [{ id: 'stories' as const, label: 'Stories', icon: '◉' }] : []),
     { id: 'page' as const, label: 'My Page', icon: '◧' },
@@ -539,6 +540,137 @@ export function ClientDashboard() {
             )}
           </div>
         )}
+
+        {/* ── Content Calendar Tab ─────────────────────────────────── */}
+        {tab === 'calendar' && (() => {
+          // Spread selected images over 4 weeks: 3 posts + 1 story per week
+          const selected = allImages.filter(img => selectedPicks.has(img.id))
+          const weekCount = Math.max(4, Math.ceil(selected.length / 3))
+          const weeks: Array<{ weekNum: number; posts: typeof selected; story: boolean }> = []
+          const hasStoryContent = stories.size > 0
+          for (let w = 0; w < weekCount && w < 12; w++) {
+            const start = w * 3
+            const posts = selected.slice(start, start + 3)
+            if (posts.length === 0) break
+            weeks.push({ weekNum: w + 1, posts, story: hasStoryContent && w < Array.from(stories.values()).flat().length })
+          }
+          const DAYS = ['Monday', 'Wednesday', 'Friday']
+
+          return (
+            <div>
+              <div ref={reveal} style={{ marginBottom: 24 }}>
+                <h2 style={{ fontSize: 20, fontWeight: 600, margin: '0 0 4px' }}>Content Calendar</h2>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,.35)', margin: 0 }}>
+                  {selected.length} photos spread over {weeks.length} weeks · 3 posts per week
+                </p>
+              </div>
+
+              {weeks.map((week, wi) => (
+                <div key={wi} ref={reveal} style={{
+                  marginBottom: 24, padding: 20,
+                  background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)',
+                  borderRadius: 14,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0, color: 'rgba(255,255,255,.7)' }}>
+                      Week {week.weekNum}
+                    </h3>
+                    {week.story && (
+                      <span style={{
+                        fontSize: 10, padding: '3px 8px', borderRadius: 4,
+                        background: 'rgba(236,72,153,.1)', color: '#ec4899', fontWeight: 600,
+                      }}>
+                        + Story
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${week.posts.length}, 1fr)`, gap: 12 }}>
+                    {week.posts.map((img, pi) => {
+                      const gallery = galleries.find(g => g.id === img.gallery_id)
+                      return (
+                        <div key={img.id}>
+                          <div style={{
+                            fontSize: 10, color: 'rgba(255,255,255,.3)', marginBottom: 6,
+                            textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600,
+                          }}>
+                            {DAYS[pi] || 'Bonus'}
+                          </div>
+                          <div style={{
+                            aspectRatio: '1', borderRadius: 8, overflow: 'hidden',
+                            position: 'relative', border: '1px solid rgba(255,255,255,.06)',
+                          }}>
+                            <img
+                              src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+                              alt="" loading="lazy"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            />
+                            <button
+                              onClick={async () => {
+                                setDownloading(img.id)
+                                await downloadImage(storageUrl('gallery-images', img.storage_path), `week${week.weekNum}_${DAYS[pi]?.toLowerCase() || 'post'}_${img.filename}`)
+                                setDownloading(null)
+                              }}
+                              style={{
+                                position: 'absolute', bottom: 6, right: 6,
+                                width: 26, height: 26, borderRadius: '50%',
+                                background: 'rgba(0,0,0,.6)', border: 'none', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                backdropFilter: 'blur(4px)', opacity: 0.7, transition: 'opacity .15s',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.opacity = '1' }}
+                              onMouseLeave={e => { e.currentTarget.style.opacity = '0.7' }}
+                            >
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                              </svg>
+                            </button>
+                          </div>
+                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {gallery?.name}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {/* Download all calendar content */}
+              <div style={{ textAlign: 'center', marginTop: 16 }}>
+                <button
+                  onClick={async () => {
+                    setDownloading('calendar')
+                    for (const week of weeks) {
+                      for (let pi = 0; pi < week.posts.length; pi++) {
+                        const img = week.posts[pi]
+                        await downloadImage(
+                          storageUrl('gallery-images', img.storage_path),
+                          `week${week.weekNum}_${DAYS[pi]?.toLowerCase() || 'post'}_${img.filename}`
+                        )
+                        await new Promise(r => setTimeout(r, 200))
+                      }
+                    }
+                    setDownloading(null)
+                  }}
+                  style={{
+                    padding: '12px 32px', borderRadius: 10,
+                    background: 'linear-gradient(135deg, #6366f1, #818cf8)',
+                    border: 'none', color: '#fff', fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                    boxShadow: '0 4px 16px rgba(99,102,241,.3)',
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  {downloading === 'calendar' ? 'Downloading...' : 'Download All Calendar Content'}
+                </button>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── Galleries Tab ───────────────────────────────────────────── */}
         {tab === 'galleries' && (
