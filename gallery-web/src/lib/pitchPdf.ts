@@ -1,17 +1,21 @@
 import jsPDF from 'jspdf'
 
-interface GalleryEntry {
-  name: string
-  eventType: string
-  description: string
-  images: string[] // thumbnail URLs
+export interface PdfOptions {
+  photos: string[]
+  bgColor: string
+  logoBase64?: string
+  title?: string
+  businessName: string
 }
 
-interface PdfOptions {
-  intro: string
-  businessName: string
-  galleries: GalleryEntry[]
-  summary: string
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '')
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
+}
+
+function isDark(hex: string): boolean {
+  const [r, g, b] = hexToRgb(hex)
+  return (r * 299 + g * 587 + b * 114) / 1000 < 128
 }
 
 async function loadImageAsBase64(url: string): Promise<string | null> {
@@ -30,148 +34,101 @@ async function loadImageAsBase64(url: string): Promise<string | null> {
 }
 
 export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
-  const { intro, businessName, galleries, summary } = options
+  const { photos, bgColor, logoBase64, title, businessName } = options
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const pageW = 210
   const pageH = 297
-  const margin = 20
+  const margin = 16
   const contentW = pageW - margin * 2
+  const dark = isDark(bgColor)
+  const [bgR, bgG, bgB] = hexToRgb(bgColor)
 
-  // ── Cover Page ──────────────────────────────────────────────────────────
+  const paintBg = () => {
+    doc.setFillColor(bgR, bgG, bgB)
+    doc.rect(0, 0, pageW, pageH, 'F')
+  }
 
-  // Background
-  doc.setFillColor(10, 10, 15)
-  doc.rect(0, 0, pageW, pageH, 'F')
+  // ── Cover Page ──────────────────────────────────────────────────────
 
-  // Accent bar
+  paintBg()
+
+  // Accent bar at top
   doc.setFillColor(99, 102, 241)
-  doc.rect(0, 0, pageW, 3, 'F')
+  doc.rect(0, 0, pageW, 2.5, 'F')
+
+  let y = 60
+
+  // Logo
+  if (logoBase64) {
+    try {
+      doc.addImage(logoBase64, 'PNG', pageW / 2 - 25, y, 50, 25)
+      y += 35
+    } catch { y += 5 }
+  }
+
+  // Title
+  if (title) {
+    doc.setFontSize(26)
+    if (dark) doc.setTextColor(255, 255, 255); else doc.setTextColor(20, 20, 30)
+    doc.text(title, pageW / 2, y, { align: 'center' })
+    y += 14
+  }
 
   // Business name
-  doc.setTextColor(255, 255, 255)
-  doc.setFontSize(28)
-  doc.text(businessName, pageW / 2, 80, { align: 'center' })
+  doc.setFontSize(13)
+  if (dark) doc.setTextColor(160, 160, 180); else doc.setTextColor(100, 100, 120)
+  doc.text(businessName, pageW / 2, y, { align: 'center' })
+  y += 10
 
-  // Divider
+  // Accent line
   doc.setDrawColor(99, 102, 241)
-  doc.setLineWidth(0.5)
-  doc.line(pageW / 2 - 30, 92, pageW / 2 + 30, 92)
+  doc.setLineWidth(0.4)
+  doc.line(pageW / 2 - 25, y, pageW / 2 + 25, y)
+  y += 12
 
-  // Subtitle
-  doc.setFontSize(14)
-  doc.setTextColor(180, 180, 200)
-  doc.text('Portfolio', pageW / 2, 104, { align: 'center' })
+  // Photo count
+  doc.setFontSize(11)
+  if (dark) doc.setTextColor(130, 130, 150); else doc.setTextColor(140, 140, 160)
+  doc.text(`${photos.length} photos`, pageW / 2, y, { align: 'center' })
 
-  // Summary
-  if (summary) {
-    doc.setFontSize(11)
-    doc.setTextColor(160, 160, 180)
-    const summaryLines = doc.splitTextToSize(summary, contentW - 20)
-    doc.text(summaryLines, pageW / 2, 120, { align: 'center' })
-  }
-
-  // Gallery count
-  doc.setFontSize(10)
-  doc.setTextColor(130, 130, 150)
-  doc.text(
-    `${galleries.length} galleries | ${galleries.reduce((sum, g) => sum + g.images.length, 0)} selected photos`,
-    pageW / 2,
-    pageH - 40,
-    { align: 'center' }
-  )
-
-  // Date
+  // Date at bottom
   const dateStr = new Date().toLocaleDateString('he-IL', { year: 'numeric', month: 'long', day: 'numeric' })
-  doc.text(dateStr, pageW / 2, pageH - 30, { align: 'center' })
+  doc.setFontSize(9)
+  doc.text(dateStr, pageW / 2, pageH - 20, { align: 'center' })
 
-  // ── Intro Page ────────────────────────────────────────────────────────
+  // ── Photo Pages ─────────────────────────────────────────────────────
 
-  if (intro) {
-    doc.addPage()
-    doc.setFillColor(10, 10, 15)
-    doc.rect(0, 0, pageW, pageH, 'F')
+  const imgW = (contentW - 4) / 2  // 2 columns with 4mm gap
+  const imgH = imgW * 0.67         // 3:2 aspect ratio
+  const gap = 4
 
-    doc.setFontSize(16)
-    doc.setTextColor(255, 255, 255)
-    doc.text('About', margin, 35)
+  let col = 0
+  let rowY = margin
 
-    doc.setDrawColor(99, 102, 241)
-    doc.setLineWidth(0.3)
-    doc.line(margin, 40, margin + 40, 40)
-
-    doc.setFontSize(11)
-    doc.setTextColor(200, 200, 210)
-    const introLines = doc.splitTextToSize(intro, contentW)
-    doc.text(introLines, margin, 52)
-  }
-
-  // ── Gallery Pages ─────────────────────────────────────────────────────
-
-  for (const gallery of galleries) {
-    doc.addPage()
-    doc.setFillColor(10, 10, 15)
-    doc.rect(0, 0, pageW, pageH, 'F')
-
-    // Gallery title
-    doc.setFontSize(16)
-    doc.setTextColor(255, 255, 255)
-    doc.text(gallery.name, margin, 30)
-
-    // Event type badge
-    if (gallery.eventType) {
-      doc.setFontSize(9)
-      doc.setTextColor(129, 140, 248)
-      doc.text(gallery.eventType.replace(/-/g, ' '), margin, 38)
+  for (let i = 0; i < photos.length; i++) {
+    // New page at start or when full
+    if (i === 0 || rowY + imgH > pageH - margin) {
+      if (i > 0) doc.addPage()
+      paintBg()
+      rowY = margin
+      col = 0
     }
 
-    // Description
-    let yOffset = 46
-    if (gallery.description) {
-      doc.setFontSize(10)
-      doc.setTextColor(180, 180, 195)
-      const descLines = doc.splitTextToSize(gallery.description, contentW)
-      doc.text(descLines, margin, yOffset)
-      yOffset += descLines.length * 5 + 8
+    const base64 = await loadImageAsBase64(photos[i])
+    if (!base64) continue
+
+    const x = margin + col * (imgW + gap)
+
+    try {
+      doc.addImage(base64, 'JPEG', x, rowY, imgW, imgH)
+    } catch {
+      // Skip broken images
     }
 
-    // Image grid
-    const imgSize = 40
-    const gap = 4
-    const cols = Math.floor((contentW + gap) / (imgSize + gap))
-    let col = 0
-    let row = 0
-
-    for (let i = 0; i < Math.min(gallery.images.length, 20); i++) {
-      const base64 = await loadImageAsBase64(gallery.images[i])
-      if (!base64) continue
-
-      const x = margin + col * (imgSize + gap)
-      const y = yOffset + row * (imgSize + gap)
-
-      // Check if we need a new page
-      if (y + imgSize > pageH - margin) {
-        doc.addPage()
-        doc.setFillColor(10, 10, 15)
-        doc.rect(0, 0, pageW, pageH, 'F')
-        row = 0
-        col = 0
-        yOffset = margin
-      }
-
-      const finalX = margin + col * (imgSize + gap)
-      const finalY = yOffset + row * (imgSize + gap)
-
-      try {
-        doc.addImage(base64, 'JPEG', finalX, finalY, imgSize, imgSize)
-      } catch {
-        // Skip broken images
-      }
-
-      col++
-      if (col >= cols) {
-        col = 0
-        row++
-      }
+    col++
+    if (col >= 2) {
+      col = 0
+      rowY += imgH + gap
     }
   }
 
