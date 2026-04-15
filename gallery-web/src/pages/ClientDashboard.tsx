@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase, storageUrl } from '../supabase'
+import { TenderBuilder } from '../components/TenderBuilder'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -103,7 +104,7 @@ export function ClientDashboard() {
   const [stories, setStories] = useState<Map<string, StoryRow[]>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'content' | 'calendar' | 'galleries' | 'stories' | 'page'>('content')
+  const [tab, setTab] = useState<'content' | 'calendar' | 'galleries' | 'stories' | 'page' | 'tender'>('content')
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(new Set())
   const [playingStory, setPlayingStory] = useState<string | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
@@ -269,6 +270,7 @@ export function ClientDashboard() {
     { id: 'galleries' as const, label: 'Galleries', icon: '▦' },
     ...(hasStories ? [{ id: 'stories' as const, label: 'Stories', icon: '◉' }] : []),
     { id: 'page' as const, label: 'My Page', icon: '◧' },
+    { id: 'tender' as const, label: 'חיפוש למכרז', icon: '◆' },
   ]
 
   return (
@@ -878,6 +880,15 @@ export function ClientDashboard() {
               </div>
             </div>
           </div>
+        )}
+
+        {tab === 'tender' && (
+          <TenderBuilder
+            galleries={galleries}
+            allImages={allImages}
+            covers={covers}
+            businessName={studioName || 'Studio'}
+          />
         )}
       </div>
 
