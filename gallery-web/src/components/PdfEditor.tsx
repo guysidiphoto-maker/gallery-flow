@@ -6,7 +6,11 @@ export interface PdfEditorGallery {
   id: string
   title: string       // editable, defaults to gallery name
   photos: string[]    // URLs (original aspect preserved)
+  photoSize?: 'small' | 'medium' | 'large'  // per-gallery override
 }
+
+// Approximate photos per page at each size — used for preview page splits
+const PHOTOS_PER_PAGE = { small: 10, medium: 6, large: 3 }
 
 interface PdfEditorProps {
   galleries: PdfEditorGallery[]
@@ -87,6 +91,10 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
     setGroups(prev => prev.map(g => g.id === gid ? { ...g, title } : g))
   }
 
+  const updateGallerySize = (gid: string, size: 'small' | 'medium' | 'large') => {
+    setGroups(prev => prev.map(g => g.id === gid ? { ...g, photoSize: size } : g))
+  }
+
   const removeGallery = (gid: string) => {
     setGroups(prev => prev.filter(g => g.id !== gid))
   }
@@ -101,7 +109,7 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
       const filtered = target.filter(g => g.photos.length > 0)
       if (filtered.length === 0) return
       const blob = await generatePitchPdf({
-        galleries: filtered.map(g => ({ title: g.title, photos: g.photos })),
+        galleries: filtered.map(g => ({ title: g.title, photos: g.photos, photoSize: g.photoSize })),
         bgColor,
         logoBase64,
         businessName,
@@ -291,139 +299,200 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
             <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,.3)' }}>
               אין אירועים
             </div>
-          ) : groups.map(g => (
-            <div key={g.id} style={{
-              background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)',
-              borderRadius: 14, overflow: 'hidden',
-            }}>
-              {/* Page simulation — 16:9 landscape to match PDF output */}
-              <div style={{ background: bgColor, padding: '18px 22px', aspectRatio: '16/9', display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'background .2s' }}>
-                {/* Header row: title + photo count */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <input
-                      value={g.title}
-                      onChange={e => updateTitle(g.id, e.target.value)}
-                      placeholder="שם האירוע..."
-                      style={{
-                        width: '100%', padding: '2px 4px', boxSizing: 'border-box',
-                        background: 'transparent', border: 'none',
-                        borderBottom: `1px dashed ${isDark(bgColor) ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.15)'}`,
-                        fontSize: 18, fontWeight: 700, fontFamily: 'inherit',
-                        color: textColor, outline: 'none', direction: 'rtl',
-                        letterSpacing: '-0.01em',
-                      }}
-                    />
-                    <div style={{ width: 30, height: 2, background: '#6366f1', marginTop: 3, borderRadius: 1 }} />
-                  </div>
-                  {logoBase64 && (
-                    <img src={logoBase64} alt="" style={{ maxHeight: 36, maxWidth: 100, flexShrink: 0 }} />
-                  )}
-                  <div style={{ fontSize: 10, color: subtextColor, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    {g.photos.length} תמונות
-                  </div>
-                </div>
+          ) : groups.map(g => {
+            const gSize = g.photoSize || photoSize
+            const perPage = PHOTOS_PER_PAGE[gSize]
+            // Split into pages
+            const pages: { photos: string[]; startIdx: number }[] = []
+            for (let i = 0; i < g.photos.length; i += perPage) {
+              pages.push({ photos: g.photos.slice(i, i + perPage), startIdx: i })
+            }
+            if (pages.length === 0) pages.push({ photos: [], startIdx: 0 })
 
-                {/* Photo flow: justified layout matching the PDF (preserves aspect ratios) */}
-                {g.photos.length === 0 ? (
-                  <div style={{ padding: 20, textAlign: 'center', color: subtextColor, fontSize: 12, flex: 1 }}>
-                    אין תמונות
-                  </div>
-                ) : (
-                  <div style={{
-                    display: 'flex', flexWrap: 'wrap', gap: 4, flex: 1, alignContent: 'flex-start',
-                  }}>
-                    {g.photos.map((url, idx) => {
-                      const isDragging = dragInfo?.gid === g.id && dragInfo.idx === idx
-                      const isOver = dragOver?.gid === g.id && dragOver.idx === idx
-                      return (
-                        <div
-                          key={`${url}-${idx}`}
-                          draggable
-                          onDragStart={() => onDragStart(g.id, idx)}
-                          onDragOver={(e) => onDragOver(e, g.id, idx)}
-                          onDrop={() => onDrop(g.id, idx)}
-                          onDragEnd={() => { setDragInfo(null); setDragOver(null) }}
-                          style={{
-                            position: 'relative', borderRadius: 3, overflow: 'hidden',
-                            cursor: 'grab', opacity: isDragging ? 0.4 : 1,
-                            outline: isOver ? '2px solid #6366f1' : 'none', outlineOffset: -2,
-                            transition: 'opacity .12s, height .2s',
-                            height: photoSize === 'small' ? 72 : photoSize === 'medium' ? 110 : 160,
-                            background: isDark(bgColor) ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.03)',
-                          }}
-                        >
-                          <img src={url} alt=""
-                            style={{ height: '100%', width: 'auto', display: 'block' }}
-                            loading="lazy" />
-                          <button
-                            onClick={(e) => { e.stopPropagation(); removePhoto(g.id, idx) }}
-                            style={{
-                              position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 4,
-                              background: 'rgba(0,0,0,.65)', border: 'none', color: '#fff', fontSize: 11,
-                              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              opacity: 0.6, transition: 'opacity .12s',
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.opacity = '1' }}
-                            onMouseLeave={e => { e.currentTarget.style.opacity = '0.6' }}
-                          >×</button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Gallery action bar */}
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '8px 14px', borderTop: '1px solid rgba(255,255,255,.04)',
-                background: 'rgba(0,0,0,.2)',
+            return (
+              <div key={g.id} style={{
+                background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)',
+                borderRadius: 14, overflow: 'hidden',
               }}>
-                <span style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>
-                  {g.title || 'ללא כותרת'}
-                </span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button
-                    onClick={() => removeGallery(g.id)}
-                    style={{
-                      padding: '5px 10px', borderRadius: 7, fontSize: 11,
-                      background: 'transparent', border: '1px solid rgba(255,255,255,.08)',
-                      color: 'rgba(255,255,255,.5)', cursor: 'pointer', fontFamily: 'inherit',
-                    }}
-                  >
-                    הסר אירוע
-                  </button>
-                  <button
-                    onClick={() => downloadZip(g.id)}
-                    disabled={!!generating || g.photos.length === 0}
-                    style={{
-                      padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 500,
-                      background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
-                      color: 'rgba(255,255,255,.75)', cursor: 'pointer', fontFamily: 'inherit',
-                      display: 'flex', alignItems: 'center', gap: 5,
-                    }}
-                  >
-                    {generating === g.id + '-zip' ? '...' : 'ZIP'}
-                  </button>
-                  <button
-                    onClick={() => downloadPdf(g.id)}
-                    disabled={!!generating || g.photos.length === 0}
-                    style={{
-                      padding: '5px 14px', borderRadius: 7, fontSize: 11, fontWeight: 600,
-                      background: g.photos.length > 0 ? 'rgba(99,102,241,.2)' : 'rgba(255,255,255,.04)',
-                      border: `1px solid ${g.photos.length > 0 ? 'rgba(99,102,241,.35)' : 'rgba(255,255,255,.08)'}`,
-                      color: g.photos.length > 0 ? '#a5b4fc' : 'rgba(255,255,255,.25)',
-                      cursor: g.photos.length > 0 && !generating ? 'pointer' : 'default',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {generating === g.id ? 'מייצר...' : 'הורד PDF של האירוע'}
-                  </button>
+                {/* Gallery control bar (on top) */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                  padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,.04)',
+                  background: 'rgba(0,0,0,.25)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.4)', whiteSpace: 'nowrap' }}>
+                      {g.title || 'ללא כותרת'}
+                    </span>
+                    <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,.3)', whiteSpace: 'nowrap' }}>
+                      · {g.photos.length} תמונות · {pages.length} {pages.length === 1 ? 'עמוד' : 'עמודים'}
+                    </span>
+                  </div>
+
+                  {/* Per-gallery size toggle */}
+                  <div style={{
+                    display: 'flex', gap: 2, padding: 2,
+                    background: 'rgba(0,0,0,.3)', borderRadius: 7,
+                    border: '1px solid rgba(255,255,255,.05)',
+                  }}>
+                    {([
+                      { key: 'small' as const, label: 'S' },
+                      { key: 'medium' as const, label: 'M' },
+                      { key: 'large' as const, label: 'L' },
+                    ]).map(s => (
+                      <button
+                        key={s.key}
+                        onClick={() => updateGallerySize(g.id, s.key)}
+                        title={s.key === 'small' ? 'קטן' : s.key === 'medium' ? 'בינוני' : 'גדול'}
+                        style={{
+                          padding: '3px 9px', borderRadius: 5, fontSize: 10.5, fontWeight: 700,
+                          background: gSize === s.key ? 'rgba(99,102,241,.25)' : 'transparent',
+                          color: gSize === s.key ? '#c7d2fe' : 'rgba(255,255,255,.4)',
+                          border: 'none', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s',
+                          minWidth: 24,
+                        }}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                    <button
+                      onClick={() => removeGallery(g.id)}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 10.5,
+                        background: 'transparent', border: '1px solid rgba(255,255,255,.08)',
+                        color: 'rgba(255,255,255,.4)', cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >הסר</button>
+                    <button
+                      onClick={() => downloadZip(g.id)}
+                      disabled={!!generating || g.photos.length === 0}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 10.5, fontWeight: 500,
+                        background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
+                        color: 'rgba(255,255,255,.7)', cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >{generating === g.id + '-zip' ? '...' : 'ZIP'}</button>
+                    <button
+                      onClick={() => downloadPdf(g.id)}
+                      disabled={!!generating || g.photos.length === 0}
+                      style={{
+                        padding: '4px 12px', borderRadius: 6, fontSize: 10.5, fontWeight: 600,
+                        background: g.photos.length > 0 ? 'rgba(99,102,241,.2)' : 'rgba(255,255,255,.04)',
+                        border: `1px solid ${g.photos.length > 0 ? 'rgba(99,102,241,.35)' : 'rgba(255,255,255,.08)'}`,
+                        color: g.photos.length > 0 ? '#a5b4fc' : 'rgba(255,255,255,.25)',
+                        cursor: g.photos.length > 0 && !generating ? 'pointer' : 'default',
+                        fontFamily: 'inherit',
+                      }}
+                    >{generating === g.id ? 'מייצר...' : 'הורד PDF'}</button>
+                  </div>
+                </div>
+
+                {/* Multi-page preview */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, background: 'rgba(0,0,0,.15)' }}>
+                  {pages.map((page, pageIdx) => {
+                    const photoH = gSize === 'small' ? 72 : gSize === 'medium' ? 110 : 160
+                    return (
+                      <div key={pageIdx} style={{
+                        background: bgColor, padding: '18px 22px', aspectRatio: '16/9',
+                        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                        borderRadius: 6, transition: 'background .2s',
+                        boxShadow: '0 2px 12px rgba(0,0,0,.3)',
+                      }}>
+                        {/* Header row */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 12 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            {pageIdx === 0 ? (
+                              <>
+                                <input
+                                  value={g.title}
+                                  onChange={e => updateTitle(g.id, e.target.value)}
+                                  placeholder="שם האירוע..."
+                                  style={{
+                                    width: '100%', padding: '2px 4px', boxSizing: 'border-box',
+                                    background: 'transparent', border: 'none',
+                                    borderBottom: `1px dashed ${isDark(bgColor) ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.15)'}`,
+                                    fontSize: 18, fontWeight: 700, fontFamily: 'inherit',
+                                    color: textColor, outline: 'none', direction: 'rtl',
+                                    letterSpacing: '-0.01em',
+                                  }}
+                                />
+                                <div style={{ width: 30, height: 2, background: '#6366f1', marginTop: 3, borderRadius: 1 }} />
+                              </>
+                            ) : (
+                              <div style={{ fontSize: 16, fontWeight: 700, color: textColor }}>
+                                {g.title}  ·  {pageIdx + 1}/{pages.length}
+                              </div>
+                            )}
+                          </div>
+                          {logoBase64 && pageIdx === 0 && (
+                            <img src={logoBase64} alt="" style={{ maxHeight: 36, maxWidth: 100, flexShrink: 0 }} />
+                          )}
+                          {pages.length > 1 && pageIdx === 0 && (
+                            <div style={{ fontSize: 10, color: subtextColor, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                              עמוד 1/{pages.length}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Photo flow */}
+                        {page.photos.length === 0 ? (
+                          <div style={{ padding: 20, textAlign: 'center', color: subtextColor, fontSize: 12, flex: 1 }}>
+                            אין תמונות
+                          </div>
+                        ) : (
+                          <div style={{
+                            display: 'flex', flexWrap: 'wrap', gap: 4, flex: 1, alignContent: 'flex-start',
+                          }}>
+                            {page.photos.map((url, localIdx) => {
+                              const idx = page.startIdx + localIdx
+                              const isDragging = dragInfo?.gid === g.id && dragInfo.idx === idx
+                              const isOver = dragOver?.gid === g.id && dragOver.idx === idx
+                              return (
+                                <div
+                                  key={`${url}-${idx}`}
+                                  draggable
+                                  onDragStart={() => onDragStart(g.id, idx)}
+                                  onDragOver={(e) => onDragOver(e, g.id, idx)}
+                                  onDrop={() => onDrop(g.id, idx)}
+                                  onDragEnd={() => { setDragInfo(null); setDragOver(null) }}
+                                  style={{
+                                    position: 'relative', borderRadius: 3, overflow: 'hidden',
+                                    cursor: 'grab', opacity: isDragging ? 0.4 : 1,
+                                    outline: isOver ? '2px solid #6366f1' : 'none', outlineOffset: -2,
+                                    transition: 'opacity .12s, height .2s',
+                                    height: photoH,
+                                    background: isDark(bgColor) ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.03)',
+                                  }}
+                                >
+                                  <img src={url} alt=""
+                                    style={{ height: '100%', width: 'auto', display: 'block' }}
+                                    loading="lazy" />
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); removePhoto(g.id, idx) }}
+                                    style={{
+                                      position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 4,
+                                      background: 'rgba(0,0,0,.65)', border: 'none', color: '#fff', fontSize: 11,
+                                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                      opacity: 0.6, transition: 'opacity .12s',
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.opacity = '1' }}
+                                    onMouseLeave={e => { e.currentTarget.style.opacity = '0.6' }}
+                                  >×</button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </div>

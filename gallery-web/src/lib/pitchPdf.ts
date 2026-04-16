@@ -3,6 +3,7 @@ import jsPDF from 'jspdf'
 export interface PdfGallerySection {
   title: string
   photos: string[]
+  photoSize?: 'small' | 'medium' | 'large'  // per-gallery override of default
 }
 
 export interface PdfOptions {
@@ -133,7 +134,7 @@ function buildJustifiedRows(images: LoadedImage[], contentW: number, targetH: nu
 
 export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
   const { galleries, bgColor, logoBase64, businessName, photoSize = 'medium' } = options
-  const targetRowH = ROW_HEIGHTS[photoSize]
+  const defaultRowH = ROW_HEIGHTS[photoSize]
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [PAGE_W, PAGE_H] })
   const contentW = PAGE_W - MARGIN * 2
   const contentH = PAGE_H - MARGIN * 2 - TITLE_H
@@ -192,8 +193,9 @@ export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
     }
     if (loaded.length === 0) continue
 
-    // Build justified rows
-    const rows = buildJustifiedRows(loaded, contentW, targetRowH)
+    // Build justified rows — use per-gallery size if set, else default
+    const rowH = gallery.photoSize ? ROW_HEIGHTS[gallery.photoSize] : defaultRowH
+    const rows = buildJustifiedRows(loaded, contentW, rowH)
 
     // Split rows into pages by height
     let pageRows: LaidRow[] = []
