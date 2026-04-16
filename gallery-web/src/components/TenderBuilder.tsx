@@ -305,6 +305,99 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
         </div>
       </div>
 
+      {/* ── Selection summary (multi-gallery collection) ── */}
+      {selectedCount > 0 && (() => {
+        // Build per-gallery breakdown
+        const breakdown = galleries
+          .map(g => {
+            const gImgs = allImages.filter(img => img.gallery_id === g.id)
+            const sel = gImgs.filter(img => selectedImageIds.has(img.id)).length
+            return { gallery: g, selected: sel }
+          })
+          .filter(b => b.selected > 0)
+
+        return (
+          <div style={{
+            marginBottom: 20, padding: '14px 18px',
+            background: 'linear-gradient(135deg, rgba(99,102,241,.06), rgba(168,85,247,.04))',
+            border: '1px solid rgba(129,140,248,.18)',
+            borderRadius: 14,
+            boxShadow: '0 4px 20px rgba(99,102,241,.08)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: 8,
+                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 800, color: '#fff',
+                  boxShadow: '0 2px 8px rgba(99,102,241,.4)',
+                }}>
+                  {selectedCount}
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
+                    בחירה מצטברת
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.45)', marginTop: 1 }}>
+                    {selectedCount} תמונות מ-{breakdown.length} {breakdown.length === 1 ? 'גלריה' : 'גלריות'} · הבחירה נשמרת בין גלריות
+                  </div>
+                </div>
+              </div>
+              <button onClick={clearAll} style={{
+                background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
+                color: 'rgba(255,255,255,.6)', borderRadius: 8, padding: '5px 12px',
+                fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.04)' }}>
+                נקה הכל
+              </button>
+            </div>
+
+            {/* Per-gallery chips */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {breakdown.map(b => {
+                const cov = covers.get(b.gallery.id)
+                return (
+                  <button
+                    key={b.gallery.id}
+                    onClick={() => setFullGalleryId(b.gallery.id)}
+                    title="פתח גלריה"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 7,
+                      padding: '4px 10px 4px 4px', borderRadius: 50,
+                      background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)',
+                      color: 'rgba(255,255,255,.85)', fontSize: 11.5, fontWeight: 500,
+                      cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(129,140,248,.12)'; e.currentTarget.style.borderColor = 'rgba(129,140,248,.25)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.05)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.08)' }}
+                  >
+                    <div style={{
+                      width: 22, height: 22, borderRadius: '50%', overflow: 'hidden',
+                      background: 'rgba(255,255,255,.05)', flexShrink: 0,
+                    }}>
+                      {cov && <img src={cov} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                    </div>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
+                      {b.gallery.name}
+                    </span>
+                    <span style={{
+                      padding: '1px 7px', borderRadius: 10,
+                      background: 'rgba(129,140,248,.2)', color: '#c7d2fe',
+                      fontSize: 10.5, fontWeight: 700,
+                    }}>
+                      {b.selected}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* ── Results header ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, padding: '0 4px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
@@ -315,16 +408,10 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
             {filtered.length === 1 ? 'גלריה' : 'גלריות'}
           </span>
         </div>
-        {selectedCount > 0 && (
-          <button onClick={clearAll} style={{
-            background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.07)',
-            color: 'rgba(255,255,255,.6)', borderRadius: 8, padding: '5px 12px',
-            fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.04)' }}>
-            נקה בחירה ({selectedCount})
-          </button>
+        {filtered.length > 0 && (
+          <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.35)' }}>
+            ניתן לבחור תמונות מכמה גלריות — הבחירה נשמרת
+          </span>
         )}
       </div>
 
