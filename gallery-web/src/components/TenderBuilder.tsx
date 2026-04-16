@@ -160,19 +160,63 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
   // ── Browse phase ────────────────────────────────────────────────────────
 
   return (
-    <div style={{ direction: 'rtl', padding: '24px', maxWidth: 1200, margin: '0 auto', paddingBottom: selectedCount > 0 ? 80 : 24 }}>
+    <div style={{ direction: 'rtl', padding: '32px 24px 24px', maxWidth: 1280, margin: '0 auto', paddingBottom: selectedCount > 0 ? 100 : 24, position: 'relative' }}>
 
-      {/* ── Filters ── */}
+      {/* Background glow */}
       <div style={{
-        padding: '16px 20px', marginBottom: 16,
-        background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)',
-        borderRadius: 12,
+        position: 'absolute', top: 0, right: '10%', width: 400, height: 400,
+        background: 'radial-gradient(circle, rgba(99,102,241,.08) 0%, transparent 70%)',
+        pointerEvents: 'none', zIndex: 0, filter: 'blur(40px)',
+      }} />
+      <div style={{
+        position: 'absolute', top: 100, left: '5%', width: 300, height: 300,
+        background: 'radial-gradient(circle, rgba(168,85,247,.06) 0%, transparent 70%)',
+        pointerEvents: 'none', zIndex: 0, filter: 'blur(40px)',
+      }} />
+
+      <div style={{ position: 'relative', zIndex: 1 }}>
+
+      {/* ── Hero ── */}
+      <div style={{ marginBottom: 28, textAlign: 'center' }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          padding: '4px 12px', borderRadius: 50,
+          background: 'linear-gradient(90deg, rgba(99,102,241,.15), rgba(168,85,247,.15))',
+          border: '1px solid rgba(129,140,248,.2)',
+          fontSize: 11, fontWeight: 600, color: '#a5b4fc', letterSpacing: '.1em',
+          marginBottom: 14,
+        }}>
+          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#818cf8', boxShadow: '0 0 8px #818cf8' }} />
+          חיפוש למכרז
+        </div>
+        <h1 style={{
+          fontSize: 34, fontWeight: 800, margin: '0 0 8px',
+          background: 'linear-gradient(135deg, #fff 0%, #c7d2fe 100%)',
+          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          letterSpacing: '-0.03em', lineHeight: 1.1,
+        }}>
+          מצאו את התמונות המושלמות
+        </h1>
+        <p style={{ fontSize: 14, color: 'rgba(255,255,255,.45)', margin: 0, maxWidth: 500, marginInline: 'auto', lineHeight: 1.6 }}>
+          סננו את הארכיון, בחרו את מה שעובד, וייצרו הצעה מרשימה
+        </p>
+      </div>
+
+      {/* ── Search + Filters Card (glass) ── */}
+      <div style={{
+        padding: '22px 24px',
+        marginBottom: 28,
+        background: 'linear-gradient(135deg, rgba(255,255,255,.035) 0%, rgba(255,255,255,.015) 100%)',
+        border: '1px solid rgba(255,255,255,.08)',
+        borderRadius: 18,
+        backdropFilter: 'blur(20px)',
+        boxShadow: '0 8px 32px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.05)',
       }}>
         {/* Search */}
-        <div style={{ position: 'relative', marginBottom: 14 }}>
+        <div style={{ position: 'relative', marginBottom: 18 }}>
           <svg
-            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-            style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,.3)', pointerEvents: 'none' }}
+            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', color: 'rgba(129,140,248,.6)', pointerEvents: 'none' }}
           >
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -183,42 +227,48 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
             onChange={e => setSearch(e.target.value)}
             placeholder="חיפוש לפי שם, לקוח, מיקום או תאריך..."
             style={{
-              width: '100%', padding: '9px 36px 9px 14px', boxSizing: 'border-box',
-              background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.08)',
-              borderRadius: 9, color: '#fff', fontSize: 13, fontFamily: 'inherit',
-              outline: 'none', direction: 'rtl', transition: 'border-color .15s, background .15s',
+              width: '100%', padding: '13px 46px 13px 18px', boxSizing: 'border-box',
+              background: 'rgba(0,0,0,.35)', border: '1px solid rgba(255,255,255,.06)',
+              borderRadius: 12, color: '#fff', fontSize: 14, fontFamily: 'inherit',
+              outline: 'none', direction: 'rtl',
+              transition: 'border-color .15s, box-shadow .15s, background .15s',
             }}
-            onFocus={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.4)'; e.currentTarget.style.background = 'rgba(255,255,255,.05)' }}
-            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.08)'; e.currentTarget.style.background = 'rgba(255,255,255,.03)' }}
+            onFocus={e => { e.currentTarget.style.borderColor = 'rgba(129,140,248,.5)'; e.currentTarget.style.boxShadow = '0 0 0 4px rgba(99,102,241,.1)' }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.06)'; e.currentTarget.style.boxShadow = 'none' }}
           />
           {search && (
             <button
               onClick={() => setSearch('')}
               style={{
-                position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
-                background: 'rgba(255,255,255,.08)', border: 'none', borderRadius: 5,
-                width: 20, height: 20, cursor: 'pointer', color: 'rgba(255,255,255,.6)',
-                fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+                background: 'rgba(255,255,255,.08)', border: 'none', borderRadius: 6,
+                width: 22, height: 22, cursor: 'pointer', color: 'rgba(255,255,255,.7)',
+                fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontFamily: 'inherit',
               }}
-            >
-              ×
-            </button>
+            >×</button>
           )}
         </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.3)', marginBottom: 8 }}>סוג אירוע</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {/* Event type chips */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{
+            fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.4)',
+            marginBottom: 10, letterSpacing: '.12em', textTransform: 'uppercase',
+          }}>
+            סוג אירוע
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
             {EVENT_TYPES.map(et => {
               const active = selectedTypes.has(et.key)
               return (
                 <button key={et.key} onClick={() => toggleType(et.key)} style={{
-                  padding: '5px 12px', borderRadius: 50, fontSize: 12, fontWeight: 500,
-                  background: active ? 'rgba(99,102,241,.15)' : 'rgba(255,255,255,.03)',
-                  color: active ? '#818cf8' : 'rgba(255,255,255,.45)',
-                  border: `1px solid ${active ? 'rgba(99,102,241,.25)' : 'rgba(255,255,255,.06)'}`,
-                  cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s',
+                  padding: '7px 14px', borderRadius: 50, fontSize: 12.5, fontWeight: 500,
+                  background: active ? 'linear-gradient(135deg, rgba(99,102,241,.25), rgba(168,85,247,.2))' : 'rgba(255,255,255,.025)',
+                  color: active ? '#fff' : 'rgba(255,255,255,.55)',
+                  border: `1px solid ${active ? 'rgba(129,140,248,.4)' : 'rgba(255,255,255,.07)'}`,
+                  cursor: 'pointer', fontFamily: 'inherit', transition: 'all .18s',
+                  boxShadow: active ? '0 4px 16px rgba(99,102,241,.2), inset 0 1px 0 rgba(255,255,255,.1)' : 'none',
                 }}>
                   {et.icon} {et.label}
                 </button>
@@ -226,15 +276,27 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
             })}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.3)' }}>גודל</span>
-          <div style={{ display: 'flex', gap: 4 }}>
+
+        {/* Size pill group */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span style={{
+            fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.4)',
+            letterSpacing: '.12em', textTransform: 'uppercase',
+          }}>
+            גודל
+          </span>
+          <div style={{
+            display: 'inline-flex', gap: 2, padding: 3,
+            background: 'rgba(0,0,0,.3)', borderRadius: 10,
+            border: '1px solid rgba(255,255,255,.05)',
+          }}>
             {SIZE_OPTIONS.map(s => (
               <button key={s.key} onClick={() => setSizeFilter(s.key)} style={{
-                padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500,
-                background: sizeFilter === s.key ? 'rgba(255,255,255,.08)' : 'transparent',
-                color: sizeFilter === s.key ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.35)',
-                border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+                background: sizeFilter === s.key ? 'rgba(255,255,255,.09)' : 'transparent',
+                color: sizeFilter === s.key ? '#fff' : 'rgba(255,255,255,.4)',
+                border: 'none', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s',
+                boxShadow: sizeFilter === s.key ? '0 1px 3px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08)' : 'none',
               }}>
                 {s.label}
               </button>
@@ -244,30 +306,46 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
       </div>
 
       {/* ── Results header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,.7)' }}>
-          {filtered.length} גלריות
-        </span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, padding: '0 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1 }}>
+            {filtered.length}
+          </span>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,.45)' }}>
+            {filtered.length === 1 ? 'גלריה' : 'גלריות'}
+          </span>
+        </div>
         {selectedCount > 0 && (
           <button onClick={clearAll} style={{
-            background: 'none', border: 'none', color: 'rgba(255,255,255,.35)',
-            fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-          }}>
-            נקה בחירה
+            background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.07)',
+            color: 'rgba(255,255,255,.6)', borderRadius: 8, padding: '5px 12px',
+            fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.04)' }}>
+            נקה בחירה ({selectedCount})
           </button>
         )}
       </div>
 
-      {/* ── Gallery list ── */}
+      {/* ── Gallery grid ── */}
       {filtered.length === 0 ? (
         <div style={{
-          padding: '60px 20px', textAlign: 'center', color: 'rgba(255,255,255,.25)', fontSize: 14,
-          background: 'rgba(255,255,255,.01)', borderRadius: 12, border: '1px solid rgba(255,255,255,.04)',
+          padding: '80px 20px', textAlign: 'center',
+          background: 'linear-gradient(135deg, rgba(255,255,255,.02), rgba(255,255,255,.005))',
+          borderRadius: 16, border: '1px dashed rgba(255,255,255,.08)',
         }}>
-          {galleries.length === 0 ? 'אין גלריות' : 'אין גלריות שמתאימות לפילטרים'}
+          <div style={{ fontSize: 34, marginBottom: 8, opacity: .5 }}>🔍</div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,.4)', fontWeight: 500 }}>
+            {galleries.length === 0 ? 'אין גלריות בארכיון' : 'לא נמצאו גלריות התואמות לחיפוש'}
+          </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+          gap: 16,
+        }}>
           {filtered.map(g => {
             const expanded = expandedGalleryId === g.id
             const coverUrl = covers.get(g.id)
@@ -277,97 +355,160 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
             const galSelectedCount = galImages.filter(img => selectedImageIds.has(img.id)).length
             const allGalSelected = galImages.length > 0 && galImages.every(img => selectedImageIds.has(img.id))
             const location = readStr(g.delivery_settings, 'eventLocation')
-            const date = readStr(g.delivery_settings, 'eventDate')
+
+            const hasSelected = galSelectedCount > 0
 
             return (
-              <div key={g.id} style={{
-                background: galSelectedCount > 0 ? 'rgba(99,102,241,.03)' : 'rgba(255,255,255,.01)',
-                border: `1px solid ${galSelectedCount > 0 ? 'rgba(99,102,241,.12)' : 'rgba(255,255,255,.05)'}`,
-                borderRadius: 12, overflow: 'hidden', transition: 'all .12s',
+              <div key={g.id} className="wsd-gallery-card" style={{
+                position: 'relative',
+                background: hasSelected
+                  ? 'linear-gradient(135deg, rgba(99,102,241,.08), rgba(168,85,247,.04))'
+                  : 'linear-gradient(135deg, rgba(255,255,255,.035), rgba(255,255,255,.015))',
+                border: `1px solid ${hasSelected ? 'rgba(129,140,248,.3)' : 'rgba(255,255,255,.07)'}`,
+                borderRadius: 16, overflow: 'hidden',
+                transition: 'all .25s cubic-bezier(.4,0,.2,1)',
+                boxShadow: hasSelected
+                  ? '0 8px 32px rgba(99,102,241,.15), 0 0 0 1px rgba(129,140,248,.1)'
+                  : '0 4px 20px rgba(0,0,0,.2)',
+                gridColumn: expanded ? '1 / -1' : 'auto',
               }}>
-                {/* Gallery header row */}
+
+                {/* Cover image with gradient overlay */}
                 <div
-                  onClick={() => setExpandedGalleryId(expanded ? null : g.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer' }}
+                  onClick={() => setFullGalleryId(g.id)}
+                  style={{
+                    position: 'relative', aspectRatio: '16/10', cursor: 'pointer',
+                    background: 'rgba(255,255,255,.03)', overflow: 'hidden',
+                  }}
                 >
-                  {/* Cover */}
-                  <div style={{
-                    width: 56, height: 40, borderRadius: 7, overflow: 'hidden', flexShrink: 0,
-                    background: 'rgba(255,255,255,.04)',
-                  }}>
-                    {coverUrl && <img src={coverUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                  </div>
-
-                  {/* Info */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {g.name}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      {etInfo && <span>{etInfo.icon} {etInfo.label}</span>}
-                      <span>{g.image_count} תמונות</span>
-                      {location && <span>· {location}</span>}
-                      {date && <span>· {date}</span>}
-                    </div>
-                  </div>
-
-                  {/* Selection badge */}
-                  {galSelectedCount > 0 && (
-                    <span style={{
-                      padding: '3px 10px', borderRadius: 50, fontSize: 11, fontWeight: 600,
-                      background: 'rgba(99,102,241,.12)', color: '#818cf8',
-                    }}>
-                      {galSelectedCount}
-                    </span>
+                  {coverUrl ? (
+                    <img src={coverUrl} alt="" className="wsd-cover-img" style={{
+                      width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                      transition: 'transform .6s cubic-bezier(.4,0,.2,1)',
+                    }} />
+                  ) : (
+                    <div style={{
+                      width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: 'rgba(255,255,255,.15)', fontSize: 30,
+                    }}>📷</div>
                   )}
 
-                  {/* View full gallery button */}
+                  {/* Gradient overlay */}
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    background: 'linear-gradient(to top, rgba(0,0,0,.75) 0%, rgba(0,0,0,.15) 50%, transparent 100%)',
+                    pointerEvents: 'none',
+                  }} />
+
+                  {/* Event type badge */}
+                  {etInfo && (
+                    <div style={{
+                      position: 'absolute', top: 12, right: 12,
+                      padding: '4px 10px', borderRadius: 50, fontSize: 11, fontWeight: 600,
+                      background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(12px)',
+                      border: '1px solid rgba(255,255,255,.1)', color: '#fff',
+                    }}>
+                      {etInfo.icon} {etInfo.label}
+                    </div>
+                  )}
+
+                  {/* Selection count badge */}
+                  {hasSelected && (
+                    <div style={{
+                      position: 'absolute', top: 12, left: 12,
+                      padding: '4px 10px', borderRadius: 50, fontSize: 11, fontWeight: 700,
+                      background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                      color: '#fff', boxShadow: '0 4px 14px rgba(99,102,241,.5)',
+                    }}>
+                      {galSelectedCount} נבחרו
+                    </div>
+                  )}
+
+                  {/* Info overlay at bottom */}
+                  <div style={{
+                    position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16,
+                    display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10,
+                  }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{
+                        fontSize: 16, fontWeight: 700, color: '#fff',
+                        textShadow: '0 2px 8px rgba(0,0,0,.5)', letterSpacing: '-0.01em',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        marginBottom: 2,
+                      }}>{g.name}</div>
+                      <div style={{
+                        fontSize: 11.5, color: 'rgba(255,255,255,.7)',
+                        display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                      }}>
+                        <span>{g.image_count} תמונות</span>
+                        {location && <span>· {location}</span>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action row */}
+                <div style={{
+                  display: 'flex', gap: 6, padding: 10,
+                  borderTop: '1px solid rgba(255,255,255,.04)',
+                  background: 'rgba(0,0,0,.15)',
+                }}>
                   <button
-                    onClick={e => { e.stopPropagation(); setFullGalleryId(g.id) }}
-                    title="צפה בגלריה המלאה"
+                    onClick={() => setExpandedGalleryId(expanded ? null : g.id)}
                     style={{
-                      background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
-                      borderRadius: 7, cursor: 'pointer', color: 'rgba(255,255,255,.5)',
-                      padding: '5px 10px', fontSize: 11, fontFamily: 'inherit', transition: 'all .12s',
-                      display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                      flex: 1, padding: '9px 12px', borderRadius: 9, cursor: 'pointer',
+                      background: expanded ? 'rgba(99,102,241,.15)' : 'rgba(255,255,255,.04)',
+                      border: `1px solid ${expanded ? 'rgba(129,140,248,.3)' : 'rgba(255,255,255,.06)'}`,
+                      color: expanded ? '#a5b4fc' : 'rgba(255,255,255,.7)',
+                      fontSize: 12, fontWeight: 500, fontFamily: 'inherit', transition: 'all .15s',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                     }}
                   >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      {expanded ? <polyline points="18 15 12 9 6 15" /> : <polyline points="6 9 12 15 18 9" />}
+                    </svg>
+                    {expanded ? 'סגור' : 'בחר תמונות'}
+                  </button>
+                  <button
+                    onClick={() => setFullGalleryId(g.id)}
+                    style={{
+                      padding: '9px 14px', borderRadius: 9, cursor: 'pointer',
+                      background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.06)',
+                      color: 'rgba(255,255,255,.7)', fontSize: 12, fontWeight: 500,
+                      fontFamily: 'inherit', transition: 'all .15s',
+                      display: 'flex', alignItems: 'center', gap: 5,
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                     </svg>
                     צפה
                   </button>
-
-                  {/* Expand chevron */}
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                    style={{ color: 'rgba(255,255,255,.25)', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }}>
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
                 </div>
 
-                {/* Expanded: full image grid */}
+                {/* Expanded: inline image grid */}
                 {expanded && (
-                  <div style={{ borderTop: '1px solid rgba(255,255,255,.04)' }}>
-                    {/* Select all bar */}
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,.05)', background: 'rgba(0,0,0,.2)' }}>
                     <div style={{
-                      padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      borderBottom: '1px solid rgba(255,255,255,.04)',
                     }}>
                       <button onClick={() => selectAllInGallery(g.id)} style={{
-                        background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                        fontSize: 12, color: '#818cf8', fontWeight: 500,
+                        background: 'rgba(99,102,241,.1)', border: '1px solid rgba(99,102,241,.2)',
+                        cursor: 'pointer', fontFamily: 'inherit', borderRadius: 7, padding: '5px 12px',
+                        fontSize: 12, color: '#a5b4fc', fontWeight: 600, transition: 'all .15s',
                       }}>
-                        {allGalSelected ? 'בטל הכל' : 'בחר הכל'}
+                        {allGalSelected ? 'בטל בחירה' : 'בחר הכל'}
                       </button>
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,.3)' }}>
+                      <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.4)', fontWeight: 500 }}>
                         {galSelectedCount} / {galImages.length}
                       </span>
                     </div>
 
-                    {/* Image grid */}
                     <div style={{
-                      padding: '0 14px 14px',
-                      display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 5,
+                      padding: 14,
+                      display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 6,
+                      maxHeight: 420, overflowY: 'auto',
                     }}>
                       {galImages.map(img => {
                         const sel = selectedImageIds.has(img.id)
@@ -375,26 +516,32 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
                           <div
                             key={img.id}
                             onClick={() => toggleImage(img.id)}
+                            className="wsd-thumb"
                             style={{
-                              position: 'relative', aspectRatio: '3/2', borderRadius: 6, overflow: 'hidden',
-                              cursor: 'pointer', border: `2px solid ${sel ? '#6366f1' : 'transparent'}`,
-                              opacity: sel ? 1 : 0.6, transition: 'all .1s',
+                              position: 'relative', aspectRatio: '3/2', borderRadius: 8, overflow: 'hidden',
+                              cursor: 'pointer',
+                              border: `2px solid ${sel ? '#818cf8' : 'transparent'}`,
+                              opacity: sel ? 1 : 0.55, transition: 'all .15s',
+                              boxShadow: sel ? '0 0 0 4px rgba(129,140,248,.15)' : 'none',
                             }}
                           >
                             <img src={imgUrl(img.thumbnail_path || img.storage_path)} alt=""
                               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
                             {sel && (
                               <div style={{
-                                position: 'absolute', top: 4, right: 4, width: 16, height: 16, borderRadius: 4,
-                                background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                position: 'absolute', top: 5, right: 5, width: 18, height: 18, borderRadius: 5,
+                                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                boxShadow: '0 2px 8px rgba(99,102,241,.5)',
                               }}>
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                               </div>
                             )}
                             {img.is_top_pick && (
                               <div style={{
-                                position: 'absolute', bottom: 3, right: 3, fontSize: 9, padding: '1px 4px',
-                                background: 'rgba(0,0,0,.65)', borderRadius: 3, color: '#fbbf24',
+                                position: 'absolute', bottom: 4, right: 4, fontSize: 10, padding: '2px 6px',
+                                background: 'rgba(0,0,0,.75)', backdropFilter: 'blur(4px)',
+                                borderRadius: 4, color: '#fbbf24', fontWeight: 700,
                               }}>★</div>
                             )}
                           </div>
@@ -514,30 +661,66 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
         )
       })()}
 
-      <style>{`@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
+      </div>
+
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes slideUp { from { opacity: 0; transform: translateX(-50%) translateY(20px) } to { opacity: 1; transform: translateX(-50%) translateY(0) } }
+        .wsd-gallery-card:hover {
+          transform: translateY(-3px);
+          border-color: rgba(129,140,248,.25) !important;
+          box-shadow: 0 16px 48px rgba(0,0,0,.35), 0 0 0 1px rgba(129,140,248,.2), 0 0 40px rgba(99,102,241,.12) !important;
+        }
+        .wsd-gallery-card:hover .wsd-cover-img {
+          transform: scale(1.06);
+        }
+        .wsd-thumb:hover {
+          opacity: 1 !important;
+          transform: scale(1.03);
+        }
+      `}</style>
 
       {/* ── Floating bottom bar ── */}
       {selectedCount > 0 && (
         <div style={{
-          position: 'fixed', bottom: 0, left: 0, right: 0,
-          padding: '12px 24px',
-          background: 'rgba(10,10,15,.92)', backdropFilter: 'blur(16px)',
-          borderTop: '1px solid rgba(255,255,255,.08)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16,
+          position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+          padding: '10px 12px 10px 20px',
+          background: 'linear-gradient(135deg, rgba(20,20,30,.92), rgba(25,20,40,.92))',
+          backdropFilter: 'blur(24px) saturate(1.3)',
+          border: '1px solid rgba(129,140,248,.25)',
+          borderRadius: 16,
+          boxShadow: '0 12px 48px rgba(0,0,0,.5), 0 0 40px rgba(99,102,241,.2), inset 0 1px 0 rgba(255,255,255,.08)',
+          display: 'flex', alignItems: 'center', gap: 14,
           zIndex: 100,
+          animation: 'slideUp .3s cubic-bezier(.4,0,.2,1)',
         }}>
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,.6)' }}>
-            {selectedCount} תמונות נבחרו
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: 9,
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 800, color: '#fff',
+              boxShadow: '0 4px 12px rgba(99,102,241,.4)',
+            }}>
+              {selectedCount}
+            </div>
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,.85)', fontWeight: 500 }}>
+              תמונות נבחרו
+            </span>
+          </div>
+          <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,.1)' }} />
           <button
             onClick={downloadZip}
             disabled={zipping}
             style={{
-              padding: '10px 22px', borderRadius: 10, cursor: 'pointer',
+              padding: '9px 16px', borderRadius: 10, cursor: 'pointer',
               background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.1)',
-              color: 'rgba(255,255,255,.85)', fontSize: 13, fontWeight: 500,
-              fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8,
+              color: 'rgba(255,255,255,.85)', fontSize: 12.5, fontWeight: 500,
+              fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 7,
+              transition: 'all .15s',
             }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.1)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.06)' }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -549,10 +732,14 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
           <button
             onClick={() => setPhase('editor')}
             style={{
-              padding: '10px 26px', borderRadius: 10, border: 'none', cursor: 'pointer',
-              background: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600,
-              fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8,
+              padding: '9px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: '#fff', fontSize: 12.5, fontWeight: 600,
+              fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 7,
+              boxShadow: '0 4px 16px rgba(99,102,241,.4)', transition: 'all .15s',
             }}
+            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 24px rgba(99,102,241,.55)' }}
+            onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(99,102,241,.4)' }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
