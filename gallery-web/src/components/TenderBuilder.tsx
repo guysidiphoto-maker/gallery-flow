@@ -649,57 +649,117 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
         </div>
       )}
 
-      {/* ── Full gallery modal ── */}
+      {/* ── Full gallery modal (fast navigation between filtered galleries) ── */}
       {fullGalleryId && (() => {
-        const gal = galleries.find(g => g.id === fullGalleryId)
-        if (!gal) return null
+        const currentIdx = filtered.findIndex(g => g.id === fullGalleryId)
+        if (currentIdx === -1) return null
+        const gal = filtered[currentIdx]
         const galImages = allImages.filter(img => img.gallery_id === fullGalleryId)
         const et = readStr(gal.delivery_settings, 'eventType')
         const etInfo = EVENT_TYPES.find(e => e.key === et)
         const location = readStr(gal.delivery_settings, 'eventLocation')
         const galSel = galImages.filter(img => selectedImageIds.has(img.id)).length
         const allSel = galImages.length > 0 && galImages.every(img => selectedImageIds.has(img.id))
+        const hasPrev = currentIdx > 0
+        const hasNext = currentIdx < filtered.length - 1
+        const goPrev = () => hasPrev && setFullGalleryId(filtered[currentIdx - 1].id)
+        const goNext = () => hasNext && setFullGalleryId(filtered[currentIdx + 1].id)
         return (
           <div
             onClick={() => setFullGalleryId(null)}
             style={{
-              position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)',
-              backdropFilter: 'blur(8px)', zIndex: 200,
+              position: 'fixed', inset: 0, background: 'rgba(8,8,12,.94)',
+              backdropFilter: 'blur(16px)', zIndex: 200,
               display: 'flex', flexDirection: 'column',
               animation: 'fadeIn .15s ease',
             }}
+            onKeyDown={e => {
+              // Note: onKeyDown on a div only fires when focused; we add global listener via useEffect below
+              if (e.key === 'Escape') setFullGalleryId(null)
+              if (e.key === 'ArrowLeft') goPrev()
+              if (e.key === 'ArrowRight') goNext()
+            }}
+            tabIndex={-1}
+            ref={node => { if (node) node.focus() }}
           >
-            {/* Header */}
+            {/* Compact header */}
             <div
               onClick={e => e.stopPropagation()}
               style={{
-                padding: '16px 24px',
-                borderBottom: '1px solid rgba(255,255,255,.08)',
-                display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0,
+                padding: '12px 20px',
+                borderBottom: '1px solid rgba(255,255,255,.06)',
+                background: 'rgba(0,0,0,.35)',
+                display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
               }}
             >
-              <button onClick={() => setFullGalleryId(null)} style={{
-                background: 'rgba(255,255,255,.06)', border: 'none', borderRadius: 8,
-                width: 32, height: 32, cursor: 'pointer', color: '#fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit',
-              }}>
-                ✕
-              </button>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, color: '#fff' }}>{gal.name}</div>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,.4)', marginTop: 2 }}>
-                  {etInfo && <span>{etInfo.icon} {etInfo.label}</span>}
-                  <span> · {gal.image_count} תמונות</span>
-                  {location && <span> · {location}</span>}
-                  {galSel > 0 && <span style={{ color: '#818cf8' }}> · {galSel} נבחרו</span>}
+              {/* Close */}
+              <button onClick={() => setFullGalleryId(null)} title="סגור (Esc)" style={{
+                background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 8,
+                width: 30, height: 30, cursor: 'pointer', color: 'rgba(255,255,255,.75)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', fontSize: 13,
+                transition: 'all .12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.1)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.05)' }}
+              >✕</button>
+
+              {/* Title + meta — ultra compact */}
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>
+                  {gal.name}
                 </div>
+                <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.35)', whiteSpace: 'nowrap' }}>
+                  {etInfo && <>{etInfo.icon} {etInfo.label} · </>}
+                  {galImages.length} תמונות
+                  {location && <> · {location}</>}
+                </span>
+                {galSel > 0 && (
+                  <span style={{
+                    padding: '2px 10px', borderRadius: 50, fontSize: 11, fontWeight: 700,
+                    background: 'linear-gradient(135deg, rgba(99,102,241,.25), rgba(168,85,247,.2))',
+                    color: '#c7d2fe', border: '1px solid rgba(129,140,248,.25)',
+                  }}>{galSel} נבחרו</span>
+                )}
               </div>
+
+              {/* Gallery position indicator */}
+              <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.35)', fontVariantNumeric: 'tabular-nums' }}>
+                {currentIdx + 1} / {filtered.length}
+              </span>
+
+              {/* Prev/next nav */}
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button onClick={goPrev} disabled={!hasPrev} title="הקודם (→)" style={{
+                  background: hasPrev ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.02)',
+                  border: '1px solid rgba(255,255,255,.08)', borderRadius: 8,
+                  width: 30, height: 30, cursor: hasPrev ? 'pointer' : 'default',
+                  color: hasPrev ? 'rgba(255,255,255,.8)' : 'rgba(255,255,255,.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit',
+                  transition: 'all .12s',
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
+                <button onClick={goNext} disabled={!hasNext} title="הבא (←)" style={{
+                  background: hasNext ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.02)',
+                  border: '1px solid rgba(255,255,255,.08)', borderRadius: 8,
+                  width: 30, height: 30, cursor: hasNext ? 'pointer' : 'default',
+                  color: hasNext ? 'rgba(255,255,255,.8)' : 'rgba(255,255,255,.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit',
+                  transition: 'all .12s',
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="15 18 9 12 15 6" /></svg>
+                </button>
+              </div>
+
+              {/* Select all */}
               <button
                 onClick={() => selectAllInGallery(fullGalleryId)}
                 style={{
-                  padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500,
-                  background: allSel ? 'rgba(255,255,255,.06)' : '#6366f1',
-                  color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                  padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                  background: allSel ? 'rgba(255,255,255,.06)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  color: '#fff', border: allSel ? '1px solid rgba(255,255,255,.1)' : 'none',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  boxShadow: allSel ? 'none' : '0 4px 12px rgba(99,102,241,.3)',
                 }}
               >
                 {allSel ? 'בטל בחירה' : 'בחר הכל'}
@@ -709,12 +769,14 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
             {/* Image grid */}
             <div
               onClick={e => e.stopPropagation()}
+              key={fullGalleryId}
               style={{
-                flex: 1, minHeight: 0, overflowY: 'auto', padding: 24,
+                flex: 1, minHeight: 0, overflowY: 'auto', padding: 20,
+                animation: 'fadeIn .18s ease',
               }}
             >
               <div style={{
-                display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8,
+                display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6,
                 maxWidth: 1400, margin: '0 auto',
               }}>
                 {galImages.map(img => {
@@ -724,26 +786,30 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
                       key={img.id}
                       onClick={() => toggleImage(img.id)}
                       style={{
-                        position: 'relative', aspectRatio: '3/2', borderRadius: 8, overflow: 'hidden',
-                        cursor: 'pointer', border: `3px solid ${sel ? '#6366f1' : 'transparent'}`,
-                        transition: 'all .12s',
+                        position: 'relative', aspectRatio: '3/2', borderRadius: 6, overflow: 'hidden',
+                        cursor: 'pointer',
+                        border: `2px solid ${sel ? '#818cf8' : 'transparent'}`,
+                        opacity: sel ? 1 : 0.7, transition: 'all .1s',
+                        boxShadow: sel ? '0 0 0 3px rgba(129,140,248,.2)' : 'none',
                       }}
                     >
                       <img src={imgUrl(img.thumbnail_path || img.storage_path)} alt=""
                         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
                       <div style={{
-                        position: 'absolute', top: 8, right: 8, width: 22, height: 22, borderRadius: 6,
-                        background: sel ? '#6366f1' : 'rgba(0,0,0,.5)',
-                        border: sel ? 'none' : '2px solid rgba(255,255,255,.5)',
+                        position: 'absolute', top: 6, right: 6, width: 20, height: 20, borderRadius: 5,
+                        background: sel ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(0,0,0,.55)',
+                        border: sel ? 'none' : '2px solid rgba(255,255,255,.45)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: sel ? '0 2px 8px rgba(99,102,241,.4)' : 'none',
                       }}>
-                        {sel && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
+                        {sel && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
                       </div>
                       {img.is_top_pick && (
                         <div style={{
-                          position: 'absolute', bottom: 8, right: 8, fontSize: 11, padding: '2px 7px',
-                          background: 'rgba(0,0,0,.7)', borderRadius: 4, color: '#fbbf24', fontWeight: 600,
-                        }}>★ TOP</div>
+                          position: 'absolute', bottom: 6, right: 6, fontSize: 10, padding: '1px 6px',
+                          background: 'rgba(0,0,0,.7)', backdropFilter: 'blur(4px)',
+                          borderRadius: 3, color: '#fbbf24', fontWeight: 700,
+                        }}>★</div>
                       )}
                     </div>
                   )

@@ -14,12 +14,12 @@ export interface PdfOptions {
   photoSize?: 'small' | 'medium' | 'large'  // controls target row height
 }
 
-// Target row heights in mm (bigger = fewer, larger photos per row)
-// Content area is 264mm x 137mm (after small margins + compact title bar).
-const ROW_HEIGHTS = {
-  small: 32,    // ~12 photos per page (4 rows of 3)
-  medium: 43,   // ~9 photos per page (3 rows of 3)
-  large: 64,    // ~6 photos per page (2 rows of 3)
+// Number of ROWS per page for each size preset. Row height is computed
+// dynamically so N rows always fill the page exactly (no empty bottom space).
+const ROWS_PER_PAGE = {
+  small: 4,    // 4 rows × ~3 images = ~12 per page
+  medium: 3,   // 3 rows × ~3 images = ~9 per page
+  large: 2,    // 2 rows × ~3 images = ~6 per page
 }
 
 // ── 16:9 widescreen page (presentation format) ─────────────────────────
@@ -84,50 +84,66 @@ async function loadImageAsBase64(url: string, maxSide = 1600): Promise<LoadedIma
 }
 
 /**
- * Justified layout: packs images into rows that span full content width.
- * Each image preserves aspect ratio. Row height computed so total scaled
- * widths (plus gaps) equal content width.
+ * Fixed-height row layout: all rows have the same height H, images preserve
+ * aspect ratio. Packs images into rows filling close to (but not exceeding)
+ * content width. The total page height is always exactly N * H + (N-1) * gap,
+ * so pages always fill vertically.
  */
 interface LaidRow {
   items: { img: LoadedImage; displayW: number; displayH: number }[]
-  height: number
+  width: number  // actual packed width (may be slightly less than contentW)
 }
 
-function buildJustifiedRows(images: LoadedImage[], contentW: number, targetH: number): LaidRow[] {
+function buildFixedRows(images: LoadedImage[], contentW: number, rowH: number): LaidRow[] {
   if (images.length === 0) return []
   const rows: LaidRow[] = []
   let rowImgs: LoadedImage[] = []
-  let sumAspect = 0
+  let rowWidth = 0
+
+  const itemWidth = (img: LoadedImage) => rowH * (img.w / img.h)
 
   for (let i = 0; i < images.length; i++) {
     const img = images[i]
-    const aspect = img.w / img.h
-    rowImgs.push(img)
-    sumAspect += aspect
+    const w = itemWidth(img)
+    const gapIfAdd = rowImgs.length > 0 ? PHOTO_GAP : 0
 
-    // Natural row width at target height
-    const naturalW = sumAspect * targetH + (rowImgs.length - 1) * PHOTO_GAP
-    const isLast = i === images.length - 1
-
-    if (naturalW >= contentW || isLast) {
-      // Compute actual row height to fill contentW
-      const avail = contentW - (rowImgs.length - 1) * PHOTO_GAP
-      const rowH = isLast && naturalW < contentW
-        ? targetH  // last row, don't stretch
-        : avail / sumAspect
-
-      // Clamp: don't let rows get absurdly tall
-      const h = Math.min(Math.max(rowH, targetH * 0.6), targetH * 1.8)
+    // Would adding this image overflow contentW?
+    if (rowImgs.length > 0 && rowWidth + gapIfAdd + w > contentW) {
+      // Finalize current row, scale down slightly to fit exactly contentW
+      const scale = contentW / rowWidth
+      const clampedScale = Math.min(scale, 1)  // don't stretch, only shrink
       const items = rowImgs.map(im => ({
         img: im,
-        displayW: h * (im.w / im.h),
-        displayH: h,
+        displayW: itemWidth(im) * clampedScale,
+        displayH: rowH * clampedScale,
       }))
-
-      rows.push({ items, height: h })
-      rowImgs = []
-      sumAspect = 0
+      rows.push({
+        items,
+        width: items.reduce((s, it) => s + it.displayW, 0) + PHOTO_GAP * (items.length - 1),
+      })
+      rowImgs = [img]
+      rowWidth = w
+    } else {
+      rowImgs.push(img)
+      rowWidth += gapIfAdd + w
     }
+  }
+
+  // Last row
+  if (rowImgs.length > 0) {
+    // Scale to exactly fill contentW
+    const scale = contentW / rowWidth
+    // Only scale UP if close (<= 1.3) to avoid tiny last-row single images blowing up
+    const clampedScale = scale > 1.3 ? 1 : Math.min(scale, 1.15)
+    const items = rowImgs.map(im => ({
+      img: im,
+      displayW: itemWidth(im) * clampedScale,
+      displayH: rowH * clampedScale,
+    }))
+    rows.push({
+      items,
+      width: items.reduce((s, it) => s + it.displayW, 0) + PHOTO_GAP * (items.length - 1),
+    })
   }
 
   return rows
@@ -135,7 +151,7 @@ function buildJustifiedRows(images: LoadedImage[], contentW: number, targetH: nu
 
 export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
   const { galleries, bgColor, logoBase64, businessName, photoSize = 'medium' } = options
-  const defaultRowH = ROW_HEIGHTS[photoSize]
+  const defaultRowsPerPage = ROWS_PER_PAGE[photoSize]
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [PAGE_W, PAGE_H] })
   const contentW = PAGE_W - MARGIN * 2
   const contentH = PAGE_H - MARGIN * 2 - TITLE_H
@@ -194,13 +210,12 @@ export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
     }
     if (loaded.length === 0) continue
 
-    // Build justified rows — use per-gallery size if set, else default
-    const rowH = gallery.photoSize ? ROW_HEIGHTS[gallery.photoSize] : defaultRowH
-    const rows = buildJustifiedRows(loaded, contentW, rowH)
+    // Build fixed-height rows. Row height computed so N rows always fill
+    // the page vertically (no empty bottom space).
+    const rowsPerPage = gallery.photoSize ? ROWS_PER_PAGE[gallery.photoSize] : defaultRowsPerPage
+    const rowH = (contentH - (rowsPerPage - 1) * PHOTO_GAP) / rowsPerPage
+    const rows = buildFixedRows(loaded, contentW, rowH)
 
-    // Split rows into pages by height
-    let pageRows: LaidRow[] = []
-    let pageHSum = 0
     let firstPageOfGallery = true
 
     const renderPage = (pageRows: LaidRow[], isFirst: boolean, pageIdx: number, totalPages: number) => {
@@ -213,35 +228,29 @@ export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
       const titleText = totalPages > 1 ? `${gallery.title}  ·  ${pageIdx}/${totalPages}` : gallery.title
       doc.text(titleText, MARGIN, MARGIN + 5)
 
-      // Render rows
+      // Render rows: fixed height, centered horizontally if narrower than contentW
       let cursorY = MARGIN + TITLE_H
       for (const row of pageRows) {
-        let x = MARGIN
+        // Horizontal offset to center row
+        const xOffset = (contentW - row.width) / 2
+        let x = MARGIN + xOffset
         for (const item of row.items) {
           try {
             doc.addImage(item.img.data, 'JPEG', x, cursorY, item.displayW, item.displayH)
           } catch { /* skip */ }
           x += item.displayW + PHOTO_GAP
         }
-        cursorY += row.height + PHOTO_GAP
+        // All rows have the same height (rowH), advance by that amount
+        cursorY += rowH + PHOTO_GAP
       }
       void isFirst
     }
 
-    // Pack rows into pages
+    // Pack rows into pages: exactly rowsPerPage rows per page
     const pages: LaidRow[][] = []
-    for (const row of rows) {
-      const rowTotal = row.height + (pageRows.length > 0 ? PHOTO_GAP : 0)
-      if (pageHSum + rowTotal > contentH && pageRows.length > 0) {
-        pages.push(pageRows)
-        pageRows = [row]
-        pageHSum = row.height
-      } else {
-        pageRows.push(row)
-        pageHSum += rowTotal
-      }
+    for (let i = 0; i < rows.length; i += rowsPerPage) {
+      pages.push(rows.slice(i, i + rowsPerPage))
     }
-    if (pageRows.length > 0) pages.push(pageRows)
 
     pages.forEach((pr, idx) => {
       renderPage(pr, firstPageOfGallery, idx + 1, pages.length)
