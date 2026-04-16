@@ -883,11 +883,41 @@ export function App() {
   }
 
   async function handleBatchDownload(imgs: GalleryImage[]) {
+    // On mobile with Web Share API: fetch all files and share in ONE share sheet.
+    // The user picks "Save X Images" and all photos go to the camera roll together.
+    if (isMobile && navigator.share) {
+      setDlProgress(`Preparing ${imgs.length} photos...`)
+      try {
+        const files: File[] = []
+        for (let i = 0; i < imgs.length; i++) {
+          setDlProgress(`Loading ${i + 1} / ${imgs.length}...`)
+          try {
+            const res = await fetch(downloadUrl(imgs[i]))
+            const blob = await res.blob()
+            files.push(new File([blob], imgs[i].filename, { type: blob.type || 'image/jpeg' }))
+          } catch { /* skip failed image */ }
+        }
+        if (files.length > 0) {
+          setDlProgress(null)
+          // Web Share API with multiple files — native OS share sheet opens with
+          // "Save to Photos" option that saves all at once.
+          if (navigator.canShare && navigator.canShare({ files })) {
+            await navigator.share({ files })
+            return
+          }
+        }
+      } catch {
+        // User cancelled or share failed — fall through to sequential downloads
+      } finally {
+        setDlProgress(null)
+      }
+    }
+
+    // Desktop (or mobile fallback): sequential downloads
     setDlProgress(`Downloading ${imgs.length} photos...`)
     for (let i = 0; i < imgs.length; i++) {
       setDlProgress(`Downloading ${i + 1} / ${imgs.length}...`)
       handleDownload(downloadUrl(imgs[i]), imgs[i].filename)
-      // Small delay between downloads to avoid browser blocking
       if (imgs.length > 1) await new Promise(r => setTimeout(r, 300))
     }
     setDlProgress(null)
