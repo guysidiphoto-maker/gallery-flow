@@ -15,18 +15,19 @@ export interface PdfOptions {
 }
 
 // Target row heights in mm (bigger = fewer, larger photos per row)
+// Content area is 264mm x 137mm (after small margins + compact title bar).
 const ROW_HEIGHTS = {
-  small: 42,    // ~8-10 photos per page
-  medium: 58,   // ~6 photos per page
-  large: 80,    // ~3-4 photos per page
+  small: 32,    // ~12 photos per page (4 rows of 3)
+  medium: 43,   // ~9 photos per page (3 rows of 3)
+  large: 64,    // ~6 photos per page (2 rows of 3)
 }
 
 // ── 16:9 widescreen page (presentation format) ─────────────────────────
 const PAGE_W = 280          // mm
 const PAGE_H = 157.5        // mm (280 * 9/16 = 157.5)
-const MARGIN = 10
-const TITLE_H = 14
-const PHOTO_GAP = 3
+const MARGIN = 8            // small margins — photos fill the page
+const TITLE_H = 10          // compact title bar
+const PHOTO_GAP = 2.5
 
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '')
@@ -206,15 +207,11 @@ export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
       doc.addPage([PAGE_W, PAGE_H], 'landscape')
       paintBg()
 
-      // Title (with pagination if multi-page)
-      doc.setFontSize(16)
+      // Title (small, single line — pagination inline if multi-page)
+      doc.setFontSize(12)
       if (dark) doc.setTextColor(255, 255, 255); else doc.setTextColor(20, 20, 30)
       const titleText = totalPages > 1 ? `${gallery.title}  ·  ${pageIdx}/${totalPages}` : gallery.title
-      doc.text(titleText, MARGIN, MARGIN + 7)
-
-      doc.setDrawColor(99, 102, 241)
-      doc.setLineWidth(0.3)
-      doc.line(MARGIN, MARGIN + 10, MARGIN + 25, MARGIN + 10)
+      doc.text(titleText, MARGIN, MARGIN + 5)
 
       // Render rows
       let cursorY = MARGIN + TITLE_H

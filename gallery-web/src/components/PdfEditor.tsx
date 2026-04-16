@@ -9,8 +9,9 @@ export interface PdfEditorGallery {
   photoSize?: 'small' | 'medium' | 'large'  // per-gallery override
 }
 
-// Approximate photos per page at each size — used for preview page splits
-const PHOTOS_PER_PAGE = { small: 10, medium: 6, large: 3 }
+// Approximate photos per page at each size — used for preview page splits.
+// Matches PDF output: small ≈ 12, medium ≈ 9, large ≈ 6 (more for portrait).
+const PHOTOS_PER_PAGE = { small: 12, medium: 9, large: 6 }
 
 interface PdfEditorProps {
   galleries: PdfEditorGallery[]
@@ -279,9 +280,9 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
               ))}
             </div>
             <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.3)', marginTop: 6, lineHeight: 1.5 }}>
-              {photoSize === 'small' && '~10 תמונות בדף'}
-              {photoSize === 'medium' && '~6 תמונות בדף'}
-              {photoSize === 'large' && '~3 תמונות בדף'}
+              {photoSize === 'small' && '~12 תמונות בדף'}
+              {photoSize === 'medium' && '~9 תמונות בדף'}
+              {photoSize === 'large' && '~6 תמונות בדף'}
             </div>
           </div>
 
@@ -393,46 +394,43 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
                 {/* Multi-page preview */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, background: 'rgba(0,0,0,.15)' }}>
                   {pages.map((page, pageIdx) => {
-                    const photoH = gSize === 'small' ? 72 : gSize === 'medium' ? 110 : 160
+                    const photoH = gSize === 'small' ? 72 : gSize === 'medium' ? 95 : 135
                     return (
                       <div key={pageIdx} style={{
-                        background: bgColor, padding: '18px 22px', aspectRatio: '16/9',
+                        background: bgColor, padding: '10px 14px', aspectRatio: '16/9',
                         display: 'flex', flexDirection: 'column', overflow: 'hidden',
                         borderRadius: 6, transition: 'background .2s',
                         boxShadow: '0 2px 12px rgba(0,0,0,.3)',
                       }}>
                         {/* Header row */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 12 }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             {pageIdx === 0 ? (
-                              <>
-                                <input
-                                  value={g.title}
-                                  onChange={e => updateTitle(g.id, e.target.value)}
-                                  placeholder="שם האירוע..."
-                                  style={{
-                                    width: '100%', padding: '2px 4px', boxSizing: 'border-box',
-                                    background: 'transparent', border: 'none',
-                                    borderBottom: `1px dashed ${isDark(bgColor) ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.15)'}`,
-                                    fontSize: 18, fontWeight: 700, fontFamily: 'inherit',
-                                    color: textColor, outline: 'none', direction: 'rtl',
-                                    letterSpacing: '-0.01em',
-                                  }}
-                                />
-                                <div style={{ width: 30, height: 2, background: '#6366f1', marginTop: 3, borderRadius: 1 }} />
-                              </>
+                              <input
+                                value={g.title}
+                                onChange={e => updateTitle(g.id, e.target.value)}
+                                placeholder="שם האירוע..."
+                                style={{
+                                  width: '100%', padding: '1px 2px', boxSizing: 'border-box',
+                                  background: 'transparent', border: 'none',
+                                  borderBottom: `1px dashed ${isDark(bgColor) ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.12)'}`,
+                                  fontSize: 14, fontWeight: 700, fontFamily: 'inherit',
+                                  color: textColor, outline: 'none', direction: 'rtl',
+                                  letterSpacing: '-0.01em',
+                                }}
+                              />
                             ) : (
-                              <div style={{ fontSize: 16, fontWeight: 700, color: textColor }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: textColor }}>
                                 {g.title}  ·  {pageIdx + 1}/{pages.length}
                               </div>
                             )}
                           </div>
                           {logoBase64 && pageIdx === 0 && (
-                            <img src={logoBase64} alt="" style={{ maxHeight: 36, maxWidth: 100, flexShrink: 0 }} />
+                            <img src={logoBase64} alt="" style={{ maxHeight: 24, maxWidth: 70, flexShrink: 0 }} />
                           )}
                           {pages.length > 1 && pageIdx === 0 && (
-                            <div style={{ fontSize: 10, color: subtextColor, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                              עמוד 1/{pages.length}
+                            <div style={{ fontSize: 9.5, color: subtextColor, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                              1/{pages.length}
                             </div>
                           )}
                         </div>
