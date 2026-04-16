@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
+import JSZip from 'jszip'
 import { generatePitchPdf } from '../lib/pitchPdf'
 
 interface PdfEditorProps {
@@ -102,6 +103,33 @@ export function PdfEditor({ photos: initialPhotos, businessName, onBack }: PdfEd
     window.open(`mailto:?subject=${encodeURIComponent(`Portfolio — ${businessName}`)}&body=${encodeURIComponent('PDF attached.')}`)
   }
 
+  const downloadZip = async () => {
+    setGenerating(true)
+    try {
+      const zip = new JSZip()
+      for (let i = 0; i < photoOrder.length; i++) {
+        const url = photoOrder[i]
+        try {
+          const res = await fetch(url)
+          const blob = await res.blob()
+          const ext = (url.split('.').pop() || 'jpg').split('?')[0].slice(0, 5)
+          zip.file(`photo-${String(i + 1).padStart(3, '0')}.${ext}`, blob)
+        } catch { /* skip */ }
+      }
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `photos-${businessName.replace(/\s+/g, '-')}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('ZIP failed:', err)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   // ── Render ──────────────────────────────────────────────────────────
 
   return (
@@ -118,14 +146,28 @@ export function PdfEditor({ photos: initialPhotos, businessName, onBack }: PdfEd
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={sendEmail} disabled={generating} style={{
-            padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+            padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500,
             background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
             color: 'rgba(255,255,255,.6)', cursor: 'pointer', fontFamily: 'inherit',
           }}>
             שלח במייל
           </button>
+          <button onClick={downloadZip} disabled={generating || photoOrder.length === 0} style={{
+            padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+            background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
+            color: photoOrder.length > 0 ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.25)',
+            cursor: photoOrder.length > 0 ? 'pointer' : 'default', fontFamily: 'inherit',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            הורד ZIP
+          </button>
           <button onClick={download} disabled={generating || photoOrder.length === 0} style={{
-            padding: '8px 22px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+            padding: '8px 20px', borderRadius: 8, fontSize: 12, fontWeight: 600,
             background: photoOrder.length > 0 ? '#6366f1' : 'rgba(255,255,255,.04)',
             color: photoOrder.length > 0 ? '#fff' : 'rgba(255,255,255,.25)',
             border: 'none', cursor: photoOrder.length > 0 ? 'pointer' : 'default',

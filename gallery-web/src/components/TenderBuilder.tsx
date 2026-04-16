@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import JSZip from 'jszip'
 import { storageUrl } from '../supabase'
 import { PdfEditor } from './PdfEditor'
 
@@ -58,6 +59,8 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
   const [sizeFilter, setSizeFilter] = useState('any')
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set())
   const [expandedGalleryId, setExpandedGalleryId] = useState<string | null>(null)
+  const [fullGalleryId, setFullGalleryId] = useState<string | null>(null)
+  const [zipping, setZipping] = useState(false)
 
   // ── Filter ──────────────────────────────────────────────────────────────
 
@@ -94,6 +97,35 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
   }
 
   const clearAll = () => setSelectedImageIds(new Set())
+
+  // ── ZIP download ────────────────────────────────────────────────────────
+
+  const downloadZip = async () => {
+    setZipping(true)
+    try {
+      const selected = allImages.filter(img => selectedImageIds.has(img.id))
+      const zip = new JSZip()
+      for (let i = 0; i < selected.length; i++) {
+        const img = selected[i]
+        try {
+          const res = await fetch(imgUrl(img.storage_path))
+          const blob = await res.blob()
+          zip.file(img.filename || `photo-${i + 1}.jpg`, blob)
+        } catch { /* skip */ }
+      }
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `photos-${businessName.replace(/\s+/g, '-')}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('ZIP failed:', err)
+    } finally {
+      setZipping(false)
+    }
+  }
 
   // ── Go to editor ────────────────────────────────────────────────────────
 
@@ -240,6 +272,24 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
                     </span>
                   )}
 
+                  {/* View full gallery button */}
+                  <button
+                    onClick={e => { e.stopPropagation(); setFullGalleryId(g.id) }}
+                    title="צפה בגלריה המלאה"
+                    style={{
+                      background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
+                      borderRadius: 7, cursor: 'pointer', color: 'rgba(255,255,255,.5)',
+                      padding: '5px 10px', fontSize: 11, fontFamily: 'inherit', transition: 'all .12s',
+                      display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                    }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    צפה
+                  </button>
+
                   {/* Expand chevron */}
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
                     style={{ color: 'rgba(255,255,255,.25)', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }}>
@@ -310,6 +360,113 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
         </div>
       )}
 
+      {/* ── Full gallery modal ── */}
+      {fullGalleryId && (() => {
+        const gal = galleries.find(g => g.id === fullGalleryId)
+        if (!gal) return null
+        const galImages = allImages.filter(img => img.gallery_id === fullGalleryId)
+        const et = readStr(gal.delivery_settings, 'eventType')
+        const etInfo = EVENT_TYPES.find(e => e.key === et)
+        const location = readStr(gal.delivery_settings, 'eventLocation')
+        const galSel = galImages.filter(img => selectedImageIds.has(img.id)).length
+        const allSel = galImages.length > 0 && galImages.every(img => selectedImageIds.has(img.id))
+        return (
+          <div
+            onClick={() => setFullGalleryId(null)}
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,.85)',
+              backdropFilter: 'blur(8px)', zIndex: 200,
+              display: 'flex', flexDirection: 'column',
+              animation: 'fadeIn .15s ease',
+            }}
+          >
+            {/* Header */}
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                padding: '16px 24px',
+                borderBottom: '1px solid rgba(255,255,255,.08)',
+                display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0,
+              }}
+            >
+              <button onClick={() => setFullGalleryId(null)} style={{
+                background: 'rgba(255,255,255,.06)', border: 'none', borderRadius: 8,
+                width: 32, height: 32, cursor: 'pointer', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit',
+              }}>
+                ✕
+              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: '#fff' }}>{gal.name}</div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,.4)', marginTop: 2 }}>
+                  {etInfo && <span>{etInfo.icon} {etInfo.label}</span>}
+                  <span> · {gal.image_count} תמונות</span>
+                  {location && <span> · {location}</span>}
+                  {galSel > 0 && <span style={{ color: '#818cf8' }}> · {galSel} נבחרו</span>}
+                </div>
+              </div>
+              <button
+                onClick={() => selectAllInGallery(fullGalleryId)}
+                style={{
+                  padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+                  background: allSel ? 'rgba(255,255,255,.06)' : '#6366f1',
+                  color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {allSel ? 'בטל בחירה' : 'בחר הכל'}
+              </button>
+            </div>
+
+            {/* Image grid */}
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                flex: 1, minHeight: 0, overflowY: 'auto', padding: 24,
+              }}
+            >
+              <div style={{
+                display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8,
+                maxWidth: 1400, margin: '0 auto',
+              }}>
+                {galImages.map(img => {
+                  const sel = selectedImageIds.has(img.id)
+                  return (
+                    <div
+                      key={img.id}
+                      onClick={() => toggleImage(img.id)}
+                      style={{
+                        position: 'relative', aspectRatio: '3/2', borderRadius: 8, overflow: 'hidden',
+                        cursor: 'pointer', border: `3px solid ${sel ? '#6366f1' : 'transparent'}`,
+                        transition: 'all .12s',
+                      }}
+                    >
+                      <img src={imgUrl(img.thumbnail_path || img.storage_path)} alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
+                      <div style={{
+                        position: 'absolute', top: 8, right: 8, width: 22, height: 22, borderRadius: 6,
+                        background: sel ? '#6366f1' : 'rgba(0,0,0,.5)',
+                        border: sel ? 'none' : '2px solid rgba(255,255,255,.5)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {sel && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
+                      </div>
+                      {img.is_top_pick && (
+                        <div style={{
+                          position: 'absolute', bottom: 8, right: 8, fontSize: 11, padding: '2px 7px',
+                          background: 'rgba(0,0,0,.7)', borderRadius: 4, color: '#fbbf24', fontWeight: 600,
+                        }}>★ TOP</div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      <style>{`@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
+
       {/* ── Floating bottom bar ── */}
       {selectedCount > 0 && (
         <div style={{
@@ -324,9 +481,26 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
             {selectedCount} תמונות נבחרו
           </span>
           <button
+            onClick={downloadZip}
+            disabled={zipping}
+            style={{
+              padding: '10px 22px', borderRadius: 10, cursor: 'pointer',
+              background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.1)',
+              color: 'rgba(255,255,255,.85)', fontSize: 13, fontWeight: 500,
+              fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            {zipping ? 'מייצר ZIP...' : 'הורד ZIP'}
+          </button>
+          <button
             onClick={() => setPhase('editor')}
             style={{
-              padding: '10px 28px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              padding: '10px 26px', borderRadius: 10, border: 'none', cursor: 'pointer',
               background: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600,
               fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8,
             }}
