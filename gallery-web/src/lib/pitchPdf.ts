@@ -12,6 +12,14 @@ export interface PdfOptions {
   businessName: string
 }
 
+// ── 16:9 widescreen page (presentation format) ─────────────────────────
+const PAGE_W = 280          // mm
+const PAGE_H = 157.5        // mm (280 * 9/16 = 157.5)
+const MARGIN = 10
+const TITLE_H = 14
+const PHOTO_GAP = 3
+const TARGET_ROW_H = 55     // mm — gives ~2 rows per page for mixed content
+
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '')
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
@@ -32,11 +40,13 @@ async function loadImage(url: string): Promise<HTMLImageElement | null> {
   })
 }
 
+interface LoadedImage { data: string; w: number; h: number }
+
 /**
  * Loads image, draws to canvas at max 1600px on longest side, returns JPEG base64.
  * Preserves original aspect ratio (no cropping).
  */
-async function loadImageAsBase64(url: string, maxSide = 1600): Promise<{ data: string; w: number; h: number } | null> {
+async function loadImageAsBase64(url: string, maxSide = 1600): Promise<LoadedImage | null> {
   const img = await loadImage(url)
   if (!img) return null
   const ratio = img.width / img.height
@@ -58,136 +68,178 @@ async function loadImageAsBase64(url: string, maxSide = 1600): Promise<{ data: s
   ctx.drawImage(img, 0, 0, w, h)
 
   try {
-    return { data: canvas.toDataURL('image/jpeg', 0.88), w, h }
+    return { data: canvas.toDataURL('image/jpeg', 0.9), w, h }
   } catch {
     return null
   }
 }
 
+/**
+ * Justified layout: packs images into rows that span full content width.
+ * Each image preserves aspect ratio. Row height computed so total scaled
+ * widths (plus gaps) equal content width.
+ */
+interface LaidRow {
+  items: { img: LoadedImage; displayW: number; displayH: number }[]
+  height: number
+}
+
+function buildJustifiedRows(images: LoadedImage[], contentW: number, targetH: number): LaidRow[] {
+  if (images.length === 0) return []
+  const rows: LaidRow[] = []
+  let rowImgs: LoadedImage[] = []
+  let sumAspect = 0
+
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i]
+    const aspect = img.w / img.h
+    rowImgs.push(img)
+    sumAspect += aspect
+
+    // Natural row width at target height
+    const naturalW = sumAspect * targetH + (rowImgs.length - 1) * PHOTO_GAP
+    const isLast = i === images.length - 1
+
+    if (naturalW >= contentW || isLast) {
+      // Compute actual row height to fill contentW
+      const avail = contentW - (rowImgs.length - 1) * PHOTO_GAP
+      const rowH = isLast && naturalW < contentW
+        ? targetH  // last row, don't stretch
+        : avail / sumAspect
+
+      // Clamp: don't let rows get absurdly tall
+      const h = Math.min(Math.max(rowH, targetH * 0.6), targetH * 1.8)
+      const items = rowImgs.map(im => ({
+        img: im,
+        displayW: h * (im.w / im.h),
+        displayH: h,
+      }))
+
+      rows.push({ items, height: h })
+      rowImgs = []
+      sumAspect = 0
+    }
+  }
+
+  return rows
+}
+
 export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
   const { galleries, bgColor, logoBase64, businessName } = options
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  const pageW = 210
-  const pageH = 297
-  const margin = 16
-  const contentW = pageW - margin * 2
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [PAGE_W, PAGE_H] })
+  const contentW = PAGE_W - MARGIN * 2
+  const contentH = PAGE_H - MARGIN * 2 - TITLE_H
   const dark = isDark(bgColor)
   const [bgR, bgG, bgB] = hexToRgb(bgColor)
 
   const paintBg = () => {
     doc.setFillColor(bgR, bgG, bgB)
-    doc.rect(0, 0, pageW, pageH, 'F')
+    doc.rect(0, 0, PAGE_W, PAGE_H, 'F')
   }
 
   // ── Cover Page ──────────────────────────────────────────────────────
 
   paintBg()
-
-  // Accent bar at top
   doc.setFillColor(99, 102, 241)
-  doc.rect(0, 0, pageW, 2.5, 'F')
+  doc.rect(0, 0, PAGE_W, 2, 'F')
 
-  let y = 80
+  let y = PAGE_H / 2 - 25
 
-  // Logo
   if (logoBase64) {
     try {
-      doc.addImage(logoBase64, 'PNG', pageW / 2 - 25, y, 50, 25)
-      y += 35
+      doc.addImage(logoBase64, 'PNG', PAGE_W / 2 - 22, y, 44, 22)
+      y += 32
     } catch { y += 5 }
   }
 
-  // Business name big title
-  doc.setFontSize(28)
+  doc.setFontSize(30)
   if (dark) doc.setTextColor(255, 255, 255); else doc.setTextColor(20, 20, 30)
-  doc.text(businessName, pageW / 2, y, { align: 'center' })
-  y += 12
+  doc.text(businessName, PAGE_W / 2, y, { align: 'center' })
+  y += 11
 
-  // Accent line
   doc.setDrawColor(99, 102, 241)
   doc.setLineWidth(0.4)
-  doc.line(pageW / 2 - 25, y, pageW / 2 + 25, y)
-  y += 12
+  doc.line(PAGE_W / 2 - 22, y, PAGE_W / 2 + 22, y)
+  y += 10
 
-  // Gallery/photo stats
   const totalPhotos = galleries.reduce((sum, g) => sum + g.photos.length, 0)
   doc.setFontSize(11)
-  if (dark) doc.setTextColor(160, 160, 180); else doc.setTextColor(100, 100, 120)
-  doc.text(`${galleries.length} events · ${totalPhotos} photos`, pageW / 2, y, { align: 'center' })
+  if (dark) doc.setTextColor(160, 160, 180); else doc.setTextColor(110, 110, 130)
+  doc.text(`${galleries.length} events · ${totalPhotos} photos`, PAGE_W / 2, y, { align: 'center' })
 
-  // Date at bottom
   const dateStr = new Date().toLocaleDateString('he-IL', { year: 'numeric', month: 'long', day: 'numeric' })
   doc.setFontSize(9)
-  doc.text(dateStr, pageW / 2, pageH - 20, { align: 'center' })
+  doc.text(dateStr, PAGE_W / 2, PAGE_H - 10, { align: 'center' })
 
   // ── Per-Gallery Pages ───────────────────────────────────────────────
 
-  for (let gi = 0; gi < galleries.length; gi++) {
-    const gallery = galleries[gi]
+  for (const gallery of galleries) {
     if (gallery.photos.length === 0) continue
 
-    doc.addPage()
-    paintBg()
-
-    // Title at top of first page of this gallery
-    doc.setFontSize(20)
-    if (dark) doc.setTextColor(255, 255, 255); else doc.setTextColor(20, 20, 30)
-    doc.text(gallery.title || 'Gallery', margin, margin + 8)
-
-    // Accent line under title
-    doc.setDrawColor(99, 102, 241)
-    doc.setLineWidth(0.4)
-    doc.line(margin, margin + 13, margin + 40, margin + 13)
-
-    let cursorY = margin + 22
-
-    // Pre-load all images with their aspect ratios
-    const gap = 4
-    const colW = (contentW - gap) / 2
-
-    // Two-column flow layout with aspect ratio preservation.
-    // We fill by row: pair photos two at a time, using the same row height
-    // equal to the smaller of their natural heights so they align nicely.
-    const images: Array<{ data: string; w: number; h: number } | null> = []
+    // Load all photos upfront with dimensions
+    const loaded: LoadedImage[] = []
     for (const url of gallery.photos) {
-      images.push(await loadImageAsBase64(url))
+      const img = await loadImageAsBase64(url)
+      if (img) loaded.push(img)
+    }
+    if (loaded.length === 0) continue
+
+    // Build justified rows
+    const rows = buildJustifiedRows(loaded, contentW, TARGET_ROW_H)
+
+    // Split rows into pages by height
+    let pageRows: LaidRow[] = []
+    let pageHSum = 0
+    let firstPageOfGallery = true
+
+    const renderPage = (pageRows: LaidRow[], isFirst: boolean, pageIdx: number, totalPages: number) => {
+      doc.addPage([PAGE_W, PAGE_H], 'landscape')
+      paintBg()
+
+      // Title (with pagination if multi-page)
+      doc.setFontSize(16)
+      if (dark) doc.setTextColor(255, 255, 255); else doc.setTextColor(20, 20, 30)
+      const titleText = totalPages > 1 ? `${gallery.title}  ·  ${pageIdx}/${totalPages}` : gallery.title
+      doc.text(titleText, MARGIN, MARGIN + 7)
+
+      doc.setDrawColor(99, 102, 241)
+      doc.setLineWidth(0.3)
+      doc.line(MARGIN, MARGIN + 10, MARGIN + 25, MARGIN + 10)
+
+      // Render rows
+      let cursorY = MARGIN + TITLE_H
+      for (const row of pageRows) {
+        let x = MARGIN
+        for (const item of row.items) {
+          try {
+            doc.addImage(item.img.data, 'JPEG', x, cursorY, item.displayW, item.displayH)
+          } catch { /* skip */ }
+          x += item.displayW + PHOTO_GAP
+        }
+        cursorY += row.height + PHOTO_GAP
+      }
+      void isFirst
     }
 
-    let i = 0
-    while (i < images.length) {
-      const a = images[i]
-      const b = i + 1 < images.length ? images[i + 1] : null
-      if (!a) { i++; continue }
-
-      // Compute display heights based on aspect ratio so each fills colW width
-      const aH = colW / (a.w / a.h)
-      const bH = b ? colW / (b.w / b.h) : 0
-
-      // Use the MAX height so neither gets cropped. Remaining space stays empty.
-      // Actually we preserve each image's own aspect — so they may have different heights
-      // in the same row. Align tops to cursorY.
-      const rowH = Math.max(aH, bH)
-
-      // Check page break
-      if (cursorY + rowH > pageH - margin) {
-        doc.addPage()
-        paintBg()
-        cursorY = margin
+    // Pack rows into pages
+    const pages: LaidRow[][] = []
+    for (const row of rows) {
+      const rowTotal = row.height + (pageRows.length > 0 ? PHOTO_GAP : 0)
+      if (pageHSum + rowTotal > contentH && pageRows.length > 0) {
+        pages.push(pageRows)
+        pageRows = [row]
+        pageHSum = row.height
+      } else {
+        pageRows.push(row)
+        pageHSum += rowTotal
       }
-
-      try {
-        doc.addImage(a.data, 'JPEG', margin, cursorY, colW, aH)
-      } catch { /* skip */ }
-
-      if (b) {
-        try {
-          doc.addImage(b.data, 'JPEG', margin + colW + gap, cursorY, colW, bH)
-        } catch { /* skip */ }
-      }
-
-      cursorY += rowH + gap
-      i += 2
     }
+    if (pageRows.length > 0) pages.push(pageRows)
+
+    pages.forEach((pr, idx) => {
+      renderPage(pr, firstPageOfGallery, idx + 1, pages.length)
+      firstPageOfGallery = false
+    })
   }
 
   return doc.output('blob')

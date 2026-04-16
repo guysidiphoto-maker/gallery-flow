@@ -263,43 +263,42 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
               background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)',
               borderRadius: 14, overflow: 'hidden',
             }}>
-              {/* Page simulation */}
-              <div style={{ background: bgColor, padding: 28, minHeight: 200, transition: 'background .2s' }}>
-                {logoBase64 && (
-                  <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                    <img src={logoBase64} alt="" style={{ maxWidth: 120, maxHeight: 50 }} />
+              {/* Page simulation — 16:9 landscape to match PDF output */}
+              <div style={{ background: bgColor, padding: '18px 22px', aspectRatio: '16/9', display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'background .2s' }}>
+                {/* Header row: title + photo count */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <input
+                      value={g.title}
+                      onChange={e => updateTitle(g.id, e.target.value)}
+                      placeholder="שם האירוע..."
+                      style={{
+                        width: '100%', padding: '2px 4px', boxSizing: 'border-box',
+                        background: 'transparent', border: 'none',
+                        borderBottom: `1px dashed ${isDark(bgColor) ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.15)'}`,
+                        fontSize: 18, fontWeight: 700, fontFamily: 'inherit',
+                        color: textColor, outline: 'none', direction: 'rtl',
+                        letterSpacing: '-0.01em',
+                      }}
+                    />
+                    <div style={{ width: 30, height: 2, background: '#6366f1', marginTop: 3, borderRadius: 1 }} />
                   </div>
-                )}
-
-                {/* Editable title */}
-                <div style={{ marginBottom: 6 }}>
-                  <input
-                    value={g.title}
-                    onChange={e => updateTitle(g.id, e.target.value)}
-                    placeholder="שם האירוע..."
-                    style={{
-                      width: '100%', padding: '4px 6px', boxSizing: 'border-box',
-                      background: 'transparent', border: 'none', borderBottom: `1px dashed ${isDark(bgColor) ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.15)'}`,
-                      fontSize: 22, fontWeight: 700, fontFamily: 'inherit',
-                      color: textColor, outline: 'none', direction: 'rtl',
-                      letterSpacing: '-0.01em',
-                    }}
-                  />
-                  <div style={{ width: 40, height: 2, background: '#6366f1', marginTop: 4, borderRadius: 1 }} />
+                  {logoBase64 && (
+                    <img src={logoBase64} alt="" style={{ maxHeight: 36, maxWidth: 100, flexShrink: 0 }} />
+                  )}
+                  <div style={{ fontSize: 10, color: subtextColor, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    {g.photos.length} תמונות
+                  </div>
                 </div>
 
-                <div style={{ fontSize: 11, color: subtextColor, marginBottom: 16 }}>
-                  {g.photos.length} תמונות
-                </div>
-
-                {/* Photo grid (preserves aspect ratio - uses object-fit: contain via natural sizing) */}
+                {/* Photo flow: justified layout matching the PDF (preserves aspect ratios) */}
                 {g.photos.length === 0 ? (
-                  <div style={{ padding: 20, textAlign: 'center', color: subtextColor, fontSize: 12 }}>
+                  <div style={{ padding: 20, textAlign: 'center', color: subtextColor, fontSize: 12, flex: 1 }}>
                     אין תמונות
                   </div>
                 ) : (
                   <div style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6,
+                    display: 'flex', flexWrap: 'wrap', gap: 4, flex: 1, alignContent: 'flex-start',
                   }}>
                     {g.photos.map((url, idx) => {
                       const isDragging = dragInfo?.gid === g.id && dragInfo.idx === idx
@@ -313,22 +312,21 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
                           onDrop={() => onDrop(g.id, idx)}
                           onDragEnd={() => { setDragInfo(null); setDragOver(null) }}
                           style={{
-                            position: 'relative', borderRadius: 4, overflow: 'hidden',
+                            position: 'relative', borderRadius: 3, overflow: 'hidden',
                             cursor: 'grab', opacity: isDragging ? 0.4 : 1,
                             outline: isOver ? '2px solid #6366f1' : 'none', outlineOffset: -2,
-                            transition: 'opacity .12s',
+                            transition: 'opacity .12s', height: 90,
                             background: isDark(bgColor) ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.03)',
                           }}
                         >
-                          {/* Keep natural aspect ratio using img display */}
                           <img src={url} alt=""
-                            style={{ width: '100%', height: 'auto', display: 'block' }}
+                            style={{ height: '100%', width: 'auto', display: 'block' }}
                             loading="lazy" />
                           <button
                             onClick={(e) => { e.stopPropagation(); removePhoto(g.id, idx) }}
                             style={{
-                              position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: 4,
-                              background: 'rgba(0,0,0,.6)', border: 'none', color: '#fff', fontSize: 12,
+                              position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 4,
+                              background: 'rgba(0,0,0,.65)', border: 'none', color: '#fff', fontSize: 11,
                               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                               opacity: 0.6, transition: 'opacity .12s',
                             }}
