@@ -9,9 +9,27 @@ export interface PdfEditorGallery {
   photoSize?: 'small' | 'medium' | 'large'  // per-gallery override
 }
 
-// Approximate photos per page at each size — used for preview page splits.
-// Matches PDF output: small ≈ 12, medium ≈ 9, large ≈ 6 (more for portrait).
-const PHOTOS_PER_PAGE = { small: 12, medium: 9, large: 6 }
+// Rows per page for each size preset — MUST match ROWS_PER_PAGE in pitchPdf.ts
+const ROWS_PER_PAGE = { small: 4, medium: 3, large: 2 }
+// Approximate per-row packing (assuming avg landscape aspect)
+const IMAGES_PER_ROW_HINT = 3
+const PHOTOS_PER_PAGE = {
+  small: ROWS_PER_PAGE.small * IMAGES_PER_ROW_HINT,    // ~12
+  medium: ROWS_PER_PAGE.medium * IMAGES_PER_ROW_HINT,  // ~9
+  large: ROWS_PER_PAGE.large * IMAGES_PER_ROW_HINT,    // ~6
+}
+
+// Chunk images into rows based on estimated aspect packing
+function chunkIntoRows(urls: string[], numRows: number): string[][] {
+  if (urls.length === 0 || numRows === 0) return []
+  const rows: string[][] = Array.from({ length: numRows }, () => [])
+  const perRow = Math.ceil(urls.length / numRows)
+  for (let i = 0; i < urls.length; i++) {
+    const rowIdx = Math.min(Math.floor(i / perRow), numRows - 1)
+    rows[rowIdx].push(urls[i])
+  }
+  return rows.filter(r => r.length > 0)
+}
 
 interface PdfEditorProps {
   galleries: PdfEditorGallery[]
@@ -394,7 +412,6 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
                 {/* Multi-page preview */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, background: 'rgba(0,0,0,.15)' }}>
                   {pages.map((page, pageIdx) => {
-                    const photoH = gSize === 'small' ? 72 : gSize === 'medium' ? 95 : 135
                     return (
                       <div key={pageIdx} style={{
                         background: bgColor, padding: '10px 14px', aspectRatio: '16/9',
@@ -435,55 +452,71 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
                           )}
                         </div>
 
-                        {/* Photo flow */}
+                        {/* Photo flow — grid with N equal-height rows that fill the page */}
                         {page.photos.length === 0 ? (
                           <div style={{ padding: 20, textAlign: 'center', color: subtextColor, fontSize: 12, flex: 1 }}>
                             אין תמונות
                           </div>
-                        ) : (
-                          <div style={{
-                            display: 'flex', flexWrap: 'wrap', gap: 4, flex: 1, alignContent: 'flex-start',
-                          }}>
-                            {page.photos.map((url, localIdx) => {
-                              const idx = page.startIdx + localIdx
-                              const isDragging = dragInfo?.gid === g.id && dragInfo.idx === idx
-                              const isOver = dragOver?.gid === g.id && dragOver.idx === idx
-                              return (
-                                <div
-                                  key={`${url}-${idx}`}
-                                  draggable
-                                  onDragStart={() => onDragStart(g.id, idx)}
-                                  onDragOver={(e) => onDragOver(e, g.id, idx)}
-                                  onDrop={() => onDrop(g.id, idx)}
-                                  onDragEnd={() => { setDragInfo(null); setDragOver(null) }}
-                                  style={{
-                                    position: 'relative', borderRadius: 3, overflow: 'hidden',
-                                    cursor: 'grab', opacity: isDragging ? 0.4 : 1,
-                                    outline: isOver ? '2px solid #6366f1' : 'none', outlineOffset: -2,
-                                    transition: 'opacity .12s, height .2s',
-                                    height: photoH,
-                                    background: isDark(bgColor) ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.03)',
-                                  }}
-                                >
-                                  <img src={url} alt=""
-                                    style={{ height: '100%', width: 'auto', display: 'block' }}
-                                    loading="lazy" />
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); removePhoto(g.id, idx) }}
-                                    style={{
-                                      position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 4,
-                                      background: 'rgba(0,0,0,.65)', border: 'none', color: '#fff', fontSize: 11,
-                                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                      opacity: 0.6, transition: 'opacity .12s',
-                                    }}
-                                    onMouseEnter={e => { e.currentTarget.style.opacity = '1' }}
-                                    onMouseLeave={e => { e.currentTarget.style.opacity = '0.6' }}
-                                  >×</button>
+                        ) : (() => {
+                          const numRows = ROWS_PER_PAGE[gSize]
+                          const photoRows = chunkIntoRows(page.photos, numRows)
+                          return (
+                            <div style={{
+                              flex: 1, minHeight: 0,
+                              display: 'grid',
+                              gridTemplateRows: `repeat(${numRows}, 1fr)`,
+                              gap: 3,
+                            }}>
+                              {photoRows.map((rowPhotos, rowIdx) => (
+                                <div key={rowIdx} style={{
+                                  display: 'flex', gap: 3, minHeight: 0, alignItems: 'stretch',
+                                  justifyContent: 'center',
+                                }}>
+                                  {rowPhotos.map((url, inRowIdx) => {
+                                    // Compute global idx: sum of previous rows' lengths
+                                    const idx = page.startIdx + photoRows.slice(0, rowIdx).reduce((s, r) => s + r.length, 0) + inRowIdx
+                                    const isDragging = dragInfo?.gid === g.id && dragInfo.idx === idx
+                                    const isOver = dragOver?.gid === g.id && dragOver.idx === idx
+                                    return (
+                                      <div
+                                        key={`${url}-${idx}`}
+                                        draggable
+                                        onDragStart={() => onDragStart(g.id, idx)}
+                                        onDragOver={(e) => onDragOver(e, g.id, idx)}
+                                        onDrop={() => onDrop(g.id, idx)}
+                                        onDragEnd={() => { setDragInfo(null); setDragOver(null) }}
+                                        style={{
+                                          position: 'relative', borderRadius: 3, overflow: 'hidden',
+                                          cursor: 'grab', opacity: isDragging ? 0.4 : 1,
+                                          outline: isOver ? '2px solid #6366f1' : 'none', outlineOffset: -2,
+                                          transition: 'opacity .12s',
+                                          height: '100%',
+                                          background: isDark(bgColor) ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.03)',
+                                          flex: '0 0 auto',  // width determined by image natural aspect at this height
+                                        }}
+                                      >
+                                        <img src={url} alt=""
+                                          style={{ height: '100%', width: 'auto', display: 'block' }}
+                                          loading="lazy" />
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); removePhoto(g.id, idx) }}
+                                          style={{
+                                            position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 4,
+                                            background: 'rgba(0,0,0,.65)', border: 'none', color: '#fff', fontSize: 11,
+                                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            opacity: 0.6, transition: 'opacity .12s',
+                                          }}
+                                          onMouseEnter={e => { e.currentTarget.style.opacity = '1' }}
+                                          onMouseLeave={e => { e.currentTarget.style.opacity = '0.6' }}
+                                        >×</button>
+                                      </div>
+                                    )
+                                  })}
                                 </div>
-                              )
-                            })}
-                          </div>
-                        )}
+                              ))}
+                            </div>
+                          )
+                        })()}
                       </div>
                     )
                   })}
