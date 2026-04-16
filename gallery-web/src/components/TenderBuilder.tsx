@@ -139,9 +139,15 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
 
   // ── Go to editor ────────────────────────────────────────────────────────
 
-  const selectedPhotos = allImages
-    .filter(img => selectedImageIds.has(img.id))
-    .map(img => imgUrl(img.storage_path))
+  // Group selected photos per gallery (preserving selection order within each gallery)
+  const editorGroups = galleries
+    .map(g => {
+      const photos = allImages
+        .filter(img => img.gallery_id === g.id && selectedImageIds.has(img.id))
+        .map(img => imgUrl(img.storage_path))
+      return { id: g.id, title: g.name, photos }
+    })
+    .filter(grp => grp.photos.length > 0)
 
   const selectedCount = selectedImageIds.size
 
@@ -150,7 +156,7 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
   if (phase === 'editor') {
     return (
       <PdfEditor
-        photos={selectedPhotos}
+        galleries={editorGroups}
         businessName={businessName}
         onBack={() => setPhase('browse')}
       />
