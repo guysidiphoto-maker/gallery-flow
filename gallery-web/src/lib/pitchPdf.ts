@@ -10,6 +10,14 @@ export interface PdfOptions {
   bgColor: string
   logoBase64?: string
   businessName: string
+  photoSize?: 'small' | 'medium' | 'large'  // controls target row height
+}
+
+// Target row heights in mm (bigger = fewer, larger photos per row)
+const ROW_HEIGHTS = {
+  small: 42,    // ~8-10 photos per page
+  medium: 58,   // ~6 photos per page
+  large: 80,    // ~3-4 photos per page
 }
 
 // ── 16:9 widescreen page (presentation format) ─────────────────────────
@@ -18,7 +26,6 @@ const PAGE_H = 157.5        // mm (280 * 9/16 = 157.5)
 const MARGIN = 10
 const TITLE_H = 14
 const PHOTO_GAP = 3
-const TARGET_ROW_H = 55     // mm — gives ~2 rows per page for mixed content
 
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '')
@@ -125,7 +132,8 @@ function buildJustifiedRows(images: LoadedImage[], contentW: number, targetH: nu
 }
 
 export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
-  const { galleries, bgColor, logoBase64, businessName } = options
+  const { galleries, bgColor, logoBase64, businessName, photoSize = 'medium' } = options
+  const targetRowH = ROW_HEIGHTS[photoSize]
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [PAGE_W, PAGE_H] })
   const contentW = PAGE_W - MARGIN * 2
   const contentH = PAGE_H - MARGIN * 2 - TITLE_H
@@ -185,7 +193,7 @@ export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
     if (loaded.length === 0) continue
 
     // Build justified rows
-    const rows = buildJustifiedRows(loaded, contentW, TARGET_ROW_H)
+    const rows = buildJustifiedRows(loaded, contentW, targetRowH)
 
     // Split rows into pages by height
     let pageRows: LaidRow[] = []

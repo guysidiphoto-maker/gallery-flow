@@ -28,6 +28,7 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
   const [bgColor, setBgColor] = useState('#ffffff')
   const [customColor, setCustomColor] = useState('')
   const [logoBase64, setLogoBase64] = useState<string | undefined>()
+  const [photoSize, setPhotoSize] = useState<'small' | 'medium' | 'large'>('medium')
   const [generating, setGenerating] = useState<string | null>(null)   // groupId or "all" or null
   const [dragInfo, setDragInfo] = useState<{ gid: string; idx: number } | null>(null)
   const [dragOver, setDragOver] = useState<{ gid: string; idx: number } | null>(null)
@@ -104,6 +105,7 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
         bgColor,
         logoBase64,
         businessName,
+        photoSize,
       })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -244,9 +246,40 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
             </div>
           </div>
 
+          {/* Photo size */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.35)', marginBottom: 8 }}>גודל תמונות</div>
+            <div style={{
+              display: 'flex', gap: 2, padding: 3,
+              background: 'rgba(0,0,0,.25)', borderRadius: 10,
+              border: '1px solid rgba(255,255,255,.05)',
+            }}>
+              {([
+                { key: 'small' as const, label: 'קטן' },
+                { key: 'medium' as const, label: 'בינוני' },
+                { key: 'large' as const, label: 'גדול' },
+              ]).map(s => (
+                <button key={s.key} onClick={() => setPhotoSize(s.key)} style={{
+                  flex: 1, padding: '6px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 500,
+                  background: photoSize === s.key ? 'rgba(99,102,241,.2)' : 'transparent',
+                  color: photoSize === s.key ? '#c7d2fe' : 'rgba(255,255,255,.4)',
+                  border: 'none', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .12s',
+                  boxShadow: photoSize === s.key ? 'inset 0 1px 0 rgba(255,255,255,.08)' : 'none',
+                }}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.3)', marginTop: 6, lineHeight: 1.5 }}>
+              {photoSize === 'small' && '~10 תמונות בדף'}
+              {photoSize === 'medium' && '~6 תמונות בדף'}
+              {photoSize === 'large' && '~3 תמונות בדף'}
+            </div>
+          </div>
+
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,.3)', lineHeight: 1.6, padding: '10px 12px', background: 'rgba(255,255,255,.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,.04)' }}>
             <b style={{ color: 'rgba(255,255,255,.5)' }}>ה-PDF מחולק לדפים:</b><br />
-            כל אירוע בעמוד נפרד עם כותרת משלו. ניתן להוריד את כל ה-PDF או רק אירוע ספציפי.
+            כל אירוע בעמוד נפרד עם כותרת משלו. הפרופורציות של התמונות נשמרות.
           </div>
         </div>
 
@@ -315,7 +348,8 @@ export function PdfEditor({ galleries: initialGalleries, businessName, onBack }:
                             position: 'relative', borderRadius: 3, overflow: 'hidden',
                             cursor: 'grab', opacity: isDragging ? 0.4 : 1,
                             outline: isOver ? '2px solid #6366f1' : 'none', outlineOffset: -2,
-                            transition: 'opacity .12s', height: 90,
+                            transition: 'opacity .12s, height .2s',
+                            height: photoSize === 'small' ? 72 : photoSize === 'medium' ? 110 : 160,
                             background: isDark(bgColor) ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.03)',
                           }}
                         >
