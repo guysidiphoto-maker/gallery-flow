@@ -57,12 +57,15 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
   const [phase, setPhase] = useState<Phase>('browse')
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set())
   const [sizeFilter, setSizeFilter] = useState('any')
+  const [search, setSearch] = useState('')
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set())
   const [expandedGalleryId, setExpandedGalleryId] = useState<string | null>(null)
   const [fullGalleryId, setFullGalleryId] = useState<string | null>(null)
   const [zipping, setZipping] = useState(false)
 
   // ── Filter ──────────────────────────────────────────────────────────────
+
+  const q = search.trim().toLowerCase()
 
   const filtered = galleries.filter(g => {
     const et = readStr(g.delivery_settings, 'eventType')
@@ -71,6 +74,13 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
     if (sizeOpt && sizeOpt.key !== 'any') {
       if ('min' in sizeOpt && sizeOpt.min !== undefined && g.image_count < sizeOpt.min) return false
       if ('max' in sizeOpt && sizeOpt.max !== undefined && g.image_count > sizeOpt.max) return false
+    }
+    if (q) {
+      const name = g.name.toLowerCase()
+      const client = (g.client_name || '').toLowerCase()
+      const location = readStr(g.delivery_settings, 'eventLocation').toLowerCase()
+      const date = readStr(g.delivery_settings, 'eventDate').toLowerCase()
+      if (!name.includes(q) && !client.includes(q) && !location.includes(q) && !date.includes(q)) return false
     }
     return true
   })
@@ -158,6 +168,45 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
         background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)',
         borderRadius: 12,
       }}>
+        {/* Search */}
+        <div style={{ position: 'relative', marginBottom: 14 }}>
+          <svg
+            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,.3)', pointerEvents: 'none' }}
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="חיפוש לפי שם, לקוח, מיקום או תאריך..."
+            style={{
+              width: '100%', padding: '9px 36px 9px 14px', boxSizing: 'border-box',
+              background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.08)',
+              borderRadius: 9, color: '#fff', fontSize: 13, fontFamily: 'inherit',
+              outline: 'none', direction: 'rtl', transition: 'border-color .15s, background .15s',
+            }}
+            onFocus={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.4)'; e.currentTarget.style.background = 'rgba(255,255,255,.05)' }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.08)'; e.currentTarget.style.background = 'rgba(255,255,255,.03)' }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              style={{
+                position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                background: 'rgba(255,255,255,.08)', border: 'none', borderRadius: 5,
+                width: 20, height: 20, cursor: 'pointer', color: 'rgba(255,255,255,.6)',
+                fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: 'inherit',
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.3)', marginBottom: 8 }}>סוג אירוע</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
