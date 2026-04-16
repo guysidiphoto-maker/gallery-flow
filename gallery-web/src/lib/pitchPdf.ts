@@ -18,16 +18,50 @@ function isDark(hex: string): boolean {
   return (r * 299 + g * 587 + b * 114) / 1000 < 128
 }
 
-async function loadImageAsBase64(url: string): Promise<string | null> {
+async function loadImage(url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+    img.src = url
+  })
+}
+
+/**
+ * Loads an image and crops it to match the target aspect ratio (like object-fit: cover),
+ * then returns a base64 JPEG string sized to fit the target dimensions in the PDF.
+ */
+async function loadImageCropped(url: string, targetAspect: number, targetPx = 1200): Promise<string | null> {
+  const img = await loadImage(url)
+  if (!img) return null
+
+  const srcAspect = img.width / img.height
+
+  // Figure out the crop region in source coords (cover logic)
+  let sx = 0, sy = 0, sw = img.width, sh = img.height
+  if (srcAspect > targetAspect) {
+    // Source is wider — crop sides
+    sw = img.height * targetAspect
+    sx = (img.width - sw) / 2
+  } else {
+    // Source is taller — crop top/bottom
+    sh = img.width / targetAspect
+    sy = (img.height - sh) / 2
+  }
+
+  // Output canvas sized by targetPx (longest side)
+  const outW = targetAspect >= 1 ? targetPx : Math.round(targetPx * targetAspect)
+  const outH = targetAspect >= 1 ? Math.round(targetPx / targetAspect) : targetPx
+  const canvas = document.createElement('canvas')
+  canvas.width = outW
+  canvas.height = outH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH)
+
   try {
-    const res = await fetch(url)
-    const blob = await res.blob()
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onloadend = () => resolve(reader.result as string)
-      reader.onerror = () => resolve(null)
-      reader.readAsDataURL(blob)
-    })
+    return canvas.toDataURL('image/jpeg', 0.88)
   } catch {
     return null
   }
@@ -98,9 +132,10 @@ export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
 
   // ── Photo Pages ─────────────────────────────────────────────────────
 
-  const imgW = (contentW - 4) / 2  // 2 columns with 4mm gap
-  const imgH = imgW * 0.67         // 3:2 aspect ratio
   const gap = 4
+  const imgW = (contentW - gap) / 2   // 2 columns with gap
+  const targetAspect = 3 / 2          // 3:2 landscape
+  const imgH = imgW / targetAspect
 
   let col = 0
   let rowY = margin
@@ -114,7 +149,7 @@ export async function generatePitchPdf(options: PdfOptions): Promise<Blob> {
       col = 0
     }
 
-    const base64 = await loadImageAsBase64(photos[i])
+    const base64 = await loadImageCropped(photos[i], targetAspect)
     if (!base64) continue
 
     const x = margin + col * (imgW + gap)
