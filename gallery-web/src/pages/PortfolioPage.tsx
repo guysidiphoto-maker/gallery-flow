@@ -318,7 +318,6 @@ export function PortfolioPage() {
                         transition: 'opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1)',
                         willChange: 'opacity, transform',
                         pointerEvents: 'none',
-                        animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both',
                       }}>
                         {settings.logoBase64 && (
                           <img src={settings.logoBase64} alt="" style={{
