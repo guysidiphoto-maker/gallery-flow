@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase, storageUrl } from '../supabase'
 import { TenderBuilder } from '../components/TenderBuilder'
+import { SocialManager } from '../components/SocialManager'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -545,8 +546,18 @@ export function ClientDashboard() {
         )}
 
         {/* ── Content Calendar Tab ─────────────────────────────────── */}
-        {tab === 'calendar' && (() => {
-          // Spread selected images over 4 weeks: 3 posts + 1 story per week
+        {tab === 'calendar' && (
+          <SocialManager
+            galleries={galleries}
+            allImages={allImages}
+            topPicks={topPicks}
+            clientId={clientId}
+            storageUrl={storageUrl}
+          />
+        )}
+
+        {/* Legacy calendar code (replaced by SocialManager) */}
+        {false && (() => {
           const selected = allImages.filter(img => selectedPicks.has(img.id))
           const weekCount = Math.max(4, Math.ceil(selected.length / 3))
           const weeks: Array<{ weekNum: number; posts: typeof selected; story: boolean }> = []
