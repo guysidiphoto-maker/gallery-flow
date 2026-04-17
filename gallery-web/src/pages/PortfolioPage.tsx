@@ -261,9 +261,9 @@ export function PortfolioPage() {
           {/* Hero — parallax: image moves slower, content fades out on scroll */}
           {(() => {
             const vh = typeof window !== 'undefined' ? window.innerHeight : 900
-            // Simple: one OR the other, never both
-            const showName = scrollY < vh * 0.35
-            const showQuestion = scrollY >= vh * 0.35 && scrollY < vh * 0.9
+            // Sequential: name fully gone, THEN question appears after a gap
+            const showName = scrollY < vh * 0.3
+            const showQuestion = scrollY >= vh * 0.5 && scrollY < vh * 0.9
             const heroDarken = Math.min(.92, .15 + scrollY / (vh * 0.5))
             const heroImgY = scrollY * 0.3
             return (
