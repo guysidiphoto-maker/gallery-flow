@@ -131,10 +131,16 @@ export function PortfolioPage() {
   const activeGal = galleries.find(g => g.id === activeGalleryId)
   const accent = settings.accentColor
 
-  // Build mosaic pool: top 5 picks per gallery
+  // Build mosaic pool: top 5 picks per gallery, fallback to all images if no picks
   const mosaicPool: string[] = []
   visible.forEach(g => {
-    const picks = topPicks.filter(p => p.gallery_id === g.id).slice(0, 5)
+    let picks = topPicks.filter(p => p.gallery_id === g.id).slice(0, 5)
+    // If no top picks, use cover image
+    if (picks.length === 0) {
+      const cover = covers.get(g.id)
+      if (cover) mosaicPool.push(cover)
+      return
+    }
     picks.forEach(p => mosaicPool.push(imgUrl(p.thumbnail_path || p.storage_path)))
   })
   // Pad to at least 30 by repeating
