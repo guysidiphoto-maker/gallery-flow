@@ -13,28 +13,20 @@ interface ImageRow {
   storage_path: string; thumbnail_path: string | null
 }
 
-const EVENT_TYPE_META: Record<string, { label: string; icon: string }> = {
-  'conference': { label: 'כנסים', icon: '🎤' },
-  'corporate-event': { label: 'אירועי חברה', icon: '🏢' },
-  'government': { label: 'אירועים ממשלתיים', icon: '🏛️' },
-  'retreat-abroad': { label: 'נופשים בחו״ל', icon: '✈️' },
-  'retreat-local': { label: 'נופשים בארץ', icon: '🏖️' },
-  'pre-event': { label: 'ימי קדם', icon: '📋' },
-  'other': { label: 'אירועים נוספים', icon: '📸' },
+const EVENT_LABELS: Record<string, string> = {
+  'conference': 'Conferences', 'corporate-event': 'Corporate', 'government': 'Government',
+  'retreat-abroad': 'Retreats Abroad', 'retreat-local': 'Local Retreats',
+  'pre-event': 'Pre-Events', 'other': 'Events',
 }
 
 function readStr(obj: Record<string, unknown> | null, key: string): string {
-  if (!obj) return ''
-  const v = obj[key]
-  return typeof v === 'string' ? v : ''
+  if (!obj) return ''; const v = obj[key]; return typeof v === 'string' ? v : ''
 }
+function imgUrl(path: string | null) { return path ? storageUrl('gallery-images', path) : '' }
 
-function imgUrl(path: string | null) {
-  return path ? storageUrl('gallery-images', path) : ''
-}
+// ─── Scroll reveal ──────────────────────────────────────────────────────────
 
-// Scroll-reveal hook: elements fade up when entering viewport
-function useReveal() {
+function useReveal(delay = 0) {
   const obs = useRef<IntersectionObserver | null>(null)
   return useCallback((el: HTMLElement | null) => {
     if (!el) return
@@ -42,520 +34,405 @@ function useReveal() {
       obs.current = new IntersectionObserver(entries => {
         entries.forEach(e => {
           if (e.isIntersecting) {
-            ;(e.target as HTMLElement).style.opacity = '1'
-            ;(e.target as HTMLElement).style.transform = 'translateY(0)'
+            const d = Number((e.target as HTMLElement).dataset.delay || delay)
+            setTimeout(() => {
+              ;(e.target as HTMLElement).style.opacity = '1'
+              ;(e.target as HTMLElement).style.transform = 'none'
+            }, d)
             obs.current?.unobserve(e.target)
           }
         })
-      }, { threshold: 0.08 })
+      }, { threshold: 0.05 })
     }
     el.style.opacity = '0'
-    el.style.transform = 'translateY(32px)'
-    el.style.transition = 'opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1)'
-    obs.current.observe(el)
-  }, [])
+    el.style.transform = 'translateY(40px)'
+    el.style.transition = 'opacity .9s cubic-bezier(.16,1,.3,1), transform .9s cubic-bezier(.16,1,.3,1)'
+    requestAnimationFrame(() => obs.current?.observe(el))
+  }, [delay])
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function PortfolioPage() {
-  // Parse URL
-  const { clientId, slug } = (() => {
+  const { clientId } = (() => {
     const path = window.location.pathname.replace(/\/$/, '')
-    const m1 = path.match(/^\/([^/]+)\/client\/([^/]+)$/)
-    if (m1) return { slug: m1[1], clientId: m1[2] }
-    const m2 = path.match(/^\/client\/([^/]+)$/)
-    if (m2) return { slug: '', clientId: m2[1] }
-    return { slug: '', clientId: '' }
+    const m1 = path.match(/^\/([^/]+)\/client\/([^/]+)$/); if (m1) return { clientId: m1[2] }
+    const m2 = path.match(/^\/client\/([^/]+)$/); if (m2) return { clientId: m2[1] }
+    return { clientId: '' }
   })()
 
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [clientName, setClientName] = useState('')
   const [studioName, setStudioName] = useState('')
   const [galleries, setGalleries] = useState<GalleryRow[]>([])
   const [topPicks, setTopPicks] = useState<ImageRow[]>([])
   const [covers, setCovers] = useState<Map<string, string>>(new Map())
-  const [activeType, setActiveType] = useState<string | null>(null)
-  const [activeGallery, setActiveGallery] = useState<string | null>(null)
   const [settings, setSettings] = useState<PortfolioSettings>(DEFAULT_SETTINGS)
+  const [view, setView] = useState<'home' | 'type' | 'gallery'>('home')
+  const [activeType, setActiveType] = useState('')
+  const [activeGalleryId, setActiveGalleryId] = useState('')
   const reveal = useReveal()
 
-  // ── Load data ─────────────────────────────────────────────────────────
+  // ── Load ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!clientId) { setError('No client ID'); setLoading(false); return }
-    load()
-    async function load() {
-      const { data, error: e } = await supabase
-        .from('galleries')
+    if (!clientId) { setLoading(false); return }
+    ;(async () => {
+      const { data } = await supabase.from('galleries')
         .select('id, name, client_name, image_count, published_at, delivery_settings')
-        .eq('client_id', clientId).eq('status', 'live')
-        .order('published_at', { ascending: false })
-      if (e || !data?.length) { setError('Not found'); setLoading(false); return }
+        .eq('client_id', clientId).eq('status', 'live').order('published_at', { ascending: false })
+      if (!data?.length) { setLoading(false); return }
       setGalleries(data)
-
-      const settings = (data[0].delivery_settings || {}) as Record<string, unknown>
-      setClientName(data[0].client_name || readStr(settings, 'clientName') || '')
-      setStudioName(readStr(settings, 'studioName'))
-
-      const ids = data.map(g => g.id)
-
-      // Covers
-      const coverResults = await Promise.all(data.map(async g => {
-        const { data: img } = await supabase.from('images')
-          .select('thumbnail_path, storage_path')
-          .eq('gallery_id', g.id).order('sort_order', { ascending: true }).limit(1).maybeSingle()
-        return { id: g.id, url: img ? imgUrl(img.thumbnail_path || img.storage_path) : '' }
-      }))
+      const s0 = (data[0].delivery_settings || {}) as Record<string, unknown>
+      setClientName(data[0].client_name || readStr(s0, 'clientName') || '')
+      setStudioName(readStr(s0, 'studioName'))
+      // covers
       const cm = new Map<string, string>()
-      coverResults.forEach(c => { if (c.url) cm.set(c.id, c.url) })
+      await Promise.all(data.map(async g => {
+        const { data: img } = await supabase.from('images').select('thumbnail_path, storage_path')
+          .eq('gallery_id', g.id).order('sort_order', { ascending: true }).limit(1).maybeSingle()
+        if (img) cm.set(g.id, imgUrl(img.thumbnail_path || img.storage_path))
+      }))
       setCovers(cm)
-
-      // Top picks
+      // top picks
       const { data: picks } = await supabase.from('images')
         .select('id, gallery_id, filename, storage_path, thumbnail_path')
-        .in('gallery_id', ids).eq('is_top_pick', true)
+        .in('gallery_id', data.map(g => g.id)).eq('is_top_pick', true)
         .order('sort_order', { ascending: true }).limit(200)
       if (picks) setTopPicks(picks)
-
       setSettings(loadPortfolioSettings(clientId))
       setLoading(false)
-    }
+    })()
   }, [clientId])
 
-  // ── Derived data ──────────────────────────────────────────────────────
+  // ── Derived ───────────────────────────────────────────────────────────
 
-  // Accent color and background from settings
-  const accent = settings.accentColor
-  const bgBase = settings.bgStyle === 'midnight' ? '#0a0a1a' : settings.bgStyle === 'gradient' ? '#0a0a1a' : '#050508'
-  const bgGradient = settings.bgStyle === 'gradient'
-    ? `linear-gradient(135deg, #050510 0%, #0a0a2a 50%, #150a20 100%)`
-    : bgBase
-
-  // Filter hidden galleries
-  const visibleGalleries = galleries.filter(g => !settings.hiddenGalleryIds.includes(g.id))
-
-  // Group galleries by event type
-  const eventTypes: { key: string; label: string; icon: string; galleries: GalleryRow[]; coverUrl: string }[] = []
+  const visible = galleries.filter(g => !settings.hiddenGalleryIds.includes(g.id))
   const typeMap = new Map<string, GalleryRow[]>()
-
-  visibleGalleries.forEach(g => {
+  visible.forEach(g => {
     const et = readStr(g.delivery_settings, 'eventType') || 'other'
     if (!typeMap.has(et)) typeMap.set(et, [])
     typeMap.get(et)!.push(g)
   })
+  const types = Array.from(typeMap.entries()).map(([key, gals]) => ({
+    key, label: EVENT_LABELS[key] || key, gals, cover: covers.get(gals[0].id) || '',
+  }))
 
-  typeMap.forEach((gals, key) => {
-    const meta = EVENT_TYPE_META[key] || { label: key, icon: '📸' }
-    const coverGal = gals[0]
-    eventTypes.push({
-      key,
-      label: meta.label,
-      icon: meta.icon,
-      galleries: gals,
-      coverUrl: covers.get(coverGal.id) || '',
-    })
-  })
+  const typeGals = activeType ? (typeMap.get(activeType) || []) : []
+  const galPhotos = activeGalleryId ? topPicks.filter(p => p.gallery_id === activeGalleryId) : []
+  const activeGal = galleries.find(g => g.id === activeGalleryId)
+  const heroCover = covers.values().next().value || ''
+  const accent = settings.accentColor
 
-  // Active type galleries
-  const activeGalleries = activeType ? (typeMap.get(activeType) || []) : []
+  const navigateTo = (v: 'home' | 'type' | 'gallery', type = '', galId = '') => {
+    setView(v); setActiveType(type); setActiveGalleryId(galId)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
-  // Active gallery photos
-  const activePhotos = activeGallery ? topPicks.filter(p => p.gallery_id === activeGallery) : []
+  // ── Loading ───────────────────────────────────────────────────────────
 
-  // Hero background: first cover image
-  const heroBg = covers.values().next().value || ''
+  if (loading) return (
+    <div style={{ height: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 1, height: 40, background: 'rgba(255,255,255,.2)', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#fff', animation: 'loadBar 1s ease infinite' }} />
+      </div>
+      <style>{`@keyframes loadBar { 0% { transform: translateY(-100%) } 50% { transform: translateY(0) } 100% { transform: translateY(100%) } }`}</style>
+    </div>
+  )
 
   // ── Render ────────────────────────────────────────────────────────────
 
-  if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#050508', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: 32, height: 32, border: '3px solid rgba(99,102,241,.3)', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-    </div>
-  )
-
-  if (error) return (
-    <div style={{ minHeight: '100vh', background: '#050508', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,.4)', fontSize: 16 }}>
-      {error}
-    </div>
-  )
-
   return (
     <div style={{
-      minHeight: '100vh', background: bgGradient,
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      color: '#fff', direction: 'rtl',
+      minHeight: '100vh', background: '#000', color: '#fff',
+      fontFamily: "'Marcellus', Georgia, 'Times New Roman', serif",
     }}>
       <style>{`
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(30px) } to { opacity: 1; transform: translateY(0) } }
-        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-        @keyframes spin { to { transform: rotate(360deg) } }
-        .pf-type-card { transition: all .35s cubic-bezier(.4,0,.2,1); }
-        .pf-type-card:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 24px 60px rgba(0,0,0,.5), 0 0 40px ${accent}25; }
-        .pf-type-card:hover .pf-type-cover { transform: scale(1.08); filter: brightness(1.1); }
-        .pf-gal-card { transition: all .25s cubic-bezier(.4,0,.2,1); }
-        .pf-gal-card:hover { transform: translateY(-3px); border-color: rgba(129,140,248,.3); }
-        .pf-gal-card:hover .pf-gal-cover { transform: scale(1.05); }
-        .pf-photo { transition: all .2s; cursor: pointer; }
-        .pf-photo:hover { transform: scale(1.03); z-index: 1; box-shadow: 0 8px 32px rgba(0,0,0,.5); }
+        @import url('https://fonts.googleapis.com/css2?family=Marcellus&display=swap');
+        * { box-sizing: border-box; }
+        .pf-panel { position: relative; overflow: hidden; cursor: pointer; }
+        .pf-panel img { transition: transform .8s cubic-bezier(.4,0,.2,1), filter .6s; }
+        .pf-panel:hover img { transform: scale(1.04); filter: brightness(1.1); }
+        .pf-panel:hover .pf-overlay { opacity: .45; }
+        .pf-panel .pf-overlay { transition: opacity .6s; }
+        .pf-panel:hover .pf-label { opacity: 1; transform: translateY(0); }
+        .pf-panel .pf-label { transition: opacity .5s .1s, transform .5s .1s cubic-bezier(.16,1,.3,1); }
+        .pf-thumb { overflow: hidden; cursor: pointer; }
+        .pf-thumb img { transition: transform .6s cubic-bezier(.4,0,.2,1); }
+        .pf-thumb:hover img { transform: scale(1.06); }
+        .pf-back { transition: opacity .2s; }
+        .pf-back:hover { opacity: 1 !important; }
       `}</style>
 
-      {/* ═══ Hero ═══ */}
-      <section style={{
-        position: 'relative', height: '100vh', minHeight: 600,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        overflow: 'hidden',
+      {/* ═══ Navigation ═══ */}
+      <nav style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+        padding: '20px 32px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'linear-gradient(180deg, rgba(0,0,0,.6) 0%, transparent 100%)',
+        pointerEvents: 'none',
       }}>
-        {/* Background image */}
-        {heroBg && (
-          <div style={{
-            position: 'absolute', inset: 0,
-            backgroundImage: `url(${heroBg})`, backgroundSize: 'cover', backgroundPosition: 'center',
-            filter: 'blur(20px) brightness(.35) saturate(1.2)',
-            transform: 'scale(1.1)',
-          }} />
-        )}
-
-        {/* Gradient overlays */}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(5,5,8,.4) 0%, rgba(5,5,8,.85) 70%, #050508 100%)' }} />
-        <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse at center, ${accent}14 0%, transparent 70%)` }} />
-        {/* Animated grid lines for high-tech feel */}
-        <div style={{
-          position: 'absolute', inset: 0, opacity: .04,
-          backgroundImage: `linear-gradient(${accent}40 1px, transparent 1px), linear-gradient(90deg, ${accent}40 1px, transparent 1px)`,
-          backgroundSize: '60px 60px',
-        }} />
-
-        {/* Content */}
-        <div style={{
-          position: 'relative', zIndex: 1, textAlign: 'center',
-          animation: 'fadeUp .8s ease both',
-          padding: '0 24px', maxWidth: 800,
-        }}>
-          {/* Logo */}
-          {settings.logoBase64 && (
-            <img src={settings.logoBase64} alt="" style={{
-              maxHeight: 60, maxWidth: 200, marginBottom: 20,
-              filter: 'drop-shadow(0 4px 16px rgba(0,0,0,.4))',
-              animation: 'fadeUp .8s cubic-bezier(.16,1,.3,1) both .1s',
-            }} />
-          )}
-
-          {studioName && settings.showStudioBadge && (
+        <div style={{ pointerEvents: 'auto', cursor: 'pointer' }} onClick={() => navigateTo('home')}>
+          {settings.logoBase64 ? (
+            <img src={settings.logoBase64} alt="" style={{ maxHeight: 36, filter: 'brightness(10) grayscale(1)', opacity: .9 }} />
+          ) : (
             <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              padding: '6px 16px', borderRadius: 50, marginBottom: 20,
-              background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)',
-              backdropFilter: 'blur(12px)',
-              fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.5)', letterSpacing: '.1em', textTransform: 'uppercase',
-              animation: 'fadeUp .8s cubic-bezier(.16,1,.3,1) both .2s',
+              fontSize: 11, fontWeight: 400, letterSpacing: '.25em', textTransform: 'uppercase',
+              color: 'rgba(255,255,255,.7)',
             }}>
-              {studioName}
+              {studioName || clientName}
             </div>
           )}
-
-          <h1 style={{
-            fontSize: 'clamp(36px, 6vw, 72px)', fontWeight: 800, margin: '0 0 16px',
-            lineHeight: 1.05, letterSpacing: '-0.04em',
-            background: 'linear-gradient(135deg, #fff 30%, #c7d2fe 100%)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          }}>
-            {clientName}
-          </h1>
-
-          <p style={{
-            fontSize: 'clamp(14px, 2vw, 18px)', color: 'rgba(255,255,255,.45)',
-            margin: '0 0 40px', lineHeight: 1.6, maxWidth: 500, marginInline: 'auto',
-          }}>
-            {settings.tagline || 'הפקת אירועים'} · {visibleGalleries.length} אירועים · {topPicks.length} תמונות
-          </p>
-
-          {/* Scroll indicator */}
-          <div style={{
-            display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-            color: 'rgba(255,255,255,.3)', fontSize: 11, fontWeight: 500,
-            animation: 'fadeUp 1.2s ease both .3s',
-          }}>
-            <span>גלול למטה</span>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'bounce 1.5s infinite' }}>
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </div>
         </div>
-      </section>
-
-      {/* ═══ Event Types Grid ═══ */}
-      {!activeType && (
-        <section style={{
-          padding: 'clamp(40px, 6vw, 80px) clamp(16px, 4vw, 48px)',
-          maxWidth: 1200, margin: '0 auto',
-          animation: 'fadeUp .6s ease both',
-        }}>
-          <div ref={reveal} style={{ textAlign: 'center', marginBottom: 48 }}>
-            <h2 style={{
-              fontSize: 'clamp(24px, 3.5vw, 40px)', fontWeight: 800, margin: '0 0 12px',
-              letterSpacing: '-0.03em', color: '#fff',
+        {view !== 'home' && (
+          <button className="pf-back" onClick={() => navigateTo(view === 'gallery' ? 'type' : 'home', view === 'gallery' ? activeType : '')}
+            style={{
+              pointerEvents: 'auto', background: 'none', border: '1px solid rgba(255,255,255,.2)',
+              borderRadius: 0, padding: '8px 20px', cursor: 'pointer',
+              color: 'rgba(255,255,255,.6)', fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase',
+              fontFamily: 'inherit', opacity: .7,
             }}>
-              סוגי אירועים
-            </h2>
-            <p style={{ fontSize: 15, color: 'rgba(255,255,255,.4)', margin: 0 }}>
-              בחר סוג אירוע לצפייה בעבודות
-            </p>
-          </div>
-
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: 20,
-          }}>
-            {eventTypes.map(et => {
-              const totalPicks = et.galleries.reduce((sum, g) =>
-                sum + topPicks.filter(p => p.gallery_id === g.id).length, 0)
-              return (
-                <div
-                  key={et.key}
-                  ref={reveal}
-                  className="pf-type-card"
-                  onClick={() => setActiveType(et.key)}
-                  style={{
-                    position: 'relative', borderRadius: 20, overflow: 'hidden',
-                    cursor: 'pointer', aspectRatio: '4/3',
-                    border: '1px solid rgba(255,255,255,.06)',
-                    boxShadow: '0 8px 32px rgba(0,0,0,.3)',
-                  }}
-                >
-                  {/* Cover image */}
-                  {et.coverUrl && (
-                    <img className="pf-type-cover" src={et.coverUrl} alt="" style={{
-                      position: 'absolute', inset: 0, width: '100%', height: '100%',
-                      objectFit: 'cover', transition: 'transform .6s cubic-bezier(.4,0,.2,1), filter .3s',
-                    }} />
-                  )}
-
-                  {/* Gradient overlay */}
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    background: 'linear-gradient(to top, rgba(0,0,0,.85) 0%, rgba(0,0,0,.3) 40%, rgba(0,0,0,.1) 100%)',
-                  }} />
-
-                  {/* Content */}
-                  <div style={{
-                    position: 'absolute', bottom: 0, left: 0, right: 0,
-                    padding: '24px 22px',
-                  }}>
-                    <div style={{ fontSize: 32, marginBottom: 4 }}>{et.icon}</div>
-                    <h3 style={{
-                      fontSize: 22, fontWeight: 700, margin: '0 0 6px',
-                      letterSpacing: '-0.01em', color: '#fff',
-                    }}>
-                      {et.label}
-                    </h3>
-                    <div style={{
-                      fontSize: 13, color: 'rgba(255,255,255,.5)',
-                      display: 'flex', gap: 10,
-                    }}>
-                      <span>{et.galleries.length} {et.galleries.length === 1 ? 'אירוע' : 'אירועים'}</span>
-                      <span>·</span>
-                      <span>{totalPicks} תמונות</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* ═══ Active Event Type → Gallery List ═══ */}
-      {activeType && !activeGallery && (
-        <section style={{
-          padding: 'clamp(40px, 6vw, 80px) clamp(16px, 4vw, 48px)',
-          maxWidth: 1200, margin: '0 auto',
-          animation: 'fadeUp .4s ease both',
-        }}>
-          {/* Back button */}
-          <button onClick={() => setActiveType(null)} style={{
-            background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
-            borderRadius: 10, padding: '8px 18px', cursor: 'pointer',
-            color: 'rgba(255,255,255,.6)', fontSize: 13, fontWeight: 500,
-            fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8,
-            marginBottom: 32, transition: 'all .15s',
-          }}>
-            ← חזרה לסוגי אירועים
+            Back
           </button>
+        )}
+      </nav>
 
-          {/* Section title */}
-          <div style={{ textAlign: 'center', marginBottom: 40 }}>
-            <div style={{ fontSize: 42, marginBottom: 8 }}>
-              {EVENT_TYPE_META[activeType]?.icon || '📸'}
-            </div>
-            <h2 style={{
-              fontSize: 'clamp(26px, 4vw, 42px)', fontWeight: 800, margin: '0 0 8px',
-              letterSpacing: '-0.03em', color: '#fff',
-            }}>
-              {EVENT_TYPE_META[activeType]?.label || activeType}
-            </h2>
-            <p style={{ fontSize: 14, color: 'rgba(255,255,255,.4)' }}>
-              {activeGalleries.length} {activeGalleries.length === 1 ? 'אירוע' : 'אירועים'}
-            </p>
-          </div>
-
-          {/* Gallery cards grid */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-            gap: 16,
-          }}>
-            {activeGalleries.map(g => {
-              const cover = covers.get(g.id)
-              const pickCount = topPicks.filter(p => p.gallery_id === g.id).length
-              const location = readStr(g.delivery_settings, 'eventLocation')
-              const date = readStr(g.delivery_settings, 'eventDate')
-              return (
-                <div
-                  key={g.id}
-                  ref={reveal}
-                  className="pf-gal-card"
-                  onClick={() => setActiveGallery(g.id)}
-                  style={{
-                    background: 'rgba(255,255,255,.02)',
-                    border: '1px solid rgba(255,255,255,.06)',
-                    borderRadius: 16, overflow: 'hidden', cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ position: 'relative', aspectRatio: '16/10', overflow: 'hidden' }}>
-                    {cover ? (
-                      <img className="pf-gal-cover" src={cover} alt="" style={{
-                        width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                        transition: 'transform .5s cubic-bezier(.4,0,.2,1)',
-                      }} />
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', background: 'rgba(255,255,255,.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,.15)', fontSize: 28 }}>📷</div>
-                    )}
-                    <div style={{
-                      position: 'absolute', inset: 0,
-                      background: 'linear-gradient(to top, rgba(0,0,0,.6) 0%, transparent 50%)',
-                    }} />
-                    <div style={{ position: 'absolute', bottom: 14, right: 14 }}>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,.5)' }}>{g.name}</div>
-                    </div>
-                  </div>
-                  <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,.4)' }}>
-                      {pickCount} תמונות מובחרות
-                      {location && ` · ${location}`}
-                    </span>
-                    {date && <span style={{ fontSize: 11, color: 'rgba(255,255,255,.25)' }}>{date}</span>}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* ═══ Active Gallery → Photo Grid ═══ */}
-      {activeGallery && (() => {
-        const gal = galleries.find(g => g.id === activeGallery)
-        if (!gal) return null
-        return (
+      {/* ═══ HOME: Split panels ═══ */}
+      {view === 'home' && (
+        <div style={{ minHeight: '100vh' }}>
+          {/* Hero */}
           <section style={{
-            padding: 'clamp(40px, 6vw, 80px) clamp(16px, 4vw, 48px)',
-            maxWidth: 1400, margin: '0 auto',
-            animation: 'fadeUp .4s ease both',
+            height: '100vh', position: 'relative',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden',
           }}>
-            {/* Back */}
-            <button onClick={() => setActiveGallery(null)} style={{
-              background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
-              borderRadius: 10, padding: '8px 18px', cursor: 'pointer',
-              color: 'rgba(255,255,255,.6)', fontSize: 13, fontWeight: 500,
-              fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8,
-              marginBottom: 32, transition: 'all .15s',
-            }}>
-              ← חזרה ל{EVENT_TYPE_META[activeType!]?.label || 'גלריות'}
-            </button>
-
-            {/* Gallery header */}
-            <div style={{ textAlign: 'center', marginBottom: 40 }}>
-              <h2 style={{
-                fontSize: 'clamp(22px, 3.5vw, 36px)', fontWeight: 800, margin: '0 0 8px',
-                letterSpacing: '-0.02em', color: '#fff',
-              }}>
-                {gal.name}
-              </h2>
-              <p style={{ fontSize: 14, color: 'rgba(255,255,255,.4)' }}>
-                {activePhotos.length} תמונות מובחרות
-                {readStr(gal.delivery_settings, 'eventLocation') && ` · ${readStr(gal.delivery_settings, 'eventLocation')}`}
-              </p>
-            </div>
-
-            {/* Photo grid — masonry-style */}
+            {heroCover && (
+              <img src={heroCover} alt="" style={{
+                position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+                filter: settings.heroStyle === 'blur' ? 'blur(8px) brightness(.3)' : 'brightness(.25)',
+                transform: 'scale(1.05)',
+              }} />
+            )}
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.4)' }} />
             <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-              gap: 8,
+              position: 'relative', textAlign: 'center', padding: '0 24px',
+              animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both',
             }}>
-              {activePhotos.map(img => (
-                <div key={img.id} ref={reveal} className="pf-photo" style={{
-                  borderRadius: 10, overflow: 'hidden',
-                  background: 'rgba(255,255,255,.02)',
+              {settings.logoBase64 && (
+                <img src={settings.logoBase64} alt="" style={{
+                  maxHeight: 70, maxWidth: 240, marginBottom: 24, display: 'block', marginInline: 'auto',
+                  animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .15s',
+                }} />
+              )}
+              <h1 style={{
+                fontSize: 'clamp(32px, 6vw, 80px)', fontWeight: 400, margin: 0,
+                letterSpacing: '.04em', lineHeight: 1.1,
+              }}>
+                {clientName}
+              </h1>
+              {settings.tagline && (
+                <p style={{
+                  fontSize: 'clamp(12px, 1.4vw, 16px)', fontWeight: 400,
+                  color: 'rgba(255,255,255,.5)', marginTop: 16,
+                  letterSpacing: '.15em', textTransform: 'uppercase',
+                  animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .3s',
                 }}>
-                  <img
-                    src={imgUrl(img.thumbnail_path || img.storage_path)}
-                    alt=""
-                    style={{ width: '100%', height: 'auto', display: 'block' }}
-                    loading="lazy"
-                  />
-                </div>
-              ))}
+                  {settings.tagline}
+                </p>
+              )}
+              <div style={{
+                marginTop: 48, color: 'rgba(255,255,255,.25)', fontSize: 10,
+                letterSpacing: '.2em', textTransform: 'uppercase',
+                animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .5s',
+              }}>
+                Scroll to explore
+              </div>
             </div>
           </section>
-        )
-      })()}
 
-      {/* ═══ Footer with contact ═══ */}
-      <footer ref={reveal} style={{
-        padding: '48px 24px 32px', textAlign: 'center',
-        borderTop: `1px solid ${accent}15`,
-        background: `linear-gradient(180deg, transparent 0%, ${accent}06 100%)`,
-      }}>
-        {(settings.phone || settings.email || settings.instagram || settings.website) && (
-          <div style={{
-            display: 'flex', justifyContent: 'center', gap: 24, flexWrap: 'wrap',
-            marginBottom: 24,
-          }}>
-            {settings.phone && (
-              <a href={`tel:${settings.phone}`} style={{ color: 'rgba(255,255,255,.5)', fontSize: 13, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, transition: 'color .15s' }}>
-                📞 {settings.phone}
-              </a>
+          {/* Event type panels */}
+          <section style={{ padding: '0' }}>
+            {types.length === 1 ? (
+              /* Single type — full screen panel */
+              <div className="pf-panel" ref={reveal}
+                onClick={() => navigateTo('type', types[0].key)}
+                style={{ height: '100vh', position: 'relative' }}>
+                {types[0].cover && <img src={types[0].cover} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+                <div className="pf-overlay" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }} />
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                  <div style={{ fontSize: 11, letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.5)', marginBottom: 12 }}>
+                    {types[0].gals.length} {types[0].gals.length === 1 ? 'Project' : 'Projects'}
+                  </div>
+                  <h2 style={{ fontSize: 'clamp(28px, 4vw, 56px)', fontWeight: 400, margin: 0, letterSpacing: '.06em' }}>
+                    {types[0].label}
+                  </h2>
+                  <div className="pf-label" style={{ opacity: 0, transform: 'translateY(8px)', marginTop: 20, fontSize: 10, letterSpacing: '.25em', textTransform: 'uppercase', color: 'rgba(255,255,255,.5)', borderBottom: '1px solid rgba(255,255,255,.3)', paddingBottom: 4 }}>
+                    See More
+                  </div>
+                </div>
+              </div>
+            ) : types.length === 2 ? (
+              /* Two types — split screen */
+              <div style={{ display: 'flex', height: '100vh' }}>
+                {types.map(t => (
+                  <div key={t.key} className="pf-panel" ref={reveal}
+                    onClick={() => navigateTo('type', t.key)}
+                    style={{ flex: 1, position: 'relative', transition: 'flex .6s cubic-bezier(.4,0,.2,1)' }}
+                    onMouseEnter={e => { e.currentTarget.style.flex = '1.8' }}
+                    onMouseLeave={e => { e.currentTarget.style.flex = '1' }}>
+                    {t.cover && <img src={t.cover} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+                    <div className="pf-overlay" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }} />
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                      <div style={{ fontSize: 10, letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginBottom: 8 }}>
+                        {t.gals.length} Projects
+                      </div>
+                      <h2 style={{ fontSize: 'clamp(20px, 3vw, 40px)', fontWeight: 400, margin: 0, letterSpacing: '.06em' }}>
+                        {t.label}
+                      </h2>
+                      <div className="pf-label" style={{ opacity: 0, transform: 'translateY(8px)', marginTop: 16, fontSize: 10, letterSpacing: '.25em', textTransform: 'uppercase', color: 'rgba(255,255,255,.5)', borderBottom: '1px solid rgba(255,255,255,.3)', paddingBottom: 4 }}>
+                        See More
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* 3+ types — stacked full-width panels */
+              types.map(t => (
+                <div key={t.key} className="pf-panel" ref={reveal}
+                  onClick={() => navigateTo('type', t.key)}
+                  style={{ height: '70vh', minHeight: 400, position: 'relative' }}>
+                  {t.cover && <img src={t.cover} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+                  <div className="pf-overlay" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }} />
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                    <div style={{ fontSize: 10, letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginBottom: 8 }}>
+                      {t.gals.length} Projects
+                    </div>
+                    <h2 style={{ fontSize: 'clamp(24px, 4vw, 52px)', fontWeight: 400, margin: 0, letterSpacing: '.06em' }}>
+                      {t.label}
+                    </h2>
+                    <div className="pf-label" style={{ opacity: 0, transform: 'translateY(8px)', marginTop: 16, fontSize: 10, letterSpacing: '.25em', textTransform: 'uppercase', color: 'rgba(255,255,255,.5)', borderBottom: '1px solid rgba(255,255,255,.3)', paddingBottom: 4 }}>
+                      See More
+                    </div>
+                  </div>
+                </div>
+              ))
             )}
-            {settings.email && (
-              <a href={`mailto:${settings.email}`} style={{ color: 'rgba(255,255,255,.5)', fontSize: 13, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-                ✉ {settings.email}
-              </a>
-            )}
-            {settings.instagram && (
-              <a href={`https://instagram.com/${settings.instagram}`} target="_blank" rel="noopener" style={{ color: 'rgba(255,255,255,.5)', fontSize: 13, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-                📸 @{settings.instagram}
-              </a>
-            )}
-            {settings.website && (
-              <a href={settings.website.startsWith('http') ? settings.website : `https://${settings.website}`} target="_blank" rel="noopener" style={{ color: 'rgba(255,255,255,.5)', fontSize: 13, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-                🌐 {settings.website}
-              </a>
+          </section>
+        </div>
+      )}
+
+      {/* ═══ TYPE VIEW: Gallery list ═══ */}
+      {view === 'type' && (
+        <div style={{ paddingTop: 120, paddingBottom: 80, animation: 'viewFadeIn .7s cubic-bezier(.16,1,.3,1) both' }}>
+          <div style={{ textAlign: 'center', marginBottom: 60, padding: '0 24px' }}>
+            <div style={{ fontSize: 10, letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 12 }}>
+              {typeGals.length} Projects
+            </div>
+            <h2 style={{ fontSize: 'clamp(28px, 4vw, 52px)', fontWeight: 400, margin: 0, letterSpacing: '.04em' }}>
+              {EVENT_LABELS[activeType] || activeType}
+            </h2>
+          </div>
+
+          <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
+            {typeGals.map((g, i) => {
+              const cover = covers.get(g.id)
+              const pickCount = topPicks.filter(p => p.gallery_id === g.id).length
+              return (
+                <div key={g.id} ref={reveal} data-delay={i * 100}
+                  className="pf-panel"
+                  onClick={() => navigateTo('gallery', activeType, g.id)}
+                  style={{
+                    position: 'relative', marginBottom: 4,
+                    height: 'clamp(300px, 50vw, 500px)',
+                  }}>
+                  {cover && <img src={cover} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+                  <div className="pf-overlay" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)' }} />
+                  <div style={{
+                    position: 'absolute', bottom: 40, left: 40, right: 40,
+                    display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+                  }}>
+                    <div>
+                      <h3 style={{ fontSize: 'clamp(20px, 3vw, 36px)', fontWeight: 400, margin: 0, letterSpacing: '.03em' }}>
+                        {g.name}
+                      </h3>
+                      <div style={{ fontSize: 10, letterSpacing: '.25em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginTop: 8 }}>
+                        {readStr(g.delivery_settings, 'eventLocation')}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)' }}>
+                      {pickCount} Photos
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ GALLERY VIEW: Photo grid ═══ */}
+      {view === 'gallery' && activeGal && (
+        <div style={{ paddingTop: 120, paddingBottom: 80, animation: 'viewFadeIn .7s cubic-bezier(.16,1,.3,1) both' }}>
+          <div style={{ textAlign: 'center', marginBottom: 60, padding: '0 24px' }}>
+            <div style={{ fontSize: 10, letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 12 }}>
+              {galPhotos.length} Highlights
+            </div>
+            <h2 style={{ fontSize: 'clamp(24px, 3.5vw, 44px)', fontWeight: 400, margin: 0, letterSpacing: '.04em' }}>
+              {activeGal.name}
+            </h2>
+            {readStr(activeGal.delivery_settings, 'eventLocation') && (
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', marginTop: 10, letterSpacing: '.15em', textTransform: 'uppercase' }}>
+                {readStr(activeGal.delivery_settings, 'eventLocation')}
+              </div>
             )}
           </div>
+
+          <div style={{
+            maxWidth: 1200, margin: '0 auto', padding: '0 24px',
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 350px), 1fr))',
+            gap: 4,
+          }}>
+            {galPhotos.map((img, i) => (
+              <div key={img.id} ref={reveal} data-delay={i * 60}
+                className="pf-thumb" style={{ borderRadius: 0 }}>
+                <img src={imgUrl(img.thumbnail_path || img.storage_path)} alt=""
+                  style={{ width: '100%', height: 'auto', display: 'block' }}
+                  loading="lazy" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Footer ═══ */}
+      <footer style={{
+        padding: '60px 24px 32px', textAlign: 'center',
+        borderTop: '1px solid rgba(255,255,255,.06)',
+      }}>
+        {(settings.phone || settings.email || settings.instagram) && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 32, flexWrap: 'wrap', marginBottom: 32 }}>
+            {settings.phone && <a href={`tel:${settings.phone}`} style={linkStyle}>{settings.phone}</a>}
+            {settings.email && <a href={`mailto:${settings.email}`} style={linkStyle}>{settings.email}</a>}
+            {settings.instagram && <a href={`https://instagram.com/${settings.instagram}`} target="_blank" rel="noopener" style={linkStyle}>@{settings.instagram}</a>}
+          </div>
         )}
-        {settings.logoBase64 && (
-          <img src={settings.logoBase64} alt="" style={{ maxHeight: 32, marginBottom: 12, opacity: .4 }} />
-        )}
-        {studioName && <div style={{ color: 'rgba(255,255,255,.25)', fontSize: 12, marginBottom: 6 }}>{studioName}</div>}
-        <div style={{ color: 'rgba(255,255,255,.15)', fontSize: 10 }}>Powered by Pixflow</div>
+        {settings.logoBase64 && <img src={settings.logoBase64} alt="" style={{ maxHeight: 28, opacity: .3, marginBottom: 16 }} />}
+        <div style={{ fontSize: 9, letterSpacing: '.2em', textTransform: 'uppercase', color: 'rgba(255,255,255,.15)' }}>
+          {studioName && <span>{studioName} · </span>}
+          Powered by Pixflow
+        </div>
       </footer>
 
-      <style>{`@keyframes bounce { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(4px) } }`}</style>
+      <style>{`
+        @keyframes heroFadeIn { from { opacity: 0; transform: translateY(24px) } to { opacity: 1; transform: none } }
+        @keyframes viewFadeIn { from { opacity: 0 } to { opacity: 1 } }
+      `}</style>
     </div>
   )
+}
+
+const linkStyle: React.CSSProperties = {
+  color: 'rgba(255,255,255,.4)', fontSize: 11, letterSpacing: '.15em', textTransform: 'uppercase',
+  textDecoration: 'none', transition: 'color .2s',
 }
