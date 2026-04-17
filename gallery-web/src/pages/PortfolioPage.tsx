@@ -211,8 +211,8 @@ export function PortfolioPage() {
           {/* Hero — parallax: image moves slower, content fades out on scroll */}
           {(() => {
             const vh = typeof window !== 'undefined' ? window.innerHeight : 900
-            const heroFade = Math.max(0, 1 - scrollY / (vh * 0.6))
-            const heroDarken = Math.min(.85, scrollY / (vh * 0.8))
+            const heroFade = Math.max(0, 1 - scrollY / (vh * 0.25))  // fades out fast
+            const heroDarken = Math.min(.9, .25 + scrollY / (vh * 0.6))
             const heroImgY = scrollY * 0.35
             return (
               <section style={{
@@ -270,41 +270,59 @@ export function PortfolioPage() {
                         {settings.tagline}
                       </p>
                     )}
+
+                    {/* Scroll down indicator */}
+                    <div style={{
+                      position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                      animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .6s',
+                    }}>
+                      <div style={{ fontSize: 9, letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.3)' }}>
+                        Scroll
+                      </div>
+                      <div style={{ animation: 'scrollBounce 2s ease infinite' }}>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" strokeWidth="1.5">
+                          <path d="M12 5v14M19 12l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Scroll-driven question text — fades IN as hero fades OUT */}
                   {(() => {
-                    const questionProgress = Math.max(0, Math.min(1, (scrollY - vh * 0.3) / (vh * 0.5)))
-                    const questionFadeOut = Math.max(0, 1 - Math.max(0, (scrollY - vh * 0.9) / (vh * 0.3)))
-                    const questionOpacity = questionProgress * questionFadeOut
-                    const questionY = (1 - questionProgress) * 60
+                    const questionIn = Math.max(0, Math.min(1, (scrollY - vh * 0.4) / (vh * 0.35)))
+                    const questionOut = Math.max(0, 1 - Math.max(0, (scrollY - vh * 0.95) / (vh * 0.25)))
+                    const questionOpacity = questionIn * questionOut
+                    const questionY = (1 - questionIn) * 50
+                    const questionScale = 0.92 + questionIn * 0.08
                     return (
                       <div style={{
                         position: 'absolute', inset: 0,
                         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                         opacity: questionOpacity,
-                        transform: `translateY(${questionY}px)`,
+                        transform: `translateY(${questionY}px) scale(${questionScale})`,
                         willChange: 'opacity, transform',
                         pointerEvents: 'none',
                       }}>
                         <div style={{
-                          fontSize: 'clamp(10px, 1.2vw, 13px)', letterSpacing: '.35em', textTransform: 'uppercase',
-                          color: 'rgba(255,255,255,.35)', marginBottom: 20,
-                        }}>
-                          Explore Our Work
-                        </div>
+                          width: 30, height: 1, background: 'rgba(255,255,255,.25)', marginBottom: 28,
+                        }} />
                         <div style={{
-                          fontSize: 'clamp(28px, 5vw, 68px)', fontWeight: 400,
-                          letterSpacing: '.02em', lineHeight: 1.15,
-                          maxWidth: 700, textAlign: 'center',
+                          fontSize: 'clamp(28px, 5.5vw, 72px)', fontWeight: 400,
+                          letterSpacing: '.01em', lineHeight: 1.1,
+                          maxWidth: 750, textAlign: 'center',
                           color: '#fff',
                         }}>
-                          Which event would you like to see?
+                          Step into the
+                          <br />
+                          <span style={{ fontStyle: 'italic', letterSpacing: '.04em' }}>experience</span>
                         </div>
                         <div style={{
-                          width: 50, height: 1, background: `rgba(255,255,255,.2)`,
-                          marginTop: 28,
-                        }} />
+                          fontSize: 'clamp(10px, 1.2vw, 14px)', letterSpacing: '.3em', textTransform: 'uppercase',
+                          color: 'rgba(255,255,255,.3)', marginTop: 24,
+                        }}>
+                          Choose your event
+                        </div>
                       </div>
                     )
                   })()}
@@ -490,6 +508,7 @@ export function PortfolioPage() {
       <style>{`
         @keyframes heroFadeIn { from { opacity: 0; transform: translateY(24px) } to { opacity: 1; transform: none } }
         @keyframes viewFadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes scrollBounce { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(6px) } }
       `}</style>
     </div>
   )
