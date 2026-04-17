@@ -103,6 +103,7 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
   const [copied, setCopied] = useState(false)
   const [saved, setSaved] = useState(false)
   const [activeSection, setActiveSection] = useState<'brand' | 'design' | 'content' | 'contact'>('brand')
+  const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile')
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { savePortfolioSettings(clientId, settings) }, [settings, clientId])
@@ -183,17 +184,42 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
 
         {/* ── Left: Live preview ── */}
         <div style={{
-          width: 380, flexShrink: 0, position: 'sticky', top: 20,
-          borderRadius: 14, overflow: 'hidden',
-          border: '1px solid rgba(255,255,255,.06)',
-          boxShadow: '0 8px 32px rgba(0,0,0,.3)',
+          width: previewMode === 'desktop' ? 480 : 320, flexShrink: 0, position: 'sticky', top: 20,
+          transition: 'width .4s cubic-bezier(.4,0,.2,1)',
         }}>
+          {/* Preview mode toggle */}
+          <div style={{
+            display: 'flex', gap: 4, marginBottom: 10, padding: 3,
+            background: 'rgba(0,0,0,.3)', borderRadius: 9, border: '1px solid rgba(255,255,255,.05)',
+            width: 'fit-content',
+          }}>
+            <button onClick={() => setPreviewMode('mobile')} style={{
+              padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+              background: previewMode === 'mobile' ? `${settings.accentColor}25` : 'transparent',
+              color: previewMode === 'mobile' ? '#fff' : 'rgba(255,255,255,.4)', transition: 'all .15s',
+            }}>📱 מובייל</button>
+            <button onClick={() => setPreviewMode('desktop')} style={{
+              padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+              background: previewMode === 'desktop' ? `${settings.accentColor}25` : 'transparent',
+              color: previewMode === 'desktop' ? '#fff' : 'rgba(255,255,255,.4)', transition: 'all .15s',
+            }}>🖥 דסקטופ</button>
+          </div>
+
+          <div style={{
+            borderRadius: previewMode === 'mobile' ? 24 : 14,
+            overflow: 'hidden',
+            border: previewMode === 'mobile' ? '6px solid rgba(255,255,255,.08)' : '1px solid rgba(255,255,255,.06)',
+            boxShadow: '0 12px 40px rgba(0,0,0,.4)',
+            transition: 'all .4s cubic-bezier(.4,0,.2,1)',
+          }}>
           {/* Mini portfolio preview */}
           <div style={{
-            aspectRatio: '9/16', overflow: 'hidden',
+            aspectRatio: previewMode === 'desktop' ? '16/10' : '9/16',
+            overflow: 'hidden',
             background: BG_STYLES.find(b => b.key === settings.bgStyle)?.bg || '#050508',
             display: 'flex', flexDirection: 'column',
             fontFamily: settings.fontStyle === 'elegant' ? 'Georgia, serif' : settings.fontStyle === 'bold' ? 'Impact, sans-serif' : 'inherit',
+            transition: 'aspect-ratio .4s cubic-bezier(.4,0,.2,1), background .3s',
           }}>
             {/* Mini hero */}
             <div style={{
@@ -256,6 +282,7 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
                 {settings.instagram && <span>📸 @{settings.instagram}</span>}
               </div>
             )}
+          </div>
           </div>
         </div>
 

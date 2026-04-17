@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase, storageUrl } from '../supabase'
 import { loadPortfolioSettings, type PortfolioSettings, DEFAULT_SETTINGS } from '../components/PortfolioEditor'
 
@@ -33,6 +33,29 @@ function imgUrl(path: string | null) {
   return path ? storageUrl('gallery-images', path) : ''
 }
 
+// Scroll-reveal hook: elements fade up when entering viewport
+function useReveal() {
+  const obs = useRef<IntersectionObserver | null>(null)
+  return useCallback((el: HTMLElement | null) => {
+    if (!el) return
+    if (!obs.current) {
+      obs.current = new IntersectionObserver(entries => {
+        entries.forEach(e => {
+          if (e.isIntersecting) {
+            ;(e.target as HTMLElement).style.opacity = '1'
+            ;(e.target as HTMLElement).style.transform = 'translateY(0)'
+            obs.current?.unobserve(e.target)
+          }
+        })
+      }, { threshold: 0.08 })
+    }
+    el.style.opacity = '0'
+    el.style.transform = 'translateY(32px)'
+    el.style.transition = 'opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1)'
+    obs.current.observe(el)
+  }, [])
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function PortfolioPage() {
@@ -56,6 +79,7 @@ export function PortfolioPage() {
   const [activeType, setActiveType] = useState<string | null>(null)
   const [activeGallery, setActiveGallery] = useState<string | null>(null)
   const [settings, setSettings] = useState<PortfolioSettings>(DEFAULT_SETTINGS)
+  const reveal = useReveal()
 
   // ── Load data ─────────────────────────────────────────────────────────
 
@@ -210,13 +234,23 @@ export function PortfolioPage() {
           animation: 'fadeUp .8s ease both',
           padding: '0 24px', maxWidth: 800,
         }}>
-          {studioName && (
+          {/* Logo */}
+          {settings.logoBase64 && (
+            <img src={settings.logoBase64} alt="" style={{
+              maxHeight: 60, maxWidth: 200, marginBottom: 20,
+              filter: 'drop-shadow(0 4px 16px rgba(0,0,0,.4))',
+              animation: 'fadeUp .8s cubic-bezier(.16,1,.3,1) both .1s',
+            }} />
+          )}
+
+          {studioName && settings.showStudioBadge && (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
               padding: '6px 16px', borderRadius: 50, marginBottom: 20,
               background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.08)',
               backdropFilter: 'blur(12px)',
               fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.5)', letterSpacing: '.1em', textTransform: 'uppercase',
+              animation: 'fadeUp .8s cubic-bezier(.16,1,.3,1) both .2s',
             }}>
               {studioName}
             </div>
@@ -259,7 +293,7 @@ export function PortfolioPage() {
           maxWidth: 1200, margin: '0 auto',
           animation: 'fadeUp .6s ease both',
         }}>
-          <div style={{ textAlign: 'center', marginBottom: 48 }}>
+          <div ref={reveal} style={{ textAlign: 'center', marginBottom: 48 }}>
             <h2 style={{
               fontSize: 'clamp(24px, 3.5vw, 40px)', fontWeight: 800, margin: '0 0 12px',
               letterSpacing: '-0.03em', color: '#fff',
@@ -282,6 +316,7 @@ export function PortfolioPage() {
               return (
                 <div
                   key={et.key}
+                  ref={reveal}
                   className="pf-type-card"
                   onClick={() => setActiveType(et.key)}
                   style={{
@@ -381,6 +416,7 @@ export function PortfolioPage() {
               return (
                 <div
                   key={g.id}
+                  ref={reveal}
                   className="pf-gal-card"
                   onClick={() => setActiveGallery(g.id)}
                   style={{
@@ -462,7 +498,7 @@ export function PortfolioPage() {
               gap: 8,
             }}>
               {activePhotos.map(img => (
-                <div key={img.id} className="pf-photo" style={{
+                <div key={img.id} ref={reveal} className="pf-photo" style={{
                   borderRadius: 10, overflow: 'hidden',
                   background: 'rgba(255,255,255,.02)',
                 }}>
@@ -479,14 +515,44 @@ export function PortfolioPage() {
         )
       })()}
 
-      {/* ═══ Footer ═══ */}
-      <footer style={{
-        padding: '40px 24px', textAlign: 'center',
-        borderTop: '1px solid rgba(255,255,255,.04)',
-        color: 'rgba(255,255,255,.2)', fontSize: 11,
+      {/* ═══ Footer with contact ═══ */}
+      <footer ref={reveal} style={{
+        padding: '48px 24px 32px', textAlign: 'center',
+        borderTop: `1px solid ${accent}15`,
+        background: `linear-gradient(180deg, transparent 0%, ${accent}06 100%)`,
       }}>
-        {studioName && <div style={{ marginBottom: 4 }}>{studioName}</div>}
-        <div>Powered by Pixflow</div>
+        {(settings.phone || settings.email || settings.instagram || settings.website) && (
+          <div style={{
+            display: 'flex', justifyContent: 'center', gap: 24, flexWrap: 'wrap',
+            marginBottom: 24,
+          }}>
+            {settings.phone && (
+              <a href={`tel:${settings.phone}`} style={{ color: 'rgba(255,255,255,.5)', fontSize: 13, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, transition: 'color .15s' }}>
+                📞 {settings.phone}
+              </a>
+            )}
+            {settings.email && (
+              <a href={`mailto:${settings.email}`} style={{ color: 'rgba(255,255,255,.5)', fontSize: 13, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                ✉ {settings.email}
+              </a>
+            )}
+            {settings.instagram && (
+              <a href={`https://instagram.com/${settings.instagram}`} target="_blank" rel="noopener" style={{ color: 'rgba(255,255,255,.5)', fontSize: 13, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                📸 @{settings.instagram}
+              </a>
+            )}
+            {settings.website && (
+              <a href={settings.website.startsWith('http') ? settings.website : `https://${settings.website}`} target="_blank" rel="noopener" style={{ color: 'rgba(255,255,255,.5)', fontSize: 13, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                🌐 {settings.website}
+              </a>
+            )}
+          </div>
+        )}
+        {settings.logoBase64 && (
+          <img src={settings.logoBase64} alt="" style={{ maxHeight: 32, marginBottom: 12, opacity: .4 }} />
+        )}
+        {studioName && <div style={{ color: 'rgba(255,255,255,.25)', fontSize: 12, marginBottom: 6 }}>{studioName}</div>}
+        <div style={{ color: 'rgba(255,255,255,.15)', fontSize: 10 }}>Powered by Pixflow</div>
       </footer>
 
       <style>{`@keyframes bounce { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(4px) } }`}</style>
