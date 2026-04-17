@@ -129,8 +129,41 @@ export function PortfolioPage() {
   const typeGals = activeType ? (typeMap.get(activeType) || []) : []
   const galPhotos = activeGalleryId ? topPicks.filter(p => p.gallery_id === activeGalleryId) : []
   const activeGal = galleries.find(g => g.id === activeGalleryId)
-  const heroCover = covers.values().next().value || ''
   const accent = settings.accentColor
+
+  // Build mosaic pool: top 5 picks per gallery
+  const mosaicPool: string[] = []
+  visible.forEach(g => {
+    const picks = topPicks.filter(p => p.gallery_id === g.id).slice(0, 5)
+    picks.forEach(p => mosaicPool.push(imgUrl(p.thumbnail_path || p.storage_path)))
+  })
+  // Pad to at least 30 by repeating
+  while (mosaicPool.length > 0 && mosaicPool.length < 30) {
+    mosaicPool.push(mosaicPool[mosaicPool.length % mosaicPool.length])
+  }
+
+  // Mosaic state: 30 tiles, each cycling through images
+  const [mosaicTiles, setMosaicTiles] = useState<string[]>([])
+  const mosaicRef = useRef<number>(0)
+
+  useEffect(() => {
+    if (mosaicPool.length === 0) return
+    // Initial fill — shuffled
+    const shuffled = [...mosaicPool].sort(() => Math.random() - .5)
+    setMosaicTiles(shuffled.slice(0, 30))
+
+    // Every 1.2s swap a random tile
+    const interval = setInterval(() => {
+      mosaicRef.current = (mosaicRef.current + 1) % 30
+      const randomImg = mosaicPool[Math.floor(Math.random() * mosaicPool.length)]
+      setMosaicTiles(prev => {
+        const next = [...prev]
+        next[mosaicRef.current] = randomImg
+        return next
+      })
+    }, 1200)
+    return () => clearInterval(interval)
+  }, [topPicks.length, visible.length])
 
   const navigateTo = (v: 'home' | 'type' | 'gallery', type = '', galId = '') => {
     setView(v); setActiveType(type); setActiveGalleryId(galId)
@@ -223,21 +256,35 @@ export function PortfolioPage() {
                   position: 'sticky', top: 0, height: '100vh',
                   overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  {/* Background image with parallax */}
-                  {heroCover && (
-                    <img src={heroCover} alt="" style={{
-                      position: 'absolute', inset: 0, width: '100%', height: '120%', objectFit: 'cover',
-                      filter: settings.heroStyle === 'blur' ? 'blur(6px)' : 'none',
-                      transform: `translateY(${-heroImgY}px) scale(1.08)`,
+                  {/* Mosaic collage background — 30 tiles cycling images */}
+                  {mosaicTiles.length > 0 && (
+                    <div style={{
+                      position: 'absolute', inset: -10, /* slight overflow to avoid edge gaps */
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(6, 1fr)',
+                      gridTemplateRows: 'repeat(5, 1fr)',
+                      gap: 3,
+                      transform: `translateY(${-heroImgY * 0.5}px)`,
                       willChange: 'transform',
-                    }} />
+                    }}>
+                      {mosaicTiles.map((url, i) => (
+                        <div key={i} style={{
+                          overflow: 'hidden', position: 'relative',
+                        }}>
+                          <img src={url} alt="" style={{
+                            position: 'absolute', inset: 0, width: '100%', height: '100%',
+                            objectFit: 'cover', display: 'block',
+                            transition: 'opacity 1s ease',
+                          }} />
+                        </div>
+                      ))}
+                    </div>
                   )}
 
                   {/* Dynamic darken overlay — gets darker as you scroll */}
                   <div style={{
                     position: 'absolute', inset: 0,
-                    background: `rgba(0,0,0,${0.3 + heroDarken})`,
-                    transition: 'background .05s linear',
+                    background: `rgba(0,0,0,${heroDarken})`,
                   }} />
 
                   {/* Hero content — fades out on scroll */}
