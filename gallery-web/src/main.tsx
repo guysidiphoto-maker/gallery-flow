@@ -6,6 +6,7 @@ import { DemoPage } from './pages/DemoPage'
 import { TermsPage } from './pages/TermsPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { ClientPage } from './pages/ClientPage'
+import { PortfolioPage } from './pages/PortfolioPage'
 import { ClientDashboard } from './pages/ClientDashboard'
 import { VendorPortal } from './pages/VendorPortal'
 import './styles.css'
@@ -21,8 +22,8 @@ function Router() {
   if (path.startsWith('/vendor/') || /^\/[^/]+\/vendor\//.test(path)) return <VendorPortal />
   // Client dashboard (authenticated)
   if (/\/client\/[^/]+\/dashboard/.test(path)) return <ClientDashboard />
-  // Client public page
-  if (path.startsWith('/client/') || /^\/[^/]+\/client\//.test(path)) return <ClientPage />
+  // Client public page → Portfolio (auto-generated website)
+  if (path.startsWith('/client/') || /^\/[^/]+\/client\//.test(path)) return <PortfolioPage />
   if (path.startsWith('/gallery') || /^\/[^/]+\/gallery\//.test(path)) return <App />
 
   // Fallback: redirect to landing
