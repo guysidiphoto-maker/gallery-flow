@@ -250,6 +250,24 @@ export function PortfolioPage() {
             </div>
           </section>
 
+          {/* Scroll text */}
+          <section ref={reveal} style={{
+            padding: 'clamp(60px, 10vw, 120px) clamp(24px, 8vw, 160px)',
+            textAlign: 'center', maxWidth: 800, margin: '0 auto',
+          }}>
+            <div style={{
+              fontSize: 'clamp(18px, 2.5vw, 28px)', fontWeight: 400,
+              color: 'rgba(255,255,255,.6)', lineHeight: 1.7,
+              letterSpacing: '.02em',
+            }}>
+              {settings.tagline || `${clientName} — producing unforgettable moments, one event at a time.`}
+            </div>
+            <div style={{
+              width: 40, height: 1, background: 'rgba(255,255,255,.15)',
+              margin: '32px auto 0',
+            }} />
+          </section>
+
           {/* Event type panels */}
           <section style={{ padding: '0' }}>
             {types.length === 1 ? (
