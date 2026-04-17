@@ -148,20 +148,37 @@ export function PortfolioPage() {
 
   useEffect(() => {
     if (mosaicPool.length === 0) return
-    // Initial fill — shuffled
+    // Initial fill — shuffled, NO duplicates
     const shuffled = [...mosaicPool].sort(() => Math.random() - .5)
-    setMosaicTiles(shuffled.slice(0, 30))
+    const unique: string[] = []
+    for (const url of shuffled) {
+      if (!unique.includes(url)) unique.push(url)
+      if (unique.length >= 30) break
+    }
+    // Pad if not enough unique
+    while (unique.length < 30 && mosaicPool.length > 0) {
+      unique.push(mosaicPool[unique.length % mosaicPool.length])
+    }
+    setMosaicTiles(unique)
 
-    // Every 1.2s swap a random tile
+    // Swap one tile every 2s — pick tile that won't create a duplicate
     const interval = setInterval(() => {
-      mosaicRef.current = (mosaicRef.current + 1) % 30
-      const randomImg = mosaicPool[Math.floor(Math.random() * mosaicPool.length)]
       setMosaicTiles(prev => {
         const next = [...prev]
-        next[mosaicRef.current] = randomImg
+        // Pick a random tile to swap
+        const tileIdx = Math.floor(Math.random() * 30)
+        // Pick a random image NOT already in the grid
+        const candidates = mosaicPool.filter(url => !next.includes(url))
+        if (candidates.length > 0) {
+          next[tileIdx] = candidates[Math.floor(Math.random() * candidates.length)]
+        } else {
+          // All images used, just pick a different one from what's in this tile
+          const others = mosaicPool.filter(url => url !== next[tileIdx])
+          if (others.length > 0) next[tileIdx] = others[Math.floor(Math.random() * others.length)]
+        }
         return next
       })
-    }, 1200)
+    }, 2000)
     return () => clearInterval(interval)
   }, [topPicks.length, visible.length])
 
@@ -270,12 +287,13 @@ export function PortfolioPage() {
                       {mosaicTiles.map((url, i) => (
                         <div key={i} style={{
                           overflow: 'hidden', position: 'relative',
+                          background: '#0a0a0a',
                         }}>
                           <img src={url} alt="" style={{
                             position: 'absolute', inset: 0, width: '100%', height: '100%',
                             objectFit: 'cover', display: 'block',
-                            transition: 'opacity 1s ease',
-                          }} />
+                            animation: `tileFade 2s ease both`,
+                          }} key={url + '-' + i} />
                         </div>
                       ))}
                     </div>
@@ -287,86 +305,95 @@ export function PortfolioPage() {
                     background: `rgba(0,0,0,${heroDarken})`,
                   }} />
 
-                  {/* Hero content — fades out on scroll */}
-                  <div style={{
-                    position: 'relative', textAlign: 'center', padding: '0 24px',
-                    opacity: heroFade,
-                    transform: `translateY(${-scrollY * 0.15}px)`,
-                    willChange: 'opacity, transform',
-                    animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both',
-                  }}>
-                    {settings.logoBase64 && (
-                      <img src={settings.logoBase64} alt="" style={{
-                        maxHeight: 70, maxWidth: 240, marginBottom: 24, display: 'block', marginInline: 'auto',
-                        animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .15s',
-                      }} />
-                    )}
-                    <h1 style={{
-                      fontSize: 'clamp(32px, 6vw, 80px)', fontWeight: 400, margin: 0,
-                      letterSpacing: '.04em', lineHeight: 1.1,
-                    }}>
-                      {clientName}
-                    </h1>
-                    {settings.tagline && (
-                      <p style={{
-                        fontSize: 'clamp(12px, 1.4vw, 16px)', fontWeight: 400,
-                        color: 'rgba(255,255,255,.5)', marginTop: 16,
-                        letterSpacing: '.15em', textTransform: 'uppercase',
-                        animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .3s',
-                      }}>
-                        {settings.tagline}
-                      </p>
-                    )}
-
-                    {/* Scroll down indicator */}
-                    <div style={{
-                      position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                      animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .6s',
-                    }}>
-                      <div style={{ fontSize: 9, letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.3)' }}>
-                        Scroll
-                      </div>
-                      <div style={{ animation: 'scrollBounce 2s ease infinite' }}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" strokeWidth="1.5">
-                          <path d="M12 5v14M19 12l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Scroll-driven question text — fades IN as hero fades OUT */}
+                  {/* Company name — moves to bottom + shrinks as you scroll */}
                   {(() => {
-                    const questionIn = Math.max(0, Math.min(1, (scrollY - vh * 0.4) / (vh * 0.35)))
-                    const questionOut = Math.max(0, 1 - Math.max(0, (scrollY - vh * 0.95) / (vh * 0.25)))
-                    const questionOpacity = questionIn * questionOut
-                    const questionY = (1 - questionIn) * 50
-                    const questionScale = 0.92 + questionIn * 0.08
+                    const nameProgress = Math.min(1, scrollY / (vh * 0.35))
+                    const nameFadeOut = Math.max(0, 1 - Math.max(0, (scrollY - vh * 0.85) / (vh * 0.2)))
+                    const nameY = nameProgress * (vh * 0.35)
+                    const nameScale = 1 - nameProgress * 0.55
+                    const nameOpacity = nameFadeOut
                     return (
                       <div style={{
                         position: 'absolute', inset: 0,
                         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        opacity: questionOpacity,
-                        transform: `translateY(${questionY}px) scale(${questionScale})`,
+                        opacity: nameOpacity,
+                        transform: `translateY(${nameY}px) scale(${nameScale})`,
+                        willChange: 'opacity, transform',
+                        pointerEvents: 'none',
+                        animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both',
+                      }}>
+                        {settings.logoBase64 && (
+                          <img src={settings.logoBase64} alt="" style={{
+                            maxHeight: 70, maxWidth: 240, marginBottom: 20, display: 'block',
+                          }} />
+                        )}
+                        <h1 style={{
+                          fontSize: 'clamp(32px, 6vw, 80px)', fontWeight: 400, margin: 0,
+                          letterSpacing: '.04em', lineHeight: 1.1,
+                        }}>
+                          {clientName}
+                        </h1>
+                        {settings.tagline && (
+                          <p style={{
+                            fontSize: 'clamp(12px, 1.4vw, 16px)', fontWeight: 400,
+                            color: 'rgba(255,255,255,.5)', marginTop: 14,
+                            letterSpacing: '.15em', textTransform: 'uppercase',
+                          }}>
+                            {settings.tagline}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Scroll indicator — fades out fast */}
+                  <div style={{
+                    position: 'absolute', bottom: 36, left: '50%', transform: 'translateX(-50%)',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                    opacity: heroFade,
+                    animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .6s',
+                    pointerEvents: 'none',
+                  }}>
+                    <div style={{ fontSize: 9, letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.3)' }}>
+                      Scroll
+                    </div>
+                    <div style={{ animation: 'scrollBounce 2s ease infinite' }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.3)" strokeWidth="1.5">
+                        <path d="M12 5v14M19 12l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Question text — fades IN mid-scroll, fades OUT before panels */}
+                  {(() => {
+                    const qIn = Math.max(0, Math.min(1, (scrollY - vh * 0.45) / (vh * 0.3)))
+                    const qOut = Math.max(0, 1 - Math.max(0, (scrollY - vh * 0.9) / (vh * 0.2)))
+                    const qOpacity = qIn * qOut
+                    const qY = (1 - qIn) * 40
+                    return (
+                      <div style={{
+                        position: 'absolute', inset: 0,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        opacity: qOpacity,
+                        transform: `translateY(${qY}px)`,
                         willChange: 'opacity, transform',
                         pointerEvents: 'none',
                       }}>
                         <div style={{
-                          width: 30, height: 1, background: 'rgba(255,255,255,.25)', marginBottom: 28,
+                          width: 30, height: 1, background: 'rgba(255,255,255,.2)', marginBottom: 28,
                         }} />
                         <div style={{
-                          fontSize: 'clamp(28px, 5.5vw, 72px)', fontWeight: 400,
-                          letterSpacing: '.01em', lineHeight: 1.1,
-                          maxWidth: 750, textAlign: 'center',
-                          color: '#fff',
+                          fontSize: 'clamp(26px, 5vw, 64px)', fontWeight: 400,
+                          letterSpacing: '.01em', lineHeight: 1.15,
+                          maxWidth: 700, textAlign: 'center', color: '#fff',
                         }}>
                           Step into the
                           <br />
                           <span style={{ fontStyle: 'italic', letterSpacing: '.04em' }}>experience</span>
                         </div>
                         <div style={{
-                          fontSize: 'clamp(10px, 1.2vw, 14px)', letterSpacing: '.3em', textTransform: 'uppercase',
-                          color: 'rgba(255,255,255,.3)', marginTop: 24,
+                          fontSize: 'clamp(9px, 1.1vw, 13px)', letterSpacing: '.3em', textTransform: 'uppercase',
+                          color: 'rgba(255,255,255,.3)', marginTop: 22,
                         }}>
                           Choose your event
                         </div>
@@ -556,6 +583,7 @@ export function PortfolioPage() {
         @keyframes heroFadeIn { from { opacity: 0; transform: translateY(24px) } to { opacity: 1; transform: none } }
         @keyframes viewFadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes scrollBounce { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(6px) } }
+        @keyframes tileFade { from { opacity: 0; transform: scale(1.08) } to { opacity: 1; transform: scale(1) } }
       `}</style>
     </div>
   )
