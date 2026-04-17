@@ -401,8 +401,16 @@ export function PortfolioPage() {
             )
           })()}
 
-          {/* Event type panels */}
-          <section style={{ padding: '0' }}>
+          {/* Event type panels — scroll-driven fade in, no gap from hero */}
+          <section style={{
+            padding: '0',
+            marginTop: '-100vh', /* overlap with hero's 200vh to eliminate black gap */
+            position: 'relative',
+            zIndex: 1,
+            opacity: Math.max(0, Math.min(1, (scrollY - (typeof window !== 'undefined' ? window.innerHeight : 900) * 0.85) / ((typeof window !== 'undefined' ? window.innerHeight : 900) * 0.3))),
+            transform: `translateY(${Math.max(0, (1 - Math.min(1, (scrollY - (typeof window !== 'undefined' ? window.innerHeight : 900) * 0.85) / ((typeof window !== 'undefined' ? window.innerHeight : 900) * 0.3))) * 40)}px)`,
+            transition: 'none',
+          }}>
             {types.length === 1 ? (
               /* Single type — full screen panel */
               <div className="pf-panel" ref={reveal}
