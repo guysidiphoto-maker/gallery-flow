@@ -307,11 +307,10 @@ export function PortfolioPage() {
 
                   {/* Company name — moves to bottom + shrinks as you scroll */}
                   {(() => {
-                    const nameProgress = Math.min(1, scrollY / (vh * 0.35))
-                    const nameFadeOut = Math.max(0, 1 - Math.max(0, (scrollY - vh * 0.85) / (vh * 0.2)))
-                    const nameY = nameProgress * (vh * 0.35)
-                    const nameScale = 1 - nameProgress * 0.55
-                    const nameOpacity = nameFadeOut
+                    const nameProgress = Math.min(1, scrollY / (vh * 0.3))
+                    const nameOpacity = Math.max(0, 1 - scrollY / (vh * 0.35))
+                    const nameY = nameProgress * (vh * 0.25)
+                    const nameScale = 1 - nameProgress * 0.4
                     return (
                       <div style={{
                         position: 'absolute', inset: 0,
