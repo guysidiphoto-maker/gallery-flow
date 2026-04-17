@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase, storageUrl } from '../supabase'
+import { loadPortfolioSettings, type PortfolioSettings, DEFAULT_SETTINGS } from '../components/PortfolioEditor'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,7 @@ export function PortfolioPage() {
   const [covers, setCovers] = useState<Map<string, string>>(new Map())
   const [activeType, setActiveType] = useState<string | null>(null)
   const [activeGallery, setActiveGallery] = useState<string | null>(null)
+  const [settings, setSettings] = useState<PortfolioSettings>(DEFAULT_SETTINGS)
 
   // ── Load data ─────────────────────────────────────────────────────────
 
@@ -93,17 +95,28 @@ export function PortfolioPage() {
         .order('sort_order', { ascending: true }).limit(200)
       if (picks) setTopPicks(picks)
 
+      setSettings(loadPortfolioSettings(clientId))
       setLoading(false)
     }
   }, [clientId])
 
   // ── Derived data ──────────────────────────────────────────────────────
 
+  // Accent color and background from settings
+  const accent = settings.accentColor
+  const bgBase = settings.bgStyle === 'midnight' ? '#0a0a1a' : settings.bgStyle === 'gradient' ? '#0a0a1a' : '#050508'
+  const bgGradient = settings.bgStyle === 'gradient'
+    ? `linear-gradient(135deg, #050510 0%, #0a0a2a 50%, #150a20 100%)`
+    : bgBase
+
+  // Filter hidden galleries
+  const visibleGalleries = galleries.filter(g => !settings.hiddenGalleryIds.includes(g.id))
+
   // Group galleries by event type
   const eventTypes: { key: string; label: string; icon: string; galleries: GalleryRow[]; coverUrl: string }[] = []
   const typeMap = new Map<string, GalleryRow[]>()
 
-  galleries.forEach(g => {
+  visibleGalleries.forEach(g => {
     const et = readStr(g.delivery_settings, 'eventType') || 'other'
     if (!typeMap.has(et)) typeMap.set(et, [])
     typeMap.get(et)!.push(g)
@@ -147,7 +160,7 @@ export function PortfolioPage() {
 
   return (
     <div style={{
-      minHeight: '100vh', background: '#050508',
+      minHeight: '100vh', background: bgGradient,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       color: '#fff', direction: 'rtl',
     }}>
@@ -156,7 +169,7 @@ export function PortfolioPage() {
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes spin { to { transform: rotate(360deg) } }
         .pf-type-card { transition: all .35s cubic-bezier(.4,0,.2,1); }
-        .pf-type-card:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 24px 60px rgba(0,0,0,.5), 0 0 40px rgba(99,102,241,.15); }
+        .pf-type-card:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 24px 60px rgba(0,0,0,.5), 0 0 40px ${accent}25; }
         .pf-type-card:hover .pf-type-cover { transform: scale(1.08); filter: brightness(1.1); }
         .pf-gal-card { transition: all .25s cubic-bezier(.4,0,.2,1); }
         .pf-gal-card:hover { transform: translateY(-3px); border-color: rgba(129,140,248,.3); }
@@ -183,7 +196,13 @@ export function PortfolioPage() {
 
         {/* Gradient overlays */}
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(5,5,8,.4) 0%, rgba(5,5,8,.85) 70%, #050508 100%)' }} />
-        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, rgba(99,102,241,.08) 0%, transparent 70%)' }} />
+        <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse at center, ${accent}14 0%, transparent 70%)` }} />
+        {/* Animated grid lines for high-tech feel */}
+        <div style={{
+          position: 'absolute', inset: 0, opacity: .04,
+          backgroundImage: `linear-gradient(${accent}40 1px, transparent 1px), linear-gradient(90deg, ${accent}40 1px, transparent 1px)`,
+          backgroundSize: '60px 60px',
+        }} />
 
         {/* Content */}
         <div style={{
@@ -216,7 +235,7 @@ export function PortfolioPage() {
             fontSize: 'clamp(14px, 2vw, 18px)', color: 'rgba(255,255,255,.45)',
             margin: '0 0 40px', lineHeight: 1.6, maxWidth: 500, marginInline: 'auto',
           }}>
-            הפקת אירועים · {galleries.length} אירועים · {topPicks.length} תמונות מובחרות
+            {settings.tagline || 'הפקת אירועים'} · {visibleGalleries.length} אירועים · {topPicks.length} תמונות
           </p>
 
           {/* Scroll indicator */}

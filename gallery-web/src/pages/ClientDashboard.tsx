@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase, storageUrl } from '../supabase'
 import { TenderBuilder } from '../components/TenderBuilder'
 import { SocialManager } from '../components/SocialManager'
+import { PortfolioEditor } from '../components/PortfolioEditor'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -830,67 +831,13 @@ export function ClientDashboard() {
 
         {/* ── My Page Tab ─────────────────────────────────────────────── */}
         {tab === 'page' && (
-          <div ref={reveal}>
-            <div style={{
-              padding: 24, background: 'rgba(255,255,255,.02)',
-              border: '1px solid rgba(255,255,255,.06)', borderRadius: 16,
-              textAlign: 'center',
-            }}>
-              <h2 style={{ fontSize: 20, fontWeight: 600, margin: '0 0 8px' }}>Your Public Page</h2>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,.4)', margin: '0 0 24px' }}>
-                Share this link with your clients and on social media
-              </p>
-
-              {/* URL display */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)',
-                borderRadius: 10, padding: '10px 14px', marginBottom: 16,
-                justifyContent: 'center',
-              }}>
-                <span style={{ fontSize: 13, color: 'rgba(255,255,255,.6)', fontFamily: 'ui-monospace, monospace' }}>
-                  pixflow-ai.com/{slug}/client/{clientId}
-                </span>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(`https://pixflow-ai.com/${slug}/client/${clientId}`)
-                    setDownloading('url')
-                    setTimeout(() => setDownloading(null), 1500)
-                  }}
-                  style={{
-                    padding: '6px 14px', borderRadius: 6,
-                    background: downloading === 'url' ? '#10b981' : '#6366f1',
-                    border: 'none', color: '#fff', fontSize: 11, fontWeight: 600,
-                    cursor: 'pointer', fontFamily: 'inherit', transition: 'background .2s',
-                  }}
-                >
-                  {downloading === 'url' ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-
-              {/* Preview */}
-              <div style={{
-                marginTop: 24, padding: '32px 24px',
-                background: 'rgba(255,255,255,.02)', borderRadius: 12,
-                border: '1px solid rgba(255,255,255,.05)',
-              }}>
-                <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.15em', color: 'rgba(255,255,255,.3)', marginBottom: 8 }}>Preview</div>
-                <div style={{ fontSize: 28, fontWeight: 200, marginBottom: 8 }}>{clientName}</div>
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,.35)' }}>
-                  {galleries.length} galleries · {selectedPicks.size} highlights
-                  {hasStories ? ` · ${Array.from(stories.values()).flat().length} stories` : ''}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 3, marginTop: 16, maxWidth: 300, margin: '16px auto 0' }}>
-                  {topPicks.slice(0, 5).map(img => (
-                    <div key={img.id} style={{ flex: 1, aspectRatio: '1', borderRadius: 4, overflow: 'hidden' }}>
-                      <img src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)} alt=""
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+          <PortfolioEditor
+            clientId={clientId}
+            clientName={clientName}
+            studioName={studioName}
+            galleries={galleries}
+            publicUrl={`https://pixflow-ai.com/${slug}/client/${clientId}`}
+          />
         )}
 
         {tab === 'tender' && (
