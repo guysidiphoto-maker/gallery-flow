@@ -261,9 +261,12 @@ export function PortfolioPage() {
           {/* Hero — parallax: image moves slower, content fades out on scroll */}
           {(() => {
             const vh = typeof window !== 'undefined' ? window.innerHeight : 900
-            const heroFade = Math.max(0, 1 - scrollY / (vh * 0.25))  // fades out fast
-            const heroDarken = Math.min(.9, .25 + scrollY / (vh * 0.6))
-            const heroImgY = scrollY * 0.35
+            // Crossfade progress: 0 = name visible, 1 = question visible
+            const crossfade = Math.max(0, Math.min(1, (scrollY - vh * 0.15) / (vh * 0.4)))
+            const heroDarken = Math.min(.92, .2 + scrollY / (vh * 0.55))
+            const heroImgY = scrollY * 0.3
+            // Everything fades out before event panels
+            const exitFade = Math.max(0, 1 - Math.max(0, (scrollY - vh * 0.85) / (vh * 0.2)))
             return (
               <section style={{
                 height: '200vh', position: 'relative',
@@ -305,18 +308,16 @@ export function PortfolioPage() {
                     background: `rgba(0,0,0,${heroDarken})`,
                   }} />
 
-                  {/* Company name — moves to bottom + shrinks as you scroll */}
+                  {/* Company name — crossfades OUT as question fades IN */}
                   {(() => {
-                    const nameProgress = Math.min(1, scrollY / (vh * 0.3))
-                    const nameOpacity = Math.max(0, 1 - scrollY / (vh * 0.35))
-                    const nameY = nameProgress * (vh * 0.25)
-                    const nameScale = 1 - nameProgress * 0.4
+                    const nameOpacity = (1 - crossfade) * exitFade
+                    const nameY = crossfade * 30
                     return (
                       <div style={{
                         position: 'absolute', inset: 0,
                         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                         opacity: nameOpacity,
-                        transform: `translateY(${nameY}px) scale(${nameScale})`,
+                        transform: `translateY(${nameY}px) scale(${1 - crossfade * 0.15})`,
                         willChange: 'opacity, transform',
                         pointerEvents: 'none',
                         animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both',
@@ -345,11 +346,11 @@ export function PortfolioPage() {
                     )
                   })()}
 
-                  {/* Scroll indicator — fades out fast */}
+                  {/* Scroll indicator — fades with name */}
                   <div style={{
                     position: 'absolute', bottom: 36, left: '50%', transform: 'translateX(-50%)',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                    opacity: heroFade,
+                    opacity: (1 - crossfade) * exitFade,
                     animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .6s',
                     pointerEvents: 'none',
                   }}>
@@ -363,12 +364,10 @@ export function PortfolioPage() {
                     </div>
                   </div>
 
-                  {/* Question text — fades IN mid-scroll, fades OUT before panels */}
+                  {/* Question text — crossfades IN as name fades OUT, exits before panels */}
                   {(() => {
-                    const qIn = Math.max(0, Math.min(1, (scrollY - vh * 0.45) / (vh * 0.3)))
-                    const qOut = Math.max(0, 1 - Math.max(0, (scrollY - vh * 0.9) / (vh * 0.2)))
-                    const qOpacity = qIn * qOut
-                    const qY = (1 - qIn) * 40
+                    const qOpacity = crossfade * exitFade
+                    const qY = (1 - crossfade) * 40
                     return (
                       <div style={{
                         position: 'absolute', inset: 0,
