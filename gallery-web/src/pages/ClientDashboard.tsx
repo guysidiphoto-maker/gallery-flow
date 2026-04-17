@@ -836,6 +836,7 @@ export function ClientDashboard() {
             clientName={clientName}
             studioName={studioName}
             galleries={galleries}
+            covers={covers}
             publicUrl={`https://pixflow-ai.com/${slug}/client/${clientId}`}
           />
         )}
