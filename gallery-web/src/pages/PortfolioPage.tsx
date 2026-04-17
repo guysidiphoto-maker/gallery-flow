@@ -71,7 +71,15 @@ export function PortfolioPage() {
   const [view, setView] = useState<'home' | 'type' | 'gallery'>('home')
   const [activeType, setActiveType] = useState('')
   const [activeGalleryId, setActiveGalleryId] = useState('')
+  const [scrollY, setScrollY] = useState(0)
   const reveal = useReveal()
+
+  // Track scroll for parallax/fade effects
+  useEffect(() => {
+    const onScroll = () => setScrollY(window.scrollY)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   // ── Load ──────────────────────────────────────────────────────────────
 
@@ -200,73 +208,110 @@ export function PortfolioPage() {
       {/* ═══ HOME: Split panels ═══ */}
       {view === 'home' && (
         <div style={{ minHeight: '100vh' }}>
-          {/* Hero */}
-          <section style={{
-            height: '100vh', position: 'relative',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            overflow: 'hidden',
-          }}>
-            {heroCover && (
-              <img src={heroCover} alt="" style={{
-                position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-                filter: settings.heroStyle === 'blur' ? 'blur(8px) brightness(.3)' : 'brightness(.25)',
-                transform: 'scale(1.05)',
-              }} />
-            )}
-            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.4)' }} />
-            <div style={{
-              position: 'relative', textAlign: 'center', padding: '0 24px',
-              animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both',
-            }}>
-              {settings.logoBase64 && (
-                <img src={settings.logoBase64} alt="" style={{
-                  maxHeight: 70, maxWidth: 240, marginBottom: 24, display: 'block', marginInline: 'auto',
-                  animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .15s',
-                }} />
-              )}
-              <h1 style={{
-                fontSize: 'clamp(32px, 6vw, 80px)', fontWeight: 400, margin: 0,
-                letterSpacing: '.04em', lineHeight: 1.1,
+          {/* Hero — parallax: image moves slower, content fades out on scroll */}
+          {(() => {
+            const vh = typeof window !== 'undefined' ? window.innerHeight : 900
+            const heroFade = Math.max(0, 1 - scrollY / (vh * 0.6))
+            const heroDarken = Math.min(.85, scrollY / (vh * 0.8))
+            const heroImgY = scrollY * 0.35
+            return (
+              <section style={{
+                height: '200vh', position: 'relative',
               }}>
-                {clientName}
-              </h1>
-              {settings.tagline && (
-                <p style={{
-                  fontSize: 'clamp(12px, 1.4vw, 16px)', fontWeight: 400,
-                  color: 'rgba(255,255,255,.5)', marginTop: 16,
-                  letterSpacing: '.15em', textTransform: 'uppercase',
-                  animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .3s',
+                {/* Sticky frame — stays in view during scroll */}
+                <div style={{
+                  position: 'sticky', top: 0, height: '100vh',
+                  overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  {settings.tagline}
-                </p>
-              )}
-              <div style={{
-                marginTop: 48, color: 'rgba(255,255,255,.25)', fontSize: 10,
-                letterSpacing: '.2em', textTransform: 'uppercase',
-                animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .5s',
-              }}>
-                Scroll to explore
-              </div>
-            </div>
-          </section>
+                  {/* Background image with parallax */}
+                  {heroCover && (
+                    <img src={heroCover} alt="" style={{
+                      position: 'absolute', inset: 0, width: '100%', height: '120%', objectFit: 'cover',
+                      filter: settings.heroStyle === 'blur' ? 'blur(6px)' : 'none',
+                      transform: `translateY(${-heroImgY}px) scale(1.08)`,
+                      willChange: 'transform',
+                    }} />
+                  )}
 
-          {/* Scroll text */}
-          <section ref={reveal} style={{
-            padding: 'clamp(60px, 10vw, 120px) clamp(24px, 8vw, 160px)',
-            textAlign: 'center', maxWidth: 800, margin: '0 auto',
-          }}>
-            <div style={{
-              fontSize: 'clamp(18px, 2.5vw, 28px)', fontWeight: 400,
-              color: 'rgba(255,255,255,.6)', lineHeight: 1.7,
-              letterSpacing: '.02em',
-            }}>
-              {settings.tagline || `${clientName} — producing unforgettable moments, one event at a time.`}
-            </div>
-            <div style={{
-              width: 40, height: 1, background: 'rgba(255,255,255,.15)',
-              margin: '32px auto 0',
-            }} />
-          </section>
+                  {/* Dynamic darken overlay — gets darker as you scroll */}
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    background: `rgba(0,0,0,${0.3 + heroDarken})`,
+                    transition: 'background .05s linear',
+                  }} />
+
+                  {/* Hero content — fades out on scroll */}
+                  <div style={{
+                    position: 'relative', textAlign: 'center', padding: '0 24px',
+                    opacity: heroFade,
+                    transform: `translateY(${-scrollY * 0.15}px)`,
+                    willChange: 'opacity, transform',
+                    animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both',
+                  }}>
+                    {settings.logoBase64 && (
+                      <img src={settings.logoBase64} alt="" style={{
+                        maxHeight: 70, maxWidth: 240, marginBottom: 24, display: 'block', marginInline: 'auto',
+                        animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .15s',
+                      }} />
+                    )}
+                    <h1 style={{
+                      fontSize: 'clamp(32px, 6vw, 80px)', fontWeight: 400, margin: 0,
+                      letterSpacing: '.04em', lineHeight: 1.1,
+                    }}>
+                      {clientName}
+                    </h1>
+                    {settings.tagline && (
+                      <p style={{
+                        fontSize: 'clamp(12px, 1.4vw, 16px)', fontWeight: 400,
+                        color: 'rgba(255,255,255,.5)', marginTop: 16,
+                        letterSpacing: '.15em', textTransform: 'uppercase',
+                        animation: 'heroFadeIn 1.4s cubic-bezier(.16,1,.3,1) both .3s',
+                      }}>
+                        {settings.tagline}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Scroll-driven question text — fades IN as hero fades OUT */}
+                  {(() => {
+                    const questionProgress = Math.max(0, Math.min(1, (scrollY - vh * 0.3) / (vh * 0.5)))
+                    const questionFadeOut = Math.max(0, 1 - Math.max(0, (scrollY - vh * 0.9) / (vh * 0.3)))
+                    const questionOpacity = questionProgress * questionFadeOut
+                    const questionY = (1 - questionProgress) * 60
+                    return (
+                      <div style={{
+                        position: 'absolute', inset: 0,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        opacity: questionOpacity,
+                        transform: `translateY(${questionY}px)`,
+                        willChange: 'opacity, transform',
+                        pointerEvents: 'none',
+                      }}>
+                        <div style={{
+                          fontSize: 'clamp(10px, 1.2vw, 13px)', letterSpacing: '.35em', textTransform: 'uppercase',
+                          color: 'rgba(255,255,255,.35)', marginBottom: 20,
+                        }}>
+                          Explore Our Work
+                        </div>
+                        <div style={{
+                          fontSize: 'clamp(28px, 5vw, 68px)', fontWeight: 400,
+                          letterSpacing: '.02em', lineHeight: 1.15,
+                          maxWidth: 700, textAlign: 'center',
+                          color: '#fff',
+                        }}>
+                          Which event would you like to see?
+                        </div>
+                        <div style={{
+                          width: 50, height: 1, background: `rgba(255,255,255,.2)`,
+                          marginTop: 28,
+                        }} />
+                      </div>
+                    )
+                  })()}
+                </div>
+              </section>
+            )
+          })()}
 
           {/* Event type panels */}
           <section style={{ padding: '0' }}>
