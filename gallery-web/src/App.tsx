@@ -809,23 +809,37 @@ export function App() {
 
   if (showWelcome && images.length > 0) {
     return (
-      <WelcomeScreen
-        galleryTitle={galleryTitle}
-        galleryDescription={rawSettings.galleryDescription || ''}
-        eventDate={rawSettings.eventDate || ''}
-        eventLocation={rawSettings.eventLocation || ''}
-        clientName={clientName || ''}
-        studioName={studioName}
-        studioWebsite={studioWebsite}
-        images={welcomeImages}
-        coverImageUrl={resolvedCoverUrl}
-        coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
-        storageUrl={(path: string) => storageUrl(imgBucket, path)}
-        onEnter={() => setShowWelcome(false)}
-        faceSearchAvailable={faceSearchAvailable}
-        facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}
-        onFindMyPhotos={() => setShowFaceSearch(true)}
-      />
+      <>
+        <WelcomeScreen
+          galleryTitle={galleryTitle}
+          galleryDescription={rawSettings.galleryDescription || ''}
+          eventDate={rawSettings.eventDate || ''}
+          eventLocation={rawSettings.eventLocation || ''}
+          clientName={clientName || ''}
+          studioName={studioName}
+          studioWebsite={studioWebsite}
+          images={welcomeImages}
+          coverImageUrl={resolvedCoverUrl}
+          coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
+          storageUrl={(path: string) => storageUrl(imgBucket, path)}
+          onEnter={() => setShowWelcome(false)}
+          faceSearchAvailable={faceSearchAvailable}
+          facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}
+          onFindMyPhotos={() => setShowFaceSearch(true)}
+        />
+        {/* Face search modal must render here too — welcome screen is an early return */}
+        {showFaceSearch && gallery && (
+          <FaceSearchModal
+            galleryId={gallery.id}
+            onClose={() => setShowFaceSearch(false)}
+            onMatches={(ids) => {
+              setFaceMatchIds(new Set(ids))
+              setShowFaceSearch(false)
+              if (ids.length > 0) setShowWelcome(false)
+            }}
+          />
+        )}
+      </>
     )
   }
 
