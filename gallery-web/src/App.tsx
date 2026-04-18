@@ -467,6 +467,11 @@ export function App() {
   // Face search: null = no search active (show everything); Set = filter
   const [faceMatchIds, setFaceMatchIds] = useState<Set<string> | null>(null)
   const [showFaceSearch, setShowFaceSearch] = useState(false)
+  // When the fullscreen viewer opens, it navigates through whichever list
+  // the clicked tile belonged to (full gallery / face-match filter / section).
+  // Snapshotting at click time means next/prev stays inside that subset and
+  // doesn't break if the filter later changes.
+  const [viewerList, setViewerList] = useState<GalleryImage[] | null>(null)
 
   // Parse gallery ID from URL: /{slug}/gallery/{uuid} or /gallery/{uuid}
   const galleryId = (() => {
@@ -1122,13 +1127,19 @@ export function App() {
       {/* All Images section — heading suppressed because the sticky nav
           already labels and counts it. */}
       <section id="all-images" className="gallery-section gallery-section--all">
+        {(() => {
+          const mainGridImages = viewerRole === 'client' ? images : visibleImages
+          return (
         <MasonryGrid
-          images={viewerRole === 'client' ? images : visibleImages}
+          images={mainGridImages}
           thumbUrl={thumbUrl}
           layoutMode={layoutMode}
           imageSpacing={imageSpacing}
           cornerStyle={cornerStyle}
-          onImageClick={setViewerIndex}
+          onImageClick={(idx) => {
+            setViewerList(mainGridImages)
+            setViewerIndex(idx)
+          }}
           onDownload={downloadsEnabled ? (img) => handleDownload(downloadUrl(img), img.filename) : undefined}
           selectMode={selectMode}
           selectedIds={selectedIds}
@@ -1141,6 +1152,8 @@ export function App() {
           hiddenIds={hiddenImageIds}
           onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
         />
+          )
+        })()}
       </section>
 
       {sections.length > 0 && sections.map(sec => {
@@ -1159,11 +1172,10 @@ export function App() {
               imageSpacing={imageSpacing}
               cornerStyle={cornerStyle}
               onImageClick={(idx) => {
-                // Map the section-local index back to the global images array
-                // index so the fullscreen viewer keeps working with the same list.
-                const target = sectionImages[idx]
-                const globalIdx = images.findIndex(im => im.id === target.id)
-                setViewerIndex(globalIdx >= 0 ? globalIdx : null)
+                // Scope the fullscreen viewer to this section — next/prev
+                // stays within the section the user clicked into.
+                setViewerList(sectionImages)
+                setViewerIndex(idx)
               }}
               onDownload={downloadsEnabled ? (img) => handleDownload(downloadUrl(img), img.filename) : undefined}
               selectMode={selectMode}
@@ -1193,16 +1205,18 @@ export function App() {
         </footer>
       )}
 
-      {/* Fullscreen viewer */}
+      {/* Fullscreen viewer — uses whichever list the clicked tile was in,
+          so next/prev navigation stays within that subset (face-match
+          results stay filtered; section clicks stay inside the section). */}
       {viewerIndex !== null && (
         <Viewer
-          images={images}
+          images={viewerList ?? images}
           index={viewerIndex}
           webUrl={webUrl}
           downloadUrl={downloadUrl}
           allowDownloads={downloadsEnabled}
           downloadLabel={downloadLabel}
-          onClose={() => setViewerIndex(null)}
+          onClose={() => { setViewerIndex(null); setViewerList(null) }}
           onNavigate={setViewerIndex}
           onDownload={handleDownload}
         />

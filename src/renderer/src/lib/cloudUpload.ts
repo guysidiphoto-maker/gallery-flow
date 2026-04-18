@@ -426,7 +426,11 @@ export async function publishGallery(
   log('inserting-records', compressedImages.length)
 
   for (let i = 0; i < imagePaths.length; i++) {
-    const filename = imagePaths[i].split('/').pop() || `img_${i}`
+    // IMPORTANT: use the sanitized filename from imageRecords, not the raw
+    // basename of imagePaths. compressedMap + the upload queue are both
+    // keyed on the sanitized name; looking up by the raw filename misses
+    // every image with a space/Hebrew/non-ASCII char and silently drops it.
+    const filename = imageRecords[i].filename
     const cr = compressedMap.get(filename)
     if (!cr) continue
     const isTopPick = topPickIds.has(imagePaths[i])

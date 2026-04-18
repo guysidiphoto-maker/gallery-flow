@@ -1014,39 +1014,49 @@ export function PublishPanel({
                 {/* Re-run / run-now button for already-live galleries. The
                     edge function is idempotent — already-indexed images are
                     skipped, so this is safe to call repeatedly. */}
-                {isAlreadyLive && galleryDbId && (
-                  <>
-                    <button
-                      onClick={() => startFaceIndexingInBackground(galleryDbId)}
-                      disabled={pub.faceIndex.status === 'indexing'}
-                      style={{
-                        marginTop: 10, width: '100%', padding: '9px 14px',
-                        borderRadius: 8, border: '1px solid rgba(99,102,241,.25)',
-                        background: pub.faceIndex.status === 'indexing'
-                          ? 'rgba(99,102,241,.08)'
-                          : 'rgba(99,102,241,.12)',
-                        color: '#a5b4fc', fontSize: 12, fontWeight: 600,
-                        fontFamily: 'inherit',
-                        cursor: pub.faceIndex.status === 'indexing' ? 'default' : 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                      }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M23 4v6h-6" /><path d="M1 20v-6h6" />
-                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                      </svg>
-                      {pub.faceIndex.status === 'indexing'
-                        ? 'Indexing in progress…'
-                        : pub.faceIndex.status === 'done'
-                          ? 'Re-run face indexing'
-                          : 'Run face indexing'}
-                    </button>
-                    <div style={{ ...S.sublabel, marginTop: 6, textAlign: 'center' as const }}>
-                      Safe to re-run — photos already indexed are skipped.
-                    </div>
-                    <FaceIndexProgress />
-                  </>
-                )}
+                {isAlreadyLive && galleryDbId && (() => {
+                  const fi = pub.faceIndex
+                  const pending = Math.max(0, fi.total - fi.indexed)
+                  const isIndexing = fi.status === 'indexing'
+                  const upToDate = fi.status === 'done' && pending === 0
+                  const disabled = isIndexing || upToDate
+                  const label =
+                    isIndexing ? 'Indexing in progress…'
+                    : upToDate ? 'Face search up to date'
+                    : fi.status === 'done' ? `Index ${pending} new photo${pending === 1 ? '' : 's'}`
+                    : fi.status === 'failed' ? 'Retry face indexing'
+                    : 'Run face indexing'
+                  return (
+                    <>
+                      <button
+                        onClick={() => startFaceIndexingInBackground(galleryDbId)}
+                        disabled={disabled}
+                        style={{
+                          marginTop: 10, width: '100%', padding: '9px 14px',
+                          borderRadius: 8,
+                          border: `1px solid ${upToDate ? 'rgba(255,255,255,.08)' : 'rgba(99,102,241,.25)'}`,
+                          background: disabled ? 'rgba(255,255,255,.04)' : 'rgba(99,102,241,.12)',
+                          color: upToDate ? 'rgba(255,255,255,.45)' : '#a5b4fc',
+                          fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                          cursor: disabled ? 'default' : 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M23 4v6h-6" /><path d="M1 20v-6h6" />
+                          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                        {label}
+                      </button>
+                      <div style={{ ...S.sublabel, marginTop: 6, textAlign: 'center' as const }}>
+                        {upToDate
+                          ? `${fi.indexed} photo${fi.indexed === 1 ? '' : 's'} indexed.`
+                          : 'Safe to re-run — already-indexed photos are skipped.'}
+                      </div>
+                      <FaceIndexProgress />
+                    </>
+                  )
+                })()}
               </div>
 
               {/* Stories */}

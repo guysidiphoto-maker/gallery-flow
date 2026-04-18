@@ -41,13 +41,15 @@ const SEARCH_FACE_MATCH_THRESHOLD = 80
 /** Max matches returned from the collection per selfie search.
  *  Passed to Rekognition as MaxFaces — default is 1, which is WAY too low. */
 const SEARCH_MAX_RESULTS = 100
-const INDEX_MAX_FACES_PER_IMAGE = 15
+/** Max faces indexed per photo. Event/crowd photos can legitimately contain
+ *  40+ people; we want everyone to find themselves. Rekognition bills per
+ *  image regardless of MaxFaces, so raising this is cost-neutral. */
+const INDEX_MAX_FACES_PER_IMAGE = 100
 /** Concurrent IndexFaces calls from a single edge-function invocation. */
 const INDEX_CONCURRENCY = 6
-/** If a gallery is already 'indexing' and its face_indexed_at is fresher than
- *  this, we assume another invocation is in-flight and bail. Prevents two
- *  parallel runs from double-indexing the same images. */
-const INDEXING_LOCK_STALENESS_MS = 10 * 60 * 1000
+/** Staleness threshold for the in-flight indexing lock, in seconds. If a
+ *  worker crashed mid-run, a new claim after this window takes over. */
+const INDEXING_LOCK_STALENESS_SEC = 10 * 60
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -243,16 +245,37 @@ async function actionIndexGallery(req: Request, body: { galleryId?: string }): P
   const sb = serviceClient()
   const gallery = await loadOwnedGallery(sb, user.id, body.galleryId)
 
-  // Refuse to double-run if a recent invocation is still in flight. Stale
-  // locks (e.g., edge function crashed) are ignored after 10 minutes.
-  if (gallery.face_index_status === 'indexing' && gallery.face_indexed_at) {
-    const last = new Date(gallery.face_indexed_at).getTime()
-    if (Date.now() - last < INDEXING_LOCK_STALENESS_MS) {
-      return json({ started: false, alreadyRunning: true })
-    }
+  // Count unindexed images before anything else. If there's nothing to do,
+  // short-circuit — avoids a briefly-flickering 'indexing' status and skips
+  // an unnecessary Rekognition CreateCollection + background worker.
+  const { count: unindexedCount } = await sb
+    .from('images')
+    .select('id', { count: 'exact', head: true })
+    .eq('gallery_id', gallery.id)
+    .is('face_indexed_at', null)
+
+  if ((unindexedCount ?? 0) === 0) {
+    // Make sure status reflects reality (in case we're fixing a stuck row).
+    await sb.from('galleries')
+      .update({ face_index_status: 'done', face_indexed_at: new Date().toISOString() })
+      .eq('id', gallery.id)
+      .neq('face_index_status', 'done')
+    return json({ started: false, alreadyDone: true, pending: 0 })
   }
 
-  // Create the collection (idempotent).
+  // Atomic claim: only one worker can hold the lock at a time. Stale locks
+  // (> INDEXING_LOCK_STALENESS_SEC) are auto-taken over. Any concurrent call
+  // gets alreadyRunning: true.
+  const { data: claimed } = await sb.rpc('try_claim_face_indexing', {
+    p_gallery_id: gallery.id,
+    p_staleness_sec: INDEXING_LOCK_STALENESS_SEC,
+  })
+  if (!claimed) {
+    return json({ started: false, alreadyRunning: true, pending: unindexedCount })
+  }
+
+  // Create the collection (idempotent). Do it after the claim so failed
+  // claims don't waste Rekognition API calls.
   const collectionId = gallery.id
   try {
     await rekognition.send(new CreateCollectionCommand({ CollectionId: collectionId }))
@@ -261,19 +284,14 @@ async function actionIndexGallery(req: Request, body: { galleryId?: string }): P
     if (code !== 'ResourceAlreadyExistsException') throw err
   }
 
+  // Wire the collection id + feature flag onto the gallery. Status was
+  // already set by the claim RPC.
   await sb.from('galleries')
     .update({
       face_index_enabled: true,
-      face_index_status: 'indexing',
       rekognition_collection_id: collectionId,
-      face_index_error: null,
-      // Bump face_indexed_at so the lock is fresh; the trigger will reset it
-      // to the real completion time when done.
-      face_indexed_at: new Date().toISOString(),
     })
     .eq('id', gallery.id)
-
-  const pendingCount = Math.max(0, (gallery.image_count ?? 0) - (gallery.face_indexed_count ?? 0))
 
   // Fire-and-forget background work. waitUntil tells Supabase to keep the
   // worker alive after the HTTP response returns.
@@ -287,7 +305,7 @@ async function actionIndexGallery(req: Request, body: { galleryId?: string }): P
     }),
   )
 
-  return json({ started: true, pending: pendingCount })
+  return json({ started: true, pending: unindexedCount })
 }
 
 async function actionDeleteCollection(req: Request, body: { galleryId?: string }): Promise<Response> {
