@@ -183,7 +183,7 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
 
 // ─── Welcome Screen ─────────────────────────────────────────────────────────
 
-function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter }: {
+function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos }: {
   galleryTitle: string
   galleryDescription?: string
   eventDate?: string
@@ -196,9 +196,15 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
   coverImageUrl?: string | null
   coverCrop?: { zoom: number; x: number; y: number } | null
   onEnter: () => void
+  faceSearchAvailable: boolean
+  facePrivacyMode: 'open' | 'private' | null
+  onFindMyPhotos: () => void
 }) {
   const [visible, setVisible] = useState(false)
   const [entered, setEntered] = useState(false)
+
+  const isPrivate = faceSearchAvailable && facePrivacyMode === 'private'
+  const showFindButton = faceSearchAvailable && facePrivacyMode !== null
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
@@ -216,12 +222,13 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
       opacity: entered ? 0 : 1, transition: 'opacity .6s ease',
       overflow: 'hidden',
     }}>
-      {/* Background: single cover image or collage */}
+      {/* Background: single cover image or collage (heavily blurred in private mode) */}
       {coverImageUrl ? (
         <div style={{
           position: 'absolute', inset: 0,
-          opacity: visible ? 0.35 : 0,
+          opacity: visible ? (isPrivate ? 0.15 : 0.35) : 0,
           transition: 'opacity 1.5s ease',
+          filter: isPrivate ? 'blur(30px)' : 'none',
         }}>
           <img
             src={coverImageUrl}
@@ -241,9 +248,9 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
           gridTemplateColumns: images.length >= 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
           gridTemplateRows: images.length >= 4 ? 'repeat(2, 1fr)' : '1fr',
           gap: 3, padding: 0,
-          opacity: visible ? 0.25 : 0,
+          opacity: visible ? (isPrivate ? 0.1 : 0.25) : 0,
           transition: 'opacity 1.5s ease',
-          filter: 'blur(1px)',
+          filter: isPrivate ? 'blur(30px)' : 'blur(1px)',
         }}>
           {images.map((img, i) => (
             <div key={img.id} style={{
@@ -358,22 +365,71 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
 
         <div style={{ marginBottom: (eventDate || eventLocation || galleryDescription || clientName) ? 32 : 40 }} />
 
-        <button
-          onClick={handleEnter}
-          style={{
-            padding: '14px 48px', borderRadius: 50, border: '1px solid rgba(255,255,255,.2)',
-            background: 'rgba(255,255,255,.08)', backdropFilter: 'blur(10px)',
-            color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer',
-            fontFamily: 'inherit', letterSpacing: '0.02em',
-            transition: 'all .2s',
-            opacity: visible ? 1 : 0,
-            transform: visible ? 'translateY(0)' : 'translateY(10px)',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.15)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.35)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.2)' }}
-        >
-          View Gallery
-        </button>
+        {/* Private mode: selfie prompt */}
+        {isPrivate && (
+          <p style={{
+            fontSize: 13, color: 'rgba(255,255,255,.4)', margin: '0 0 20px',
+            fontWeight: 400, letterSpacing: '0.02em',
+          }}>
+            Take a quick selfie to find your photos
+          </p>
+        )}
+
+        <div style={{
+          display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center',
+          opacity: visible ? 1 : 0,
+          transform: visible ? 'translateY(0)' : 'translateY(10px)',
+          transition: 'all .6s ease .5s',
+        }}>
+          {/* View Gallery button (hidden in private mode) */}
+          {!isPrivate && (
+            <button
+              onClick={handleEnter}
+              style={{
+                padding: '14px 48px', borderRadius: 50, border: '1px solid rgba(255,255,255,.2)',
+                background: 'rgba(255,255,255,.08)', backdropFilter: 'blur(10px)',
+                color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer',
+                fontFamily: 'inherit', letterSpacing: '0.02em',
+                transition: 'all .2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.15)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.35)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.2)' }}
+            >
+              View Gallery
+            </button>
+          )}
+
+          {/* Find My Photos button (face search available) */}
+          {showFindButton && (
+            <button
+              onClick={onFindMyPhotos}
+              style={{
+                padding: isPrivate ? '14px 48px' : '14px 32px', borderRadius: 50,
+                border: isPrivate ? 'none' : '1px solid rgba(99,102,241,.3)',
+                background: isPrivate ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(99,102,241,.12)',
+                color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer',
+                fontFamily: 'inherit', letterSpacing: '0.02em',
+                transition: 'all .2s',
+                display: 'flex', alignItems: 'center', gap: 10,
+                boxShadow: isPrivate ? '0 8px 32px rgba(99,102,241,.35)' : 'none',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.transform = 'scale(1.03)'
+                if (!isPrivate) e.currentTarget.style.background = 'rgba(99,102,241,.2)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = 'scale(1)'
+                if (!isPrivate) e.currentTarget.style.background = 'rgba(99,102,241,.12)'
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M5 20a7 7 0 0 1 14 0" />
+              </svg>
+              Find My Photos
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -687,6 +743,7 @@ export function App() {
   const downloadsEnabled = raw.downloadsEnabled !== undefined
     ? raw.downloadsEnabled
     : (raw as Record<string, unknown>).allowDownloads !== false
+  const facePrivacyMode = ((raw as Record<string, unknown>).facePrivacyMode as 'open' | 'private') || 'open'
 
   // ── Password gate ──────────────────────────────────────────────────────
   if (accessType === 'password' && password && !unlocked) {
@@ -740,6 +797,9 @@ export function App() {
         coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
         storageUrl={(path: string) => storageUrl(imgBucket, path)}
         onEnter={() => setShowWelcome(false)}
+        faceSearchAvailable={faceSearchAvailable}
+        facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}
+        onFindMyPhotos={() => setShowFaceSearch(true)}
       />
     )
   }
@@ -1033,16 +1093,27 @@ export function App() {
             <>
               {faceSearchAvailable && !selectMode && (
                 faceMatchIds ? (
-                  <button
-                    className="gallery-toolbar__btn gallery-toolbar__btn--active"
-                    onClick={() => setFaceMatchIds(null)}
-                    title="Show all photos"
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                    {visibleImages.length} of yours · Show all
-                  </button>
+                  facePrivacyMode === 'private' ? (
+                    /* Private mode: show count but no "Show all" option */
+                    <span className="gallery-toolbar__btn gallery-toolbar__btn--active" style={{ cursor: 'default' }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <circle cx="12" cy="8" r="3" />
+                        <path d="M5 20a7 7 0 0 1 14 0" />
+                      </svg>
+                      {visibleImages.length} photos found
+                    </span>
+                  ) : (
+                    <button
+                      className="gallery-toolbar__btn gallery-toolbar__btn--active"
+                      onClick={() => setFaceMatchIds(null)}
+                      title="Show all photos"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                      {visibleImages.length} of yours · Show all
+                    </button>
+                  )
                 ) : (
                   <button
                     className="gallery-toolbar__btn"
@@ -1230,6 +1301,8 @@ export function App() {
           onMatches={(ids) => {
             setFaceMatchIds(new Set(ids))
             setShowFaceSearch(false)
+            // Dismiss welcome screen when matches found
+            if (showWelcome && ids.length > 0) setShowWelcome(false)
           }}
         />
       )}

@@ -82,6 +82,10 @@ export interface DeliverySettings {
   /** Opt-in per gallery. Sends each web_preview to AWS Rekognition so
    *  viewers can do selfie-based photo search. */
   faceIndexEnabled: boolean
+  /** When face search is enabled, controls viewer access:
+   *  'open' = everyone sees all photos, selfie search is a bonus feature
+   *  'private' = viewers must take a selfie and only see their own photos */
+  facePrivacyMode: 'open' | 'private'
   creditsSystem: 'locked'
   // Legacy compat
   allowDownloads?: boolean
@@ -116,6 +120,7 @@ export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
   generateStories: true,
   showStories: true,
   faceIndexEnabled: false,
+  facePrivacyMode: 'open',
   creditsSystem: 'locked',
 }
 

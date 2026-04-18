@@ -24,6 +24,8 @@ export interface DeliverySettings {
   cornerStyle: 'sharp' | 'rounded'
   generateStories: boolean
   showStories: boolean
+  faceIndexEnabled?: boolean
+  facePrivacyMode?: 'open' | 'private'
   // Backward compat fields from old settings
   allowDownloads?: boolean
   autoGenerateStories?: boolean
