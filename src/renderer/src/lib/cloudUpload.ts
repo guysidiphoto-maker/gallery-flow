@@ -434,7 +434,6 @@ export async function publishGallery(
     const cr = compressedMap.get(filename)
     if (!cr) continue
     const isTopPick = topPickIds.has(imagePaths[i])
-    const imgRecord = usePublish.getState().images.find(img => img.filename === filename)
 
     const payload = {
       gallery_id: galleryId,
