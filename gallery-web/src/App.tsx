@@ -217,29 +217,33 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 1000, background: '#0a0a0c',
+      position: 'fixed', inset: 0, zIndex: 1000, background: '#06060a',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       opacity: entered ? 0 : 1, transition: 'opacity .6s ease',
       overflow: 'hidden',
     }}>
-      {/* Background: single cover image or collage (heavily blurred in private mode) */}
+      <style>{`
+        @keyframes welcomePulse { 0%, 100% { opacity: .08; } 50% { opacity: .15; } }
+        @keyframes welcomeFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+        @keyframes welcomeScan { 0% { transform: translateY(-100%); } 100% { transform: translateY(100vh); } }
+        @keyframes welcomeGlow { 0%, 100% { box-shadow: 0 0 20px rgba(99,102,241,.3); } 50% { box-shadow: 0 0 40px rgba(99,102,241,.5), 0 0 80px rgba(99,102,241,.2); } }
+        @keyframes welcomeBtnPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+      `}</style>
+
+      {/* Background: cover or collage */}
       {coverImageUrl ? (
         <div style={{
           position: 'absolute', inset: 0,
-          opacity: visible ? (isPrivate ? 0.15 : 0.35) : 0,
-          transition: 'opacity 1.5s ease',
-          filter: isPrivate ? 'blur(30px)' : 'none',
+          opacity: visible ? (isPrivate ? 0.12 : 0.35) : 0,
+          transition: 'opacity 2s ease',
+          filter: isPrivate ? 'blur(40px) saturate(0.5)' : 'none',
         }}>
-          <img
-            src={coverImageUrl}
-            alt=""
-            style={{
-              width: '100%', height: '100%', objectFit: 'cover',
-              objectPosition: coverCrop ? `${coverCrop.x}% ${coverCrop.y}%` : 'center',
-              transform: `scale(${coverCrop ? coverCrop.zoom + (visible ? 0.02 : 0.08) : (visible ? 1.02 : 1.08)})`,
-              transition: 'transform 8s ease',
-            }}
-          />
+          <img src={coverImageUrl} alt="" style={{
+            width: '100%', height: '100%', objectFit: 'cover',
+            objectPosition: coverCrop ? `${coverCrop.x}% ${coverCrop.y}%` : 'center',
+            transform: `scale(${coverCrop ? coverCrop.zoom + (visible ? 0.02 : 0.08) : (visible ? 1.02 : 1.08)})`,
+            transition: 'transform 12s ease',
+          }} />
         </div>
       ) : (
         <div style={{
@@ -247,26 +251,22 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
           display: 'grid',
           gridTemplateColumns: images.length >= 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
           gridTemplateRows: images.length >= 4 ? 'repeat(2, 1fr)' : '1fr',
-          gap: 3, padding: 0,
-          opacity: visible ? (isPrivate ? 0.1 : 0.25) : 0,
-          transition: 'opacity 1.5s ease',
-          filter: isPrivate ? 'blur(30px)' : 'blur(1px)',
+          gap: 2, padding: 0,
+          opacity: visible ? (isPrivate ? 0.08 : 0.25) : 0,
+          transition: 'opacity 2s ease',
+          filter: isPrivate ? 'blur(40px) saturate(0.5)' : 'blur(1px)',
         }}>
           {images.map((img, i) => (
             <div key={img.id} style={{
               overflow: 'hidden',
               opacity: visible ? 1 : 0,
-              transition: `opacity .8s ease ${0.1 + i * 0.15}s`,
+              transition: `opacity 1s ease ${0.1 + i * 0.15}s`,
             }}>
-              <img
-                src={getUrl(img.thumbnail_path || img.storage_path)}
-                alt=""
-                style={{
-                  width: '100%', height: '100%', objectFit: 'cover',
-                  transform: visible ? 'scale(1.05)' : 'scale(1.15)',
-                  transition: 'transform 8s ease',
-                }}
-              />
+              <img src={getUrl(img.thumbnail_path || img.storage_path)} alt="" style={{
+                width: '100%', height: '100%', objectFit: 'cover',
+                transform: visible ? 'scale(1.05)' : 'scale(1.15)',
+                transition: 'transform 12s ease',
+              }} />
             </div>
           ))}
         </div>
@@ -274,155 +274,180 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
 
       {/* Gradient overlay */}
       <div style={{
-        position: 'absolute', inset: 0,
-        background: 'radial-gradient(ellipse at center, rgba(10,10,12,.4) 0%, rgba(10,10,12,.85) 100%)',
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: isPrivate
+          ? 'radial-gradient(ellipse at center, rgba(6,6,10,.5) 0%, rgba(6,6,10,.92) 100%)'
+          : 'radial-gradient(ellipse at center, rgba(10,10,12,.4) 0%, rgba(10,10,12,.85) 100%)',
       }} />
+
+      {/* Ambient glow for private mode */}
+      {isPrivate && (
+        <div style={{
+          position: 'absolute', top: '30%', left: '50%', width: 300, height: 300,
+          transform: 'translate(-50%, -50%)',
+          background: 'radial-gradient(circle, rgba(99,102,241,.08) 0%, transparent 70%)',
+          animation: 'welcomePulse 4s ease-in-out infinite',
+          pointerEvents: 'none',
+        }} />
+      )}
+
+      {/* Scan line effect for private mode */}
+      {isPrivate && visible && (
+        <div style={{
+          position: 'absolute', left: 0, right: 0, height: 1,
+          background: 'linear-gradient(90deg, transparent 0%, rgba(99,102,241,.3) 50%, transparent 100%)',
+          animation: 'welcomeScan 4s linear infinite',
+          pointerEvents: 'none',
+        }} />
+      )}
 
       {/* Content */}
       <div style={{
-        position: 'relative', zIndex: 1, textAlign: 'center',
-        opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(20px)',
-        transition: 'all .8s ease .3s',
+        position: 'relative', zIndex: 2, textAlign: 'center', padding: '0 24px',
+        maxWidth: 600,
       }}>
-        {studioName && (
-          studioWebsite ? (
-            <a
-              href={studioWebsite.startsWith('http') ? studioWebsite : `https://${studioWebsite}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-block', fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase',
-                color: 'rgba(255,255,255,.5)', margin: '0 0 16px', fontWeight: 500,
-                textDecoration: 'none', borderBottom: '1px solid rgba(255,255,255,.2)',
-                paddingBottom: 2, transition: 'color .2s, border-color .2s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,.8)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.5)' }}
-              onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,.5)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.2)' }}
-              onClick={e => e.stopPropagation()}
-            >
-              {studioName}
-            </a>
-          ) : (
-            <p style={{
-              fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase',
-              color: 'rgba(255,255,255,.4)', margin: '0 0 16px', fontWeight: 500,
-            }}>
-              {studioName}
-            </p>
-          )
-        )}
-
-        <h1 style={{
-          fontSize: 'clamp(32px, 6vw, 56px)', fontWeight: 700, color: '#fff',
-          margin: '0 0 8px', lineHeight: 1.1, letterSpacing: '-0.02em',
-        }}>
-          {galleryTitle}
-        </h1>
-
-        {clientName && (
-          <p style={{
-            fontSize: 'clamp(14px, 2vw, 18px)', color: 'rgba(255,255,255,.5)',
-            margin: '0 0 8px', fontWeight: 400,
-          }}>
-            {clientName}
-          </p>
-        )}
-
-        {(eventDate || eventLocation) && (
-          <p style={{
-            fontSize: 'clamp(11px, 1.3vw, 13px)', color: 'rgba(255,255,255,.3)',
-            margin: '0 0 8px', fontWeight: 400, letterSpacing: '0.04em',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          }}>
-            {eventDate && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.5 }}>
-                  <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-                {eventDate}
-              </span>
-            )}
-            {eventDate && eventLocation && <span style={{ opacity: 0.3 }}>·</span>}
-            {eventLocation && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.5 }}>
-                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
-                </svg>
-                {eventLocation}
-              </span>
-            )}
-          </p>
-        )}
-
-        {galleryDescription && (
-          <p style={{
-            fontSize: 'clamp(12px, 1.5vw, 14px)', color: 'rgba(255,255,255,.35)',
-            margin: '0 0 8px', fontWeight: 400, letterSpacing: '0.02em',
-          }}>
-            {galleryDescription}
-          </p>
-        )}
-
-        <div style={{ marginBottom: (eventDate || eventLocation || galleryDescription || clientName) ? 32 : 40 }} />
-
-        {/* Private mode: selfie prompt */}
-        {isPrivate && (
-          <p style={{
-            fontSize: 13, color: 'rgba(255,255,255,.4)', margin: '0 0 20px',
-            fontWeight: 400, letterSpacing: '0.02em',
-          }}>
-            Take a quick selfie to find your photos
-          </p>
-        )}
-
+        {/* Studio name */}
         <div style={{
-          display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center',
-          opacity: visible ? 1 : 0,
-          transform: visible ? 'translateY(0)' : 'translateY(10px)',
-          transition: 'all .6s ease .5s',
+          opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(15px)',
+          transition: 'all .8s cubic-bezier(.16,1,.3,1) .2s',
         }}>
-          {/* View Gallery button (hidden in private mode) */}
+          {studioName && (
+            studioWebsite ? (
+              <a href={studioWebsite.startsWith('http') ? studioWebsite : `https://${studioWebsite}`}
+                target="_blank" rel="noopener noreferrer"
+                style={{
+                  display: 'inline-block', fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,.4)', margin: '0 0 20px', fontWeight: 500,
+                  textDecoration: 'none', borderBottom: '1px solid rgba(255,255,255,.15)',
+                  paddingBottom: 2, transition: 'color .2s, border-color .2s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,.7)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,.4)' }}
+                onClick={e => e.stopPropagation()}
+              >{studioName}</a>
+            ) : (
+              <p style={{ fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', margin: '0 0 20px', fontWeight: 500 }}>
+                {studioName}
+              </p>
+            )
+          )}
+        </div>
+
+        {/* Title */}
+        <div style={{
+          opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(20px)',
+          transition: 'all .9s cubic-bezier(.16,1,.3,1) .35s',
+        }}>
+          <h1 style={{
+            fontSize: 'clamp(28px, 6vw, 52px)', fontWeight: 700, color: '#fff',
+            margin: '0 0 8px', lineHeight: 1.1, letterSpacing: '-0.02em',
+          }}>{galleryTitle}</h1>
+        </div>
+
+        {/* Client name */}
+        <div style={{
+          opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(15px)',
+          transition: 'all .8s cubic-bezier(.16,1,.3,1) .5s',
+        }}>
+          {clientName && (
+            <p style={{ fontSize: 'clamp(13px, 2vw, 17px)', color: 'rgba(255,255,255,.45)', margin: '0 0 6px', fontWeight: 400 }}>
+              {clientName}
+            </p>
+          )}
+        </div>
+
+        {/* Event info */}
+        <div style={{
+          opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(12px)',
+          transition: 'all .8s cubic-bezier(.16,1,.3,1) .6s',
+        }}>
+          {(eventDate || eventLocation) && (
+            <p style={{
+              fontSize: 'clamp(10px, 1.3vw, 12px)', color: 'rgba(255,255,255,.25)',
+              margin: '0 0 6px', fontWeight: 400, letterSpacing: '0.04em',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}>
+              {eventDate && <span>{eventDate}</span>}
+              {eventDate && eventLocation && <span style={{ opacity: 0.3 }}>·</span>}
+              {eventLocation && <span>{eventLocation}</span>}
+            </p>
+          )}
+          {galleryDescription && (
+            <p style={{ fontSize: 'clamp(11px, 1.4vw, 13px)', color: 'rgba(255,255,255,.3)', margin: '0', fontWeight: 400 }}>
+              {galleryDescription}
+            </p>
+          )}
+        </div>
+
+        {/* Spacer */}
+        <div style={{ height: isPrivate ? 40 : 36 }} />
+
+        {/* Privacy notice for private mode */}
+        {isPrivate && (
+          <div style={{
+            opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(10px)',
+            transition: 'all .8s cubic-bezier(.16,1,.3,1) .7s',
+            marginBottom: 24,
+          }}>
+            {/* Lock icon */}
+            <div style={{ marginBottom: 14, animation: 'welcomeFloat 3s ease-in-out infinite' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,.6)" strokeWidth="1.5">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </div>
+            <p style={{
+              fontSize: 12, color: 'rgba(255,255,255,.35)', margin: '0 0 6px',
+              fontWeight: 400, letterSpacing: '0.02em', lineHeight: 1.6,
+              maxWidth: 280, marginInline: 'auto',
+            }}>
+              To protect the privacy of everyone in this event, you can only view photos where you appear.
+            </p>
+            <p style={{
+              fontSize: 11, color: 'rgba(99,102,241,.5)', margin: 0,
+              fontWeight: 500, letterSpacing: '0.03em',
+            }}>
+              Take a quick selfie to get started
+            </p>
+          </div>
+        )}
+
+        {/* Buttons */}
+        <div style={{
+          display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap',
+          opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(12px)',
+          transition: 'all .8s cubic-bezier(.16,1,.3,1) .8s',
+        }}>
+          {/* View Gallery (hidden in private mode) */}
           {!isPrivate && (
-            <button
-              onClick={handleEnter}
-              style={{
-                padding: '14px 48px', borderRadius: 50, border: '1px solid rgba(255,255,255,.2)',
-                background: 'rgba(255,255,255,.08)', backdropFilter: 'blur(10px)',
-                color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer',
-                fontFamily: 'inherit', letterSpacing: '0.02em',
-                transition: 'all .2s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.15)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.35)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.2)' }}
-            >
-              View Gallery
-            </button>
+            <button onClick={handleEnter} style={{
+              padding: '14px 44px', borderRadius: 50, border: '1px solid rgba(255,255,255,.15)',
+              background: 'rgba(255,255,255,.06)', backdropFilter: 'blur(10px)',
+              color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              fontFamily: 'inherit', letterSpacing: '0.02em', transition: 'all .25s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.12)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.3)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.06)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.15)' }}
+            >View Gallery</button>
           )}
 
-          {/* Find My Photos button (face search available) */}
+          {/* Find My Photos */}
           {showFindButton && (
-            <button
-              onClick={onFindMyPhotos}
-              style={{
-                padding: isPrivate ? '14px 48px' : '14px 32px', borderRadius: 50,
-                border: isPrivate ? 'none' : '1px solid rgba(99,102,241,.3)',
-                background: isPrivate ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(99,102,241,.12)',
-                color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer',
-                fontFamily: 'inherit', letterSpacing: '0.02em',
-                transition: 'all .2s',
-                display: 'flex', alignItems: 'center', gap: 10,
-                boxShadow: isPrivate ? '0 8px 32px rgba(99,102,241,.35)' : 'none',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.transform = 'scale(1.03)'
-                if (!isPrivate) e.currentTarget.style.background = 'rgba(99,102,241,.2)'
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = 'scale(1)'
-                if (!isPrivate) e.currentTarget.style.background = 'rgba(99,102,241,.12)'
-              }}
+            <button onClick={onFindMyPhotos} style={{
+              padding: isPrivate ? '16px 52px' : '14px 32px', borderRadius: 50,
+              border: 'none',
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: '#fff', fontSize: isPrivate ? 16 : 14, fontWeight: 700, cursor: 'pointer',
+              fontFamily: 'inherit', letterSpacing: '0.02em',
+              transition: 'all .25s',
+              display: 'flex', alignItems: 'center', gap: 10,
+              animation: isPrivate ? 'welcomeGlow 3s ease-in-out infinite, welcomeBtnPulse 3s ease-in-out infinite' : 'none',
+              position: 'relative', zIndex: 10,
+            }}
+              onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05)' }}
+              onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="8" r="4" />
                 <path d="M5 20a7 7 0 0 1 14 0" />
               </svg>
