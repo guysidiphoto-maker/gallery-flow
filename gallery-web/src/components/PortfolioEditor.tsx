@@ -1,10 +1,20 @@
 import { useState, useEffect, useRef } from 'react'
 
+// Load Hebrew Google Fonts
+const HEBREW_FONTS_URL = 'https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800&family=Assistant:wght@300;400;500;600;700;800&display=swap'
+if (typeof document !== 'undefined' && !document.querySelector(`link[href="${HEBREW_FONTS_URL}"]`)) {
+  const link = document.createElement('link')
+  link.rel = 'stylesheet'
+  link.href = HEBREW_FONTS_URL
+  document.head.appendChild(link)
+}
+
 // ─── Portfolio settings ─────────────────────────────────────────────────────
 
 export interface PortfolioSettings {
   // Branding
   logoBase64: string
+  pageTitle: string
   tagline: string
   // Contact
   phone: string
@@ -14,7 +24,7 @@ export interface PortfolioSettings {
   // Appearance
   accentColor: string
   bgStyle: 'dark' | 'midnight' | 'gradient' | 'deep-blue'
-  fontStyle: 'modern' | 'elegant' | 'bold'
+  fontStyle: 'modern' | 'elegant' | 'bold' | 'heebo' | 'rubik' | 'assistant'
   heroStyle: 'blur' | 'gradient-only' | 'cover'
   heroCoverGalleryId: string  // which gallery cover to use as hero bg
   // Layout
@@ -27,6 +37,7 @@ export interface PortfolioSettings {
 
 export const DEFAULT_SETTINGS: PortfolioSettings = {
   logoBase64: '',
+  pageTitle: '',
   tagline: '',
   phone: '',
   email: '',
@@ -88,6 +99,9 @@ const FONT_STYLES: { key: PortfolioSettings['fontStyle']; label: string; sample:
   { key: 'modern', label: 'מודרני', sample: 'Aa', family: '-apple-system, sans-serif' },
   { key: 'elegant', label: 'אלגנטי', sample: 'Aa', family: 'Georgia, serif' },
   { key: 'bold', label: 'בולט', sample: 'Aa', family: 'Impact, sans-serif' },
+  { key: 'heebo', label: 'חיבו', sample: 'אב', family: "'Heebo', sans-serif" },
+  { key: 'rubik', label: 'רוביק', sample: 'אב', family: "'Rubik', sans-serif" },
+  { key: 'assistant', label: 'אסיסטנט', sample: 'אב', family: "'Assistant', sans-serif" },
 ]
 
 const HERO_STYLES: { key: PortfolioSettings['heroStyle']; label: string }[] = [
@@ -95,6 +109,10 @@ const HERO_STYLES: { key: PortfolioSettings['heroStyle']; label: string }[] = [
   { key: 'cover', label: 'תמונת כיסוי' },
   { key: 'gradient-only', label: 'גרדיאנט בלבד' },
 ]
+
+export function getFontFamily(fontStyle: PortfolioSettings['fontStyle']): string {
+  return FONT_STYLES.find(f => f.key === fontStyle)?.family || 'inherit'
+}
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -218,7 +236,7 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
             overflow: 'hidden',
             background: BG_STYLES.find(b => b.key === settings.bgStyle)?.bg || '#050508',
             display: 'flex', flexDirection: 'column',
-            fontFamily: settings.fontStyle === 'elegant' ? 'Georgia, serif' : settings.fontStyle === 'bold' ? 'Impact, sans-serif' : 'inherit',
+            fontFamily: getFontFamily(settings.fontStyle),
             transition: 'aspect-ratio .4s cubic-bezier(.4,0,.2,1), background .3s',
           }}>
             {/* Mini hero */}
@@ -239,7 +257,7 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
                 {settings.logoBase64 && (
                   <img src={settings.logoBase64} alt="" style={{ maxHeight: 28, maxWidth: 80, marginBottom: 6, display: 'block', marginInline: 'auto' }} />
                 )}
-                <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{clientName}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{settings.pageTitle || clientName}</div>
                 {settings.tagline && <div style={{ fontSize: 8, color: 'rgba(255,255,255,.5)', marginTop: 2 }}>{settings.tagline}</div>}
               </div>
             </div>
@@ -335,6 +353,14 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
                   </button>
                 )}
                 <input ref={fileRef} type="file" accept="image/*" onChange={handleLogo} style={{ display: 'none' }} />
+              </Panel>
+
+              {/* Page title */}
+              <Panel title="כותרת ראשית">
+                <input value={settings.pageTitle} onChange={e => update({ pageTitle: e.target.value })}
+                  placeholder={clientName}
+                  style={inputStyle} />
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,.25)', marginTop: 6 }}>ברירת מחדל: שם הלקוח</div>
               </Panel>
 
               {/* Tagline */}

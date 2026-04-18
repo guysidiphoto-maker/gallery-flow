@@ -22,6 +22,9 @@ const api = {
   scanFolder: (folderPath: string): Promise<ScanResult[]> =>
     ipcRenderer.invoke('scan-folder', folderPath),
 
+  listSubfolders: (parentPath: string): Promise<Array<{ name: string; path: string }>> =>
+    ipcRenderer.invoke('list-subfolders', parentPath),
+
   renameFile: (oldPath: string, newPath: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('rename-file', oldPath, newPath),
 

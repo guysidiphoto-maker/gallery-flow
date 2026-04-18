@@ -128,4 +128,4 @@ export const BUCKET = 'gallery-images'
 export const STORY_BUCKET = 'gallery-stories'
 export const MAX_RETRIES = 2
 export const GALLERY_BASE = 'https://pixflow-ai.com'
-export const PREVIEW_FAILURE_THRESHOLD = 0.5  // gallery fails if >50% of previews fail
+export const PREVIEW_FAILURE_THRESHOLD = 0.8  // gallery fails only if >80% of previews fail

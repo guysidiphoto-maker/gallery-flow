@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase, storageUrl } from '../supabase'
 import { TenderBuilder } from '../components/TenderBuilder'
 import { SocialManager } from '../components/SocialManager'
-import { PortfolioEditor } from '../components/PortfolioEditor'
+import { PortfolioEditor, loadPortfolioSettings, getFontFamily } from '../components/PortfolioEditor'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -250,9 +250,11 @@ export function ClientDashboard() {
   }
 
   const first = galleries[0]
-  const settings = (first.delivery_settings || {}) as Record<string, unknown>
-  const studioName = readStr(settings, 'studioName')
-  const clientName = first.client_name || readStr(settings, 'clientName') || 'Dashboard'
+  const deliverySettings = (first.delivery_settings || {}) as Record<string, unknown>
+  const studioName = readStr(deliverySettings, 'studioName')
+  const clientName = first.client_name || readStr(deliverySettings, 'clientName') || 'Dashboard'
+  const portfolioSettings = loadPortfolioSettings(clientId)
+  const displayTitle = portfolioSettings.pageTitle || clientName
   const galleryUrl = (id: string) => slug ? `/${slug}/gallery/${id}` : `/gallery/${id}`
   const hasStories = stories.size > 0
 
@@ -292,7 +294,7 @@ export function ClientDashboard() {
                 {studioName}
               </div>
             )}
-            <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, letterSpacing: '-0.02em' }}>{clientName}</h1>
+            <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, letterSpacing: '-0.02em' }}>{displayTitle}</h1>
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
             {tabs.map(t => (

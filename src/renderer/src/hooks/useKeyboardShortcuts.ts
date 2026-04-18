@@ -47,22 +47,22 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
 
       const meta = e.metaKey || e.ctrlKey
 
-      // Cmd+O: Open folder
-      if (meta && e.key === 'o') {
+      // Cmd+O: Open folder — use e.code so Hebrew keyboard still matches
+      if (meta && e.code === 'KeyO') {
         e.preventDefault()
         openFolder()
         return
       }
 
       // Cmd+Z: Unified undo (visual reorder/picks/sort, or filesystem rename)
-      if (meta && e.key === 'z' && !e.shiftKey) {
+      if (meta && e.code === 'KeyZ' && !e.shiftKey) {
         e.preventDefault()
         undo()
         return
       }
 
       // Cmd+A: Select all
-      if (meta && e.key === 'a') {
+      if (meta && e.code === 'KeyA') {
         e.preventDefault()
         if (selectedIds.size === images.length) deselectAll()
         else selectAll()
@@ -76,7 +76,7 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
       }
 
       // Cmd+P: Preview mode
-      if (meta && e.key === 'p') {
+      if (meta && e.code === 'KeyP') {
         e.preventDefault()
         togglePreviewMode()
         return
@@ -113,7 +113,7 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
       }
 
       // T with no selection: toggle Top Picks tray
-      if (e.key === 't' && !meta && !e.shiftKey && selectedIds.size === 0 && topPickIds.size > 0) {
+      if (e.code === 'KeyT' && !meta && !e.shiftKey && selectedIds.size === 0 && topPickIds.size > 0) {
         e.preventDefault()
         toggleTopPicksTray()
         return
@@ -122,7 +122,7 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
       // T: Add selected image(s) to Top Picks (move to top)
       // Also add to "Top Picks" section automatically
       // Auto-advance selection to the image after the last selected one
-      if (e.key === 't' && !meta && !e.shiftKey && selectedIds.size > 0) {
+      if (e.code === 'KeyT' && !meta && !e.shiftKey && selectedIds.size > 0) {
         e.preventDefault()
 
         // Find the image right after the last selected image in array order
@@ -167,7 +167,7 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
       }
 
       // Shift+T: Remove selected image(s) from Top Picks + section
-      if (e.key === 'T' && !meta && e.shiftKey && selectedIds.size > 0) {
+      if (e.code === 'KeyT' && !meta && e.shiftKey && selectedIds.size > 0) {
         e.preventDefault()
         // Remove from "Top Picks" section
         const { sections: currentSections } = useSections.getState()
@@ -182,7 +182,7 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
       }
 
       // Cmd+S: Open Story modal (when top picks exist)
-      if (meta && e.key === 's' && topPickIds.size > 0) {
+      if (meta && e.code === 'KeyS' && topPickIds.size > 0) {
         e.preventDefault()
         openStoryModal()
         return

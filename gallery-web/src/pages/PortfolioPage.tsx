@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase, storageUrl } from '../supabase'
-import { loadPortfolioSettings, type PortfolioSettings, DEFAULT_SETTINGS } from '../components/PortfolioEditor'
+import { loadPortfolioSettings, getFontFamily, type PortfolioSettings, DEFAULT_SETTINGS } from '../components/PortfolioEditor'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -209,10 +209,10 @@ export function PortfolioPage() {
   return (
     <div style={{
       minHeight: '100vh', background: '#000', color: '#fff',
-      fontFamily: "'Marcellus', Georgia, 'Times New Roman', serif",
+      fontFamily: getFontFamily(settings.fontStyle),
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Marcellus&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Marcellus&family=Heebo:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800&family=Assistant:wght@300;400;500;600;700;800&display=swap');
         * { box-sizing: border-box; }
         .pf-panel { position: relative; overflow: hidden; cursor: pointer; }
         .pf-panel img { transition: transform .8s cubic-bezier(.4,0,.2,1), filter .6s; }
@@ -334,7 +334,7 @@ export function PortfolioPage() {
                           fontSize: 'clamp(32px, 6vw, 80px)', fontWeight: 400, margin: 0,
                           letterSpacing: '.04em', lineHeight: 1.1,
                         }}>
-                          {clientName}
+                          {settings.pageTitle || clientName}
                         </h1>
                         {settings.tagline && (
                           <p style={{

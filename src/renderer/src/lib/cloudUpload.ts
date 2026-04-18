@@ -95,9 +95,19 @@ export async function publishGallery(
   usePublish.getState().reset()
   const store = usePublish.getState()
 
+  // Sanitize filename for Supabase storage keys (ASCII only, no spaces)
+  const sanitizeFilename = (name: string): string => {
+    return name
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip diacritics
+      .replace(/[^\x20-\x7E]/g, '')                     // remove non-ASCII (Hebrew etc.)
+      .replace(/\s+/g, '_')                              // spaces → underscore
+      .replace(/[^a-zA-Z0-9._\-]/g, '')                 // only safe chars
+      || `img_${Date.now()}`                             // fallback if empty
+  }
+
   // Build initial image records
-  const imageRecords: ImageUploadRecord[] = imagePaths.map(p => ({
-    filename: p.split('/').pop() || 'unknown',
+  const imageRecords: ImageUploadRecord[] = imagePaths.map((p, i) => ({
+    filename: sanitizeFilename(p.split('/').pop() || `img_${i}`),
     localPath: p,
     status: 'pending',
     thumbnailUploaded: false,
@@ -720,7 +730,7 @@ export async function updateGalleryImages(
   if (removed.length > 0) {
     log('update-images:removing', `${removed.length} images`)
     // Fetch DB-stored paths for removed images, then delete from storage + DB
-    for (const filename of removed) {
+    await Promise.all(removed.map(async (filename) => {
       const { data: imgPaths } = await supabase.from('images')
         .select('storage_path, original_path, thumbnail_path')
         .eq('gallery_id', galleryDbId).eq('filename', filename).maybeSingle()
@@ -734,19 +744,18 @@ export async function updateGalleryImages(
         .eq('gallery_id', galleryDbId)
         .eq('filename', filename)
       if (error) log('update-images:remove-error', `${filename}: ${error.message}`)
-    }
+    }))
   }
 
   // 2. Update sort_order for remaining images
   log('update-images:reorder', `${currentFilenames.length} images`)
-  for (let i = 0; i < currentFilenames.length; i++) {
-    const filename = currentFilenames[i]
-    await supabase
+  await Promise.all(currentFilenames.map((filename, i) =>
+    supabase
       .from('images')
       .update({ sort_order: i })
       .eq('gallery_id', galleryDbId)
       .eq('filename', filename)
-  }
+  ))
 
   // 3. Update gallery image_count
   await supabase
@@ -826,7 +835,7 @@ export async function updateGallerySectionsInCloud(
     .eq('gallery_id', galleryDbId)
 
   if (galleryImages) {
-    for (const img of galleryImages) {
+    await Promise.all(galleryImages.map(async (img) => {
       const newSection = filenameToSection.get(img.filename) ?? null
       const { error: upErr } = await supabase
         .from('images')
@@ -835,7 +844,7 @@ export async function updateGallerySectionsInCloud(
       if (upErr) {
         log('update-sections:image-error', `${img.filename}: ${upErr.message}`)
       }
-    }
+    }))
   }
 
   log('update-sections:done', `${sections.length} sections`)
@@ -858,10 +867,10 @@ export async function fetchCloudClientId(localClientId: string): Promise<string 
   return data.id
 }
 
-/** Public URL for the client landing page on the gallery web host. */
+/** URL for the client zone dashboard on the gallery web host. */
 export function buildClientPageUrl(cloudClientId: string): string {
   const businessSlug = requireBusiness().slug
-  return `${GALLERY_BASE}/${businessSlug}/client/${cloudClientId}`
+  return `${GALLERY_BASE}/${businessSlug}/client/${cloudClientId}/dashboard`
 }
 
 // ─── Update Gallery Settings (unchanged) ────────────────────────────────────

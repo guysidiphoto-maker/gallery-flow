@@ -34,12 +34,14 @@ import { UploadFloater } from './components/UploadFloater'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { KeyboardShortcuts } from './components/KeyboardShortcuts'
 import { publishGallery, uploadStoryToCloud, markGalleryLive, updateGallerySettings, updateGalleryImages, updateGallerySectionsInCloud, cancelUpload, deleteGalleryFromCloud, deleteImageFromCloud } from './lib/cloudUpload'
+import { supabase } from './lib/supabase'
 import { loadPersistedQueue, clearPersistedQueue } from './lib/uploadQueue'
 import { usePublish } from './store/publish'
 import { type Business } from './lib/auth'
 import { AuthShell } from './components/auth/AuthShell'
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow'
 import { useSession } from './store/session'
+import { BusinessSettingsModal, DEFAULT_BUSINESS_SETTINGS, type BusinessSettings } from './components/BusinessSettingsModal'
 import { MissingFilesBanner } from './components/MissingFilesBanner'
 import { UpgradeModal } from './components/UpgradeModal'
 import type { ImageFile, Section } from './types'
@@ -134,9 +136,24 @@ const PER_GALLERY_SETTINGS: (keyof DeliverySettings)[] = [
 ]
 
 let lastUsedSettings: Partial<DeliverySettings> | null = null
+let currentBusinessSettings: BusinessSettings | null = null
 
 function migrateSettings(raw: Record<string, unknown>, projectEventType?: string): DeliverySettings {
   const d = { ...DEFAULT_DELIVERY_SETTINGS }
+
+  // Apply business settings as base defaults (branding)
+  if (currentBusinessSettings) {
+    d.studioName = currentBusinessSettings.studioName || d.studioName
+    d.studioWebsite = currentBusinessSettings.studioWebsite || d.studioWebsite
+    d.logoUrl = currentBusinessSettings.logoUrl ?? d.logoUrl
+    d.showFooterCredit = currentBusinessSettings.showFooterCredit
+    d.downloadsEnabled = currentBusinessSettings.downloadsEnabled
+    d.bulkDownloadEnabled = currentBusinessSettings.bulkDownloadEnabled
+    d.downloadQuality = currentBusinessSettings.downloadQuality
+    d.layoutMode = currentBusinessSettings.layoutMode
+    d.imageSpacing = currentBusinessSettings.imageSpacing
+    d.cornerStyle = currentBusinessSettings.cornerStyle
+  }
 
   // If no existing settings, inherit persistent fields from last used
   const hasExisting = Object.keys(raw).length > 3 // more than just defaults
@@ -345,7 +362,7 @@ function AppInner() {
 
 function MainApp({ business }: { business: Business | null }) {
   const { showPreviewMode, showDuplicatesPanel, showStoryModal, isLoading, folderPath, reloadFolder, thumbnailSize, images, showTopPicksTray, showExportPanel, topPickIds: galleryTopPickIds } = useGallery()
-  const { isPanelOpen: isSectionsPanelOpen, isPublishModalOpen, isPublishing, publishDone, publishError, resetForFolder } = useSections()
+  const { isPanelOpen: isSectionsPanelOpen, isPublishModalOpen, isPublishing, publishDone, publishError, resetForFolder, sectionsDirtyAt } = useSections()
   const [showWelcome, setShowWelcome] = useState(false)
   const [welcomed, setWelcomed] = useState(false)
   const [demoActive, setDemoActive] = useState(false)
@@ -366,6 +383,7 @@ function MainApp({ business }: { business: Business | null }) {
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false)
   const [view, setView] = useState<'workspace' | 'clients' | 'clientDetail'>('workspace')
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+  const [navOrigin, setNavOrigin] = useState<{ type: 'workspace' } | { type: 'clientDetail', clientId: string }>({ type: 'workspace' })
   const [newProjectClientName, setNewProjectClientName] = useState('')
   const [newProjectSelectedClientId, setNewProjectSelectedClientId] = useState<string | null>(null)
   const [newProjectShowSuggestions, setNewProjectShowSuggestions] = useState(false)
@@ -374,7 +392,18 @@ function MainApp({ business }: { business: Business | null }) {
   const [newProjectEventType, setNewProjectEventType] = useState('')
   const [prefilledClientId, setPrefilledClientId] = useState<string | null>(null)
   const [galleryPreviewProjectId, setGalleryPreviewProjectId] = useState<string | null>(null)
+  // Refs to always access latest state (avoids stale closure bugs in save functions)
+  const projectsRef = useRef(projects)
+  projectsRef.current = projects
+  const imageRegistryRef = useRef(imageRegistry)
+  imageRegistryRef.current = imageRegistry
   const [exportProgress, setExportProgress] = useState<string | null>(null)
+  // Review mode: sequential gallery review (pick tops → next → pick tops → next)
+  const [reviewQueue, setReviewQueue] = useState<string[]>([])
+  const [reviewIndex, setReviewIndex] = useState(0)
+  // Bulk publish: queue of gallery IDs to publish with same settings
+  const [bulkPublishQueue, setBulkPublishQueue] = useState<string[]>([])
+  const [bulkPublishProgress, setBulkPublishProgress] = useState(0)
   const [publishProjectId, setPublishProjectId] = useState<string | null>(null)
   const [publishPhase, setPublishPhase] = useState<'settings' | 'publishing' | 'done' | 'error' | 'editing'>('settings')
   const [publishStory, setPublishStory] = useState({ completed: 0, total: 3, currentStyle: '' })
@@ -383,6 +412,8 @@ function MainApp({ business }: { business: Business | null }) {
   const [isPublishHidden, setIsPublishHidden] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [upgradeInfo, setUpgradeInfo] = useState<{ planName: string; violations: string[] } | null>(null)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings>(DEFAULT_BUSINESS_SETTINGS)
   // Register keyboard shortcuts
   useKeyboardShortcuts({ onShowShortcuts: () => setShowShortcuts(s => !s) })
 
@@ -493,7 +524,6 @@ function MainApp({ business }: { business: Business | null }) {
       const sectionsState = useSections.getState()
       const idToPath = new Map(imgs.map(i => [i.id, i.path]))
       const sectionsInput = sectionsState.sections
-        .filter(sec => sec.imageIds.length > 0)
         .map((sec, idx) => ({
           localId: sec.id,
           name: sec.name,
@@ -505,9 +535,32 @@ function MainApp({ business }: { business: Business | null }) {
       const secResult = await updateGallerySectionsInCloud(project.publishState.galleryDbId, sectionsInput)
       if (secResult.error) throw new Error(secResult.error)
 
-      // 3) Sync delivery settings (cheap, idempotent)
+      // 3+4) Sync top picks + delivery settings in parallel (both independent)
+      const topPickIdSet = useGallery.getState().topPickIds
+      const topPickFilenames = new Set(
+        imgs.filter(i => topPickIdSet.has(i.id)).map(i => i.filename)
+      )
       const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
-      await updateGallerySettings(project.id, settings as Record<string, unknown>)
+      if (project.eventType) {
+        (settings as Record<string, unknown>).eventType = project.eventType
+      }
+
+      await Promise.all([
+        // Top picks
+        supabase.from('images')
+          .select('id, filename')
+          .eq('gallery_id', project.publishState.galleryDbId)
+          .then(({ data: cloudImages }) => {
+            if (!cloudImages) return
+            return Promise.all(cloudImages.map(img =>
+              supabase.from('images')
+                .update({ is_top_pick: topPickFilenames.has(img.filename) })
+                .eq('id', img.id)
+            ))
+          }),
+        // Delivery settings
+        updateGallerySettings(project.id, settings as Record<string, unknown>),
+      ])
 
       // 4) Update local snapshot of published image ids so the next diff is empty
       setProjects(prev => prev.map(p => p.id === projectId
@@ -548,14 +601,17 @@ function MainApp({ business }: { business: Business | null }) {
 
     try {
       // Phases 1-3: Compress → upload previews → upload originals (all via queue engine)
+      // Convert top pick IMAGE IDs to FILE PATHS for the upload function
       const topPickIdSet = useGallery.getState().topPickIds
+      const topPickPaths = new Set(
+        imgs.filter(i => topPickIdSet.has(i.id)).map(i => i.path)
+      )
 
       // Snapshot the current sections so the publish flow can attach
       // section_id to each image and create gallery_sections rows.
       const sectionsState = useSections.getState()
       const idToPath = new Map(imgs.map(i => [i.id, i.path]))
       const sectionsInput = sectionsState.sections
-        .filter(sec => sec.imageIds.length > 0)
         .map((sec, idx) => ({
           localId: sec.id,
           name: sec.name,
@@ -571,7 +627,7 @@ function MainApp({ business }: { business: Business | null }) {
         project.clientId,
         project.id,
         imgs.map(i => i.path),
-        topPickIdSet,
+        topPickPaths,
         settings as Record<string, unknown>,
         sectionsInput,
       )
@@ -680,6 +736,59 @@ function MainApp({ business }: { business: Business | null }) {
       setIsCloudPublishing(false)
     }
   }
+
+  // ── Bulk publish: auto-publish next gallery when current one completes ──
+  useEffect(() => {
+    if (bulkPublishQueue.length === 0) return
+    if (publishPhase !== 'done') return
+
+    const currentBulkIdx = bulkPublishQueue.indexOf(publishProjectId || '')
+    if (currentBulkIdx === -1) return
+
+    const nextIdx = currentBulkIdx + 1
+    setBulkPublishProgress(nextIdx)
+
+    if (nextIdx >= bulkPublishQueue.length) {
+      // All done!
+      useGallery.getState().addToast(`All ${bulkPublishQueue.length} galleries published!`, 'success')
+      setBulkPublishQueue([])
+      setBulkPublishProgress(0)
+      setPublishProjectId(null)
+      setPublishPhase('settings')
+      return
+    }
+
+    // Auto-publish next gallery with SAME settings.
+    // Get the settings from the first published gallery.
+    const firstProject = projects.find(p => p.id === bulkPublishQueue[0])
+    const sharedSettings = firstProject?.deliverySettings
+
+    // Apply shared settings to next project (keep name + eventType)
+    const nextProjectId = bulkPublishQueue[nextIdx]
+    const nextProject = projects.find(p => p.id === nextProjectId)
+    if (nextProject && sharedSettings) {
+      setProjects(prev => prev.map(p => {
+        if (p.id !== nextProjectId) return p
+        return {
+          ...p,
+          deliverySettings: {
+            ...sharedSettings,
+            galleryTitle: p.name,           // keep gallery name
+            eventType: p.eventType || sharedSettings.eventType,  // keep tag
+          }
+        }
+      }))
+    }
+
+    // Small delay then publish
+    useGallery.getState().addToast(`Publishing ${nextIdx + 1}/${bulkPublishQueue.length}: ${nextProject?.name || ''}`, 'info')
+    setTimeout(() => {
+      setPublishProjectId(nextProjectId)
+      setPublishPhase('settings')
+      // Auto-trigger publish (skip settings UI for subsequent galleries)
+      handlePublish(nextProjectId)
+    }, 1500)
+  }, [publishPhase, bulkPublishQueue])
 
   // Sync gallery images back to project imageIds + registry
   useEffect(() => {
@@ -848,6 +957,13 @@ function MainApp({ business }: { business: Business | null }) {
         lastUsedSettings = val as Partial<DeliverySettings>
       }
     })
+    window.api.getPref('businessSettings').then(val => {
+      if (val && typeof val === 'object') {
+        const loaded = { ...DEFAULT_BUSINESS_SETTINGS, ...(val as Partial<BusinessSettings>) }
+        setBusinessSettings(loaded)
+        currentBusinessSettings = loaded
+      }
+    })
   }, [])
 
   // Check for interrupted publish queue on startup (recovery)
@@ -890,6 +1006,31 @@ function MainApp({ business }: { business: Business | null }) {
     if (!clientsLoaded) return
     window.api.setPref('clients', clients)
   }, [clients, clientsLoaded])
+
+  // Auto-save safety net: snapshot current project every 3 seconds
+  // so top picks and sections never get lost on unexpected navigation.
+  useEffect(() => {
+    if (!currentProjectId) return
+    const interval = setInterval(() => {
+      const currentImages = useGallery.getState().images
+      // Safety: never overwrite a project's imageIds with empty if it already has images
+      // (protects against race where gallery store hasn't been hydrated yet)
+      if (currentImages.length === 0) {
+        const proj = projectsRef.current.find(p => p.id === currentProjectId)
+        if (proj && proj.imageIds.length > 0) return
+      }
+      const snap = snapshotCurrentProject(currentProjectId)
+      setImageRegistry(prev => {
+        const updated = { ...prev }
+        for (const img of currentImages) updated[img.id] = img
+        return updated
+      })
+      setProjects(prev => prev.map(p =>
+        p.id === currentProjectId ? { ...p, ...snap, updatedAt: new Date().toISOString() } : p
+      ))
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [currentProjectId])
 
   // Live-mirror top picks + sections from their zustand stores into the
   // current project so they persist on every change (not just on switch /
@@ -978,7 +1119,8 @@ function MainApp({ business }: { business: Business | null }) {
   const hydrateProjectIntoStores = (target: ProjectData) => {
     isHydratingProject.current = true
     try {
-      const resolved = resolveImages(target.imageIds, imageRegistry)
+      // Use ref for latest registry (avoids stale closure after batched setImageRegistry)
+      const resolved = resolveImages(target.imageIds, imageRegistryRef.current)
       useGallery.setState({
         images: resolved,
         folderPath: '',
@@ -1003,26 +1145,120 @@ function MainApp({ business }: { business: Business | null }) {
 
   // Switch to a project: load its images into gallery
   const switchToProject = (projectId: string) => {
-    // Save current project first (images + top picks + sections)
+    // Save current project first — use refs for latest state
     if (currentProjectId) {
-      const snapshot = snapshotCurrentProject(currentProjectId)
-      const currentImages = useGallery.getState().images
-      setImageRegistry(prev => {
-        const updated = { ...prev }
-        for (const img of currentImages) updated[img.id] = img
-        return updated
-      })
-      setProjects(prev => prev.map(p =>
-        p.id === currentProjectId ? { ...p, ...snapshot } : p
-      ))
+      forceSaveCurrentProject()
     }
-    const target = projects.find(p => p.id === projectId)
+    const target = projectsRef.current.find(p => p.id === projectId)
     if (target) {
       hydrateProjectIntoStores(target)
     }
     setCurrentProjectId(projectId)
     setWelcomed(true)
   }
+
+  // ── Review mode: sequential gallery walk-through ─────────────────────
+
+  const forceSaveCurrentProject = () => {
+    if (!currentProjectId) return
+    const currentImages = useGallery.getState().images
+    // Safety: never overwrite a project's imageIds with empty if it already has images
+    if (currentImages.length === 0) {
+      const proj = projectsRef.current.find(p => p.id === currentProjectId)
+      if (proj && proj.imageIds.length > 0) return
+    }
+    const snapshot = snapshotCurrentProject(currentProjectId)
+    // Use refs to get LATEST state (not stale closure)
+    const newRegistry = { ...imageRegistryRef.current }
+    for (const img of currentImages) newRegistry[img.id] = img
+    setImageRegistry(newRegistry)
+    imageRegistryRef.current = newRegistry
+    const updatedProjects = projectsRef.current.map(p =>
+      p.id === currentProjectId ? { ...p, ...snapshot, updatedAt: new Date().toISOString() } : p
+    )
+    setProjects(updatedProjects)
+    projectsRef.current = updatedProjects
+    window.api.setPref('projects', updatedProjects)
+    window.api.setPref('imageRegistry', newRegistry)
+    return updatedProjects
+  }
+
+  const startReviewMode = (projectIds: string[]) => {
+    if (projectIds.length === 0) return
+    setReviewQueue(projectIds)
+    setReviewIndex(0)
+    // Load first gallery
+    const target = projects.find(p => p.id === projectIds[0])
+    if (target) {
+      if (currentProjectId) forceSaveCurrentProject()
+      hydrateProjectIntoStores(target)
+      setCurrentProjectId(projectIds[0])
+      setWelcomed(true)
+    }
+  }
+
+  const reviewNext = () => {
+    if (reviewQueue.length === 0) return
+    forceSaveCurrentProject()
+    const nextIdx = reviewIndex + 1
+    if (nextIdx >= reviewQueue.length) {
+      // Done — save and open publish for the first gallery.
+      // Settings configured once will apply to all galleries.
+      forceSaveCurrentProject()
+      setReviewQueue([])
+      setReviewIndex(0)
+      setCurrentProjectId(null)
+      isHydratingProject.current = true
+      try {
+        useGallery.setState({ images: [], folderPath: '', topPickIds: new Set() })
+        useSections.setState({ sections: [], activeSectionFilter: null })
+      } finally {
+        isHydratingProject.current = false
+      }
+      // Open publish settings for first reviewed gallery
+      setPublishProjectId(reviewQueue[0])
+      setPublishPhase('settings')
+      useGallery.getState().addToast(`Review complete! Configure settings — they'll apply to all ${reviewQueue.length} galleries`, 'info')
+      return
+    }
+    setReviewIndex(nextIdx)
+    const latestProjects = forceSaveCurrentProject() || projects
+    const target = latestProjects.find(p => p.id === reviewQueue[nextIdx])
+    if (target) {
+      hydrateProjectIntoStores(target)
+      setCurrentProjectId(reviewQueue[nextIdx])
+    }
+  }
+
+  const reviewPrev = () => {
+    if (reviewIndex <= 0) return
+    forceSaveCurrentProject()
+    const prevIdx = reviewIndex - 1
+    setReviewIndex(prevIdx)
+    const latestProjects = forceSaveCurrentProject() || projects
+    const target = latestProjects.find(p => p.id === reviewQueue[prevIdx])
+    if (target) {
+      hydrateProjectIntoStores(target)
+      setCurrentProjectId(reviewQueue[prevIdx])
+    }
+  }
+
+  const exitReviewMode = () => {
+    forceSaveCurrentProject()
+    setReviewQueue([])
+    setReviewIndex(0)
+    setCurrentProjectId(null)
+    setView('workspace')
+    isHydratingProject.current = true
+    try {
+      useGallery.setState({ images: [], folderPath: '', topPickIds: new Set() })
+      useSections.setState({ sections: [], activeSectionFilter: null })
+    } finally {
+      isHydratingProject.current = false
+    }
+  }
+
+  const isReviewMode = reviewQueue.length > 0
 
   // Delete a client and cascade-delete all its galleries (local + cloud)
   const deleteClientCascade = (clientId: string) => {
@@ -1060,29 +1296,32 @@ function MainApp({ business }: { business: Business | null }) {
     }
     if (currentProjectId && deletedIds.has(currentProjectId)) {
       setCurrentProjectId(null)
-      useGallery.setState({ images: [], folderPath: '', topPickIds: new Set() })
-      useSections.setState({ sections: [], activeSectionFilter: null })
+      isHydratingProject.current = true
+      try {
+        useGallery.setState({ images: [], folderPath: '', topPickIds: new Set() })
+        useSections.setState({ sections: [], activeSectionFilter: null })
+      } finally {
+        isHydratingProject.current = false
+      }
     }
   }
 
   // Go back to workspace
   const goWorkspace = () => {
     if (currentProjectId) {
-      const snapshot = snapshotCurrentProject(currentProjectId)
-      const currentImages = useGallery.getState().images
-      setImageRegistry(prev => {
-        const updated = { ...prev }
-        for (const img of currentImages) updated[img.id] = img
-        return updated
-      })
-      setProjects(prev => prev.map(p =>
-        p.id === currentProjectId ? { ...p, ...snapshot } : p
-      ))
+      forceSaveCurrentProject()
     }
     setCurrentProjectId(null)
     setView('workspace')
-    useGallery.setState({ images: [], folderPath: '', topPickIds: new Set() })
-    useSections.setState({ sections: [], activeSectionFilter: null })
+    // Guard: prevent the live-mirror subscription from overwriting the saved
+    // project with empty topPickIds/sections when we clear the stores.
+    isHydratingProject.current = true
+    try {
+      useGallery.setState({ images: [], folderPath: '', topPickIds: new Set() })
+      useSections.setState({ sections: [], activeSectionFilter: null })
+    } finally {
+      isHydratingProject.current = false
+    }
   }
 
   // Restore last folder on launch + show welcome on first run
@@ -1150,15 +1389,83 @@ function MainApp({ business }: { business: Business | null }) {
           }}
         />
       )}
-      <Toolbar
-        currentProject={currentProject?.name || null}
-        projects={projects}
-        onImport={() => { setImportInitialView('menu'); setIsImportOpen(true) }}
-        onImportCreate={() => { setImportInitialView('create'); setIsImportOpen(true) }}
-        onGoWorkspace={goWorkspace}
-        onGoClients={() => { goWorkspace(); setView('clients') }}
-        onSwitchProject={(id) => switchToProject(id)}
-      />
+      {currentProjectId && (
+        <Toolbar
+          currentProject={currentProject?.name || null}
+          projects={projects}
+          onImport={() => { setImportInitialView('menu'); setIsImportOpen(true) }}
+          onImportCreate={() => { setImportInitialView('create'); setIsImportOpen(true) }}
+          backLabel={navOrigin.type === 'clientDetail'
+            ? (clients.find(c => c.id === navOrigin.clientId)?.name || 'Client')
+            : 'Workspace'}
+          onGoBack={navOrigin.type === 'clientDetail'
+            ? () => {
+                forceSaveCurrentProject()
+                setCurrentProjectId(null)
+                setSelectedClientId(navOrigin.clientId)
+                setView('clientDetail')
+                isHydratingProject.current = true
+                try {
+                  useGallery.setState({ images: [], folderPath: '', topPickIds: new Set() })
+                  useSections.setState({ sections: [], activeSectionFilter: null })
+                } finally {
+                  isHydratingProject.current = false
+                }
+              }
+            : goWorkspace}
+          onGoWorkspace={goWorkspace}
+          onSwitchProject={(id) => switchToProject(id)}
+        />
+      )}
+
+      {/* Review mode bar */}
+      {isReviewMode && currentProjectId && (
+        <div style={{
+          // @ts-expect-error electron
+          WebkitAppRegion: 'no-drag',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16,
+          padding: '8px 20px',
+          background: 'linear-gradient(90deg, rgba(99,102,241,.15), rgba(168,85,247,.1))',
+          borderBottom: '1px solid rgba(99,102,241,.2)',
+          flexShrink: 0,
+        }}>
+          <button onClick={exitReviewMode} style={{
+            background: 'none', border: 'none', color: 'rgba(255,255,255,.5)',
+            cursor: 'pointer', fontSize: 12, fontFamily: 'inherit',
+          }}>✕ Exit</button>
+
+          <button onClick={reviewPrev} disabled={reviewIndex <= 0} style={{
+            background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.1)',
+            borderRadius: 6, padding: '5px 12px', cursor: reviewIndex > 0 ? 'pointer' : 'default',
+            color: reviewIndex > 0 ? '#fff' : 'rgba(255,255,255,.25)',
+            fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+          }}>← Prev</button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{
+              padding: '3px 10px', borderRadius: 50, fontSize: 11, fontWeight: 700,
+              background: 'rgba(99,102,241,.2)', color: '#c7d2fe',
+            }}>
+              {reviewIndex + 1} / {reviewQueue.length}
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
+              {currentProject?.name}
+            </span>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>
+              Select top picks with T, then click Next
+            </span>
+          </div>
+
+          <button onClick={reviewNext} style={{
+            background: '#6366f1', border: 'none', borderRadius: 6,
+            padding: '5px 16px', cursor: 'pointer', color: '#fff',
+            fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+            boxShadow: '0 2px 8px rgba(99,102,241,.3)',
+          }}>
+            {reviewIndex >= reviewQueue.length - 1 ? 'Done ✓' : 'Next →'}
+          </button>
+        </div>
+      )}
 
       {/* Workspace or Gallery */}
       {welcomed && !currentProjectId && view === 'workspace' ? (
@@ -1167,7 +1474,59 @@ function MainApp({ business }: { business: Business | null }) {
           clients={clients}
           imageRegistry={imageRegistry}
           onNewProject={() => { setImportInitialView('create'); setIsImportOpen(true) }}
-          onSelectProject={(id) => switchToProject(id)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onBulkImport={async (clientName, folders) => {
+            const now = new Date().toISOString()
+            // Find or create client
+            const normalized = clientName.trim().toLowerCase()
+            let clientId: string | null = null
+            const existingClient = clients.find(c => c.name.toLowerCase() === normalized)
+            if (existingClient) {
+              clientId = existingClient.id
+            } else {
+              clientId = `client_${Date.now()}`
+              setClients(prev => [...prev, { id: clientId!, name: clientName.trim(), createdAt: now, updatedAt: now }])
+            }
+
+            // Create a project per folder and scan images
+            const newProjects: typeof projects = []
+            const newRegistry = { ...imageRegistry }
+            for (const folder of folders) {
+              const id = String(Date.now()) + '_' + Math.random().toString(36).slice(2, 6)
+              const scanned = await window.api.scanFolder(folder.path)
+              const imageIds: string[] = []
+              for (const file of scanned) {
+                const imgId = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+                newRegistry[imgId] = {
+                  id: imgId,
+                  filename: file.filename,
+                  path: file.path,
+                  folderPath: file.folderPath,
+                  ext: file.ext,
+                  size: file.size,
+                  mtimeMs: file.mtimeMs,
+                  birthtimeMs: file.birthtimeMs,
+                } as ImageFile
+                imageIds.push(imgId)
+              }
+              newProjects.push({
+                id, name: folder.name, clientId, clientName: clientName.trim(),
+                imageIds, createdAt: now, updatedAt: now,
+              })
+            }
+            setImageRegistry(newRegistry)
+            imageRegistryRef.current = newRegistry
+            const updatedProjects = [...projectsRef.current, ...newProjects]
+            setProjects(updatedProjects)
+            projectsRef.current = updatedProjects
+            useGallery.getState().addToast(`Imported ${newProjects.length} galleries for ${clientName}`, 'success')
+
+            // Open first project so user can start tagging
+            if (newProjects.length > 0) {
+              switchToProject(newProjects[0].id)
+            }
+          }}
+          onSelectProject={(id) => { setNavOrigin({ type: 'workspace' }); switchToProject(id) }}
           onSelectClient={(id) => { setSelectedClientId(id); setView('clientDetail') }}
           onDeleteProject={(id) => {
             const project = projects.find(p => p.id === id)
@@ -1215,7 +1574,7 @@ function MainApp({ business }: { business: Business | null }) {
               client={client}
               projects={projects}
               imageRegistry={imageRegistry}
-              onSelectProject={(id) => switchToProject(id)}
+              onSelectProject={(id) => { setNavOrigin({ type: 'clientDetail', clientId: client.id }); switchToProject(id) }}
               onDeleteProject={(id) => {
                 const project = projects.find(p => p.id === id)
                 if (project?.publishState?.status === 'live') {
@@ -1251,6 +1610,73 @@ function MainApp({ business }: { business: Business | null }) {
                 setPublishProjectId(id)
                 setPublishPhase(proj?.publishState?.status === 'live' ? 'editing' : 'settings')
               }}
+              onUpdateEventType={(projectId, eventType) => {
+                setProjects(prev => prev.map(p => {
+                  if (p.id !== projectId) return p
+                  // Update both project.eventType AND delivery_settings.eventType
+                  const ds = { ...(p.deliverySettings || {} as any), eventType: eventType || '' }
+                  return { ...p, eventType: eventType || undefined, deliverySettings: ds, updatedAt: new Date().toISOString() }
+                }))
+              }}
+              onUpdateAll={async (projectIds) => {
+                // SAFE bulk update: directly update Supabase without touching gallery stores.
+                // No hydration, no store mutations — just DB writes per gallery.
+                useGallery.getState().addToast(`Updating ${projectIds.length} galleries...`, 'info')
+                let done = 0
+                for (const id of projectIds) {
+                  const proj = projectsRef.current.find(p => p.id === id)
+                  if (!proj?.publishState?.galleryDbId) continue
+                  const galleryDbId = proj.publishState.galleryDbId
+                  try {
+                    // 1) Update is_top_pick by matching filenames
+                    const topPickIds = new Set(proj.topPickIds || [])
+                    const topPickFilenames = new Set<string>()
+                    for (const imgId of topPickIds) {
+                      const img = imageRegistryRef.current[imgId]
+                      if (img) topPickFilenames.add(img.filename)
+                    }
+                    const { data: cloudImgs } = await supabase.from('images')
+                      .select('id, filename').eq('gallery_id', galleryDbId)
+                    if (cloudImgs) {
+                      for (const ci of cloudImgs) {
+                        await supabase.from('images')
+                          .update({ is_top_pick: topPickFilenames.has(ci.filename) })
+                          .eq('id', ci.id)
+                      }
+                    }
+
+                    // 2) Update delivery settings (eventType etc.)
+                    const settings = { ...(proj.deliverySettings || {}) }
+                    if (proj.eventType) (settings as Record<string, unknown>).eventType = proj.eventType
+                    await supabase.from('galleries')
+                      .update({ delivery_settings: settings })
+                      .eq('id', galleryDbId)
+
+                    done++
+                    if (done % 5 === 0 || done === projectIds.length) {
+                      useGallery.getState().addToast(`Updated ${done}/${projectIds.length}`, 'info')
+                    }
+                  } catch (err) {
+                    console.error(`[bulk-update] ${proj.name} failed:`, err)
+                  }
+                }
+                useGallery.getState().addToast(`Done! ${done}/${projectIds.length} galleries updated`, 'success')
+              }}
+              onPublishAll={(projectIds) => {
+                // Store the queue and open publish settings for the first gallery.
+                // After user configures settings and publishes the first one,
+                // the rest will auto-publish with the same settings.
+                setBulkPublishQueue(projectIds)
+                setBulkPublishProgress(0)
+                if (projectIds.length > 0) {
+                  setPublishProjectId(projectIds[0])
+                  setPublishPhase('settings')
+                  useGallery.getState().addToast(
+                    `Configure settings once — they'll apply to all ${projectIds.length} galleries. Gallery names and event types stay as-is.`,
+                    'info'
+                  )
+                }
+              }}
             />
           )
         })()
@@ -1264,39 +1690,25 @@ function MainApp({ business }: { business: Business | null }) {
               publishStatus={currentProject?.publishState?.status || 'draft'}
               publicUrl={currentProject?.publishState?.publicUrl}
               hasUnsavedChanges={
-                currentProject?.publishState?.status === 'live' &&
-                !!currentProject?.publishState?.publishedImageIds &&
-                JSON.stringify(currentProject.imageIds) !== JSON.stringify(currentProject.publishState.publishedImageIds)
+                currentProject?.publishState?.status === 'live' && (
+                  (!!currentProject?.publishState?.publishedImageIds &&
+                    JSON.stringify(currentProject.imageIds) !== JSON.stringify(currentProject.publishState.publishedImageIds))
+                  || sectionsDirtyAt > 0
+                )
               }
               onPublish={async () => {
                 if (!currentProjectId) return
                 const proj = projects.find(p => p.id === currentProjectId)
                 if (!proj) return
 
-                // If gallery is live and has unsaved changes → quick sync (no re-upload)
-                const hasChanges = proj.publishState?.status === 'live' &&
+                // If gallery is live and has any unsaved changes (images OR sections) → full sync
+                const imagesChanged = proj.publishState?.status === 'live' &&
                   !!proj.publishState?.publishedImageIds &&
                   JSON.stringify(proj.imageIds) !== JSON.stringify(proj.publishState.publishedImageIds)
+                const sectionsChanged = proj.publishState?.status === 'live' && sectionsDirtyAt > 0
 
-                if (hasChanges) {
-                  const dbId = proj.publishState?.galleryDbId || proj.id
-                  const imgs = resolveImages(proj.imageIds, imageRegistry)
-                  const { error } = await updateGalleryImages(
-                    dbId,
-                    imgs.map(i => i.path),
-                    proj.publishState!.publishedImageIds!,
-                    imageRegistry
-                  )
-                  if (error) {
-                    useGallery.getState().addToast(`Update failed: ${error}`, 'error')
-                  } else {
-                    // Update snapshot
-                    setProjects(prev => prev.map(p => p.id === currentProjectId
-                      ? { ...p, publishState: { ...p.publishState!, publishedImageIds: [...p.imageIds] } }
-                      : p
-                    ))
-                    useGallery.getState().addToast('Gallery updated', 'success')
-                  }
+                if (imagesChanged || sectionsChanged) {
+                  await handleUpdateChanges(currentProjectId)
                   return
                 }
 
@@ -1407,6 +1819,17 @@ function MainApp({ business }: { business: Business | null }) {
       {showWelcome && <WelcomeModal onClose={handleCloseWelcome} />}
       {demoActive && <DemoMode onDone={handleDemoDone} />}
       {showShortcuts && <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />}
+      {isSettingsOpen && (
+        <BusinessSettingsModal
+          settings={businessSettings}
+          onSave={(s) => {
+            setBusinessSettings(s)
+            currentBusinessSettings = s
+            window.api.setPref('businessSettings', s)
+          }}
+          onClose={() => setIsSettingsOpen(false)}
+        />
+      )}
       {upgradeInfo && (
         <UpgradeModal
           planName={upgradeInfo.planName}

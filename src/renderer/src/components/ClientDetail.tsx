@@ -19,6 +19,17 @@ function getInitials(name: string): string {
     : name.substring(0, 2).toUpperCase()
 }
 
+const EVENT_TYPES = [
+  { key: '', label: 'No tag' },
+  { key: 'conference', label: '🎤 Conference' },
+  { key: 'corporate-event', label: '🏢 Corporate' },
+  { key: 'government', label: '🏛️ Government' },
+  { key: 'retreat-abroad', label: '✈️ Retreat Abroad' },
+  { key: 'retreat-local', label: '🏖️ Local Retreat' },
+  { key: 'pre-event', label: '📋 Pre-Event' },
+  { key: 'other', label: '📸 Other' },
+]
+
 interface ClientDetailProps {
   client: ClientData
   projects: ProjectData[]
@@ -30,9 +41,12 @@ interface ClientDetailProps {
   onNewGallery: () => void
   onPreviewGallery: (projectId: string) => void
   onPublish: (projectId: string) => void
+  onPublishAll?: (projectIds: string[]) => void
+  onUpdateAll?: (projectIds: string[]) => void
+  onUpdateEventType?: (projectId: string, eventType: string) => void
 }
 
-export function ClientDetail({ client, projects, imageRegistry, onSelectProject, onDeleteProject, onBack, onRenameClient, onNewGallery, onPreviewGallery, onPublish }: ClientDetailProps) {
+export function ClientDetail({ client, projects, imageRegistry, onSelectProject, onDeleteProject, onBack, onRenameClient, onNewGallery, onPreviewGallery, onPublish, onPublishAll, onUpdateAll, onUpdateEventType }: ClientDetailProps) {
   const clientProjects = getProjectsByClient(client.id, projects)
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
   const totalImages = getTotalImagesForClient(client.id, projects)
@@ -44,6 +58,7 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
   const [shareMenuId, setShareMenuId] = useState<string | null>(null)
   const [copiedGalleryId, setCopiedGalleryId] = useState<string | null>(null)
   const [clientPageStatus, setClientPageStatus] = useState<'idle' | 'loading' | 'copied' | 'empty'>('idle')
+  const [sortBy, setSortBy] = useState<'createdAt' | 'eventDate' | 'updatedAt'>('createdAt')
 
   const showClientPageButton = clientProjects.some(p => p.publishState?.status === 'live')
 
@@ -109,10 +124,20 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
     }).catch(() => { /* clipboard unavailable */ })
   }
 
+  // Sort key extractor
+  const getSortDate = (p: ProjectData): string => {
+    if (sortBy === 'eventDate') return p.deliverySettings?.eventDate || p.createdAt || ''
+    if (sortBy === 'updatedAt') return p.updatedAt || ''
+    return p.createdAt || ''
+  }
+
+  const sortedProjects = [...clientProjects].sort((a, b) => getSortDate(b).localeCompare(getSortDate(a)))
+
   // Group projects by year
   const groupedByYear: Record<string, ProjectData[]> = {}
-  clientProjects.forEach(p => {
-    const year = p.createdAt ? new Date(p.createdAt).getFullYear().toString() : 'Unknown'
+  sortedProjects.forEach(p => {
+    const dateStr = getSortDate(p)
+    const year = dateStr ? new Date(dateStr).getFullYear().toString() : 'Unknown'
     if (!groupedByYear[year]) groupedByYear[year] = []
     groupedByYear[year].push(p)
   })
@@ -192,8 +217,78 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
               </svg>
               New Gallery
             </button>
+            {/* Update All Live button */}
+            {onUpdateAll && (() => {
+              const liveOnes = clientProjects.filter(p => p.publishState?.status === 'live')
+              if (liveOnes.length === 0) return null
+              return (
+                <button
+                  onClick={() => onUpdateAll(liveOnes.map(p => p.id))}
+                  style={{
+                    padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+                    background: 'rgba(16,185,129,.12)', border: '1px solid rgba(16,185,129,.25)',
+                    color: '#34d399', cursor: 'pointer', fontFamily: 'inherit',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                    <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                  </svg>
+                  Update All ({liveOnes.length})
+                </button>
+              )
+            })()}
+            {/* Upload All / Upload New button */}
+            {onPublishAll && clientProjects.length > 0 && (() => {
+              const unpublished = clientProjects.filter(p => !p.publishState || p.publishState.status === 'draft')
+              const allLive = unpublished.length === 0
+              if (allLive) return null
+              const isAll = unpublished.length === clientProjects.length
+              return (
+                <button
+                  className="cdv__btn-primary"
+                  onClick={() => onPublishAll(unpublished.map(p => p.id))}
+                  style={{
+                    padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                    background: '#6366f1', border: 'none', color: '#fff',
+                    cursor: 'pointer', fontFamily: 'inherit',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    boxShadow: '0 4px 12px rgba(99,102,241,.3)',
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                    <polyline points="16 6 12 2 8 6"/>
+                    <line x1="12" y1="2" x2="12" y2="15"/>
+                  </svg>
+                  {isAll ? `Upload All (${unpublished.length})` : `Upload New (${unpublished.length})`}
+                </button>
+              )
+            })()}
           </div>
         </div>
+
+        {/* Sort control */}
+        {clientProjects.length > 1 && (
+          <div className="cdv__sort-bar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: .45 }}>
+              <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="16" y2="12"/><line x1="4" y1="18" x2="12" y2="18"/>
+            </svg>
+            <button
+              className={`cdv__sort-btn ${sortBy === 'createdAt' ? 'cdv__sort-btn--active' : ''}`}
+              onClick={() => setSortBy('createdAt')}
+            >Date Added</button>
+            <button
+              className={`cdv__sort-btn ${sortBy === 'eventDate' ? 'cdv__sort-btn--active' : ''}`}
+              onClick={() => setSortBy('eventDate')}
+            >Event Date</button>
+            <button
+              className={`cdv__sort-btn ${sortBy === 'updatedAt' ? 'cdv__sort-btn--active' : ''}`}
+              onClick={() => setSortBy('updatedAt')}
+            >Last Modified</button>
+          </div>
+        )}
 
         {/* Galleries grouped by year */}
         {clientProjects.length > 0 ? (
@@ -228,6 +323,27 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
                             <span className="cdv__card-badge cdv__card-badge--pub">Publishing...</span>
                           )}
                         </div>
+                        {/* Event type tag */}
+                        {onUpdateEventType && (
+                          <select
+                            value={p.eventType || ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => { e.stopPropagation(); onUpdateEventType(p.id, e.target.value) }}
+                            style={{
+                              marginTop: 4, padding: '3px 6px', width: '100%', boxSizing: 'border-box',
+                              background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
+                              borderRadius: 6, color: p.eventType ? 'rgba(255,255,255,.8)' : 'rgba(255,255,255,.3)',
+                              fontSize: 11, fontFamily: 'inherit', cursor: 'pointer', outline: 'none',
+                              appearance: 'none', WebkitAppearance: 'none',
+                            }}
+                          >
+                            {EVENT_TYPES.map(et => (
+                              <option key={et.key} value={et.key} style={{ background: '#1a1a1c', color: '#fff' }}>
+                                {et.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
 
                       {/* Live actions bar */}

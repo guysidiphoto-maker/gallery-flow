@@ -599,10 +599,10 @@ export const useGallery = create<GalleryState>((set, get) => ({
         topPickIds: lastSnap.topPickIds,
         undoStack: state.undoStack.slice(1),
       }))
-      get().addToast(`Undo: ${lastSnap.label}`, 'info')
+      get().addToast(`בוטל: ${lastSnap.label}`, 'success')
       return
     }
-    get().addToast('Nothing to undo', 'info')
+    // Nothing to undo — stay silent instead of showing a confusing "success" toast
   },
 
   setFilenamePrefix: (prefix) => set({ filenamePrefix: prefix }),

@@ -67,6 +67,8 @@ interface WorkspaceDashboardProps {
   clients: ClientData[]
   imageRegistry: Record<string, ImageFile>
   onNewProject: () => void
+  onOpenSettings: () => void
+  onBulkImport: (clientName: string, folders: Array<{ name: string; path: string }>) => void
   onSelectProject: (id: string) => void
   onSelectClient: (id: string) => void
   onDeleteProject: (id: string) => void
@@ -80,6 +82,8 @@ export function WorkspaceDashboard({
   clients,
   imageRegistry,
   onNewProject,
+  onOpenSettings,
+  onBulkImport,
   onSelectProject,
   onSelectClient,
   onDeleteProject,
@@ -94,6 +98,31 @@ export function WorkspaceDashboard({
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement>(null)
+
+  // Bulk import state
+  const [bulkImportOpen, setBulkImportOpen] = useState(false)
+  const [bulkFolders, setBulkFolders] = useState<Array<{ name: string; path: string }>>([])
+  const [bulkClientName, setBulkClientName] = useState('')
+  const [bulkImporting, setBulkImporting] = useState(false)
+
+  const startBulkImport = async () => {
+    const parentPath = await (window as unknown as { api: { openFolderDialog: () => Promise<string | null>; listSubfolders: (p: string) => Promise<Array<{ name: string; path: string }>> } }).api.openFolderDialog()
+    if (!parentPath) return
+    const folders = await (window as unknown as { api: { listSubfolders: (p: string) => Promise<Array<{ name: string; path: string }>> } }).api.listSubfolders(parentPath)
+    if (folders.length === 0) return
+    setBulkFolders(folders)
+    setBulkImportOpen(true)
+  }
+
+  const executeBulkImport = async () => {
+    if (!bulkClientName.trim() || bulkFolders.length === 0) return
+    setBulkImporting(true)
+    onBulkImport(bulkClientName.trim(), bulkFolders)
+    setBulkImporting(false)
+    setBulkImportOpen(false)
+    setBulkFolders([])
+    setBulkClientName('')
+  }
 
   // ── Initial data load ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -208,15 +237,15 @@ export function WorkspaceDashboard({
       <style>{`
         @keyframes wsd-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         .wsd-card {
-          transition: transform .25s cubic-bezier(.4,0,.2,1), border-color .25s, box-shadow .25s;
+          transition: transform .22s cubic-bezier(.4,0,.2,1), border-color .22s, box-shadow .25s;
           border: 1px solid rgba(255,255,255,.05) !important;
         }
         .wsd-card:hover {
-          transform: translateY(-4px);
-          border-color: rgba(99,102,241,.25) !important;
-          box-shadow: 0 12px 40px rgba(0,0,0,.3), 0 0 0 1px rgba(99,102,241,.1);
+          transform: translateY(-2px);
+          border-color: rgba(255,255,255,.12) !important;
+          box-shadow: 0 12px 40px rgba(0,0,0,.35);
         }
-        .wsd-card:hover .wsd-card-img { transform: scale(1.06); filter: brightness(1.05); }
+        .wsd-card:hover .wsd-card-img { transform: scale(1.04); }
         .wsd-card:hover .wsd-card-actions { opacity: 1; }
         .wsd-card-actions { opacity: 0; transition: opacity .2s; }
         .wsd-card-img { transition: transform .6s cubic-bezier(.4,0,.2,1), filter .3s; }
@@ -225,11 +254,10 @@ export function WorkspaceDashboard({
         .wsd-client-row:hover .wsd-client-arrow { opacity: 1; transform: translateX(0); }
         .wsd-client-arrow { opacity: 0; transform: translateX(-4px); transition: opacity .15s, transform .15s; }
         .wsd-cta {
-          transition: background .2s, box-shadow .2s, transform .12s;
-          background: linear-gradient(135deg, #6366f1, #818cf8) !important;
-          box-shadow: 0 4px 16px rgba(99,102,241,.3);
+          transition: background .15s, box-shadow .15s, transform .1s;
+          background: #6366f1 !important;
         }
-        .wsd-cta:hover { box-shadow: 0 8px 28px rgba(99,102,241,.45); transform: translateY(-1px); }
+        .wsd-cta:hover { background: #7577f5 !important; }
         .wsd-cta:active { transform: scale(.97); }
         .wsd-secondary { transition: all .15s; }
         .wsd-secondary:hover { background: rgba(255,255,255,.08) !important; border-color: rgba(255,255,255,.15) !important; }
@@ -243,116 +271,108 @@ export function WorkspaceDashboard({
         .wsd-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.1); }
       `}</style>
 
-      {/* ─── Compact top hero strip ──────────────────────────────────────── */}
+      {/* ─── Title bar (macOS drag region) ──────────────────────────────── */}
       <div style={{
         flexShrink: 0,
-        padding: '18px 28px 16px',
-        borderBottom: '1px solid rgba(255,255,255,.04)',
-        background: 'rgba(255,255,255,.01)',
+        height: 52,
+        // @ts-expect-error electron
+        WebkitAppRegion: 'drag',
         display: 'flex',
         alignItems: 'center',
-        gap: 20,
-        animation: 'wsd-fade .3s ease both',
+        padding: '0 24px 0 80px',
+        background: 'transparent',
         position: 'relative',
         zIndex: 20,
       }}>
-        {/* Avatar + welcome */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, position: 'relative' }} ref={accountMenuRef}>
+        {/* Avatar + account */}
+        <div
+          ref={accountMenuRef}
+          // @ts-expect-error electron
+          style={{ WebkitAppRegion: 'no-drag', display: 'flex', alignItems: 'center', gap: 10, position: 'relative' }}
+        >
           <button
             onClick={() => setAccountMenuOpen(o => !o)}
             title="Account"
             style={{
-              width: 38,
-              height: 38,
-              borderRadius: 11,
-              background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',
+              width: 32,
+              height: 32,
+              borderRadius: 9,
+              background: 'linear-gradient(135deg,#6366f1,#818cf8)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 15,
+              fontSize: 13,
               fontWeight: 700,
               color: '#fff',
               flexShrink: 0,
-              boxShadow: '0 4px 14px rgba(99,102,241,.3)',
               border: 'none',
               cursor: 'pointer',
               padding: 0,
               fontFamily: 'inherit',
-              transition: 'transform .12s, box-shadow .15s',
+              transition: 'opacity .15s',
             }}
-            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 18px rgba(99,102,241,.5)' }}
-            onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 14px rgba(99,102,241,.3)' }}
           >
             {sysName ? sysName.charAt(0) : '·'}
           </button>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: 'rgba(255,255,255,.85)', letterSpacing: '-0.01em' }}>
+            {sysName ? `Hi, ${sysName}` : 'Workspace'}
+          </span>
 
           {/* Account dropdown */}
           {accountMenuOpen && (
             <div style={{
               position: 'absolute',
-              top: 46,
+              top: 40,
               left: 0,
-              minWidth: 240,
-              background: 'rgba(20,20,28,.97)',
-              border: '1px solid rgba(255,255,255,.1)',
+              minWidth: 220,
+              background: 'rgba(20,20,28,.96)',
+              border: '1px solid rgba(255,255,255,.08)',
               borderRadius: 12,
-              padding: 6,
-              boxShadow: '0 16px 40px rgba(0,0,0,.55)',
-              backdropFilter: 'blur(20px)',
+              padding: 5,
+              boxShadow: '0 20px 60px rgba(0,0,0,.55)',
+              backdropFilter: 'blur(24px)',
               zIndex: 100,
-              animation: 'wsd-fade .15s ease both',
+              animation: 'wsd-fade .12s ease both',
             }}>
-              <div style={{
-                padding: '12px 12px 10px',
-                borderBottom: '1px solid rgba(255,255,255,.06)',
-                marginBottom: 4,
-              }}>
-                <div style={{
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  color: 'rgba(255,255,255,.92)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}>
+              <div style={{ padding: '10px 12px 8px', borderBottom: '1px solid rgba(255,255,255,.06)', marginBottom: 3 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {sysName || 'Signed in'}
                 </div>
-                <div style={{
-                  fontSize: 11.5,
-                  color: 'rgba(255,255,255,.42)',
-                  marginTop: 2,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,.38)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {userEmail || 'No email on file'}
                 </div>
               </div>
               <button
+                onClick={() => { setAccountMenuOpen(false); onOpenSettings() }}
+                style={{
+                  width: '100%', padding: '8px 12px', background: 'transparent', border: 'none', borderRadius: 7,
+                  color: 'rgba(255,255,255,.7)', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+                  transition: 'background .12s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.05)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+                Business Settings
+              </button>
+              <div style={{ height: 1, background: 'rgba(255,255,255,.06)', margin: '3px 0' }} />
+              <button
                 onClick={handleSignOut}
                 disabled={signingOut}
                 style={{
-                  width: '100%',
-                  padding: '9px 12px',
-                  background: 'transparent',
-                  border: 'none',
-                  borderRadius: 7,
-                  color: '#f87171',
-                  fontSize: 12.5,
-                  fontWeight: 500,
-                  fontFamily: 'inherit',
-                  cursor: signingOut ? 'wait' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  textAlign: 'left',
-                  opacity: signingOut ? 0.6 : 1,
-                  transition: 'background .12s',
+                  width: '100%', padding: '8px 12px', background: 'transparent', border: 'none', borderRadius: 7,
+                  color: '#f87171', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+                  cursor: signingOut ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+                  opacity: signingOut ? 0.6 : 1, transition: 'background .12s',
                 }}
                 onMouseEnter={e => { if (!signingOut) e.currentTarget.style.background = 'rgba(248,113,113,.08)' }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                   <polyline points="16 17 21 12 16 7" />
                   <line x1="21" y1="12" x2="9" y2="12" />
@@ -361,34 +381,12 @@ export function WorkspaceDashboard({
               </button>
             </div>
           )}
-
-          <div style={{ minWidth: 0 }}>
-            <div style={{
-              fontSize: 16,
-              fontWeight: 600,
-              letterSpacing: '-0.01em',
-              color: 'rgba(255,255,255,.95)',
-              lineHeight: 1.2,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}>
-              {sysName ? `Hi, ${sysName}` : 'Hi'}
-            </div>
-            <div style={{
-              fontSize: 11.5,
-              color: 'rgba(255,255,255,.4)',
-              marginTop: 1,
-              whiteSpace: 'nowrap',
-            }}>
-              {hasAnything ? 'Here\'s your studio at a glance' : 'Let\'s set up your first delivery'}
-            </div>
-          </div>
         </div>
 
-        {/* Inline stat pills */}
+        {/* Stat pills */}
         {hasAnything && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+          // @ts-expect-error electron
+          <div style={{ WebkitAppRegion: 'no-drag', display: 'flex', alignItems: 'center', gap: 6, marginLeft: 16 }}>
             <StatPill value={String(projects.length)} label="galleries" />
             <StatPill value={formatNumber(stats.totalPhotos)} label="photos" />
             <StatPill value={String(clients.length)} label="clients" />
@@ -396,18 +394,21 @@ export function WorkspaceDashboard({
           </div>
         )}
 
-        {/* Storage quota indicator */}
-        <UsageIndicator />
-
-        {/* Spacer */}
         <div style={{ flex: 1 }} />
+
+        {/* Storage */}
+        {/* @ts-expect-error electron */}
+        <div style={{ WebkitAppRegion: 'no-drag' }}>
+          <UsageIndicator />
+        </div>
 
         {/* Search */}
         {hasAnything && (
-          <div style={{ position: 'relative', width: 240 }}>
+          // @ts-expect-error electron
+          <div style={{ WebkitAppRegion: 'no-drag', position: 'relative', width: 200, marginLeft: 12 }}>
             <svg
-              width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-              style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,.32)', pointerEvents: 'none' }}
+              width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,.28)', pointerEvents: 'none' }}
             >
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -418,35 +419,35 @@ export function WorkspaceDashboard({
               onChange={e => setSearch(e.target.value)}
               style={{
                 width: '100%',
-                padding: '8px 12px 8px 32px',
+                padding: '7px 10px 7px 30px',
                 background: 'rgba(255,255,255,.04)',
-                border: '1px solid rgba(255,255,255,.07)',
-                borderRadius: 9,
+                border: '1px solid rgba(255,255,255,.06)',
+                borderRadius: 8,
                 color: '#fff',
-                fontSize: 12.5,
+                fontSize: 12,
                 fontFamily: 'inherit',
                 outline: 'none',
                 boxSizing: 'border-box',
                 transition: 'border-color .15s, background .15s',
               }}
-              onFocus={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.5)' }}
-              onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.07)' }}
+              onFocus={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.4)'; e.currentTarget.style.background = 'rgba(255,255,255,.06)' }}
+              onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.06)'; e.currentTarget.style.background = 'rgba(255,255,255,.04)' }}
             />
           </div>
         )}
 
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        {/* Import buttons */}
+        {/* @ts-expect-error electron */}
+        <div style={{ WebkitAppRegion: 'no-drag', marginLeft: 10, display: 'flex', gap: 6 }}>
           <button
-            className="wsd-secondary"
-            onClick={onNewProject}
+            onClick={startBulkImport}
             style={{
-              padding: '8px 14px',
-              background: 'rgba(255,255,255,.03)',
+              padding: '7px 14px',
+              background: 'rgba(255,255,255,.06)',
               border: '1px solid rgba(255,255,255,.1)',
-              borderRadius: 9,
-              color: 'rgba(255,255,255,.78)',
-              fontSize: 12.5,
+              borderRadius: 8,
+              color: 'rgba(255,255,255,.75)',
+              fontSize: 12,
               fontWeight: 500,
               fontFamily: 'inherit',
               cursor: 'pointer',
@@ -455,38 +456,36 @@ export function WorkspaceDashboard({
               gap: 6,
             }}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
-            Import
+            Bulk Import
           </button>
           <button
             className="wsd-cta"
             onClick={onNewProject}
             style={{
-              padding: '8px 16px',
+              padding: '7px 16px',
               background: '#6366f1',
               border: 'none',
-              borderRadius: 9,
+              borderRadius: 8,
               color: '#fff',
-              fontSize: 12.5,
+              fontSize: 12,
               fontWeight: 600,
               fontFamily: 'inherit',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              boxShadow: '0 4px 14px rgba(99,102,241,.3)',
               letterSpacing: '0.01em',
             }}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
-            New Gallery
+            Import
           </button>
         </div>
       </div>
@@ -496,19 +495,20 @@ export function WorkspaceDashboard({
         flex: 1,
         minHeight: 0,
         display: 'flex',
-        animation: 'wsd-fade .4s ease both .04s',
+        animation: 'wsd-fade .35s ease both',
       }}>
         {/* ── Sidebar: Clients ─────────────────────────────────────────── */}
         <aside style={{
-          width: 256,
+          width: 240,
           flexShrink: 0,
           borderRight: '1px solid rgba(255,255,255,.05)',
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
+          background: 'rgba(255,255,255,.01)',
         }}>
           <div style={{
-            padding: '16px 18px 10px',
+            padding: '14px 16px 10px',
             display: 'flex',
             alignItems: 'baseline',
             justifyContent: 'space-between',
@@ -516,13 +516,13 @@ export function WorkspaceDashboard({
             <span style={{
               fontSize: 11,
               fontWeight: 600,
-              letterSpacing: '0.08em',
+              letterSpacing: '0.06em',
               textTransform: 'uppercase',
-              color: 'rgba(255,255,255,.42)',
+              color: 'rgba(255,255,255,.35)',
             }}>
               Clients
             </span>
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,.3)' }}>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,.25)' }}>
               {clients.length}
             </span>
           </div>
@@ -623,63 +623,63 @@ export function WorkspaceDashboard({
           flexDirection: 'column',
           minHeight: 0,
         }}>
-          {/* Filter tabs */}
+          {/* Filter tabs (pill style) */}
           <div style={{
-            padding: '14px 28px 10px',
+            padding: '12px 28px',
             display: 'flex',
             alignItems: 'center',
-            gap: 18,
-            borderBottom: '1px solid rgba(255,255,255,.04)',
+            gap: 6,
           }}>
-            {([
-              { key: 'all' as const, label: 'All', count: projects.length },
-              { key: 'live' as const, label: 'Live', count: stats.live },
-              { key: 'draft' as const, label: 'Drafts', count: stats.draft },
-            ]).map(tab => {
-              const active = activeFilter === tab.key
-              return (
-                <button
-                  key={tab.key}
-                  className="wsd-filter-btn"
-                  onClick={() => setActiveFilter(tab.key)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    padding: '6px 0',
-                    color: active ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.42)',
-                    fontSize: 12.5,
-                    fontWeight: active ? 600 : 500,
-                    fontFamily: 'inherit',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    position: 'relative',
-                    letterSpacing: '0.01em',
-                  }}
-                >
-                  {tab.label}
-                  <span style={{
-                    fontSize: 10.5,
-                    color: active ? 'rgba(255,255,255,.5)' : 'rgba(255,255,255,.28)',
-                    fontWeight: 500,
-                  }}>
-                    {tab.count}
-                  </span>
-                  {active && (
-                    <div style={{
-                      position: 'absolute',
-                      left: 0,
-                      right: 0,
-                      bottom: -10,
-                      height: 1.5,
-                      background: '#6366f1',
-                      borderRadius: 1,
-                    }} />
-                  )}
-                </button>
-              )
-            })}
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 2,
+              background: 'rgba(255,255,255,.03)',
+              border: '1px solid rgba(255,255,255,.05)',
+              borderRadius: 10,
+              padding: 2,
+            }}>
+              {([
+                { key: 'all' as const, label: 'All', count: projects.length },
+                { key: 'live' as const, label: 'Live', count: stats.live },
+                { key: 'draft' as const, label: 'Drafts', count: stats.draft },
+              ]).map(tab => {
+                const active = activeFilter === tab.key
+                return (
+                  <button
+                    key={tab.key}
+                    className="wsd-filter-btn"
+                    onClick={() => setActiveFilter(tab.key)}
+                    style={{
+                      background: active ? 'rgba(255,255,255,.08)' : 'none',
+                      border: 'none',
+                      padding: '5px 14px',
+                      borderRadius: 8,
+                      color: active ? 'rgba(255,255,255,.92)' : 'rgba(255,255,255,.38)',
+                      fontSize: 12,
+                      fontWeight: active ? 600 : 500,
+                      fontFamily: 'inherit',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      letterSpacing: '0.01em',
+                      transition: 'all .15s',
+                      boxShadow: active ? '0 1px 3px rgba(0,0,0,.2)' : 'none',
+                    }}
+                  >
+                    {tab.label}
+                    <span style={{
+                      fontSize: 10,
+                      color: active ? 'rgba(255,255,255,.45)' : 'rgba(255,255,255,.22)',
+                      fontWeight: 500,
+                    }}>
+                      {tab.count}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           {/* Galleries grid */}
@@ -687,7 +687,7 @@ export function WorkspaceDashboard({
             flex: 1,
             minHeight: 0,
             overflowY: 'auto',
-            padding: '18px 28px 28px',
+            padding: '8px 28px 28px',
           }}>
             {filteredProjects.length === 0 ? (
               <EmptyState
@@ -699,8 +699,8 @@ export function WorkspaceDashboard({
             ) : (
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                gap: 14,
+                gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                gap: 16,
               }}>
                 {filteredProjects.map(p => {
                   const cover = getProjectCover(p, imageRegistry)
@@ -721,8 +721,8 @@ export function WorkspaceDashboard({
                         <div style={{
                           position: 'relative',
                           width: '100%',
-                          aspectRatio: '4/3',
-                          background: 'linear-gradient(135deg, rgba(99,102,241,.06), rgba(168,85,247,.03))',
+                          aspectRatio: '16/10',
+                          background: 'rgba(255,255,255,.02)',
                           overflow: 'hidden',
                         }}>
                           {cover ? (
@@ -825,7 +825,7 @@ export function WorkspaceDashboard({
                         </div>
 
                         {/* Card body */}
-                        <div style={{ padding: '12px 14px 14px' }}>
+                        <div style={{ padding: '11px 14px 13px' }}>
                           <div style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -1042,6 +1042,84 @@ export function WorkspaceDashboard({
           </div>
         </div>
       )}
+
+      {/* ─── Bulk Import Modal ─────────────────────────────────── */}
+      {bulkImportOpen && (
+        <div onClick={() => setBulkImportOpen(false)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'rgba(20,20,28,.97)', border: '1px solid rgba(255,255,255,.1)',
+            borderRadius: 16, padding: '28px 30px', maxWidth: 500, width: '90%',
+            boxShadow: '0 24px 60px rgba(0,0,0,.6)', backdropFilter: 'blur(20px)',
+          }}>
+            <h3 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 6px', color: '#fff' }}>
+              Bulk Import
+            </h3>
+            <p style={{ fontSize: 12.5, color: 'rgba(255,255,255,.45)', margin: '0 0 20px', lineHeight: 1.5 }}>
+              {bulkFolders.length} galleries found. Enter client name and import all at once.
+            </p>
+
+            {/* Client name input */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.4)', marginBottom: 6 }}>Client Name</div>
+              <input
+                value={bulkClientName}
+                onChange={e => setBulkClientName(e.target.value)}
+                placeholder="e.g. So And Co"
+                autoFocus
+                style={{
+                  width: '100%', padding: '10px 14px', boxSizing: 'border-box',
+                  background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)',
+                  borderRadius: 9, color: '#fff', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+                }}
+                onKeyDown={e => { if (e.key === 'Enter' && bulkClientName.trim()) executeBulkImport() }}
+              />
+            </div>
+
+            {/* Folder list */}
+            <div style={{
+              maxHeight: 240, overflowY: 'auto', marginBottom: 20,
+              background: 'rgba(0,0,0,.2)', borderRadius: 10, padding: 8,
+              border: '1px solid rgba(255,255,255,.05)',
+            }}>
+              {bulkFolders.map((f, i) => (
+                <div key={f.path} style={{
+                  padding: '6px 10px', fontSize: 12.5, color: 'rgba(255,255,255,.7)',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  borderBottom: i < bulkFolders.length - 1 ? '1px solid rgba(255,255,255,.04)' : 'none',
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#6366f1', flexShrink: 0 }}>
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                  </svg>
+                  {f.name}
+                </div>
+              ))}
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setBulkImportOpen(false)} style={{
+                padding: '9px 18px', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.1)',
+                borderRadius: 8, color: 'rgba(255,255,255,.7)', fontSize: 12.5, fontWeight: 500,
+                fontFamily: 'inherit', cursor: 'pointer',
+              }}>Cancel</button>
+              <button
+                onClick={executeBulkImport}
+                disabled={!bulkClientName.trim() || bulkImporting}
+                style={{
+                  padding: '9px 22px', background: bulkClientName.trim() ? '#6366f1' : 'rgba(255,255,255,.06)',
+                  border: 'none', borderRadius: 8, color: '#fff', fontSize: 12.5, fontWeight: 600,
+                  fontFamily: 'inherit', cursor: bulkClientName.trim() ? 'pointer' : 'default',
+                }}
+              >
+                {bulkImporting ? 'Importing...' : `Import ${bulkFolders.length} Galleries`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1051,35 +1129,32 @@ export function WorkspaceDashboard({
 function StatPill({ value, label, accent }: { value: string; label: string; accent?: string }) {
   return (
     <div style={{
-      padding: '5px 12px',
-      background: accent ? `${accent}10` : 'rgba(255,255,255,.03)',
-      border: `1px solid ${accent ? `${accent}20` : 'rgba(255,255,255,.05)'}`,
-      borderRadius: 50,
       display: 'flex',
-      alignItems: 'center',
-      gap: 6,
+      alignItems: 'baseline',
+      gap: 4,
       whiteSpace: 'nowrap',
     }}>
       {accent && (
         <span style={{
-          width: 6,
-          height: 6,
+          width: 5,
+          height: 5,
           borderRadius: '50%',
           background: accent,
-          boxShadow: `0 0 8px ${accent}66`,
+          boxShadow: `0 0 6px ${accent}55`,
+          alignSelf: 'center',
         }} />
       )}
       <span style={{
         fontSize: 13,
         fontWeight: 700,
-        color: accent || 'rgba(255,255,255,.9)',
-        letterSpacing: '-0.01em',
+        color: accent || 'rgba(255,255,255,.85)',
+        letterSpacing: '-0.02em',
       }}>
         {value}
       </span>
       <span style={{
-        fontSize: 10,
-        color: 'rgba(255,255,255,.35)',
+        fontSize: 10.5,
+        color: 'rgba(255,255,255,.3)',
         fontWeight: 500,
       }}>
         {label}

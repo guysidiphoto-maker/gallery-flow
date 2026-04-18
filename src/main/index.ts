@@ -10,6 +10,10 @@ import { initAutoUpdater } from './updater'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
+// Suppress EPIPE errors from console writes to closed pipes
+process.stdout?.on('error', () => {})
+process.stderr?.on('error', () => {})
+
 // Supported image formats
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp'])
 
@@ -209,6 +213,21 @@ ipcMain.handle('open-folder-dialog', async () => {
 })
 
 // Scan folder for images
+// List immediate subfolders of a directory (for bulk import)
+ipcMain.handle('list-subfolders', async (_e, parentPath: string) => {
+  const entries = await readdir(parentPath)
+  const folders: Array<{ name: string; path: string }> = []
+  for (const name of entries) {
+    if (name.startsWith('.')) continue
+    try {
+      const fullPath = join(parentPath, name)
+      const info = await stat(fullPath)
+      if (info.isDirectory()) folders.push({ name, path: fullPath })
+    } catch { /* skip */ }
+  }
+  return folders.sort((a, b) => a.name.localeCompare(b.name))
+})
+
 ipcMain.handle('scan-folder', async (_e, folderPath: string) => {
   const entries = await readdir(folderPath)
   const images: Array<{
