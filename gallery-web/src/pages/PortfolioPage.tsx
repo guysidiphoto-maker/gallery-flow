@@ -215,12 +215,14 @@ export function PortfolioPage() {
         @import url('https://fonts.googleapis.com/css2?family=Marcellus&family=Heebo:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800&family=Assistant:wght@300;400;500;600;700;800&display=swap');
         * { box-sizing: border-box; }
         .pf-panel { position: relative; overflow: hidden; cursor: pointer; }
-        .pf-panel img { transition: transform .8s cubic-bezier(.4,0,.2,1), filter .6s; }
-        .pf-panel:hover img { transform: scale(1.04); filter: brightness(1.1); }
-        .pf-panel:hover .pf-overlay { opacity: .45; }
-        .pf-panel .pf-overlay { transition: opacity .6s; }
+        .pf-panel img { transition: transform 1.2s cubic-bezier(.25,.46,.45,.94), filter .8s; transform: scale(1.01); }
+        .pf-panel:hover img { transform: scale(1.08); filter: brightness(1.05); }
+        .pf-panel:hover .pf-overlay { opacity: .25; }
+        .pf-panel .pf-overlay { transition: opacity .8s; }
         .pf-panel:hover .pf-label { opacity: 1; transform: translateY(0); }
         .pf-panel .pf-label { transition: opacity .5s .1s, transform .5s .1s cubic-bezier(.16,1,.3,1); }
+        @keyframes panelReveal { from { opacity: 0; transform: scale(1.02); } to { opacity: 1; transform: scale(1); } }
+        .pf-grid-item { animation: panelReveal .9s cubic-bezier(.16,1,.3,1) both; }
         .pf-thumb { overflow: hidden; cursor: pointer; }
         .pf-thumb img { transition: transform .6s cubic-bezier(.4,0,.2,1); }
         .pf-thumb:hover img { transform: scale(1.06); }
@@ -436,59 +438,35 @@ export function PortfolioPage() {
                   </div>
                 </div>
               </div>
-            ) : types.length === 2 ? (
-              /* Two types — split screen */
-              <div style={{ display: 'flex', height: '100vh' }}>
-                {types.map(t => (
-                  <div key={t.key} className="pf-panel" ref={reveal}
-                    onClick={() => navigateTo('type', t.key)}
-                    style={{ flex: 1, position: 'relative', transition: 'flex .6s cubic-bezier(.4,0,.2,1)' }}
-                    onMouseEnter={e => { e.currentTarget.style.flex = '1.8' }}
-                    onMouseLeave={e => { e.currentTarget.style.flex = '1' }}>
-                    {t.cover && <img src={t.cover} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
-                    <div className="pf-overlay" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }} />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                      <div style={{ fontSize: 10, letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginBottom: 8 }}>
-                        {t.gals.length} Projects
-                      </div>
-                      <h2 style={{ fontSize: 'clamp(20px, 3vw, 40px)', fontWeight: 400, margin: 0, letterSpacing: '.06em' }}>
-                        {t.label}
-                      </h2>
-                      <div className="pf-label" style={{ opacity: 0, transform: 'translateY(8px)', marginTop: 16, fontSize: 10, letterSpacing: '.25em', textTransform: 'uppercase', color: 'rgba(255,255,255,.5)', borderBottom: '1px solid rgba(255,255,255,.3)', paddingBottom: 4 }}>
-                        See More
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              /* 3+ types — luxury mosaic grid, no scrolling */
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: types.length === 3 ? '1fr 1fr' : 'repeat(2, 1fr)',
-                gridTemplateRows: types.length === 3 ? '1fr 1fr' : `repeat(${Math.ceil(types.length / 2)}, 1fr)`,
-                height: '100vh',
-                gap: 3,
-              }}>
+            ) : types.length >= 2 ? (
+              /* 2+ types — side by side columns, text at bottom */
+              <div style={{ display: 'flex', height: '100vh', gap: 2 }}>
                 {types.map((t, i) => (
-                  <div key={t.key} className="pf-panel" ref={reveal}
+                  <div key={t.key} className="pf-panel pf-grid-item" ref={reveal}
                     onClick={() => navigateTo('type', t.key)}
                     style={{
-                      position: 'relative',
-                      gridColumn: types.length === 3 && i === 0 ? '1 / 2' : undefined,
-                      gridRow: types.length === 3 && i === 0 ? '1 / 3' : undefined,
+                      flex: 1, position: 'relative',
+                      animationDelay: `${i * 0.12}s`,
                     }}>
                     {t.cover && <img src={t.cover} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
-                    <div className="pf-overlay" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)' }} />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                      <div style={{ fontSize: 9, letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 8 }}>
-                        {t.gals.length} {t.gals.length === 1 ? 'Project' : 'Projects'}
-                      </div>
-                      <h2 style={{ fontSize: types.length <= 4 ? 'clamp(18px, 2.5vw, 36px)' : 'clamp(16px, 2vw, 28px)', fontWeight: 400, margin: 0, letterSpacing: '.06em', textAlign: 'center', padding: '0 16px' }}>
+                    <div style={{
+                      position: 'absolute', bottom: 0, left: 0, right: 0, height: '45%',
+                      background: 'linear-gradient(to top, rgba(0,0,0,.7) 0%, rgba(0,0,0,.25) 50%, transparent 100%)',
+                      pointerEvents: 'none',
+                    }} />
+                    <div className="pf-overlay" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.15)' }} />
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '32px 28px' }}>
+                      <h2 style={{
+                        fontSize: 'clamp(22px, 2.5vw, 38px)', fontWeight: 300, margin: 0,
+                        letterSpacing: '.02em', lineHeight: 1.2, textTransform: 'lowercase',
+                      }}>
                         {t.label}
                       </h2>
-                      <div className="pf-label" style={{ opacity: 0, transform: 'translateY(8px)', marginTop: 14, fontSize: 9, letterSpacing: '.25em', textTransform: 'uppercase', color: 'rgba(255,255,255,.5)', borderBottom: '1px solid rgba(255,255,255,.3)', paddingBottom: 4 }}>
-                        See More
+                      <div style={{
+                        fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase',
+                        color: 'rgba(255,255,255,.4)', marginTop: 8,
+                      }}>
+                        {t.gals.length} {t.gals.length === 1 ? 'project' : 'projects'}
                       </div>
                     </div>
                   </div>
