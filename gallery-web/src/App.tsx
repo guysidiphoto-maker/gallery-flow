@@ -3,6 +3,7 @@ import { supabase, storageUrl } from './supabase'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
+import { FaceSearchModal } from './components/FaceSearchModal'
 
 // ─── Order-preserving Masonry Grid ──────────────────────────────────────────
 
@@ -463,6 +464,9 @@ export function App() {
   // button in the section-nav toolbar so the gallery doesn't open with a big
   // stories block above the photos.
   const [storiesOpen, setStoriesOpen] = useState(false)
+  // Face search: null = no search active (show everything); Set = filter
+  const [faceMatchIds, setFaceMatchIds] = useState<Set<string> | null>(null)
+  const [showFaceSearch, setShowFaceSearch] = useState(false)
 
   // Parse gallery ID from URL: /{slug}/gallery/{uuid} or /gallery/{uuid}
   const galleryId = (() => {
@@ -631,8 +635,16 @@ export function App() {
     }
   }, [gallery, hiddenImageIds])
 
-  // Visible images: guests see only non-hidden, clients see all
-  const visibleImages = viewerRole === 'client' ? images : images.filter(img => !hiddenImageIds.has(img.id))
+  // Visible images: guests see only non-hidden, clients see all. Face search
+  // filter is applied on top for guests only (clients always see the full set).
+  const visibleImages = useMemo(() => {
+    if (viewerRole === 'client') return images
+    const base = images.filter(img => !hiddenImageIds.has(img.id))
+    if (!faceMatchIds) return base
+    return base.filter(img => faceMatchIds.has(img.id))
+  }, [images, hiddenImageIds, viewerRole, faceMatchIds])
+
+  const faceSearchAvailable = gallery?.face_index_status === 'done'
 
   if (error) {
     return (
@@ -983,7 +995,7 @@ export function App() {
       </header>
 
       {/* Unified sticky bar: section pills (left) + download/select toolbar (right) */}
-      {(sections.length > 0 || downloadsEnabled || showStoriesSection) && (
+      {(sections.length > 0 || downloadsEnabled || showStoriesSection || faceSearchAvailable) && (
         <SectionNav
           sections={sections.filter(sec => images.some(im => im.section_id === sec.id))}
           sectionCounts={sections.reduce<Record<string, number>>((acc, sec) => {
@@ -1012,14 +1024,39 @@ export function App() {
               <span className="gallery-toolbar__count">{stories.length}</span>
             </button>
           ) : null}
-          toolbar={downloadsEnabled ? (
+          toolbar={(faceSearchAvailable || downloadsEnabled) ? (
             <>
-              <button
+              {faceSearchAvailable && !selectMode && (
+                faceMatchIds ? (
+                  <button
+                    className="gallery-toolbar__btn gallery-toolbar__btn--active"
+                    onClick={() => setFaceMatchIds(null)}
+                    title="Show all photos"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                    {visibleImages.length} of yours · Show all
+                  </button>
+                ) : (
+                  <button
+                    className="gallery-toolbar__btn"
+                    onClick={() => setShowFaceSearch(true)}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <circle cx="12" cy="8" r="3" />
+                      <path d="M5.5 20a7 7 0 0 1 13 0" />
+                    </svg>
+                    Find my photos
+                  </button>
+                )
+              )}
+              {downloadsEnabled && <button
                 className={`gallery-toolbar__btn ${selectMode ? 'gallery-toolbar__btn--active' : ''}`}
                 onClick={() => { setSelectMode(!selectMode); setSelectedIds(new Set()) }}
               >
                 {selectMode ? `${selectedIds.size} selected` : 'Select'}
-              </button>
+              </button>}
               {selectMode && selectedIds.size > 0 && (
                 <button
                   className="gallery-toolbar__btn gallery-toolbar__btn--primary"
@@ -1034,7 +1071,7 @@ export function App() {
                   {isMobile ? 'Save' : 'Download'} {selectedIds.size}
                 </button>
               )}
-              {!selectMode && (
+              {downloadsEnabled && !selectMode && (
                 <button
                   className="gallery-toolbar__btn"
                   onClick={() => handleBatchDownload(images)}
@@ -1168,6 +1205,18 @@ export function App() {
           onClose={() => setViewerIndex(null)}
           onNavigate={setViewerIndex}
           onDownload={handleDownload}
+        />
+      )}
+
+      {/* Face search — uploads a selfie and filters the gallery to matches */}
+      {showFaceSearch && gallery && (
+        <FaceSearchModal
+          galleryId={gallery.id}
+          onClose={() => setShowFaceSearch(false)}
+          onMatches={(ids) => {
+            setFaceMatchIds(new Set(ids))
+            setShowFaceSearch(false)
+          }}
         />
       )}
     </>

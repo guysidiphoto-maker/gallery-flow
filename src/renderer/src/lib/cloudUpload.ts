@@ -7,13 +7,14 @@ import {
   persistQueue, clearPersistedQueue,
 } from './uploadQueue'
 import type {
-  PublishStatus, ImageUploadRecord, CompressionResult,
+  ImageUploadRecord, CompressionResult,
   QueueItem, PersistedQueueState,
 } from './uploadTypes'
 import {
   BUCKET, STORY_BUCKET, STANDARD_UPLOAD_LIMIT, TUS_CHUNK_SIZE,
   PREVIEW_FAILURE_THRESHOLD, GALLERY_BASE, DEFAULT_QUEUE_CONFIG,
 } from './uploadTypes'
+import { startFaceIndexingInBackground, resumeFaceIndexingIfEnabled, deleteCollection, deleteImageFaces } from './faceIndex'
 
 // ─── Logger ─────────────────────────────────────────────────────────────────
 
@@ -148,6 +149,8 @@ export async function publishGallery(
 
   // ── Step 2: Create gallery record (owned by business) ────────────────
 
+  const faceIndexEnabled = !!deliverySettings.faceIndexEnabled
+
   const galleryPayload = {
     business_id: businessId,
     local_id: localGalleryId,
@@ -157,6 +160,8 @@ export async function publishGallery(
     status: 'publishing',
     image_count: imagePaths.length,
     delivery_settings: deliverySettings,
+    face_index_enabled: faceIndexEnabled,
+    face_index_status: faceIndexEnabled ? 'pending' : null,
   }
 
   const { data: gallery, error: galleryError } = await supabase
@@ -458,6 +463,13 @@ export async function publishGallery(
   // Bump monthly usage counters now that the gallery is live
   import('./planGuard').then(({ bumpUsage }) => bumpUsage(imagePaths.length)).catch(() => {})
 
+  // Kick off face indexing in the background — never blocks the gallery
+  // from being shown to the client. The edge function owns the loop via
+  // EdgeRuntime.waitUntil, so this client's lifetime doesn't matter.
+  if (faceIndexEnabled) {
+    startFaceIndexingInBackground(galleryId)
+  }
+
   // Free compression cache (originals read from disk as needed)
   compressedMap.clear()
 
@@ -632,6 +644,11 @@ export async function deleteGalleryFromCloud(
     galleryDbId = data.id
   }
 
+  // Delete the Rekognition collection first (best-effort, never fatal).
+  // We do this before the DB delete so we still know the gallery exists
+  // when the edge function checks ownership.
+  await deleteCollection(galleryDbId)
+
   // 1. Get all images to delete from storage (paths stored in DB)
   const { data: imgs } = await supabase.from('images').select('filename, storage_path, original_path, thumbnail_path').eq('gallery_id', galleryDbId)
 
@@ -675,12 +692,14 @@ export async function deleteImageFromCloud(
     galleryDbId = data.id
   }
 
-  // Delete from storage using DB-stored paths
-  const { data: imgPaths } = await supabase.from('images')
-    .select('storage_path, original_path, thumbnail_path')
+  // Delete from storage using DB-stored paths; also clean up face records
+  // in Rekognition (best-effort) before the image row goes away.
+  const { data: imgRow } = await supabase.from('images')
+    .select('id, storage_path, original_path, thumbnail_path')
     .eq('gallery_id', galleryDbId).eq('filename', filename).maybeSingle()
-  if (imgPaths) {
-    const paths = [imgPaths.thumbnail_path, imgPaths.storage_path, imgPaths.original_path].filter(Boolean)
+  if (imgRow) {
+    await deleteImageFaces(galleryDbId, imgRow.id)
+    const paths = [imgRow.thumbnail_path, imgRow.storage_path, imgRow.original_path].filter(Boolean)
     await supabase.storage.from(BUCKET).remove(paths)
   }
 
@@ -731,11 +750,12 @@ export async function updateGalleryImages(
     log('update-images:removing', `${removed.length} images`)
     // Fetch DB-stored paths for removed images, then delete from storage + DB
     await Promise.all(removed.map(async (filename) => {
-      const { data: imgPaths } = await supabase.from('images')
-        .select('storage_path, original_path, thumbnail_path')
+      const { data: imgRow } = await supabase.from('images')
+        .select('id, storage_path, original_path, thumbnail_path')
         .eq('gallery_id', galleryDbId).eq('filename', filename).maybeSingle()
-      if (imgPaths) {
-        const paths = [imgPaths.thumbnail_path, imgPaths.storage_path, imgPaths.original_path].filter(Boolean)
+      if (imgRow) {
+        await deleteImageFaces(galleryDbId, imgRow.id)
+        const paths = [imgRow.thumbnail_path, imgRow.storage_path, imgRow.original_path].filter(Boolean)
         await supabase.storage.from(BUCKET).remove(paths)
       }
       const { error } = await supabase
@@ -762,6 +782,13 @@ export async function updateGalleryImages(
     .from('galleries')
     .update({ image_count: currentFilenames.length })
     .eq('id', galleryDbId)
+
+  // 4. If this gallery has face indexing enabled, fire the edge function
+  //    to pick up any newly-added images. No-op when face indexing isn't
+  //    turned on, or when every image is already indexed.
+  resumeFaceIndexingIfEnabled(galleryDbId).catch(err => {
+    log('update-images:face-resume-error', err instanceof Error ? err.message : String(err))
+  })
 
   log('update-images:done', `${currentFilenames.length} images, ${removed.length} removed`)
   return { error: null }

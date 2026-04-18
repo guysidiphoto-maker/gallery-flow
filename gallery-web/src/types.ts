@@ -38,6 +38,10 @@ export interface Gallery {
   delivery_settings: DeliverySettings
   published_at: string | null
   demo_expires_at?: string | null
+  // Face search (AWS Rekognition per-gallery collection)
+  face_index_enabled?: boolean
+  face_index_status?: 'pending' | 'indexing' | 'done' | 'failed' | null
+  face_indexed_count?: number
 }
 
 export interface GalleryImage {

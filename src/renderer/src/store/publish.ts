@@ -5,6 +5,28 @@ import type {
 } from '../lib/uploadTypes'
 import { DEFAULT_QUEUE_CONFIG } from '../lib/uploadTypes'
 
+// ─── Face Indexing Progress ─────────────────────────────────────────────────
+
+export type FaceIndexStatus = 'idle' | 'pending' | 'indexing' | 'done' | 'failed'
+
+export interface FaceIndexState {
+  enabled: boolean
+  status: FaceIndexStatus
+  total: number
+  indexed: number
+  failed: number
+  currentFile?: string
+  error?: string
+}
+
+const initialFaceIndex: FaceIndexState = {
+  enabled: false,
+  status: 'idle',
+  total: 0,
+  indexed: 0,
+  failed: 0,
+}
+
 // ─── Publish Store ──────────────────────────────────────────────────────────
 
 export interface PublishState {
@@ -29,6 +51,9 @@ export interface PublishState {
   // Aggregate progress
   progress: PublishProgress
 
+  // Face indexing (runs in background after publish)
+  faceIndex: FaceIndexState
+
   // Recovery
   hasPendingRecovery: boolean
   recoveryState: PersistedQueueState | null
@@ -41,6 +66,7 @@ export interface PublishState {
   setQueueItems: (items: QueueItem[]) => void
   updateQueueItem: (id: string, updates: Partial<QueueItem>) => void
   setPaused: (paused: boolean) => void
+  setFaceIndex: (partial: Partial<FaceIndexState>) => void
   setRecovery: (state: PersistedQueueState | null) => void
   dismissRecovery: () => void
   recalculateProgress: () => void
@@ -71,6 +97,7 @@ export const usePublish = create<PublishState>((set, get) => ({
   queueConfig: DEFAULT_QUEUE_CONFIG,
   isPaused: false,
   progress: { ...initialProgress },
+  faceIndex: { ...initialFaceIndex },
   hasPendingRecovery: false,
   recoveryState: null,
 
@@ -90,8 +117,13 @@ export const usePublish = create<PublishState>((set, get) => ({
         phase: 'preparing_assets',
         totalImages: images.length,
       },
+      faceIndex: { ...initialFaceIndex },
     })
   },
+
+  setFaceIndex: (partial) => set(state => ({
+    faceIndex: { ...state.faceIndex, ...partial },
+  })),
 
   setPublishStatus: (status) => {
     set(state => ({
@@ -197,5 +229,6 @@ export const usePublish = create<PublishState>((set, get) => ({
     queueItems: [],
     isPaused: false,
     progress: { ...initialProgress },
+    faceIndex: { ...initialFaceIndex },
   }),
 }))

@@ -79,7 +79,9 @@ export interface DeliverySettings {
   cornerStyle: 'sharp' | 'rounded'
   generateStories: boolean
   showStories: boolean
-  faceRecognition: 'locked'
+  /** Opt-in per gallery. Sends each web_preview to AWS Rekognition so
+   *  viewers can do selfie-based photo search. */
+  faceIndexEnabled: boolean
   creditsSystem: 'locked'
   // Legacy compat
   allowDownloads?: boolean
@@ -113,7 +115,7 @@ export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
   cornerStyle: 'rounded',
   generateStories: true,
   showStories: true,
-  faceRecognition: 'locked',
+  faceIndexEnabled: false,
   creditsSystem: 'locked',
 }
 
@@ -1775,6 +1777,7 @@ function MainApp({ business }: { business: Business | null }) {
             settings={settings}
             projectImages={project.imageIds.map(id => imageRegistry[id]).filter(Boolean).map(img => ({ id: img.id, path: toLocalURL(img.path) }))}
             isAlreadyLive={project.publishState?.status === 'live'}
+            galleryDbId={project.publishState?.galleryDbId}
             onSettingsChange={(s) => {
               setProjects(prev => prev.map(p => p.id === publishProjectId ? { ...p, deliverySettings: s } : p))
               saveLastUsedSettings(s)

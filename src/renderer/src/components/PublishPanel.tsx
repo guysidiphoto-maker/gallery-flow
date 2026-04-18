@@ -3,6 +3,7 @@ import type { DeliverySettings } from '../App'
 import { usePublish } from '../store/publish'
 import type { PublishStatus } from '../lib/uploadTypes'
 import { pauseOriginals, resumeOriginals, retryFailedOriginals } from '../lib/cloudUpload'
+import { startFaceIndexingInBackground, fetchFaceIndexSnapshot } from '../lib/faceIndex'
 import { computeByteProgress, computeEtaSeconds, formatEta, formatBytes } from '../lib/eta'
 import { fetchPlanLimits, type PlanLimits } from '../lib/planGuard'
 import { toLocalURL } from '../utils/imageUtils'
@@ -28,6 +29,47 @@ interface PublishPanelProps {
   /** True when the gallery is already live in the cloud — the primary CTA
    *  becomes "Update Changes" instead of "Publish Gallery". */
   isAlreadyLive?: boolean
+  /** Cloud UUID of the published gallery (only set when editing a live one).
+   *  Needed for actions like re-running face indexing on demand. */
+  galleryDbId?: string
+}
+
+// ─── Face Index Progress (shown in publishing + done phases) ────────────────
+
+function FaceIndexProgress() {
+  const face = usePublish(s => s.faceIndex)
+  if (!face.enabled || face.status === 'idle') return null
+
+  const pct = face.total > 0 ? Math.round((face.indexed / face.total) * 100) : 0
+  const done = face.status === 'done'
+  const failed = face.status === 'failed'
+
+  return (
+    <div style={{
+      marginTop: 12, padding: '10px 14px', borderRadius: 8,
+      background: failed ? 'rgba(239,68,68,.06)' : done ? 'rgba(16,185,129,.06)' : 'rgba(99,102,241,.06)',
+      border: `1px solid ${failed ? 'rgba(239,68,68,.18)' : done ? 'rgba(16,185,129,.18)' : 'rgba(99,102,241,.18)'}`,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: done || failed ? 0 : 6 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: failed ? '#f87171' : done ? '#6ee7b7' : '#a5b4fc' }}>
+          {failed ? 'Face indexing failed' : done ? 'Face search ready' : 'Indexing faces'}
+        </span>
+        {!done && !failed && (
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,.5)' }}>
+            {face.indexed}{face.failed > 0 ? ` (+${face.failed} failed)` : ''} / {face.total}
+          </span>
+        )}
+      </div>
+      {!done && !failed && (
+        <div style={{ height: 3, background: 'rgba(255,255,255,.06)', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: '#6366f1', transition: 'width .3s' }} />
+        </div>
+      )}
+      {failed && face.error && (
+        <div style={{ fontSize: 10, color: 'rgba(239,68,68,.7)', marginTop: 4 }}>{face.error}</div>
+      )}
+    </div>
+  )
 }
 
 // ─── Done Screen (celebration + actions) ────────────────────────────────────
@@ -100,6 +142,10 @@ function DoneScreen({ projectName, publicUrl, error, onClose }: {
       )}
 
       {error && <p style={{ fontSize: 11, color: '#f59e0b', margin: '0 0 12px' }}>{error}</p>}
+
+      {/* Face indexing progress — shows alongside the success screen since
+          indexing runs in the background after publish. */}
+      <FaceIndexProgress />
 
       {/* Primary actions */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -559,6 +605,7 @@ export function PublishPanel({
   projectName, clientName, imageCount, topPickCount,
   settings, onSettingsChange, onPublish, onClose, phase,
   error, publicUrl, onRetry, onHide, onCancel, projectImages, isAlreadyLive,
+  galleryDbId,
 }: PublishPanelProps) {
   const pub = usePublish()
   const { progress, publishStatus, isPaused, queueItems, startedAt } = pub
@@ -570,6 +617,25 @@ export function PublishPanel({
       fetchPlanLimits().then(l => setPlanLimits(l))
     }
   }, [phase])
+
+  // When editing a live, face-indexed gallery, prime the face-index progress
+  // card from the DB so the re-run button can show the current state.
+  useEffect(() => {
+    if (phase !== 'editing' || !galleryDbId) return
+    fetchFaceIndexSnapshot(galleryDbId).then(snap => {
+      if (!snap || !snap.status) return
+      pub.setFaceIndex({
+        enabled: true,
+        status: snap.status === 'done' ? 'done'
+              : snap.status === 'failed' ? 'failed'
+              : 'indexing',
+        total: snap.total,
+        indexed: snap.indexed,
+        failed: 0,
+        error: snap.error ?? undefined,
+      })
+    })
+  }, [phase, galleryDbId])
 
   // Live ticker so the ETA label updates every second during active uploads
   const [, setTick] = useState(0)
@@ -913,6 +979,76 @@ export function PublishPanel({
                 )}
               </div>
 
+              {/* Face Search (powered by AWS Rekognition) */}
+              <div style={S.section}>
+                <p style={S.sectionTitle}>Face Search</p>
+                <div style={S.row}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={S.label}>Enable face search</div>
+                    <div style={S.sublabel}>
+                      Viewers upload a selfie to find their photos in this gallery.
+                      Indexing runs in the background after publish.
+                    </div>
+                  </div>
+                  <Toggle
+                    value={settings.faceIndexEnabled}
+                    onChange={v => update({ faceIndexEnabled: v })}
+                    disabled={isAlreadyLive}
+                  />
+                </div>
+                {settings.faceIndexEnabled && !isAlreadyLive && (
+                  <div style={{
+                    marginTop: 8,
+                    padding: '8px 10px',
+                    background: 'rgba(245,158,11,.06)',
+                    border: '1px solid rgba(245,158,11,.15)',
+                    borderRadius: 6,
+                    fontSize: 10,
+                    color: 'rgba(245,158,11,.8)',
+                    lineHeight: 1.5,
+                  }}>
+                    By enabling this, you confirm you have consent from the photographed
+                    subjects to process their facial data for search.
+                  </div>
+                )}
+                {/* Re-run / run-now button for already-live galleries. The
+                    edge function is idempotent — already-indexed images are
+                    skipped, so this is safe to call repeatedly. */}
+                {isAlreadyLive && galleryDbId && (
+                  <>
+                    <button
+                      onClick={() => startFaceIndexingInBackground(galleryDbId)}
+                      disabled={pub.faceIndex.status === 'indexing'}
+                      style={{
+                        marginTop: 10, width: '100%', padding: '9px 14px',
+                        borderRadius: 8, border: '1px solid rgba(99,102,241,.25)',
+                        background: pub.faceIndex.status === 'indexing'
+                          ? 'rgba(99,102,241,.08)'
+                          : 'rgba(99,102,241,.12)',
+                        color: '#a5b4fc', fontSize: 12, fontWeight: 600,
+                        fontFamily: 'inherit',
+                        cursor: pub.faceIndex.status === 'indexing' ? 'default' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                      }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M23 4v6h-6" /><path d="M1 20v-6h6" />
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                      </svg>
+                      {pub.faceIndex.status === 'indexing'
+                        ? 'Indexing in progress…'
+                        : pub.faceIndex.status === 'done'
+                          ? 'Re-run face indexing'
+                          : 'Run face indexing'}
+                    </button>
+                    <div style={{ ...S.sublabel, marginTop: 6, textAlign: 'center' as const }}>
+                      Safe to re-run — photos already indexed are skipped.
+                    </div>
+                    <FaceIndexProgress />
+                  </>
+                )}
+              </div>
+
               {/* Stories */}
               <div style={S.section}>
                 <p style={S.sectionTitle}>Stories</p>
@@ -1114,6 +1250,9 @@ export function PublishPanel({
                   ))}
                 </div>
               )}
+
+              {/* Face indexing progress (runs after gallery goes live) */}
+              <FaceIndexProgress />
 
               {/* Actions */}
               {(onHide || onCancel) && (
