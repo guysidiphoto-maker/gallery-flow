@@ -472,7 +472,7 @@ export function PortfolioPage() {
                   </div>
                 ))}
               </div>
-            )}
+            ) : null}
           </section>
         </div>
       )}
