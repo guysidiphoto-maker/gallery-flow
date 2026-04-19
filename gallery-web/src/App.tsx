@@ -3,7 +3,7 @@ import { supabase, storageUrl } from './supabase'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
-import { FaceSearchModal } from './components/FaceSearchModal'
+import { FaceSearchExperience } from './components/FaceSearchExperience'
 
 // ─── Order-preserving Masonry Grid ──────────────────────────────────────────
 
@@ -814,15 +814,22 @@ export function App() {
           facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}
           onFindMyPhotos={() => setShowFaceSearch(true)}
         />
-        {/* Face search modal must render here too — welcome screen is an early return */}
+        {/* Face search experience — full-screen flow with camera, thinking, results */}
         {showFaceSearch && gallery && (
-          <FaceSearchModal
+          <FaceSearchExperience
             galleryId={gallery.id}
+            backgroundImages={images.slice(0, 6)}
+            storageUrl={(path: string) => storageUrl(imgBucket, path)}
+            privacyMode={facePrivacyMode}
             onClose={() => setShowFaceSearch(false)}
             onMatches={(ids) => {
               setFaceMatchIds(new Set(ids))
               setShowFaceSearch(false)
               if (ids.length > 0) setShowWelcome(false)
+            }}
+            onBrowseAll={() => {
+              setShowFaceSearch(false)
+              setShowWelcome(false)
             }}
           />
         )}
@@ -1319,16 +1326,22 @@ export function App() {
         />
       )}
 
-      {/* Face search — uploads a selfie and filters the gallery to matches */}
+      {/* Face search — full-screen experience with camera, thinking, results */}
       {showFaceSearch && gallery && (
-        <FaceSearchModal
+        <FaceSearchExperience
           galleryId={gallery.id}
+          backgroundImages={images.slice(0, 6)}
+          storageUrl={(path: string) => storageUrl(imgBucket, path)}
+          privacyMode={facePrivacyMode}
           onClose={() => setShowFaceSearch(false)}
           onMatches={(ids) => {
             setFaceMatchIds(new Set(ids))
             setShowFaceSearch(false)
-            // Dismiss welcome screen when matches found
             if (showWelcome && ids.length > 0) setShowWelcome(false)
+          }}
+          onBrowseAll={() => {
+            setShowFaceSearch(false)
+            if (showWelcome) setShowWelcome(false)
           }}
         />
       )}
