@@ -68,3 +68,30 @@ export interface GallerySection {
   name: string
   sort_order: number
 }
+
+// ─── Event Lead Capture ─────────────────────────────────────────────────────
+
+export interface EventConfig {
+  id: string
+  business_id: string
+  gallery_id: string | null
+  name: string
+  gallery_url: string
+  welcome_text: string | null
+  logo_url: string | null
+  is_active: boolean
+  created_at: string
+}
+
+export interface EventLead {
+  id: string
+  event_id: string
+  name: string
+  phone: string
+  email: string | null
+  whatsapp_status: 'pending' | 'sent' | 'failed'
+  whatsapp_message_id: string | null
+  whatsapp_error: string | null
+  retry_count: number
+  created_at: string
+}

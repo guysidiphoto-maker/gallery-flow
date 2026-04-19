@@ -5,5 +5,8 @@
   "installCommand": "npm install",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/retry-failed-sends", "schedule": "*/5 * * * *" }
   ]
 }
