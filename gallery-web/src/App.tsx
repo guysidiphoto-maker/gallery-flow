@@ -535,6 +535,7 @@ export function App() {
   // Face search: null = no search active (show everything); Set = filter
   const [faceMatchIds, setFaceMatchIds] = useState<Set<string> | null>(null)
   const [showFaceSearch, setShowFaceSearch] = useState(false)
+  const [faceSelfieUrl, setFaceSelfieUrl] = useState<string | null>(null)
   // When the fullscreen viewer opens, it navigates through whichever list
   // the clicked tile belonged to (full gallery / face-match filter / section).
   // Snapshotting at click time means next/prev stays inside that subset and
@@ -822,6 +823,7 @@ export function App() {
             storageUrl={(path: string) => storageUrl(imgBucket, path)}
             privacyMode={facePrivacyMode}
             onClose={() => setShowFaceSearch(false)}
+            onSelfieCapture={(url) => setFaceSelfieUrl(url)}
             onMatches={(ids) => {
               setFaceMatchIds(new Set(ids))
               setShowFaceSearch(false)
@@ -1079,16 +1081,57 @@ export function App() {
         )}
         {heroBgUrl && <div className="hero__overlay" />}
         <div className="hero__content">
-          {studioName && (
-            <p className="hero__eyebrow">{studioName}</p>
+          {faceMatchIds && faceSelfieUrl ? (
+            /* ── Personalized hero after face search ── */
+            <>
+              <div style={{
+                width: 64, height: 64, borderRadius: '50%', overflow: 'hidden',
+                border: '2px solid rgba(34,197,94,.45)',
+                boxShadow: '0 0 20px rgba(34,197,94,.15)',
+                marginBottom: 12,
+                animation: 'wcFadeUp .6s cubic-bezier(.16,1,.3,1) both',
+              }}>
+                <img src={faceSelfieUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+              <h1 className="hero__title" style={{
+                fontSize: 'clamp(22px, 3.5vw, 36px)',
+                animation: 'wcFadeUp .6s cubic-bezier(.16,1,.3,1) .1s both',
+                direction: 'rtl',
+              }}>
+                הנה התמונות שלך ✨
+              </h1>
+              <p style={{
+                marginTop: 6, fontSize: 13, color: 'rgba(255,255,255,.4)',
+                direction: 'rtl',
+                animation: 'wcFadeUp .6s cubic-bezier(.16,1,.3,1) .2s both',
+              }}>
+                {studioName && <>{studioName} · </>}{galleryTitle}
+              </p>
+              <div className="hero__meta" style={{ animation: 'wcFadeUp .5s cubic-bezier(.16,1,.3,1) .3s both' }}>
+                <span className="hero__count" style={{
+                  background: 'rgba(34,197,94,.1)',
+                  borderColor: 'rgba(34,197,94,.2)',
+                  color: 'rgba(34,197,94,.9)',
+                }}>
+                  {visibleImages.length} {visibleImages.length === 1 ? 'photo' : 'photos'}
+                </span>
+              </div>
+            </>
+          ) : (
+            /* ── Default hero ── */
+            <>
+              {studioName && (
+                <p className="hero__eyebrow">{studioName}</p>
+              )}
+              <h1 className="hero__title">{galleryTitle}</h1>
+              {clientName && (
+                <p className="hero__sub">{clientName}</p>
+              )}
+              <div className="hero__meta">
+                <span className="hero__count">{images.length} {images.length === 1 ? 'photo' : 'photos'}</span>
+              </div>
+            </>
           )}
-          <h1 className="hero__title">{galleryTitle}</h1>
-          {clientName && (
-            <p className="hero__sub">{clientName}</p>
-          )}
-          <div className="hero__meta">
-            <span className="hero__count">{images.length} {images.length === 1 ? 'photo' : 'photos'}</span>
-          </div>
         </div>
       </header>
 
@@ -1138,7 +1181,7 @@ export function App() {
                   ) : (
                     <button
                       className="gallery-toolbar__btn gallery-toolbar__btn--active"
-                      onClick={() => setFaceMatchIds(null)}
+                      onClick={() => { setFaceMatchIds(null); setFaceSelfieUrl(null) }}
                       title="Show all photos"
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -1334,6 +1377,7 @@ export function App() {
           storageUrl={(path: string) => storageUrl(imgBucket, path)}
           privacyMode={facePrivacyMode}
           onClose={() => setShowFaceSearch(false)}
+          onSelfieCapture={(url) => setFaceSelfieUrl(url)}
           onMatches={(ids) => {
             setFaceMatchIds(new Set(ids))
             setShowFaceSearch(false)

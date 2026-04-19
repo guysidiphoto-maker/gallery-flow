@@ -14,6 +14,7 @@ interface FaceSearchExperienceProps {
   onMatches: (imageIds: string[]) => void
   onBrowseAll: () => void
   onClose: () => void
+  onSelfieCapture?: (url: string) => void
 }
 
 type Phase =
@@ -44,6 +45,7 @@ export function FaceSearchExperience({
   onMatches,
   onBrowseAll,
   onClose,
+  onSelfieCapture,
 }: FaceSearchExperienceProps) {
   const [phase, setPhase] = useState<Phase>('welcome')
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null)
@@ -172,11 +174,12 @@ export function FaceSearchExperience({
       const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' })
       const url = URL.createObjectURL(blob)
       setSelfieUrl(url)
+      onSelfieCapture?.(url)
 
       stopCamera()
       startSearch(file)
     }, 'image/jpeg', 0.85)
-  }, [stopCamera, startSearch])
+  }, [stopCamera, startSearch, onSelfieCapture])
 
   // ── File input fallback ───────────────────────────────────────────────────
 
@@ -184,7 +187,9 @@ export function FaceSearchExperience({
     const f = e.target.files?.[0]
     if (!f) return
     if (f.size > MAX_SELFIE_BYTES) return
-    setSelfieUrl(URL.createObjectURL(f))
+    const url = URL.createObjectURL(f)
+    setSelfieUrl(url)
+    onSelfieCapture?.(url)
 
     stopCamera()
     startSearch(f)
