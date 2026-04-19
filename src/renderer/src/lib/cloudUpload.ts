@@ -740,11 +740,11 @@ export async function updateGalleryImages(
   // Build current filename list from paths (sanitized for consistent matching)
   const currentFilenames = currentImagePaths.map(p => sanitizeFilename(p.split('/').pop() || ''))
 
-  // Build published filename list from IDs (IDs are paths in this app)
-  const publishedFilenames = publishedImageIds.map(id => {
-    const img = imageRegistry[id]
-    return sanitizeFilename(img?.filename || id.split('/').pop() || '')
-  })
+  // Query cloud for actually-published filenames (single source of truth)
+  const { data: cloudImages } = await supabase.from('images')
+    .select('filename')
+    .eq('gallery_id', galleryDbId)
+  const publishedFilenames = (cloudImages || []).map(img => img.filename)
 
   // 1. Find removed images (in published but not in current)
   const currentSet = new Set(currentFilenames)
