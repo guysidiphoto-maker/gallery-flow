@@ -41,7 +41,16 @@ export function getActiveRunner(): UploadQueueRunner | null {
   return activeRunner
 }
 
-// ─── Mime type helper ───────────────────────────────────────────────────────
+// ─── Filename helpers ──────────────────────────────────────────────────────
+
+function sanitizeFilename(name: string): string {
+  return name
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip diacritics
+    .replace(/[^\x20-\x7E]/g, '')                     // remove non-ASCII (Hebrew etc.)
+    .replace(/\s+/g, '_')                              // spaces → underscore
+    .replace(/[^a-zA-Z0-9._\-]/g, '')                 // only safe chars
+    || `img_${Date.now()}`                             // fallback if empty
+}
 
 function mimeFromFilename(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || 'jpg'
@@ -96,15 +105,7 @@ export async function publishGallery(
   usePublish.getState().reset()
   const store = usePublish.getState()
 
-  // Sanitize filename for Supabase storage keys (ASCII only, no spaces)
-  const sanitizeFilename = (name: string): string => {
-    return name
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip diacritics
-      .replace(/[^\x20-\x7E]/g, '')                     // remove non-ASCII (Hebrew etc.)
-      .replace(/\s+/g, '_')                              // spaces → underscore
-      .replace(/[^a-zA-Z0-9._\-]/g, '')                 // only safe chars
-      || `img_${Date.now()}`                             // fallback if empty
-  }
+  // sanitizeFilename is now a module-level function (shared with updateGalleryImages)
 
   // Build initial image records
   const imageRecords: ImageUploadRecord[] = imagePaths.map((p, i) => ({
@@ -736,13 +737,13 @@ export async function updateGalleryImages(
     galleryDbId = data.id
   }
 
-  // Build current filename list from paths
-  const currentFilenames = currentImagePaths.map(p => p.split('/').pop() || '')
+  // Build current filename list from paths (sanitized for consistent matching)
+  const currentFilenames = currentImagePaths.map(p => sanitizeFilename(p.split('/').pop() || ''))
 
   // Build published filename list from IDs (IDs are paths in this app)
   const publishedFilenames = publishedImageIds.map(id => {
     const img = imageRegistry[id]
-    return img?.filename || id.split('/').pop() || ''
+    return sanitizeFilename(img?.filename || id.split('/').pop() || '')
   })
 
   // 1. Find removed images (in published but not in current)
@@ -770,9 +771,71 @@ export async function updateGalleryImages(
     }))
   }
 
-  // 2. Update sort_order for remaining images
+  // 2. Find added images (in current but not in published)
+  const publishedSet = new Set(publishedFilenames)
+  const addedPaths = currentImagePaths.filter(p => {
+    const fn = sanitizeFilename(p.split('/').pop() || '')
+    return !publishedSet.has(fn)
+  })
+
+  if (addedPaths.length > 0) {
+    log('update-images:uploading', `${addedPaths.length} new images`)
+    const slug = requireBusiness().slug
+
+    // Compress, upload, and insert DB records for each new image
+    for (let i = 0; i < addedPaths.length; i++) {
+      const localPath = addedPaths[i]
+      const filename = sanitizeFilename(localPath.split('/').pop() || `img_${i}`)
+
+      try {
+        // Compress
+        const cr = await window.api.compressImageForUpload(localPath) as {
+          thumb: Uint8Array; web: Uint8Array; original: Uint8Array
+          thumbSize: number; webSize: number; originalSize: number
+          width: number; height: number
+        } | null
+        if (!cr) { log('update-images:compress-failed', filename); continue }
+
+        // Upload thumb, web preview, original
+        const thumbPath = `${slug}/${galleryDbId}/thumbs/${filename}`
+        const webPath = `${slug}/${galleryDbId}/web/${filename}`
+        const origPath = `${slug}/${galleryDbId}/originals/${filename}`
+
+        await Promise.all([
+          supabase.storage.from(BUCKET).upload(thumbPath, new Blob([cr.thumb], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true }),
+          supabase.storage.from(BUCKET).upload(webPath, new Blob([cr.web], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true }),
+        ])
+
+        // Upload original (may be large — use regular upload)
+        const origBuffer = await window.api.readFileBuffer(localPath)
+        if (origBuffer) {
+          const contentType = mimeFromFilename(filename)
+          await supabase.storage.from(BUCKET).upload(origPath, new Blob([origBuffer], { type: contentType }), { contentType, upsert: true })
+        }
+
+        // Insert DB record
+        const sortOrder = currentImagePaths.indexOf(localPath)
+        await supabase.from('images').insert({
+          gallery_id: galleryDbId,
+          filename,
+          storage_path: webPath,
+          original_path: origPath,
+          thumbnail_path: thumbPath,
+          is_top_pick: false,
+          sort_order: sortOrder,
+        })
+
+        log('update-images:added', filename)
+      } catch (err) {
+        log('update-images:add-error', `${filename}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+
+  // 3. Update sort_order for all images
   log('update-images:reorder', `${currentFilenames.length} images`)
-  await Promise.all(currentFilenames.map((filename, i) =>
+  const sanitizedCurrentFilenames = currentImagePaths.map(p => sanitizeFilename(p.split('/').pop() || ''))
+  await Promise.all(sanitizedCurrentFilenames.map((filename, i) =>
     supabase
       .from('images')
       .update({ sort_order: i })
@@ -780,10 +843,11 @@ export async function updateGalleryImages(
       .eq('filename', filename)
   ))
 
-  // 3. Update gallery image_count
+  // 4. Update gallery image_count
+  const { count } = await supabase.from('images').select('id', { count: 'exact', head: true }).eq('gallery_id', galleryDbId)
   await supabase
     .from('galleries')
-    .update({ image_count: currentFilenames.length })
+    .update({ image_count: count || currentFilenames.length })
     .eq('id', galleryDbId)
 
   // 4. If this gallery has face indexing enabled, fire the edge function

@@ -997,36 +997,36 @@ export function PublishPanel({
                   />
                 </div>
                 {settings.faceIndexEnabled && !isAlreadyLive && (
-                  <>
-                    <div style={{
-                      marginTop: 8,
-                      padding: '8px 10px',
-                      background: 'rgba(245,158,11,.06)',
-                      border: '1px solid rgba(245,158,11,.15)',
-                      borderRadius: 6,
-                      fontSize: 10,
-                      color: 'rgba(245,158,11,.8)',
-                      lineHeight: 1.5,
-                    }}>
-                      By enabling this, you confirm you have consent from the photographed
-                      subjects to process their facial data for search.
-                    </div>
-                    {/* Privacy mode */}
-                    <div style={{ ...S.row, marginTop: 12 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={S.label}>Privacy mode</div>
-                        <div style={S.sublabel}>
-                          {settings.facePrivacyMode === 'private'
-                            ? 'Private — viewers must take a selfie and only see their own photos'
-                            : 'Open — everyone sees all photos, selfie search is a bonus'}
-                        </div>
+                  <div style={{
+                    marginTop: 8,
+                    padding: '8px 10px',
+                    background: 'rgba(245,158,11,.06)',
+                    border: '1px solid rgba(245,158,11,.15)',
+                    borderRadius: 6,
+                    fontSize: 10,
+                    color: 'rgba(245,158,11,.8)',
+                    lineHeight: 1.5,
+                  }}>
+                    By enabling this, you confirm you have consent from the photographed
+                    subjects to process their facial data for search.
+                  </div>
+                )}
+                {/* Privacy mode — available for both new and live galleries */}
+                {settings.faceIndexEnabled && (
+                  <div style={{ ...S.row, marginTop: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={S.label}>Privacy mode</div>
+                      <div style={S.sublabel}>
+                        {settings.facePrivacyMode === 'private'
+                          ? 'Private — viewers must take a selfie and only see their own photos'
+                          : 'Open — everyone sees all photos, selfie search is a bonus'}
                       </div>
-                      <Toggle
-                        value={settings.facePrivacyMode === 'private'}
-                        onChange={v => update({ facePrivacyMode: v ? 'private' : 'open' })}
-                      />
                     </div>
-                  </>
+                    <Toggle
+                      value={settings.facePrivacyMode === 'private'}
+                      onChange={v => update({ facePrivacyMode: v ? 'private' : 'open' })}
+                    />
+                  </div>
                 )}
                 {/* Re-run / run-now button for already-live galleries. The
                     edge function is idempotent — already-indexed images are
