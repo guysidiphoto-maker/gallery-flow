@@ -227,42 +227,50 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
         @keyframes wcGlow { 0%, 100% { box-shadow: 0 0 24px rgba(99,102,241,.3); } 50% { box-shadow: 0 0 48px rgba(99,102,241,.5), 0 0 80px rgba(99,102,241,.15); } }
         @keyframes wcFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
         @keyframes wcLine { from { left: -30%; } to { left: 130%; } }
-        @keyframes wcScroll { from { transform: translateY(0); } to { transform: translateY(calc(-50%)); } }
-        .wc-col { display: flex; flex-direction: column; gap: 4px; }
+        @keyframes wcScroll { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+        .wc-col { display: flex; flex-direction: column; gap: 2px; }
         .wc-col img {
-          width: 100%; display: block; border-radius: 3px;
-          opacity: 0; transition: opacity 1s ease;
+          width: 100%; height: auto; display: block;
+          opacity: 0; transition: opacity .6s ease;
         }
         .wc-col img.wc-loaded { opacity: 1; }
       `}</style>
 
       {/* ── Scrolling mosaic columns ── */}
       <div style={{
-        position: 'absolute', inset: -30,
-        display: 'flex', gap: 4,
-        opacity: visible ? (isPrivate ? 0.06 : 0.4) : 0,
+        position: 'absolute', inset: 0,
+        display: 'flex', gap: 2,
+        opacity: visible ? (isPrivate ? 0.06 : 0.45) : 0,
         transition: 'opacity 2s ease .2s',
         filter: isPrivate ? 'blur(40px) saturate(.3)' : 'none',
       }}>
         {(() => {
-          // Distribute images across 6 columns, duplicate to fill
+          // Use 6 columns, fill each with enough images to scroll
           const colCount = 6
-          const columns: typeof images[] = Array.from({ length: colCount }, () => [])
-          images.forEach((img, i) => columns[i % colCount].push(img))
-          // Duplicate each column for seamless infinite scroll
+          const allImgs = images.length > 0 ? images : []
+          // Build each column by cycling through all images with offset
+          const columns = Array.from({ length: colCount }, (_, ci) => {
+            const col: typeof images = []
+            // Fill with enough images to guarantee continuous scroll (at least 15 per col)
+            const needed = Math.max(15, Math.ceil(allImgs.length / colCount) * 3)
+            for (let j = 0; j < needed; j++) {
+              col.push(allImgs[(ci * 3 + j) % allImgs.length])
+            }
+            return col
+          })
           return columns.map((col, ci) => {
-            const doubled = [...col, ...col]
-            const speed = 35 + (ci % 3) * 12 // vary speed per column
+            const doubled = [...col, ...col] // duplicate for seamless loop
+            const speed = 40 + (ci % 3) * 15
             const dir = ci % 2 === 0 ? 'normal' : 'reverse'
             return (
-              <div key={ci} style={{ flex: 1, overflow: 'hidden', height: '100%' }}>
+              <div key={ci} style={{ flex: 1, overflow: 'hidden' }}>
                 <div className="wc-col" style={{
                   animation: `wcScroll ${speed}s linear infinite`,
                   animationDirection: dir,
                 }}>
                   {doubled.map((img, i) => (
                     <img
-                      key={`${img.id}-${i}`}
+                      key={`${ci}-${i}`}
                       src={getUrl(img.thumbnail_path || img.storage_path)}
                       alt=""
                       onLoad={e => e.currentTarget.classList.add('wc-loaded')}
