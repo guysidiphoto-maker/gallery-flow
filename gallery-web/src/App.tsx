@@ -532,8 +532,10 @@ export function App() {
   // button in the section-nav toolbar so the gallery doesn't open with a big
   // stories block above the photos.
   const [storiesOpen, setStoriesOpen] = useState(false)
-  // Face search: null = no search active (show everything); Set = filter
+  // Face search: null = no search done; Set = matched IDs (always kept once found)
   const [faceMatchIds, setFaceMatchIds] = useState<Set<string> | null>(null)
+  // Toggle: true = show only face matches, false = show all (but keep matches for toggling back)
+  const [faceFilterActive, setFaceFilterActive] = useState(false)
   const [showFaceSearch, setShowFaceSearch] = useState(false)
   const [faceSelfieUrl, setFaceSelfieUrl] = useState<string | null>(null)
   // When the fullscreen viewer opens, it navigates through whichever list
@@ -714,9 +716,9 @@ export function App() {
   const visibleImages = useMemo(() => {
     if (viewerRole === 'client') return images
     const base = images.filter(img => !hiddenImageIds.has(img.id))
-    if (!faceMatchIds) return base
+    if (!faceMatchIds || !faceFilterActive) return base
     return base.filter(img => faceMatchIds.has(img.id))
-  }, [images, hiddenImageIds, viewerRole, faceMatchIds])
+  }, [images, hiddenImageIds, viewerRole, faceMatchIds, faceFilterActive])
 
   const faceSearchAvailable = gallery?.face_index_status === 'done'
 
@@ -826,6 +828,7 @@ export function App() {
             onSelfieCapture={(url) => setFaceSelfieUrl(url)}
             onMatches={(ids) => {
               setFaceMatchIds(new Set(ids))
+              setFaceFilterActive(true)
               setShowFaceSearch(false)
               if (ids.length > 0) setShowWelcome(false)
             }}
@@ -1081,7 +1084,7 @@ export function App() {
         )}
         {heroBgUrl && <div className="hero__overlay" />}
         <div className="hero__content">
-          {faceMatchIds && faceSelfieUrl ? (
+          {faceMatchIds && faceFilterActive && faceSelfieUrl ? (
             /* ── Personalized hero after face search ── */
             <>
               <div style={{
@@ -1169,25 +1172,37 @@ export function App() {
             <>
               {faceSearchAvailable && !selectMode && (
                 faceMatchIds ? (
-                  facePrivacyMode === 'private' ? (
+                  facePrivacyMode === 'private' && faceFilterActive ? (
                     /* Private mode: show count but no "Show all" option */
                     <span className="gallery-toolbar__btn gallery-toolbar__btn--active" style={{ cursor: 'default' }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                         <circle cx="12" cy="8" r="3" />
                         <path d="M5 20a7 7 0 0 1 14 0" />
                       </svg>
-                      {visibleImages.length} photos found
+                      {faceMatchIds.size} photos found
                     </span>
-                  ) : (
+                  ) : faceFilterActive ? (
                     <button
                       className="gallery-toolbar__btn gallery-toolbar__btn--active"
-                      onClick={() => { setFaceMatchIds(null); setFaceSelfieUrl(null) }}
+                      onClick={() => setFaceFilterActive(false)}
                       title="Show all photos"
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        <circle cx="12" cy="8" r="3" />
+                        <path d="M5 20a7 7 0 0 1 14 0" />
                       </svg>
-                      {visibleImages.length} of yours · Show all
+                      {faceMatchIds.size} of yours · Show all
+                    </button>
+                  ) : (
+                    <button
+                      className="gallery-toolbar__btn"
+                      onClick={() => setFaceFilterActive(true)}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <circle cx="12" cy="8" r="3" />
+                        <path d="M5 20a7 7 0 0 1 14 0" />
+                      </svg>
+                      Your photos ({faceMatchIds.size})
                     </button>
                   )
                 ) : (
@@ -1380,6 +1395,7 @@ export function App() {
           onSelfieCapture={(url) => setFaceSelfieUrl(url)}
           onMatches={(ids) => {
             setFaceMatchIds(new Set(ids))
+            setFaceFilterActive(true)
             setShowFaceSearch(false)
             if (showWelcome && ids.length > 0) setShowWelcome(false)
           }}
