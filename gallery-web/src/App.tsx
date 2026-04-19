@@ -215,241 +215,183 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
     setTimeout(onEnter, 600)
   }
 
+  // Pick the best background image
+  const bgImage = coverImageUrl || (images.length > 0 ? getUrl(images[0].storage_path) : null)
+
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 1000, background: '#06060a',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      opacity: entered ? 0 : 1, transition: 'opacity .6s ease',
+      position: 'fixed', inset: 0, zIndex: 1000, background: '#000',
+      opacity: entered ? 0 : 1, transition: 'opacity .7s ease',
       overflow: 'hidden',
     }}>
       <style>{`
-        @keyframes welcomePulse { 0%, 100% { opacity: .08; } 50% { opacity: .15; } }
-        @keyframes welcomeFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-        @keyframes welcomeScan { 0% { transform: translateY(-100%); } 100% { transform: translateY(100vh); } }
-        @keyframes welcomeGlow { 0%, 100% { box-shadow: 0 0 20px rgba(99,102,241,.3); } 50% { box-shadow: 0 0 40px rgba(99,102,241,.5), 0 0 80px rgba(99,102,241,.2); } }
-        @keyframes welcomeBtnPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+        @keyframes wcZoom { from { transform: scale(1.12); } to { transform: scale(1); } }
+        @keyframes wcFadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes wcGlow { 0%, 100% { box-shadow: 0 0 24px rgba(99,102,241,.3); } 50% { box-shadow: 0 0 48px rgba(99,102,241,.5), 0 0 96px rgba(99,102,241,.15); } }
+        @keyframes wcFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+        @keyframes wcLine { from { left: -30%; } to { left: 130%; } }
       `}</style>
 
-      {/* Background: cover or collage */}
-      {coverImageUrl ? (
+      {/* ── Full-bleed background image ── */}
+      {bgImage && (
         <div style={{
-          position: 'absolute', inset: 0,
-          opacity: visible ? (isPrivate ? 0.12 : 0.35) : 0,
-          transition: 'opacity 2s ease',
-          filter: isPrivate ? 'blur(40px) saturate(0.5)' : 'none',
+          position: 'absolute', inset: isPrivate ? -40 : -20,
+          animation: 'wcZoom 15s ease-out forwards',
+          filter: isPrivate ? 'blur(50px) saturate(.4) brightness(.3)' : 'none',
         }}>
-          <img src={coverImageUrl} alt="" style={{
+          <img src={bgImage} alt="" style={{
             width: '100%', height: '100%', objectFit: 'cover',
             objectPosition: coverCrop ? `${coverCrop.x}% ${coverCrop.y}%` : 'center',
-            transform: `scale(${coverCrop ? coverCrop.zoom + (visible ? 0.02 : 0.08) : (visible ? 1.02 : 1.08)})`,
-            transition: 'transform 12s ease',
           }} />
-        </div>
-      ) : (
-        <div style={{
-          position: 'absolute', inset: 0,
-          display: 'grid',
-          gridTemplateColumns: images.length >= 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
-          gridTemplateRows: images.length >= 4 ? 'repeat(2, 1fr)' : '1fr',
-          gap: 2, padding: 0,
-          opacity: visible ? (isPrivate ? 0.08 : 0.25) : 0,
-          transition: 'opacity 2s ease',
-          filter: isPrivate ? 'blur(40px) saturate(0.5)' : 'blur(1px)',
-        }}>
-          {images.map((img, i) => (
-            <div key={img.id} style={{
-              overflow: 'hidden',
-              opacity: visible ? 1 : 0,
-              transition: `opacity 1s ease ${0.1 + i * 0.15}s`,
-            }}>
-              <img src={getUrl(img.thumbnail_path || img.storage_path)} alt="" style={{
-                width: '100%', height: '100%', objectFit: 'cover',
-                transform: visible ? 'scale(1.05)' : 'scale(1.15)',
-                transition: 'transform 12s ease',
-              }} />
-            </div>
-          ))}
         </div>
       )}
 
-      {/* Gradient overlay */}
+      {/* ── Cinematic gradient overlay ── */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none',
         background: isPrivate
-          ? 'radial-gradient(ellipse at center, rgba(6,6,10,.5) 0%, rgba(6,6,10,.92) 100%)'
-          : 'radial-gradient(ellipse at center, rgba(10,10,12,.4) 0%, rgba(10,10,12,.85) 100%)',
+          ? 'linear-gradient(180deg, rgba(0,0,0,.6) 0%, rgba(0,0,0,.75) 40%, rgba(0,0,0,.9) 100%)'
+          : 'linear-gradient(180deg, rgba(0,0,0,.15) 0%, rgba(0,0,0,.5) 50%, rgba(0,0,0,.85) 100%)',
       }} />
 
-      {/* Ambient glow for private mode */}
-      {isPrivate && (
-        <div style={{
-          position: 'absolute', top: '30%', left: '50%', width: 300, height: 300,
-          transform: 'translate(-50%, -50%)',
-          background: 'radial-gradient(circle, rgba(99,102,241,.08) 0%, transparent 70%)',
-          animation: 'welcomePulse 4s ease-in-out infinite',
-          pointerEvents: 'none',
-        }} />
-      )}
+      {/* Subtle vignette */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.5) 100%)',
+      }} />
 
-      {/* Scan line effect for private mode */}
+      {/* Private mode: animated accent line */}
       {isPrivate && visible && (
         <div style={{
-          position: 'absolute', left: 0, right: 0, height: 1,
-          background: 'linear-gradient(90deg, transparent 0%, rgba(99,102,241,.3) 50%, transparent 100%)',
-          animation: 'welcomeScan 4s linear infinite',
+          position: 'absolute', top: '55%', width: '20%', height: 1,
+          background: 'linear-gradient(90deg, transparent, rgba(99,102,241,.4), transparent)',
+          animation: 'wcLine 3s ease-in-out infinite',
           pointerEvents: 'none',
         }} />
       )}
 
-      {/* Content */}
+      {/* ── Content: anchored to bottom ── */}
       <div style={{
-        position: 'relative', zIndex: 2, textAlign: 'center', padding: '0 24px',
-        maxWidth: 600,
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        padding: 'clamp(32px, 8vh, 80px) clamp(24px, 5vw, 60px)',
+        zIndex: 2,
       }}>
         {/* Studio name */}
-        <div style={{
-          opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(15px)',
-          transition: 'all .8s cubic-bezier(.16,1,.3,1) .2s',
-        }}>
-          {studioName && (
-            studioWebsite ? (
+        {studioName && (
+          <div style={{
+            animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .1s both' : 'none',
+          }}>
+            {studioWebsite ? (
               <a href={studioWebsite.startsWith('http') ? studioWebsite : `https://${studioWebsite}`}
                 target="_blank" rel="noopener noreferrer"
                 style={{
-                  display: 'inline-block', fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase',
-                  color: 'rgba(255,255,255,.4)', margin: '0 0 20px', fontWeight: 500,
-                  textDecoration: 'none', borderBottom: '1px solid rgba(255,255,255,.15)',
-                  paddingBottom: 2, transition: 'color .2s, border-color .2s',
+                  display: 'inline-block', fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,.45)', margin: '0 0 16px', fontWeight: 500,
+                  textDecoration: 'none', transition: 'color .2s',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,.7)' }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,.4)' }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,.8)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,.45)' }}
                 onClick={e => e.stopPropagation()}
               >{studioName}</a>
             ) : (
-              <p style={{ fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', margin: '0 0 20px', fontWeight: 500 }}>
+              <p style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', margin: '0 0 16px', fontWeight: 500 }}>
                 {studioName}
               </p>
-            )
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
-        {/* Title */}
-        <div style={{
-          opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(20px)',
-          transition: 'all .9s cubic-bezier(.16,1,.3,1) .35s',
-        }}>
+        {/* Title — large, cinematic */}
+        <div style={{ animation: visible ? 'wcFadeUp .9s cubic-bezier(.16,1,.3,1) .25s both' : 'none' }}>
           <h1 style={{
-            fontSize: 'clamp(28px, 6vw, 52px)', fontWeight: 700, color: '#fff',
-            margin: '0 0 8px', lineHeight: 1.1, letterSpacing: '-0.02em',
+            fontSize: 'clamp(36px, 7vw, 72px)', fontWeight: 800, color: '#fff',
+            margin: 0, lineHeight: 1.05, letterSpacing: '-0.03em',
+            textShadow: '0 4px 30px rgba(0,0,0,.4)',
           }}>{galleryTitle}</h1>
         </div>
 
         {/* Client name */}
-        <div style={{
-          opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(15px)',
-          transition: 'all .8s cubic-bezier(.16,1,.3,1) .5s',
-        }}>
-          {clientName && (
-            <p style={{ fontSize: 'clamp(13px, 2vw, 17px)', color: 'rgba(255,255,255,.45)', margin: '0 0 6px', fontWeight: 400 }}>
-              {clientName}
-            </p>
-          )}
-        </div>
-
-        {/* Event info */}
-        <div style={{
-          opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(12px)',
-          transition: 'all .8s cubic-bezier(.16,1,.3,1) .6s',
-        }}>
-          {(eventDate || eventLocation) && (
+        {clientName && (
+          <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .4s both' : 'none' }}>
             <p style={{
-              fontSize: 'clamp(10px, 1.3vw, 12px)', color: 'rgba(255,255,255,.25)',
-              margin: '0 0 6px', fontWeight: 400, letterSpacing: '0.04em',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              fontSize: 'clamp(15px, 2.2vw, 20px)', color: 'rgba(255,255,255,.5)',
+              margin: '8px 0 0', fontWeight: 400,
+            }}>{clientName}</p>
+          </div>
+        )}
+
+        {/* Event meta */}
+        {(eventDate || eventLocation) && (
+          <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .5s both' : 'none' }}>
+            <p style={{
+              fontSize: 13, color: 'rgba(255,255,255,.3)', margin: '10px 0 0',
+              display: 'flex', alignItems: 'center', gap: 8,
             }}>
               {eventDate && <span>{eventDate}</span>}
-              {eventDate && eventLocation && <span style={{ opacity: 0.3 }}>·</span>}
+              {eventDate && eventLocation && <span style={{ opacity: .3 }}>·</span>}
               {eventLocation && <span>{eventLocation}</span>}
             </p>
-          )}
-          {galleryDescription && (
-            <p style={{ fontSize: 'clamp(11px, 1.4vw, 13px)', color: 'rgba(255,255,255,.3)', margin: '0', fontWeight: 400 }}>
+          </div>
+        )}
+
+        {galleryDescription && (
+          <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .55s both' : 'none' }}>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,.25)', margin: '6px 0 0', maxWidth: 500 }}>
               {galleryDescription}
             </p>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Spacer */}
-        <div style={{ height: isPrivate ? 40 : 36 }} />
-
-        {/* Privacy notice for private mode */}
+        {/* Private mode notice */}
         {isPrivate && (
-          <div style={{
-            opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(10px)',
-            transition: 'all .8s cubic-bezier(.16,1,.3,1) .7s',
-            marginBottom: 24,
-          }}>
-            {/* Lock icon */}
-            <div style={{ marginBottom: 14, animation: 'welcomeFloat 3s ease-in-out infinite' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,.6)" strokeWidth="1.5">
-                <rect x="3" y="11" width="18" height="11" rx="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .6s both' : 'none', marginTop: 16 }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '8px 16px', borderRadius: 20,
+              background: 'rgba(99,102,241,.08)', border: '1px solid rgba(99,102,241,.15)',
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,.6)" strokeWidth="1.8" style={{ animation: 'wcFloat 2.5s ease-in-out infinite' }}>
+                <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,.4)', fontWeight: 400 }}>
+                Privacy mode — take a selfie to see your photos
+              </span>
             </div>
-            <p style={{
-              fontSize: 12, color: 'rgba(255,255,255,.35)', margin: '0 0 6px',
-              fontWeight: 400, letterSpacing: '0.02em', lineHeight: 1.6,
-              maxWidth: 280, marginInline: 'auto',
-            }}>
-              To protect the privacy of everyone in this event, you can only view photos where you appear.
-            </p>
-            <p style={{
-              fontSize: 11, color: 'rgba(99,102,241,.5)', margin: 0,
-              fontWeight: 500, letterSpacing: '0.03em',
-            }}>
-              Take a quick selfie to get started
-            </p>
           </div>
         )}
 
         {/* Buttons */}
         <div style={{
-          display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap',
-          opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(12px)',
-          transition: 'all .8s cubic-bezier(.16,1,.3,1) .8s',
+          display: 'flex', gap: 12, marginTop: 28, flexWrap: 'wrap',
+          animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .7s both' : 'none',
         }}>
-          {/* View Gallery (hidden in private mode) */}
           {!isPrivate && (
             <button onClick={handleEnter} style={{
-              padding: '14px 44px', borderRadius: 50, border: '1px solid rgba(255,255,255,.15)',
-              background: 'rgba(255,255,255,.06)', backdropFilter: 'blur(10px)',
-              color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-              fontFamily: 'inherit', letterSpacing: '0.02em', transition: 'all .25s',
+              padding: '15px 40px', borderRadius: 50, border: '1px solid rgba(255,255,255,.2)',
+              background: 'rgba(255,255,255,.08)', backdropFilter: 'blur(16px)',
+              color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer',
+              fontFamily: 'inherit', letterSpacing: '0.01em', transition: 'all .25s',
             }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.12)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.3)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.06)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.15)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.18)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.4)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.2)' }}
             >View Gallery</button>
           )}
 
-          {/* Find My Photos */}
           {showFindButton && (
             <button onClick={onFindMyPhotos} style={{
-              padding: isPrivate ? '16px 52px' : '14px 32px', borderRadius: 50,
-              border: 'none',
+              padding: isPrivate ? '16px 44px' : '15px 32px', borderRadius: 50, border: 'none',
               background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              color: '#fff', fontSize: isPrivate ? 16 : 14, fontWeight: 700, cursor: 'pointer',
-              fontFamily: 'inherit', letterSpacing: '0.02em',
-              transition: 'all .25s',
+              color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+              fontFamily: 'inherit', letterSpacing: '0.01em', transition: 'all .25s',
               display: 'flex', alignItems: 'center', gap: 10,
-              animation: isPrivate ? 'welcomeGlow 3s ease-in-out infinite, welcomeBtnPulse 3s ease-in-out infinite' : 'none',
+              animation: isPrivate ? 'wcGlow 3s ease-in-out infinite' : 'none',
               position: 'relative', zIndex: 10,
             }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05)' }}
+              onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)' }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="8" r="4" />
-                <path d="M5 20a7 7 0 0 1 14 0" />
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <circle cx="12" cy="8" r="4" /><path d="M5 20a7 7 0 0 1 14 0" />
               </svg>
               Find My Photos
             </button>
