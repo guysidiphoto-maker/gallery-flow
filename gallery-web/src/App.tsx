@@ -215,11 +215,6 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
     setTimeout(onEnter, 600)
   }
 
-  // Use up to 20 images for mosaic background
-  const mosaicImages = images.slice(0, 20)
-  const cols = mosaicImages.length >= 12 ? 5 : mosaicImages.length >= 6 ? 4 : 3
-  const rows = Math.ceil(mosaicImages.length / cols)
-
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1000, background: '#000',
@@ -229,37 +224,55 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
     }}>
       <style>{`
         @keyframes wcFadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes wcDrift { 0% { transform: scale(1.08) translate(0, 0); } 25% { transform: scale(1.1) translate(-1%, 1%); } 50% { transform: scale(1.06) translate(1%, -0.5%); } 75% { transform: scale(1.09) translate(-0.5%, -1%); } 100% { transform: scale(1.08) translate(0, 0); } }
         @keyframes wcGlow { 0%, 100% { box-shadow: 0 0 24px rgba(99,102,241,.3); } 50% { box-shadow: 0 0 48px rgba(99,102,241,.5), 0 0 80px rgba(99,102,241,.15); } }
         @keyframes wcFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
         @keyframes wcLine { from { left: -30%; } to { left: 130%; } }
-        .wc-tile { overflow: hidden; }
-        .wc-tile img { width: 100%; height: 100%; object-fit: cover; animation: wcDrift 25s ease-in-out infinite; }
+        @keyframes wcScroll { from { transform: translateY(0); } to { transform: translateY(calc(-50%)); } }
+        .wc-col { display: flex; flex-direction: column; gap: 4px; }
+        .wc-col img {
+          width: 100%; display: block; border-radius: 3px;
+          opacity: 0; transition: opacity 1s ease;
+        }
+        .wc-col img.wc-loaded { opacity: 1; }
       `}</style>
 
-      {/* ── Mosaic background: grid of gallery images with gentle drift ── */}
+      {/* ── Scrolling mosaic columns ── */}
       <div style={{
-        position: 'absolute', inset: -20,
-        display: 'grid',
-        gridTemplateColumns: `repeat(${cols}, 1fr)`,
-        gridTemplateRows: `repeat(${rows}, 1fr)`,
-        gap: 3,
-        opacity: visible ? (isPrivate ? 0.06 : 0.35) : 0,
-        transition: 'opacity 2.5s ease',
+        position: 'absolute', inset: -30,
+        display: 'flex', gap: 4,
+        opacity: visible ? (isPrivate ? 0.06 : 0.4) : 0,
+        transition: 'opacity 2s ease .2s',
         filter: isPrivate ? 'blur(40px) saturate(.3)' : 'none',
       }}>
-        {mosaicImages.map((img, i) => (
-          <div key={img.id} className="wc-tile" style={{
-            opacity: visible ? 1 : 0,
-            transition: `opacity 1.2s ease ${0.05 + i * 0.08}s`,
-          }}>
-            <img
-              src={getUrl(img.thumbnail_path || img.storage_path)}
-              alt=""
-              style={{ animationDelay: `${-(i * 1.3)}s` }}
-            />
-          </div>
-        ))}
+        {(() => {
+          // Distribute images across 6 columns, duplicate to fill
+          const colCount = 6
+          const columns: typeof images[] = Array.from({ length: colCount }, () => [])
+          images.forEach((img, i) => columns[i % colCount].push(img))
+          // Duplicate each column for seamless infinite scroll
+          return columns.map((col, ci) => {
+            const doubled = [...col, ...col]
+            const speed = 35 + (ci % 3) * 12 // vary speed per column
+            const dir = ci % 2 === 0 ? 'normal' : 'reverse'
+            return (
+              <div key={ci} style={{ flex: 1, overflow: 'hidden', height: '100%' }}>
+                <div className="wc-col" style={{
+                  animation: `wcScroll ${speed}s linear infinite`,
+                  animationDirection: dir,
+                }}>
+                  {doubled.map((img, i) => (
+                    <img
+                      key={`${img.id}-${i}`}
+                      src={getUrl(img.thumbnail_path || img.storage_path)}
+                      alt=""
+                      onLoad={e => e.currentTarget.classList.add('wc-loaded')}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          })
+        })()}
       </div>
 
       {/* ── Overlay layers ── */}
@@ -733,7 +746,7 @@ export function App() {
 
   // ── Welcome screen (collage of top picks) ──────────────────────────────
   const topPicks = images.filter(img => img.is_top_pick)
-  const welcomeImages = topPicks.length >= 3 ? topPicks.slice(0, 6) : images.slice(0, 6)
+  const welcomeImages = images.slice(0, 30)
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   // Demo galleries store their images in the 'demo-uploads' bucket instead
