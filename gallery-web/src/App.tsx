@@ -230,7 +230,7 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
         @keyframes wcScroll { from { transform: translateY(0); } to { transform: translateY(-50%); } }
         .wc-col { display: flex; flex-direction: column; gap: 2px; }
         .wc-col img {
-          width: 100%; height: auto; display: block;
+          width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block;
           opacity: 0; transition: opacity .6s ease;
         }
         .wc-col img.wc-loaded { opacity: 1; }
@@ -245,16 +245,33 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
         filter: isPrivate ? 'blur(40px) saturate(.3)' : 'none',
       }}>
         {(() => {
-          // Use 6 columns, fill each with enough images to scroll
+          // Use 6 columns, fill each with shuffled images (no adjacent duplicates)
           const colCount = 6
           const allImgs = images.length > 0 ? images : []
-          // Build each column by cycling through all images with offset
+
+          // Seeded shuffle to keep stable across re-renders
+          const shuffle = (arr: typeof images, seed: number) => {
+            const a = [...arr]
+            for (let i = a.length - 1; i > 0; i--) {
+              seed = (seed * 16807 + 0) % 2147483647
+              const j = seed % (i + 1)
+              ;[a[i], a[j]] = [a[j], a[i]]
+            }
+            return a
+          }
+
           const columns = Array.from({ length: colCount }, (_, ci) => {
             const col: typeof images = []
-            // Fill with enough images to guarantee continuous scroll (at least 15 per col)
-            const needed = Math.max(15, Math.ceil(allImgs.length / colCount) * 3)
-            for (let j = 0; j < needed; j++) {
-              col.push(allImgs[(ci * 3 + j) % allImgs.length])
+            const shuffled = shuffle(allImgs, ci * 7919 + 1)
+            const needed = Math.max(12, Math.ceil(allImgs.length / colCount) * 3)
+            let lastId = ''
+            for (let j = 0; col.length < needed; j++) {
+              const img = shuffled[j % shuffled.length]
+              // Skip if same as previous to avoid adjacent duplicates
+              if (img.id !== lastId || allImgs.length <= 1) {
+                col.push(img)
+                lastId = img.id
+              }
             }
             return col
           })
