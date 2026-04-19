@@ -3,61 +3,49 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
 
-async function sendWhatsApp(
+async function sendSms(
   phone: string,
   guestName: string,
   galleryUrl: string,
 ): Promise<{ ok: boolean; messageId?: string; error?: string }> {
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
-  const templateName = process.env.WHATSAPP_TEMPLATE_NAME || 'gallery_link_he'
+  const accountSid = process.env.TWILIO_ACCOUNT_SID
+  const authToken = process.env.TWILIO_AUTH_TOKEN
+  const fromNumber = process.env.TWILIO_PHONE_NUMBER
 
-  if (!phoneNumberId || !accessToken) {
-    return { ok: false, error: 'WhatsApp not configured' }
+  if (!accountSid || !authToken || !fromNumber) {
+    return { ok: false, error: 'SMS not configured' }
   }
+
+  const body = `היי ${guestName}! 📸\nהגלריה מהאירוע מוכנה.\nצפה בתמונות שלך כאן:\n${galleryUrl}`
 
   try {
     const resp = await fetch(
-      `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
+          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to: phone,
-          type: 'template',
-          template: {
-            name: templateName,
-            language: { code: 'he' },
-            components: [
-              {
-                type: 'body',
-                parameters: [
-                  { type: 'text', text: guestName },
-                  { type: 'text', text: galleryUrl },
-                ],
-              },
-            ],
-          },
+        body: new URLSearchParams({
+          To: phone,
+          From: fromNumber,
+          Body: body,
         }),
       },
     )
 
     const data = await resp.json()
     if (!resp.ok) {
-      return { ok: false, error: data?.error?.message || `HTTP ${resp.status}` }
+      return { ok: false, error: data?.message || `HTTP ${resp.status}` }
     }
-    return { ok: true, messageId: data?.messages?.[0]?.id }
+    return { ok: true, messageId: data?.sid }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' }
   }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Only allow GET (Vercel Cron) or POST
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
@@ -79,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ retried: 0 })
   }
 
-  // Fetch event gallery URLs for these leads
+  // Fetch event gallery URLs
   const eventIds = [...new Set(leads.map(l => l.event_id))]
   const { data: events } = await supabase
     .from('events')
@@ -95,7 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const galleryUrl = eventMap.get(lead.event_id)
     if (!galleryUrl) continue
 
-    const result = await sendWhatsApp(lead.phone, lead.name, galleryUrl)
+    const result = await sendSms(lead.phone, lead.name, galleryUrl)
     retried++
 
     await supabase

@@ -342,7 +342,7 @@ export function EventCapturePage() {
               margin: '0 0 20px', direction: 'rtl', lineHeight: 1.6,
               textAlign: 'center',
             }}>
-              בלחיצה על &quot;שלח&quot; אני מסכים/ה לקבל הודעת WhatsApp עם קישור לגלריית התמונות
+              בלחיצה על &quot;שלח&quot; אני מסכים/ה לקבל הודעה עם קישור לגלריית התמונות
             </p>
 
             {/* Submit */}
@@ -408,7 +408,7 @@ export function EventCapturePage() {
           </div>
 
           <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 8px' }}>
-            {whatsappSent ? 'הקישור נשלח לוואטסאפ שלך!' : 'נרשמת בהצלחה!'}
+            {whatsappSent ? 'הקישור נשלח אליך ב-SMS!' : 'נרשמת בהצלחה!'}
           </h2>
 
           <p style={{
@@ -416,7 +416,7 @@ export function EventCapturePage() {
             margin: '0 0 32px', lineHeight: 1.6,
           }}>
             {whatsappSent
-              ? 'תוך כמה שניות תקבל הודעה עם הלינק לגלריה'
+              ? 'תוך כמה שניות תקבל SMS עם הלינק לגלריה'
               : 'הלינק לגלריה מופיע כאן למטה'
             }
           </p>

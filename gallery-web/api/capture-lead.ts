@@ -21,47 +21,36 @@ function normalizePhone(raw: string): string | null {
   return null
 }
 
-// ─── WhatsApp Cloud API ─────────────────────────────────────────────────────
+// ─── Twilio SMS ─────────────────────────────────────────────────────────────
 
-async function sendWhatsApp(
+async function sendSms(
   phone: string,
   guestName: string,
   galleryUrl: string,
 ): Promise<{ ok: boolean; messageId?: string; error?: string }> {
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
-  const templateName = process.env.WHATSAPP_TEMPLATE_NAME || 'gallery_link_he'
+  const accountSid = process.env.TWILIO_ACCOUNT_SID
+  const authToken = process.env.TWILIO_AUTH_TOKEN
+  const fromNumber = process.env.TWILIO_PHONE_NUMBER
 
-  if (!phoneNumberId || !accessToken) {
-    return { ok: false, error: 'WhatsApp not configured' }
+  if (!accountSid || !authToken || !fromNumber) {
+    return { ok: false, error: 'SMS not configured' }
   }
+
+  const body = `היי ${guestName}! 📸\nהגלריה מהאירוע מוכנה.\nצפה בתמונות שלך כאן:\n${galleryUrl}`
 
   try {
     const resp = await fetch(
-      `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
+          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to: phone,
-          type: 'template',
-          template: {
-            name: templateName,
-            language: { code: 'he' },
-            components: [
-              {
-                type: 'body',
-                parameters: [
-                  { type: 'text', text: guestName },
-                  { type: 'text', text: galleryUrl },
-                ],
-              },
-            ],
-          },
+        body: new URLSearchParams({
+          To: phone,
+          From: fromNumber,
+          Body: body,
         }),
       },
     )
@@ -69,12 +58,11 @@ async function sendWhatsApp(
     const data = await resp.json()
 
     if (!resp.ok) {
-      const errMsg = data?.error?.message || `HTTP ${resp.status}`
+      const errMsg = data?.message || `HTTP ${resp.status}`
       return { ok: false, error: errMsg }
     }
 
-    const messageId = data?.messages?.[0]?.id
-    return { ok: true, messageId }
+    return { ok: true, messageId: data?.sid }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     return { ok: false, error: msg }
@@ -146,18 +134,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       ok: true,
       galleryUrl: event.gallery_url,
-      whatsappSent: true,
+      smsSent: true,
       duplicate: true,
     })
   }
 
-  // Send WhatsApp
-  let result = await sendWhatsApp(normalizedPhone, name.trim(), event.gallery_url)
+  // Send SMS
+  let result = await sendSms(normalizedPhone, name.trim(), event.gallery_url)
 
   // One inline retry on failure
   if (!result.ok) {
     await new Promise(r => setTimeout(r, 2000))
-    result = await sendWhatsApp(normalizedPhone, name.trim(), event.gallery_url)
+    result = await sendSms(normalizedPhone, name.trim(), event.gallery_url)
   }
 
   // Update lead status
@@ -174,6 +162,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   return res.status(200).json({
     ok: true,
     galleryUrl: event.gallery_url,
-    whatsappSent: result.ok,
+    smsSent: result.ok,
   })
 }
