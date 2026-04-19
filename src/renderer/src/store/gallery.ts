@@ -386,44 +386,24 @@ export const useGallery = create<GalleryState>((set, get) => ({
   deleteSelected: async () => {
     const { images, selectedIds } = get()
     if (selectedIds.size === 0) return
-    const toDelete = images.filter(img => selectedIds.has(img.id))
-    const failed: string[] = []
-    for (const img of toDelete) {
-      try {
-        const result = await window.api.deleteFile(img.path)
-        if (!result.success) failed.push(img.filename)
-      } catch {
-        failed.push(img.filename)
-      }
-    }
-    const deletedIds = new Set(toDelete.filter(img => !failed.includes(img.filename)).map(img => img.id))
+    // Remove from gallery only — never delete source files from disk
+    const count = selectedIds.size
     set(state => {
       const nextTopPicks = new Set(state.topPickIds)
-      for (const id of deletedIds) nextTopPicks.delete(id)
+      for (const id of selectedIds) nextTopPicks.delete(id)
       return {
-        images: state.images.filter(img => !deletedIds.has(img.id)),
+        images: state.images.filter(img => !selectedIds.has(img.id)),
         selectedIds: new Set(),
         topPickIds: nextTopPicks
       }
     })
-    const count = deletedIds.size
-    if (count > 0) get().addToast(`Moved ${count} image(s) to Trash`, 'info')
-    if (failed.length > 0) get().addToast(`${failed.length} file(s) could not be deleted`, 'error')
+    if (count > 0) get().addToast(`Removed ${count} image(s) from gallery`, 'info')
   },
 
   deleteImage: async (id) => {
     const img = get().images.find(i => i.id === id)
     if (!img) return
-    try {
-      const result = await window.api.deleteFile(img.path)
-      if (!result.success) {
-        get().addToast(`Delete failed: ${result.error}`, 'error')
-        return
-      }
-    } catch {
-      get().addToast('Delete failed', 'error')
-      return
-    }
+    // Remove from gallery only — never delete source files from disk
     set(state => {
       const nextTopPicks = new Set(state.topPickIds)
       nextTopPicks.delete(id)
