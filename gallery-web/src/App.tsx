@@ -1084,40 +1084,60 @@ export function App() {
         )}
         {heroBgUrl && <div className="hero__overlay" />}
         <div className="hero__content">
-          {faceMatchIds && faceFilterActive && faceSelfieUrl ? (
+          {faceMatchIds && faceSelfieUrl ? (
             /* ── Personalized hero after face search ── */
             <>
               <div style={{
-                width: 64, height: 64, borderRadius: '50%', overflow: 'hidden',
-                border: '2px solid rgba(34,197,94,.45)',
-                boxShadow: '0 0 20px rgba(34,197,94,.15)',
-                marginBottom: 12,
-                animation: 'wcFadeUp .6s cubic-bezier(.16,1,.3,1) both',
+                width: 52, height: 52, borderRadius: '50%', overflow: 'hidden',
+                border: '2px solid rgba(255,255,255,.15)',
+                marginBottom: 14,
               }}>
                 <img src={faceSelfieUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
-              <h1 className="hero__title" style={{
-                fontSize: 'clamp(22px, 3.5vw, 36px)',
-                animation: 'wcFadeUp .6s cubic-bezier(.16,1,.3,1) .1s both',
-                direction: 'rtl',
+
+              {studioName && (
+                <p className="hero__eyebrow">{studioName}</p>
+              )}
+              <h1 className="hero__title" style={{ fontSize: 'clamp(24px, 4vw, 44px)' }}>{galleryTitle}</h1>
+
+              {/* ── Segmented toggle: Your Photos / All Photos ── */}
+              <div style={{
+                marginTop: 14,
+                display: 'inline-flex',
+                borderRadius: 999, padding: 3,
+                background: 'rgba(255,255,255,.06)',
+                border: '1px solid rgba(255,255,255,.08)',
               }}>
-                הנה התמונות שלך ✨
-              </h1>
-              <p style={{
-                marginTop: 6, fontSize: 13, color: 'rgba(255,255,255,.4)',
-                direction: 'rtl',
-                animation: 'wcFadeUp .6s cubic-bezier(.16,1,.3,1) .2s both',
-              }}>
-                {studioName && <>{studioName} · </>}{galleryTitle}
-              </p>
-              <div className="hero__meta" style={{ animation: 'wcFadeUp .5s cubic-bezier(.16,1,.3,1) .3s both' }}>
-                <span className="hero__count" style={{
-                  background: 'rgba(34,197,94,.1)',
-                  borderColor: 'rgba(34,197,94,.2)',
-                  color: 'rgba(34,197,94,.9)',
-                }}>
-                  {visibleImages.length} {visibleImages.length === 1 ? 'photo' : 'photos'}
-                </span>
+                <button
+                  onClick={() => setFaceFilterActive(true)}
+                  style={{
+                    padding: '7px 16px', borderRadius: 999,
+                    border: 'none', cursor: 'pointer',
+                    fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                    letterSpacing: '.01em', whiteSpace: 'nowrap',
+                    transition: 'all .2s ease',
+                    background: faceFilterActive ? 'rgba(255,255,255,.13)' : 'transparent',
+                    color: faceFilterActive ? '#fff' : 'rgba(255,255,255,.4)',
+                    boxShadow: faceFilterActive ? '0 1px 4px rgba(0,0,0,.2)' : 'none',
+                  }}
+                >
+                  Your Photos · {faceMatchIds.size}
+                </button>
+                <button
+                  onClick={() => setFaceFilterActive(false)}
+                  style={{
+                    padding: '7px 16px', borderRadius: 999,
+                    border: 'none', cursor: 'pointer',
+                    fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                    letterSpacing: '.01em', whiteSpace: 'nowrap',
+                    transition: 'all .2s ease',
+                    background: !faceFilterActive ? 'rgba(255,255,255,.13)' : 'transparent',
+                    color: !faceFilterActive ? '#fff' : 'rgba(255,255,255,.4)',
+                    boxShadow: !faceFilterActive ? '0 1px 4px rgba(0,0,0,.2)' : 'none',
+                  }}
+                >
+                  All Photos · {images.length}
+                </button>
               </div>
             </>
           ) : (
@@ -1170,53 +1190,17 @@ export function App() {
           ) : null}
           toolbar={(faceSearchAvailable || downloadsEnabled) ? (
             <>
-              {faceSearchAvailable && !selectMode && (
-                faceMatchIds ? (
-                  facePrivacyMode === 'private' && faceFilterActive ? (
-                    /* Private mode: show count but no "Show all" option */
-                    <span className="gallery-toolbar__btn gallery-toolbar__btn--active" style={{ cursor: 'default' }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                        <circle cx="12" cy="8" r="3" />
-                        <path d="M5 20a7 7 0 0 1 14 0" />
-                      </svg>
-                      {faceMatchIds.size} photos found
-                    </span>
-                  ) : faceFilterActive ? (
-                    <button
-                      className="gallery-toolbar__btn gallery-toolbar__btn--active"
-                      onClick={() => setFaceFilterActive(false)}
-                      title="Show all photos"
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                        <circle cx="12" cy="8" r="3" />
-                        <path d="M5 20a7 7 0 0 1 14 0" />
-                      </svg>
-                      {faceMatchIds.size} of yours · Show all
-                    </button>
-                  ) : (
-                    <button
-                      className="gallery-toolbar__btn"
-                      onClick={() => setFaceFilterActive(true)}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                        <circle cx="12" cy="8" r="3" />
-                        <path d="M5 20a7 7 0 0 1 14 0" />
-                      </svg>
-                      Your photos ({faceMatchIds.size})
-                    </button>
-                  )
-                ) : (
-                  <button
-                    className="gallery-toolbar__btn"
-                    onClick={() => setShowFaceSearch(true)}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                      <circle cx="12" cy="8" r="3" />
-                      <path d="M5.5 20a7 7 0 0 1 13 0" />
-                    </svg>
-                    Find my photos
-                  </button>
-                )
+              {faceSearchAvailable && !selectMode && !faceMatchIds && (
+                <button
+                  className="gallery-toolbar__btn"
+                  onClick={() => setShowFaceSearch(true)}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <circle cx="12" cy="8" r="3" />
+                    <path d="M5.5 20a7 7 0 0 1 13 0" />
+                  </svg>
+                  Find my photos
+                </button>
               )}
               {downloadsEnabled && <button
                 className={`gallery-toolbar__btn ${selectMode ? 'gallery-toolbar__btn--active' : ''}`}
