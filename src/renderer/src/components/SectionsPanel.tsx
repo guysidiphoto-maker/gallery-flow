@@ -79,9 +79,10 @@ interface SectionsPanelProps {
   publicUrl?: string
   onPublish?: () => void
   hasUnsavedChanges?: boolean
+  lastSyncedAt?: string
 }
 
-export function SectionsPanel({ publishStatus, publicUrl, onPublish, hasUnsavedChanges }: SectionsPanelProps = {}) {
+export function SectionsPanel({ publishStatus, publicUrl, onPublish, hasUnsavedChanges, lastSyncedAt }: SectionsPanelProps = {}) {
   const [copied, setCopied] = useState(false)
 
   const handleCopyLink = useCallback(() => {
@@ -230,12 +231,18 @@ export function SectionsPanel({ publishStatus, publicUrl, onPublish, hasUnsavedC
               </>
             ) : (
               <>
-                {/* Published state — green check + Copy Link */}
+                {/* Published state — green check + timestamp */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
                     <polyline points="20 6 9 17 4 12"/>
                   </svg>
                   <span style={{ fontSize: 11, color: '#10b981', fontWeight: 500 }}>Published</span>
+                  {lastSyncedAt && (
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', fontWeight: 400 }}>
+                      · {new Date(lastSyncedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}{' '}
+                      {new Date(lastSyncedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
                 </div>
                 {publicUrl && (
                   <button

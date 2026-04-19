@@ -213,6 +213,8 @@ export interface GalleryPublishState {
   publishStatus?: string
   /** Snapshot of image IDs at publish time — used to detect changes */
   publishedImageIds?: string[]
+  /** Timestamp of last successful sync/publish */
+  lastSyncedAt?: string
 }
 
 export interface ProjectData {
@@ -571,13 +573,13 @@ function MainApp({ business }: { business: Business | null }) {
 
       // 4) Update local snapshot of published image ids so the next diff is empty
       setProjects(prev => prev.map(p => p.id === projectId
-        ? { ...p, publishState: { ...p.publishState!, publishedImageIds: imgs.map(i => i.id) } }
+        ? { ...p, publishState: { ...p.publishState!, publishedImageIds: imgs.map(i => i.id), lastSyncedAt: new Date().toISOString() } }
         : p
       ))
       sectionsState.markSectionsClean()
 
       setPublishPhase('done')
-      useGallery.getState().addToast('Changes synced to cloud', 'success')
+      useGallery.getState().addToast(`Changes synced to cloud · ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`, 'success')
     } catch (err) {
       console.error('[handleUpdateChanges] failed', err)
       setPubError(err instanceof Error ? err.message : String(err))
@@ -651,7 +653,7 @@ function MainApp({ business }: { business: Business | null }) {
       setPublishGalleryDir(publicUrl)
       setPublishPhase('done')
       setProjects(prev => prev.map(p => p.id === projectId
-        ? { ...p, publishState: { status: 'live', publicUrl, galleryDbId: galleryId, storiesReady: false, originalsReady, publishStatus: pubStore.publishStatus, publishedImageIds: imgs.map(i => i.id) } }
+        ? { ...p, publishState: { status: 'live', publicUrl, galleryDbId: galleryId, storiesReady: false, originalsReady, publishStatus: pubStore.publishStatus, publishedImageIds: imgs.map(i => i.id), lastSyncedAt: new Date().toISOString() } }
         : p
       ))
 
@@ -1696,6 +1698,7 @@ function MainApp({ business }: { business: Business | null }) {
             <SectionsPanel
               publishStatus={currentProject?.publishState?.status || 'draft'}
               publicUrl={currentProject?.publishState?.publicUrl}
+              lastSyncedAt={currentProject?.publishState?.lastSyncedAt}
               hasUnsavedChanges={
                 currentProject?.publishState?.status === 'live' && (
                   (!!currentProject?.publishState?.publishedImageIds &&
