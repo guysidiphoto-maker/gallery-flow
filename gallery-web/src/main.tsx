@@ -10,6 +10,7 @@ import { PortfolioPage } from './pages/PortfolioPage'
 import { ClientDashboard } from './pages/ClientDashboard'
 import { VendorPortal } from './pages/VendorPortal'
 import { EventCapturePage } from './pages/EventCapturePage'
+import { QuestionnairePage } from './pages/QuestionnairePage'
 import './styles.css'
 
 function Router() {
@@ -19,6 +20,8 @@ function Router() {
   if (path === '/demo') return <DemoPage />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
+  // Questionnaire
+  if (path.startsWith('/q/')) return <QuestionnairePage />
   // Event lead capture (QR landing)
   if (path.startsWith('/event/')) return <EventCapturePage />
   // Vendor portal

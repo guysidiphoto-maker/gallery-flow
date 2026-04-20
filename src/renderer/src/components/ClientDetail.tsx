@@ -4,6 +4,7 @@ import type { ClientData, ProjectData } from '../App'
 import type { ImageFile } from '../types'
 import { getProjectsByClient, getTotalImagesForClient, getProjectCover } from '../App'
 import { fetchCloudClientId, buildClientPageUrl } from '../lib/cloudUpload'
+import { QuestionnaireBuilder } from './QuestionnaireBuilder'
 
 function clientColor(name: string): string {
   const colors = ['#6366f1','#ec4899','#8b5cf6','#a855f7','#3b82f6','#d946ef','#818cf8','#f43f5e','#7c3aed','#c084fc']
@@ -59,6 +60,7 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
   const [copiedGalleryId, setCopiedGalleryId] = useState<string | null>(null)
   const [clientPageStatus, setClientPageStatus] = useState<'idle' | 'loading' | 'copied' | 'empty'>('idle')
   const [sortBy, setSortBy] = useState<'createdAt' | 'eventDate' | 'updatedAt'>('createdAt')
+  const [showQuestionnaire, setShowQuestionnaire] = useState(false)
 
   const showClientPageButton = clientProjects.some(p => p.publishState?.status === 'live')
 
@@ -216,6 +218,16 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
               New Gallery
+            </button>
+            <button className="cdv__btn-secondary" onClick={() => setShowQuestionnaire(true)}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+              </svg>
+              Questionnaire
             </button>
             {/* Update All Live button */}
             {onUpdateAll && (() => {
@@ -451,6 +463,15 @@ export function ClientDetail({ client, projects, imageRegistry, onSelectProject,
             </div>
           </div>
         </div>
+      )}
+
+      {/* Questionnaire Builder */}
+      {showQuestionnaire && (
+        <QuestionnaireBuilder
+          clientName={client.name}
+          projects={clientProjects}
+          onClose={() => setShowQuestionnaire(false)}
+        />
       )}
     </div>
   )

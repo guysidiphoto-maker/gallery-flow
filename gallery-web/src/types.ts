@@ -95,3 +95,34 @@ export interface EventLead {
   retry_count: number
   created_at: string
 }
+
+// ─── Questionnaires ─────────────────────────────────────────────────────────
+
+export interface QuestionnaireQuestion {
+  id: string
+  label: string
+  required: boolean
+}
+
+export interface QuestionnaireConfig {
+  id: string
+  business_id: string
+  gallery_id: string | null
+  title: string
+  description: string | null
+  questions: QuestionnaireQuestion[]
+  background_url: string | null
+  send_method: 'none' | 'email' | 'sms'
+  is_active: boolean
+  created_at: string
+}
+
+export interface QuestionnaireResponse {
+  id: string
+  questionnaire_id: string
+  respondent_name: string
+  respondent_phone: string | null
+  respondent_email: string | null
+  answers: Record<string, string>
+  created_at: string
+}
