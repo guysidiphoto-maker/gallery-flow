@@ -81,7 +81,7 @@ export function EventCapturePage() {
       .select('id, business_id, gallery_id, name, gallery_url, welcome_text, logo_url, is_active, created_at')
       .eq('id', eventId)
       .eq('is_active', true)
-      .single()
+      .maybeSingle()
       .then(({ data, error }) => {
         if (error || !data) { setPhase('error'); return }
         setEvent(data as EventConfig)
