@@ -14,26 +14,32 @@ export function QuestionnairePage() {
   const [errors, setErrors] = useState<Record<string, boolean>>({})
   const [consent, setConsent] = useState(false)
 
-  const questionnaireId = (() => {
+  // Support both /q/{uuid} and /q/{slug}
+  const questionnaireIdOrSlug = (() => {
     const match = window.location.pathname.match(/^\/q\/([^/]+)$/)
     return match?.[1] || ''
   })()
 
   useEffect(() => {
-    if (!questionnaireId) { setPhase('error'); return }
+    if (!questionnaireIdOrSlug) { setPhase('error'); return }
 
-    supabase
+    // Try by ID first, then by slug
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(questionnaireIdOrSlug)
+    const query = supabase
       .from('questionnaires')
       .select('*')
-      .eq('id', questionnaireId)
       .eq('is_active', true)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (error || !data) { setPhase('error'); return }
-        setConfig(data as QuestionnaireConfig)
-        setPhase('form')
-      })
-  }, [questionnaireId])
+
+    const fetcher = isUuid
+      ? query.eq('id', questionnaireIdOrSlug)
+      : query.eq('slug', questionnaireIdOrSlug)
+
+    fetcher.maybeSingle().then(({ data, error }) => {
+      if (error || !data) { setPhase('error'); return }
+      setConfig(data as QuestionnaireConfig)
+      setPhase('form')
+    })
+  }, [questionnaireIdOrSlug])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -63,7 +69,7 @@ export function QuestionnairePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          questionnaireId,
+          questionnaireId: config.id,
           respondentName: name.trim(),
           respondentPhone: phone.trim() || null,
           respondentEmail: email.trim() || null,
@@ -82,25 +88,43 @@ export function QuestionnairePage() {
     }
   }
 
-  // ── Styles ──
+  // ── Theme: dark when bg image/animation, light/clean otherwise ──
+  const hasDarkBg = !!(config?.background_url || config?.bg_animation)
+
+  const theme = {
+    bg: hasDarkBg ? '#0a0a0f' : '#f8f9fa',
+    text: hasDarkBg ? '#fff' : '#1a1a2e',
+    textMuted: hasDarkBg ? 'rgba(255,255,255,.45)' : '#6b7280',
+    textFaint: hasDarkBg ? 'rgba(255,255,255,.25)' : '#9ca3af',
+    inputBg: hasDarkBg ? 'rgba(255,255,255,.05)' : '#fff',
+    inputBorder: hasDarkBg ? 'rgba(255,255,255,.1)' : '#e5e7eb',
+    inputText: hasDarkBg ? '#fff' : '#1a1a2e',
+    inputPlaceholder: hasDarkBg ? 'rgba(255,255,255,.2)' : '#9ca3af',
+    errorBorder: hasDarkBg ? 'rgba(239,68,68,.5)' : '#ef4444',
+    consentText: hasDarkBg ? 'rgba(255,255,255,.4)' : '#6b7280',
+    linkColor: hasDarkBg ? '#818cf8' : '#6366f1',
+    cardBg: hasDarkBg ? 'transparent' : '#fff',
+    cardShadow: hasDarkBg ? 'none' : '0 4px 24px rgba(0,0,0,.06)',
+  }
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '14px 16px', borderRadius: 12,
-    border: '1px solid rgba(255,255,255,.1)',
-    background: 'rgba(255,255,255,.05)',
-    color: '#fff', fontSize: 16, fontFamily: 'inherit',
+    border: `1px solid ${theme.inputBorder}`,
+    background: theme.inputBg,
+    color: theme.inputText, fontSize: 16, fontFamily: 'inherit',
     outline: 'none', direction: 'rtl',
     WebkitAppearance: 'none',
     transition: 'border-color .2s',
+    boxShadow: hasDarkBg ? 'none' : '0 1px 3px rgba(0,0,0,.04)',
   }
 
   const inputErrorStyle: React.CSSProperties = {
     ...inputStyle,
-    borderColor: 'rgba(239,68,68,.5)',
+    borderColor: theme.errorBorder,
   }
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 13, color: 'rgba(255,255,255,.5)',
+    fontSize: 13, color: theme.textMuted,
     marginBottom: 6, display: 'block', direction: 'rtl',
   }
 
@@ -129,11 +153,11 @@ export function QuestionnairePage() {
   return (
     <div style={{
       minHeight: '100dvh',
-      background: '#0a0a0f',
+      background: theme.bg,
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       WebkitFontSmoothing: 'antialiased',
-      color: '#fff', padding: '0 20px',
+      color: theme.text, padding: '0 20px',
       position: 'relative', overflow: 'hidden',
     }}>
       {/* Animated background image */}
@@ -223,7 +247,7 @@ export function QuestionnairePage() {
           100% { transform: rotate(${logo.rot}deg) translate3d(0,0,0) rotateX(0deg) rotateY(0deg); }
         }`).join('')}
         .q-input:focus { border-color: rgba(99,102,241,.5) !important; }
-        .q-input::placeholder { color: rgba(255,255,255,.2); }
+        .q-input::placeholder { color: ${theme.inputPlaceholder}; }
         .q-textarea { resize: vertical; min-height: 80px; }
       `}</style>
 
@@ -248,7 +272,7 @@ export function QuestionnairePage() {
           position: 'relative', zIndex: 1,
         }}>
           <p style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>השאלון לא נמצא</p>
-          <p style={{ fontSize: 14, color: 'rgba(255,255,255,.4)' }}>
+          <p style={{ fontSize: 14, color: theme.textMuted }}>
             יכול להיות שהשאלון כבר לא פעיל או שהקישור לא תקין
           </p>
         </div>
@@ -257,11 +281,19 @@ export function QuestionnairePage() {
       {/* Form */}
       {(phase === 'form' || phase === 'submitting') && config && (
         <div style={{
-          width: '100%', maxWidth: 400,
+          width: '100%', maxWidth: 440,
           paddingTop: 'max(env(safe-area-inset-top, 0px), 40px)',
           paddingBottom: 40,
           animation: 'q-fadeIn .5s ease both',
           position: 'relative', zIndex: 1,
+          ...(hasDarkBg ? {} : {
+            background: '#fff',
+            borderRadius: 20,
+            padding: '36px 32px',
+            marginTop: 20,
+            boxShadow: '0 4px 24px rgba(0,0,0,.06)',
+            border: '1px solid #e5e7eb',
+          }),
         }}>
           {/* Title */}
           <h1 style={{
@@ -274,7 +306,7 @@ export function QuestionnairePage() {
           {/* Description */}
           {config.description && (
             <p style={{
-              fontSize: 15, color: 'rgba(255,255,255,.45)',
+              fontSize: 15, color: theme.textMuted,
               textAlign: 'center', margin: '0 0 32px', direction: 'rtl',
               lineHeight: 1.6,
             }}>
@@ -303,7 +335,7 @@ export function QuestionnairePage() {
             {/* Phone */}
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>
-                טלפון {config.send_method === 'sms' ? '*' : <span style={{ color: 'rgba(255,255,255,.25)' }}>(לא חובה)</span>}
+                טלפון {config.send_method === 'sms' ? '*' : <span style={{ color: theme.textFaint }}>(לא חובה)</span>}
               </label>
               <input
                 className="q-input"
@@ -372,7 +404,7 @@ export function QuestionnairePage() {
               <label style={{
                 display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer',
                 direction: 'rtl', fontSize: 12, lineHeight: 1.6,
-                color: errors['_consent'] ? '#f87171' : 'rgba(255,255,255,.4)',
+                color: errors['_consent'] ? '#f87171' : theme.consentText,
               }}>
                 <input
                   type="checkbox"
@@ -381,7 +413,7 @@ export function QuestionnairePage() {
                   style={{ width: 16, height: 16, accentColor: '#6366f1', marginTop: 2, flexShrink: 0 }}
                 />
                 <span>
-                  אני מסכים/ה ל<a href="/terms" target="_blank" style={{ color: '#818cf8', textDecoration: 'underline' }}>תקנון השימוש</a> ול<a href="/privacy" target="_blank" style={{ color: '#818cf8', textDecoration: 'underline' }}>מדיניות הפרטיות</a>.
+                  אני מסכים/ה ל<a href="/terms" target="_blank" style={{ color: theme.linkColor, textDecoration: 'underline' }}>תקנון השימוש</a> ול<a href="/privacy" target="_blank" style={{ color: theme.linkColor, textDecoration: 'underline' }}>מדיניות הפרטיות</a>.
                   אני מאשר/ת שליחת הודעות הכוללות אישורים, הנחיות והודעות אחרות לכתובת הדואר האלקטרוני ומספר הטלפון שסיפקתי.
                 </span>
               </label>
@@ -447,7 +479,7 @@ export function QuestionnairePage() {
           <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 8px' }}>
             תודה רבה!
           </h2>
-          <p style={{ fontSize: 14, color: 'rgba(255,255,255,.4)', margin: 0, lineHeight: 1.6 }}>
+          <p style={{ fontSize: 14, color: theme.textMuted, margin: 0, lineHeight: 1.6 }}>
             התשובות שלך נשלחו בהצלחה
           </p>
 

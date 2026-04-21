@@ -18,6 +18,7 @@ interface Questionnaire {
   gallery_id: string | null
   background_url: string | null
   send_method: 'none' | 'email' | 'sms'
+  slug: string | null
   is_active: boolean
   created_at: string
 }
@@ -61,6 +62,7 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
   const [selectedGalleryId, setSelectedGalleryId] = useState<string>('')
   const [backgroundUrl, setBackgroundUrl] = useState('')
   const [sendMethod, setSendMethod] = useState<'none' | 'email' | 'sms'>('none')
+  const [slug, setSlug] = useState('')
   const [saving, setSaving] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -93,6 +95,7 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
     setSelectedGalleryId('')
     setBackgroundUrl('')
     setSendMethod('none')
+    setSlug('')
     setEditing(null)
     setShowForm(false)
   }
@@ -104,6 +107,7 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
     setSelectedGalleryId(q.gallery_id || '')
     setBackgroundUrl(q.background_url || '')
     setSendMethod(q.send_method || 'none')
+    setSlug(q.slug || '')
     setEditing(q)
     setShowForm(true)
   }
@@ -152,6 +156,7 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
       questions: validQuestions.map(q => ({ ...q, label: q.label.trim() })),
       background_url: backgroundUrl.trim() || null,
       send_method: sendMethod,
+      slug: slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '') || null,
       is_active: true,
     }
 
@@ -233,8 +238,8 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
     addToast('הקובץ הורד בהצלחה', 'success')
   }
 
-  const copyLink = (id: string) => {
-    const url = `${GALLERY_WEB_URL}/q/${id}`
+  const copyLink = (q: Questionnaire) => {
+    const url = `${GALLERY_WEB_URL}/q/${q.slug || q.id}`
     navigator.clipboard.writeText(url).then(() => {
       setCopiedId(id)
       setTimeout(() => setCopiedId(null), 2000)
@@ -421,6 +426,20 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
               <label style={labelStyle}>כותרת השאלון</label>
               <input value={title} onChange={e => setTitle(e.target.value)}
                 placeholder="לדוגמה: שאלון לפני צילום" style={inputStyle} />
+            </div>
+
+            {/* ── Slug (short URL) ── */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>קישור קצר <span style={{ color: 'rgba(255,255,255,.2)' }}>(לא חובה)</span></label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                <span style={{
+                  padding: '11px 10px 11px 0', fontSize: 13, color: 'rgba(255,255,255,.3)',
+                  whiteSpace: 'nowrap', direction: 'ltr',
+                }}>pixflow-ai.com/q/</span>
+                <input value={slug} onChange={e => setSlug(e.target.value.replace(/[^a-zA-Z0-9-]/g, ''))}
+                  placeholder="my-form" dir="ltr"
+                  style={{ ...inputStyle, direction: 'ltr', flex: 1 }} />
+              </div>
             </div>
 
             {/* ── Description ── */}
@@ -649,7 +668,7 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
                       <p style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', margin: '0 0 6px' }}>{q.description}</p>
                     )}
                     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                      <button onClick={() => copyLink(q.id)} style={{
+                      <button onClick={() => copyLink(q)} style={{
                         ...btnSecondary, fontSize: 11, padding: '5px 10px',
                         background: copiedId === q.id ? 'rgba(34,197,94,.1)' : undefined,
                         borderColor: copiedId === q.id ? 'rgba(34,197,94,.3)' : undefined,

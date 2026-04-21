@@ -114,6 +114,7 @@ export interface QuestionnaireConfig {
   background_url: string | null
   bg_animation: string | null
   send_method: 'none' | 'email' | 'sms'
+  slug: string | null
   is_active: boolean
   created_at: string
 }
