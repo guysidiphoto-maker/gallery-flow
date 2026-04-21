@@ -1,73 +1,113 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { signInWithGoogle } from '../lib/auth'
 
-// ─── Scroll reveal ──────────────────────────────────────────────────────────
+// ─── Reveal on scroll ───────────────────────────────────────────────────────
 
-function Reveal({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
+function R({ children, d = 0, cls = '' }: { children: ReactNode; d?: number; cls?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = ref.current
     if (!el) return
     const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) {
-        setTimeout(() => { el.classList.add('lph-visible') }, delay)
-        obs.unobserve(el)
-      }
-    }, { threshold: 0.08 })
+      if (e.isIntersecting) { setTimeout(() => el.classList.add('v'), d); obs.unobserve(el) }
+    }, { threshold: 0.06 })
     obs.observe(el)
     return () => obs.disconnect()
-  }, [delay])
-  return <div ref={ref} className={`lph-reveal ${className || ''}`}>{children}</div>
+  }, [d])
+  return <div ref={ref} className={`rv ${cls}`}>{children}</div>
 }
 
 // ─── FAQ ─────────────────────────────────────────────────────────────────────
 
-function FaqItem({ q, a }: { q: string; a: string }) {
+function Faq({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="lph-faq-item">
-      <button onClick={() => setOpen(!open)} className="lph-faq-q">
+    <div style={{ borderBottom: '1px solid rgba(255,255,255,.06)' }}>
+      <button onClick={() => setOpen(!open)} style={{
+        width: '100%', padding: '20px 0', background: 'none', border: 'none', cursor: 'pointer',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        color: '#fff', fontSize: 15, fontWeight: 600, fontFamily: 'inherit', textAlign: 'right',
+      }}>
         <span>{q}</span>
-        <span className={`lph-faq-icon ${open ? 'lph-faq-icon--open' : ''}`}>+</span>
+        <span style={{ color: '#6366f1', fontSize: 20, transition: 'transform .2s', transform: open ? 'rotate(45deg)' : '', marginLeft: 16, flexShrink: 0 }}>+</span>
       </button>
-      <div className={`lph-faq-a ${open ? 'lph-faq-a--open' : ''}`}>
-        <p>{a}</p>
+      <div style={{ maxHeight: open ? 200 : 0, overflow: 'hidden', transition: 'max-height .3s ease' }}>
+        <p style={{ fontSize: 14, lineHeight: 1.8, color: 'rgba(255,255,255,.4)', margin: 0, padding: '0 0 20px' }}>{a}</p>
       </div>
     </div>
   )
 }
 
-// ─── Number counter ─────────────────────────────────────────────────────────
+// ─── Animated Phone Mockup ──────────────────────────────────────────────────
 
-function CountUp({ target, suffix = '' }: { target: number; suffix?: string }) {
-  const [count, setCount] = useState(0)
-  const ref = useRef<HTMLSpanElement>(null)
+function PhoneMockup() {
+  const [step, setStep] = useState(0)
   useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) {
-        let start = 0
-        const step = Math.ceil(target / 40)
-        const timer = setInterval(() => {
-          start += step
-          if (start >= target) { setCount(target); clearInterval(timer) }
-          else setCount(start)
-        }, 30)
-        obs.unobserve(el)
-      }
-    }, { threshold: 0.3 })
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [target])
-  return <span ref={ref}>{count.toLocaleString()}{suffix}</span>
+    const timers = [
+      setTimeout(() => setStep(1), 2000),
+      setTimeout(() => setStep(2), 4000),
+      setTimeout(() => setStep(3), 5500),
+      setTimeout(() => setStep(0), 8000),
+    ]
+    const loop = setInterval(() => {
+      setTimeout(() => setStep(1), 100)
+      setTimeout(() => setStep(2), 2100)
+      setTimeout(() => setStep(3), 3600)
+      setTimeout(() => setStep(0), 6100)
+    }, 8000)
+    return () => { timers.forEach(clearTimeout); clearInterval(loop) }
+  }, [])
+
+  return (
+    <div className="phone">
+      <div className="phone-notch" />
+      <div className="phone-screen">
+        {/* Step 0: Selfie screen */}
+        <div className="phone-step" style={{ opacity: step === 0 ? 1 : 0 }}>
+          <div className="phone-cam">
+            <div className="phone-cam-ring" />
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="rgba(255,255,255,.6)" strokeWidth="1.5">
+              <circle cx="12" cy="12" r="9" /><circle cx="12" cy="10" r="3" /><path d="M6 20c0-3 3-5 6-5s6 2 6 5" />
+            </svg>
+          </div>
+          <p className="phone-text">צלם סלפי</p>
+        </div>
+        {/* Step 1: Scanning */}
+        <div className="phone-step" style={{ opacity: step === 1 ? 1 : 0 }}>
+          <div className="phone-scan">
+            <div className="phone-scan-line" />
+          </div>
+          <p className="phone-text">מזהה פנים...</p>
+        </div>
+        {/* Step 2: Loading dots */}
+        <div className="phone-step" style={{ opacity: step === 2 ? 1 : 0 }}>
+          <div className="phone-dots">
+            <span /><span /><span />
+          </div>
+          <p className="phone-text">מחפש תמונות</p>
+        </div>
+        {/* Step 3: Results */}
+        <div className="phone-step" style={{ opacity: step === 3 ? 1 : 0 }}>
+          <div className="phone-results">
+            <div className="phone-thumb" style={{ animationDelay: '0s' }} />
+            <div className="phone-thumb" style={{ animationDelay: '.1s' }} />
+            <div className="phone-thumb" style={{ animationDelay: '.2s' }} />
+            <div className="phone-thumb" style={{ animationDelay: '.3s' }} />
+            <div className="phone-thumb" style={{ animationDelay: '.4s' }} />
+            <div className="phone-thumb" style={{ animationDelay: '.5s' }} />
+          </div>
+          <p className="phone-text" style={{ color: '#22c55e' }}>נמצאו 47 תמונות!</p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
-// ─── Component ──────────────────────────────────────────────────────────────
+// ─── Main ───────────────────────────────────────────────────────────────────
 
 export function LandingPageHe() {
   const [scrolled, setScrolled] = useState(false)
-  const [mobileMenu, setMobileMenu] = useState(false)
+  const [menu, setMenu] = useState(false)
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 50)
@@ -76,533 +116,337 @@ export function LandingPageHe() {
   }, [])
 
   return (
-    <div className="lph">
+    <div className="lp" style={{ direction: 'rtl' }}>
       <style>{`
-        /* ── Base ── */
-        .lph {
-          --bg: #07070d; --card: #0e0e18; --border: rgba(255,255,255,.06);
-          --text: #fff; --muted: rgba(255,255,255,.45); --faint: rgba(255,255,255,.2);
-          --accent: #6366f1; --accent-glow: rgba(99,102,241,.15);
-          min-height: 100vh; background: var(--bg); color: var(--text);
-          font-family: 'Inter', -apple-system, sans-serif; direction: rtl;
-          overflow-x: hidden; -webkit-font-smoothing: antialiased;
-        }
-        .lph *, .lph *::before, .lph *::after { box-sizing: border-box; }
-        .lph a { color: inherit; }
-        .lph-wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
+/* ── Reset & Base ── */
+.lp{--a:#6366f1;--bg:#07070d;--card:#0d0d16;--b:rgba(255,255,255,.06);min-height:100vh;background:var(--bg);color:#fff;font-family:'Inter',-apple-system,sans-serif;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+.lp *,.lp *::before,.lp *::after{box-sizing:border-box}
+.lp a{color:inherit}
+.w{max-width:1060px;margin:0 auto;padding:0 28px}
 
-        /* ── Reveal ── */
-        .lph-reveal { opacity: 0; transform: translateY(28px); transition: opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1); }
-        .lph-visible { opacity: 1; transform: translateY(0); }
+/* ── Reveal ── */
+.rv{opacity:0;transform:translateY(30px);transition:opacity .8s cubic-bezier(.16,1,.3,1),transform .8s cubic-bezier(.16,1,.3,1)}
+.v{opacity:1;transform:translateY(0)}
 
-        /* ── Nav ── */
-        .lph-nav {
-          position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-          padding: 18px 0; transition: background .3s, border-color .3s, padding .3s;
-        }
-        .lph-nav--solid {
-          background: rgba(7,7,13,.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-          border-bottom: 1px solid var(--border); padding: 12px 0;
-        }
-        .lph-nav-inner {
-          max-width: 1080px; margin: 0 auto; padding: 0 28px;
-          display: flex; align-items: center; justify-content: space-between;
-        }
-        .lph-logo { font-size: 24px; font-weight: 900; text-decoration: none; letter-spacing: -.7px; }
-        .lph-logo-x { color: var(--accent); }
-        .lph-nav-links { display: flex; gap: 6px; align-items: center; }
-        .lph-nav-link {
-          padding: 8px 16px; font-size: 14px; font-weight: 500; color: var(--muted);
-          text-decoration: none; border-radius: 8px; transition: color .2s;
-        }
-        .lph-nav-link:hover { color: var(--text); }
-        .lph-nav-cta {
-          padding: 10px 24px; border-radius: 10px; border: none; cursor: pointer;
-          background: var(--accent); color: #fff; font-size: 14px; font-weight: 700;
-          font-family: inherit; transition: transform .15s, box-shadow .15s;
-        }
-        .lph-nav-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(99,102,241,.3); }
+/* ── Nav ── */
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;transition:all .3s}
+.nav--s{background:rgba(7,7,13,.9);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--b);padding:10px 0}
+.nav-i{max-width:1060px;margin:0 auto;padding:0 28px;display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:24px;font-weight:900;text-decoration:none;letter-spacing:-.7px}
+.logo span{color:var(--a)}
+.nav-r{display:flex;gap:4px;align-items:center}
+.nav-l{padding:10px 16px;font-size:13px;font-weight:500;color:rgba(255,255,255,.45);text-decoration:none;border-radius:8px;transition:color .2s}
+.nav-l:hover{color:#fff}
+.cta{padding:10px 22px;border-radius:10px;border:none;cursor:pointer;background:var(--a);color:#fff;font-size:13px;font-weight:700;font-family:inherit;transition:transform .15s,box-shadow .15s}
+.cta:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(99,102,241,.3)}
+@media(max-width:680px){.nav-r{display:none}.mob-b{display:flex!important}}
+.mob-b{display:none;width:36px;height:36px;border-radius:8px;border:1px solid var(--b);background:0;color:rgba(255,255,255,.5);cursor:pointer;align-items:center;justify-content:center;font-size:18px}
+.mob-menu{padding:12px 28px 16px;display:flex;flex-direction:column;gap:4px;background:rgba(7,7,13,.97);border-top:1px solid var(--b)}
+.mob-menu .cta{margin-top:8px}
 
-        @media (max-width: 640px) {
-          .lph-nav-links { display: none; }
-          .lph-mobile-btn { display: flex !important; }
-        }
-        .lph-mobile-btn {
-          display: none; width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border);
-          background: transparent; color: var(--muted); cursor: pointer;
-          align-items: center; justify-content: center; font-size: 18px;
-        }
+/* ── Hero ── */
+.hero{padding:160px 28px 80px;display:flex;align-items:center;justify-content:center;gap:60px;position:relative;min-height:85vh}
+@media(max-width:860px){.hero{flex-direction:column;text-align:center;padding:140px 20px 60px;gap:40px}}
+.hero-txt{flex:1;max-width:480px}
+.hero-badge{display:inline-block;padding:6px 16px;border-radius:100px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.12);font-size:12px;font-weight:600;color:#818cf8;margin-bottom:24px;letter-spacing:.3px}
+.hero h1{font-size:clamp(32px,5vw,48px);font-weight:900;line-height:1.08;margin:0 0 20px;letter-spacing:-1.2px}
+.hero-gr{background:linear-gradient(135deg,#818cf8,#c084fc,#818cf8);background-size:200% 200%;animation:gr 5s ease infinite;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+@keyframes gr{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.hero p{font-size:16px;line-height:1.7;color:rgba(255,255,255,.4);margin:0 0 36px}
+.hero-btns{display:flex;gap:12px;flex-wrap:wrap}
+@media(max-width:860px){.hero-btns{justify-content:center}}
+.btn-p{padding:15px 36px;border-radius:12px;border:none;cursor:pointer;background:var(--a);color:#fff;font-size:16px;font-weight:700;font-family:inherit;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 20px rgba(99,102,241,.2)}
+.btn-p:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(99,102,241,.35)}
+.btn-g{padding:15px 36px;border-radius:12px;cursor:pointer;background:0;color:#fff;font-size:16px;font-weight:600;font-family:inherit;border:1px solid rgba(255,255,255,.1);text-decoration:none;transition:border-color .2s}
+.btn-g:hover{border-color:rgba(255,255,255,.25)}
+.hero-glow{position:absolute;border-radius:50%;filter:blur(100px);pointer-events:none;animation:breathe 8s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.08}50%{opacity:.18}}
 
-        /* ── Hero ── */
-        .lph-hero {
-          padding: 180px 28px 120px; text-align: center; position: relative;
-        }
-        @media (max-width: 640px) { .lph-hero { padding: 140px 20px 80px; } }
-        .lph-hero-badge {
-          display: inline-block; padding: 6px 18px; border-radius: 100px;
-          background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.15);
-          font-size: 13px; font-weight: 600; color: #818cf8; margin-bottom: 28px;
-          letter-spacing: .2px;
-        }
-        .lph-hero h1 {
-          font-size: clamp(34px, 5.5vw, 52px); font-weight: 900; line-height: 1.1;
-          margin: 0 auto 24px; max-width: 650px; letter-spacing: -1.2px;
-        }
-        .lph-hero-gradient {
-          background: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #818cf8 100%);
-          background-size: 200% 200%; animation: lph-grad 5s ease infinite;
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        }
-        @keyframes lph-grad { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
-        .lph-hero p {
-          font-size: 17px; line-height: 1.7; color: var(--muted);
-          max-width: 440px; margin: 0 auto 44px;
-        }
-        .lph-hero-btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
-        .lph-btn-primary {
-          padding: 16px 40px; border-radius: 12px; border: none; cursor: pointer;
-          background: var(--accent); color: #fff; font-size: 17px; font-weight: 700;
-          font-family: inherit; transition: transform .15s, box-shadow .15s;
-          box-shadow: 0 4px 20px rgba(99,102,241,.2);
-        }
-        .lph-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(99,102,241,.35); }
-        .lph-btn-ghost {
-          padding: 16px 40px; border-radius: 12px; cursor: pointer;
-          background: transparent; color: var(--text); font-size: 17px; font-weight: 600;
-          font-family: inherit; border: 1px solid rgba(255,255,255,.1);
-          text-decoration: none; transition: border-color .2s;
-        }
-        .lph-btn-ghost:hover { border-color: rgba(255,255,255,.25); }
+/* ── Phone ── */
+.phone{width:220px;height:440px;border-radius:36px;border:2px solid rgba(255,255,255,.1);background:#111;position:relative;overflow:hidden;flex-shrink:0;box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04),inset 0 1px 0 rgba(255,255,255,.06)}
+.phone-notch{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:60px;height:20px;border-radius:10px;background:#000;z-index:5}
+.phone-screen{position:absolute;inset:2px;border-radius:34px;background:linear-gradient(180deg,#0a0a14,#0e0e1a);overflow:hidden}
+.phone-step{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity .5s ease;padding:20px}
+.phone-text{font-size:13px;color:rgba(255,255,255,.5);margin:0;font-weight:500}
+.phone-cam{width:100px;height:100px;border-radius:50%;border:3px solid rgba(99,102,241,.3);display:flex;align-items:center;justify-content:center;position:relative}
+.phone-cam-ring{position:absolute;inset:-8px;border-radius:50%;border:2px solid rgba(99,102,241,.1);animation:cam-pulse 2s ease-in-out infinite}
+@keyframes cam-pulse{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.08);opacity:1}}
+.phone-scan{width:100px;height:100px;border-radius:50%;border:2px solid var(--a);position:relative;overflow:hidden}
+.phone-scan-line{position:absolute;top:0;left:0;right:0;height:3px;background:var(--a);box-shadow:0 0 12px var(--a);animation:scan 1.2s ease-in-out infinite}
+@keyframes scan{0%{top:0}50%{top:calc(100% - 3px)}100%{top:0}}
+.phone-dots{display:flex;gap:10px}
+.phone-dots span{width:10px;height:10px;border-radius:50%;background:var(--a);animation:dot-bounce .6s ease-in-out infinite alternate}
+.phone-dots span:nth-child(2){animation-delay:.15s}
+.phone-dots span:nth-child(3){animation-delay:.3s}
+@keyframes dot-bounce{0%{transform:translateY(0);opacity:.3}100%{transform:translateY(-8px);opacity:1}}
+.phone-results{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:140px}
+.phone-thumb{aspect-ratio:1;border-radius:6px;background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(168,85,247,.15));animation:thumb-in .4s ease both}
+@keyframes thumb-in{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
 
-        /* Hero glow */
-        .lph-glow {
-          position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none;
-          animation: lph-breathe 7s ease-in-out infinite;
-        }
-        @keyframes lph-breathe { 0%,100% { opacity: .12; } 50% { opacity: .22; } }
+/* ── Ticker ── */
+.ticker{padding:40px 0;overflow:hidden;border-top:1px solid var(--b);border-bottom:1px solid var(--b)}
+.ticker-track{display:flex;gap:48px;animation:ticker-scroll 20s linear infinite;white-space:nowrap;width:max-content}
+@keyframes ticker-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.ticker-item{font-size:14px;font-weight:600;color:rgba(255,255,255,.12);letter-spacing:2px;text-transform:uppercase}
 
-        /* ── Stats ── */
-        .lph-stats {
-          display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
-          max-width: 640px; margin: 0 auto;
-          background: var(--border); border-radius: 16px; overflow: hidden;
-        }
-        .lph-stat {
-          padding: 32px 20px; text-align: center; background: var(--card);
-        }
-        .lph-stat-num { font-size: 36px; font-weight: 900; display: block; margin-bottom: 4px; }
-        .lph-stat-label { font-size: 13px; color: var(--muted); }
-        @media (max-width: 480px) {
-          .lph-stats { grid-template-columns: 1fr; }
-          .lph-stat { padding: 20px; }
-          .lph-stat-num { font-size: 28px; }
-        }
+/* ── Section ── */
+.sec{padding:100px 28px}
+.sec-t{font-size:28px;font-weight:800;text-align:center;margin:0 0 10px;letter-spacing:-.5px}
+.sec-s{font-size:14px;color:rgba(255,255,255,.35);text-align:center;margin:0 auto 48px;max-width:380px;line-height:1.7}
 
-        /* ── Section ── */
-        .lph-section { padding: 100px 28px; }
-        .lph-section-title {
-          font-size: 30px; font-weight: 800; text-align: center; margin: 0 0 10px;
-          letter-spacing: -.5px;
-        }
-        .lph-section-sub {
-          font-size: 15px; color: var(--muted); text-align: center;
-          margin: 0 auto 52px; max-width: 420px; line-height: 1.7;
-        }
+/* ── Steps ── */
+.steps{display:flex;gap:0;max-width:860px;margin:0 auto;border-radius:20px;overflow:hidden;border:1px solid var(--b)}
+@media(max-width:700px){.steps{flex-direction:column}}
+.step{flex:1;padding:40px 28px;background:var(--card);border-left:1px solid var(--b);position:relative}
+.step:first-child{border-left:none}
+@media(max-width:700px){.step{border-left:none;border-top:1px solid var(--b)}.step:first-child{border-top:none}}
+.step-n{font-size:52px;font-weight:900;color:rgba(99,102,241,.08);line-height:1;margin-bottom:20px}
+.step h3{font-size:16px;font-weight:700;margin:0 0 10px}
+.step p{font-size:13px;line-height:1.7;color:rgba(255,255,255,.35);margin:0}
+.step::after{content:'';position:absolute;bottom:0;right:28px;left:28px;height:2px;background:linear-gradient(90deg,transparent,var(--a),transparent);opacity:0;transition:opacity .3s}
+.step:hover::after{opacity:.3}
 
-        /* ── Steps ── */
-        .lph-steps {
-          display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;
-          max-width: 880px; margin: 0 auto;
-          background: var(--border); border-radius: 20px; overflow: hidden;
-        }
-        @media (max-width: 700px) { .lph-steps { grid-template-columns: 1fr; } }
-        .lph-step {
-          padding: 40px 32px; background: var(--card);
-        }
-        .lph-step-num {
-          font-size: 48px; font-weight: 900; color: rgba(99,102,241,.12);
-          line-height: 1; margin-bottom: 20px;
-        }
-        .lph-step h3 { font-size: 17px; font-weight: 700; margin: 0 0 10px; }
-        .lph-step p { font-size: 14px; line-height: 1.7; color: var(--muted); margin: 0; }
+/* ── Features ── */
+.feats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;max-width:660px;margin:0 auto}
+@media(max-width:600px){.feats{grid-template-columns:1fr}}
+.feat{padding:24px;border-radius:14px;background:var(--card);border:1px solid var(--b);transition:border-color .25s,transform .25s}
+.feat:hover{border-color:rgba(99,102,241,.15);transform:translateY(-2px)}
+.feat h3{font-size:14px;font-weight:700;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+.feat-d{width:6px;height:6px;border-radius:50%;background:var(--a);flex-shrink:0}
+.feat p{font-size:13px;line-height:1.7;color:rgba(255,255,255,.35);margin:0;padding-right:16px}
 
-        /* ── Features ── */
-        .lph-features {
-          display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;
-          max-width: 700px; margin: 0 auto;
-        }
-        @media (max-width: 600px) { .lph-features { grid-template-columns: 1fr; } }
-        .lph-feature {
-          padding: 28px 24px; border-radius: 16px;
-          background: var(--card); border: 1px solid var(--border);
-          transition: border-color .25s;
-        }
-        .lph-feature:hover { border-color: rgba(99,102,241,.2); }
-        .lph-feature h3 {
-          font-size: 15px; font-weight: 700; margin: 0 0 8px;
-          display: flex; align-items: center; gap: 10px;
-        }
-        .lph-feature-dot {
-          width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
-        }
-        .lph-feature p { font-size: 13px; line-height: 1.7; color: var(--muted); margin: 0; padding-right: 18px; }
+/* ── Pricing ── */
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:860px;margin:0 auto}
+@media(max-width:760px){.plans{grid-template-columns:1fr;max-width:360px}}
+.plan{padding:32px 24px;border-radius:18px;background:var(--card);border:1px solid var(--b);transition:transform .25s;position:relative}
+.plan:hover{transform:translateY(-3px)}
+.plan--p{border-color:var(--a);background:rgba(99,102,241,.03)}
+.plan-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);padding:4px 16px;border-radius:100px;font-size:11px;font-weight:700;background:var(--a);color:#fff;white-space:nowrap}
+.plan h3{font-size:14px;font-weight:600;color:rgba(255,255,255,.4);margin:0 0 14px}
+.plan-price{font-size:40px;font-weight:900;letter-spacing:-1px}
+.plan-per{font-size:13px;color:rgba(255,255,255,.2);margin-right:4px}
+.plan ul{list-style:none;padding:0;margin:20px 0}
+.plan li{font-size:13px;color:rgba(255,255,255,.4);padding:6px 0;display:flex;align-items:center;gap:8px}
+.plan li::before{content:'✓';color:var(--a);font-weight:700;font-size:12px}
+.plan-b{width:100%;padding:13px;border-radius:10px;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;transition:transform .15s,box-shadow .15s}
+.plan-b:hover{transform:translateY(-1px)}
+.plan-bf{background:var(--a);color:#fff;box-shadow:0 4px 16px rgba(99,102,241,.2)}
+.plan-bf:hover{box-shadow:0 6px 24px rgba(99,102,241,.35)}
+.plan-bg{background:rgba(255,255,255,.04);color:rgba(255,255,255,.5);border:1px solid var(--b)}
 
-        /* ── Pricing ── */
-        .lph-plans {
-          display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
-          max-width: 900px; margin: 0 auto;
-        }
-        @media (max-width: 760px) { .lph-plans { grid-template-columns: 1fr; max-width: 380px; } }
-        .lph-plan {
-          padding: 36px 28px; border-radius: 20px;
-          background: var(--card); border: 1px solid var(--border);
-          transition: border-color .25s, transform .25s;
-          position: relative;
-        }
-        .lph-plan:hover { transform: translateY(-4px); }
-        .lph-plan--pop { border-color: var(--accent); background: rgba(99,102,241,.04); }
-        .lph-plan-badge {
-          position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
-          padding: 5px 18px; border-radius: 100px; font-size: 11px; font-weight: 700;
-          background: var(--accent); color: #fff; white-space: nowrap;
-        }
-        .lph-plan h3 { font-size: 16px; font-weight: 700; margin: 0 0 16px; color: var(--muted); }
-        .lph-plan-price { font-size: 44px; font-weight: 900; letter-spacing: -1px; }
-        .lph-plan-per { font-size: 14px; color: var(--faint); margin-right: 4px; }
-        .lph-plan ul { list-style: none; padding: 0; margin: 24px 0; }
-        .lph-plan li {
-          font-size: 14px; color: var(--muted); padding: 7px 0;
-          display: flex; align-items: center; gap: 10px;
-        }
-        .lph-plan li::before { content: '✓'; color: var(--accent); font-weight: 700; font-size: 13px; }
-        .lph-plan-btn {
-          width: 100%; padding: 14px; border-radius: 10px; border: none; cursor: pointer;
-          font-size: 15px; font-weight: 700; font-family: inherit;
-          transition: transform .15s, box-shadow .15s;
-        }
-        .lph-plan-btn:hover { transform: translateY(-1px); }
-        .lph-plan-btn--fill { background: var(--accent); color: #fff; box-shadow: 0 4px 16px rgba(99,102,241,.2); }
-        .lph-plan-btn--fill:hover { box-shadow: 0 6px 24px rgba(99,102,241,.35); }
-        .lph-plan-btn--ghost { background: rgba(255,255,255,.04); color: var(--muted); border: 1px solid var(--border); }
+/* ── Reviews ── */
+.revs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:860px;margin:0 auto}
+@media(max-width:700px){.revs{grid-template-columns:1fr}}
+.rev{padding:24px;border-radius:14px;background:var(--card);border:1px solid var(--b)}
+.rev-stars{color:#fbbf24;font-size:12px;letter-spacing:2px;margin-bottom:12px}
+.rev-txt{font-size:13px;line-height:1.75;color:rgba(255,255,255,.4);margin:0 0 16px}
+.rev-a{display:flex;align-items:center;gap:10px}
+.rev-av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--a),#a855f7);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.rev-n{font-size:12px;font-weight:600}
+.rev-r{font-size:11px;color:rgba(255,255,255,.2)}
 
-        /* ── Testimonials ── */
-        .lph-reviews {
-          display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
-          max-width: 900px; margin: 0 auto;
-        }
-        @media (max-width: 700px) { .lph-reviews { grid-template-columns: 1fr; } }
-        .lph-review {
-          padding: 28px; border-radius: 16px;
-          background: var(--card); border: 1px solid var(--border);
-        }
-        .lph-review-stars { color: #fbbf24; font-size: 13px; letter-spacing: 2px; margin-bottom: 14px; }
-        .lph-review-text { font-size: 14px; line-height: 1.75; color: var(--muted); margin: 0 0 18px; }
-        .lph-review-author { display: flex; align-items: center; gap: 10px; }
-        .lph-review-avatar {
-          width: 34px; height: 34px; border-radius: 50%;
-          background: linear-gradient(135deg, var(--accent), #a855f7);
-          display: flex; align-items: center; justify-content: center;
-          font-size: 13px; font-weight: 700;
-        }
-        .lph-review-name { font-size: 13px; font-weight: 600; }
-        .lph-review-role { font-size: 11px; color: var(--faint); }
-
-        /* ── FAQ ── */
-        .lph-faq-item { border-bottom: 1px solid var(--border); }
-        .lph-faq-q {
-          width: 100%; padding: 22px 0; background: none; border: none; cursor: pointer;
-          display: flex; justify-content: space-between; align-items: center;
-          color: var(--text); font-size: 15px; font-weight: 600; font-family: inherit;
-          text-align: right;
-        }
-        .lph-faq-icon {
-          font-size: 22px; color: var(--accent); flex-shrink: 0; margin-left: 16px;
-          transition: transform .25s;
-        }
-        .lph-faq-icon--open { transform: rotate(45deg); }
-        .lph-faq-a {
-          max-height: 0; overflow: hidden; transition: max-height .3s ease;
-        }
-        .lph-faq-a--open { max-height: 300px; }
-        .lph-faq-a p {
-          font-size: 14px; line-height: 1.8; color: var(--muted);
-          margin: 0; padding: 0 0 20px;
-        }
-
-        /* ── Footer ── */
-        .lph-footer {
-          padding: 28px; border-top: 1px solid var(--border); text-align: center;
-        }
-        .lph-footer-links { display: flex; justify-content: center; gap: 28px; margin-bottom: 14px; }
-        .lph-footer-links a { font-size: 13px; color: var(--faint); text-decoration: none; }
-        .lph-footer-links a:hover { color: var(--muted); }
-        .lph-footer-copy { font-size: 11px; color: rgba(255,255,255,.12); margin: 0; }
+/* ── Footer ── */
+.ft{padding:28px;border-top:1px solid var(--b);text-align:center}
+.ft-links{display:flex;justify-content:center;gap:28px;margin-bottom:12px}
+.ft-links a{font-size:12px;color:rgba(255,255,255,.15);text-decoration:none}
+.ft-links a:hover{color:rgba(255,255,255,.3)}
+.ft-copy{font-size:11px;color:rgba(255,255,255,.08);margin:0}
       `}</style>
 
-      {/* ─── Nav ─── */}
-      <nav className={`lph-nav ${scrolled ? 'lph-nav--solid' : ''}`}>
-        <div className="lph-nav-inner">
-          <a href="/" className="lph-logo">Pi<span className="lph-logo-x">x</span>flow</a>
-          <div className="lph-nav-links">
-            <a href="#how" className="lph-nav-link">איך זה עובד</a>
-            <a href="#pricing" className="lph-nav-link">מחירים</a>
-            <a href="/demo" className="lph-nav-link">דמו חי</a>
-            <button onClick={signInWithGoogle} className="lph-nav-cta">התחברות</button>
+      {/* Nav */}
+      <nav className={`nav ${scrolled ? 'nav--s' : ''}`}>
+        <div className="nav-i">
+          <a href="/" className="logo">Pi<span>x</span>flow</a>
+          <div className="nav-r">
+            <a href="#how" className="nav-l">איך זה עובד</a>
+            <a href="#pricing" className="nav-l">מחירים</a>
+            <a href="/demo" className="nav-l">דמו חי</a>
+            <button onClick={signInWithGoogle} className="cta">התחברות</button>
           </div>
-          <button className="lph-mobile-btn" onClick={() => setMobileMenu(!mobileMenu)}>☰</button>
+          <button className="mob-b" onClick={() => setMenu(!menu)}>☰</button>
         </div>
-        {mobileMenu && (
-          <div style={{
-            padding: '16px 28px 20px', display: 'flex', flexDirection: 'column', gap: 8,
-            background: 'rgba(7,7,13,.95)', borderTop: '1px solid var(--border)',
-          }}>
-            <a href="#how" className="lph-nav-link" onClick={() => setMobileMenu(false)}>איך זה עובד</a>
-            <a href="#pricing" className="lph-nav-link" onClick={() => setMobileMenu(false)}>מחירים</a>
-            <a href="/demo" className="lph-nav-link" onClick={() => setMobileMenu(false)}>דמו חי</a>
-            <button onClick={() => { setMobileMenu(false); signInWithGoogle() }} className="lph-nav-cta" style={{ marginTop: 8 }}>התחברות</button>
+        {menu && (
+          <div className="mob-menu">
+            <a href="#how" className="nav-l" onClick={() => setMenu(false)}>איך זה עובד</a>
+            <a href="#pricing" className="nav-l" onClick={() => setMenu(false)}>מחירים</a>
+            <a href="/demo" className="nav-l" onClick={() => setMenu(false)}>דמו חי</a>
+            <button onClick={() => { setMenu(false); signInWithGoogle() }} className="cta">התחברות</button>
           </div>
         )}
       </nav>
 
-      {/* ─── Hero ─── */}
-      <section className="lph-hero">
-        <div className="lph-glow" style={{ width: 500, height: 500, top: '5%', right: '10%', background: 'var(--accent)' }} />
-        <div className="lph-glow" style={{ width: 350, height: 350, top: '35%', left: '5%', background: '#a855f7', animationDelay: '3s' }} />
+      {/* Hero */}
+      <section className="hero">
+        <div className="hero-glow" style={{ width: 500, height: 500, top: '5%', right: '8%', background: '#6366f1' }} />
+        <div className="hero-glow" style={{ width: 350, height: 350, bottom: '10%', left: '5%', background: '#a855f7', animationDelay: '3s' }} />
 
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <Reveal>
-            <div className="lph-hero-badge">פלטפורמת הזיהוי פנים לצלמי אירועים</div>
-          </Reveal>
-
-          <Reveal delay={80}>
-            <h1>
-              סלפי אחד —<br />
-              <span className="lph-hero-gradient">כל התמונות שלהם</span>
-            </h1>
-          </Reveal>
-
-          <Reveal delay={160}>
-            <p>
-              מעלים את התמונות מהאירוע, שולחים לינק לאורחים,
-              והם מוצאים את עצמם תוך שנייה. בלי אפליקציה, בלי סיפורים.
-            </p>
-          </Reveal>
-
-          <Reveal delay={240}>
-            <div className="lph-hero-btns">
-              <button onClick={signInWithGoogle} className="lph-btn-primary">יאלה, מתחילים</button>
-              <a href="/demo" className="lph-btn-ghost">תנסו דמו חי</a>
+        <div className="hero-txt" style={{ position: 'relative', zIndex: 1 }}>
+          <R><div className="hero-badge">זיהוי פנים לאירועים</div></R>
+          <R d={80}><h1>סלפי אחד —<br /><span className="hero-gr">כל התמונות שלהם</span></h1></R>
+          <R d={160}><p>מעלים תמונות מהאירוע, האורח עושה סלפי, ותוך שנייה הוא מקבל את כל התמונות שלו. בלי אפליקציה.</p></R>
+          <R d={240}>
+            <div className="hero-btns">
+              <button onClick={signInWithGoogle} className="btn-p">יאלה, מתחילים</button>
+              <a href="/demo" className="btn-g">תנסו דמו חי</a>
             </div>
-          </Reveal>
+          </R>
         </div>
+
+        <R d={300}>
+          <PhoneMockup />
+        </R>
       </section>
 
-      {/* ─── Stats ─── */}
-      <section style={{ padding: '0 28px 80px' }}>
-        <Reveal>
-          <div className="lph-stats">
-            <div className="lph-stat">
-              <span className="lph-stat-num"><CountUp target={97} suffix="%" /></span>
-              <span className="lph-stat-label">דיוק זיהוי</span>
-            </div>
-            <div className="lph-stat">
-              <span className="lph-stat-num"><CountUp target={2} suffix=" שנ׳" /></span>
-              <span className="lph-stat-label">זמן זיהוי ממוצע</span>
-            </div>
-            <div className="lph-stat">
-              <span className="lph-stat-num">0</span>
-              <span className="lph-stat-label">אפליקציות להורדה</span>
-            </div>
-          </div>
-        </Reveal>
-      </section>
+      {/* Ticker */}
+      <div className="ticker">
+        <div className="ticker-track">
+          {[...Array(2)].map((_, r) => (
+            <span key={r} style={{ display: 'contents' }}>
+              {['חתונות', 'בר מצוות', 'כנסים', 'ימי גיבוש', 'אירועי חברה', 'פסטיבלים', 'חגיגות', 'השקות'].map((t, i) => (
+                <span key={`${r}-${i}`} className="ticker-item">{t}</span>
+              ))}
+            </span>
+          ))}
+        </div>
+      </div>
 
-      {/* ─── How it works ─── */}
-      <section id="how" className="lph-section">
-        <div className="lph-wrap">
-          <Reveal>
-            <h2 className="lph-section-title">שלושה שלבים, אפס כאב ראש</h2>
-            <p className="lph-section-sub">פשוט עד שזה כמעט חשוד</p>
-          </Reveal>
-
-          <Reveal delay={100}>
-            <div className="lph-steps">
-              <div className="lph-step">
-                <div className="lph-step-num">01</div>
+      {/* How it works */}
+      <section id="how" className="sec">
+        <div className="w">
+          <R><h2 className="sec-t">שלושה שלבים. זהו.</h2></R>
+          <R d={60}><p className="sec-s">פשוט עד שזה כמעט חשוד</p></R>
+          <R d={120}>
+            <div className="steps">
+              <div className="step">
+                <div className="step-n">01</div>
                 <h3>תעלו את התמונות</h3>
-                <p>סיימתם לצלם? מעלים הכל לגלריה. אנחנו מטפלים בשאר.</p>
+                <p>סיימתם לצלם? מעלים הכל. אנחנו מטפלים בשאר.</p>
               </div>
-              <div className="lph-step">
-                <div className="lph-step-num">02</div>
+              <div className="step">
+                <div className="step-n">02</div>
                 <h3>תשלחו לינק</h3>
-                <p>QR, ווטסאפ, SMS, מייל — איך שנוח. האורחים לוחצים ומגיעים.</p>
+                <p>QR, ווטסאפ, SMS, מייל — מה שבא לכם. האורחים לוחצים ומגיעים.</p>
               </div>
-              <div className="lph-step">
-                <div className="lph-step-num">03</div>
-                <h3>הם עושים סלפי</h3>
-                <p>סלפי אחד מהטלפון, והמערכת מוצאת את כל התמונות שלהם. נקודה.</p>
+              <div className="step">
+                <div className="step-n">03</div>
+                <h3>סלפי = תמונות</h3>
+                <p>סלפי אחד מהטלפון, והמערכת מוצאת להם הכל. נקודה.</p>
               </div>
             </div>
-          </Reveal>
+          </R>
         </div>
       </section>
 
-      {/* ─── Features ─── */}
-      <section className="lph-section">
-        <div className="lph-wrap">
-          <Reveal>
-            <h2 className="lph-section-title">למה צלמים עוברים אלינו</h2>
-            <p className="lph-section-sub">לא סתם עוד גלריה אונליין</p>
-          </Reveal>
-
-          <div className="lph-features">
+      {/* Features */}
+      <section className="sec">
+        <div className="w">
+          <R><h2 className="sec-t">למה צלמים עוברים אלינו</h2></R>
+          <R d={60}><p className="sec-s">לא סתם עוד גלריה אונליין</p></R>
+          <div className="feats">
             {[
               { t: 'זיהוי ב-2 שניות', d: 'לא דקות. לא "מעבד". האורח עושה סלפי ומקבל תוצאות עוד לפני שהוריד את היד.' },
-              { t: 'הלוגו שלך, הצבעים שלך', d: 'הגלריה נראית כאילו בנית אותה בעצמך. הלקוח לא רואה את Pixflow — הוא רואה אותך.' },
-              { t: 'פרטיות ברמה אחרת', d: 'כל אורח רואה רק את התמונות שלו. הסלפי נמחק אחרי חיפוש. GDPR? סגור.' },
-              { t: 'אפס חיכוך', d: 'בלי אפליקציה, בלי הרשמה, בלי "הכנס קוד". האורח לוחץ, מצלם סלפי, מקבל. זהו.' },
+              { t: 'הלוגו שלך, הצבעים שלך', d: 'הגלריה נראית כאילו בנית אותה. הלקוח לא רואה Pixflow — הוא רואה אותך.' },
+              { t: 'פרטיות ברמה אחרת', d: 'כל אורח רואה רק את שלו. הסלפי נמחק אוטומטית. GDPR? סגור.' },
+              { t: 'אפס חיכוך', d: 'בלי אפליקציה, בלי הרשמה, בלי "הכנס קוד". לוחץ, סלפי, מקבל. זהו.' },
             ].map((f, i) => (
-              <Reveal key={i} delay={i * 80}>
-                <div className="lph-feature">
-                  <h3><span className="lph-feature-dot" /> {f.t}</h3>
-                  <p>{f.d}</p>
-                </div>
-              </Reveal>
+              <R key={i} d={i * 60}><div className="feat"><h3><span className="feat-d" />{f.t}</h3><p>{f.d}</p></div></R>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ─── Pricing ─── */}
-      <section id="pricing" className="lph-section">
-        <div className="lph-wrap">
-          <Reveal>
-            <h2 className="lph-section-title">תמחור</h2>
-            <p className="lph-section-sub">תשלום חד פעמי לאירוע. בלי מנויים, בלי קאצ'.</p>
-          </Reveal>
-
-          <Reveal delay={100}>
-            <div className="lph-plans">
-              <div className="lph-plan">
+      {/* Pricing */}
+      <section id="pricing" className="sec">
+        <div className="w">
+          <R><h2 className="sec-t">תמחור</h2></R>
+          <R d={60}><p className="sec-s">חד פעמי. בלי מנויים, בלי קאצ'.</p></R>
+          <R d={120}>
+            <div className="plans">
+              <div className="plan">
                 <h3>Essential</h3>
-                <div><span className="lph-plan-price">₪599</span><span className="lph-plan-per">/אירוע</span></div>
-                <ul>
-                  <li>עד 2,000 תמונות</li>
-                  <li>זיהוי פנים AI</li>
-                  <li>שאלון ללקוח</li>
-                  <li>שיתוף QR + לינק</li>
-                  <li>3 חודשי אחסון</li>
-                </ul>
-                <button onClick={signInWithGoogle} className="lph-plan-btn lph-plan-btn--ghost">להתחיל</button>
+                <div><span className="plan-price">₪599</span><span className="plan-per">/אירוע</span></div>
+                <ul><li>עד 2,000 תמונות</li><li>זיהוי פנים AI</li><li>שאלון ללקוח</li><li>שיתוף QR + לינק</li><li>3 חודשי אחסון</li></ul>
+                <button onClick={signInWithGoogle} className="plan-b plan-bg">להתחיל</button>
               </div>
-
-              <div className="lph-plan lph-plan--pop">
-                <div className="lph-plan-badge">הכי נבחר</div>
+              <div className="plan plan--p">
+                <div className="plan-badge">הכי נבחר</div>
                 <h3>Premium</h3>
-                <div><span className="lph-plan-price">₪799</span><span className="lph-plan-per">/אירוע</span></div>
-                <ul>
-                  <li>תמונות ללא הגבלה</li>
-                  <li>זיהוי פנים AI</li>
-                  <li>מיתוג מלא — לוגו + צבעים</li>
-                  <li>SMS + מייל אוטומטי</li>
-                  <li>שאלון מותאם אישית</li>
-                  <li>6 חודשי אחסון</li>
-                </ul>
-                <button onClick={signInWithGoogle} className="lph-plan-btn lph-plan-btn--fill">להתחיל</button>
+                <div><span className="plan-price">₪799</span><span className="plan-per">/אירוע</span></div>
+                <ul><li>ללא הגבלת תמונות</li><li>זיהוי פנים AI</li><li>מיתוג מלא</li><li>SMS + מייל אוטומטי</li><li>שאלון מותאם</li><li>6 חודשי אחסון</li></ul>
+                <button onClick={signInWithGoogle} className="plan-b plan-bf">להתחיל</button>
               </div>
-
-              <div className="lph-plan">
+              <div className="plan">
                 <h3>Exclusive</h3>
-                <div><span className="lph-plan-price">₪1,199</span><span className="lph-plan-per">/אירוע</span></div>
-                <ul>
-                  <li>הכל מ-Premium</li>
-                  <li>עיצוב גלריה VIP</li>
-                  <li>מסך לייב באירוע</li>
-                  <li>שנה אחסון</li>
-                  <li>תמיכה VIP + ייעוץ</li>
-                </ul>
-                <button onClick={signInWithGoogle} className="lph-plan-btn lph-plan-btn--ghost">להתחיל</button>
+                <div><span className="plan-price">₪1,199</span><span className="plan-per">/אירוע</span></div>
+                <ul><li>הכל מ-Premium</li><li>עיצוב גלריה VIP</li><li>מסך לייב באירוע</li><li>שנה אחסון</li><li>תמיכה VIP</li></ul>
+                <button onClick={signInWithGoogle} className="plan-b plan-bg">להתחיל</button>
               </div>
             </div>
-          </Reveal>
+          </R>
         </div>
       </section>
 
-      {/* ─── Testimonials ─── */}
-      <section className="lph-section">
-        <div className="lph-wrap">
-          <Reveal>
-            <h2 className="lph-section-title">צלמים מדברים</h2>
-          </Reveal>
-
-          <div className="lph-reviews">
-            {[
-              { name: 'דניאל כ.', role: 'צלם אירועים · ת״א', text: 'האורחים מקבלים את התמונות עוד באירוע ושולחים סטוריז. שיווק חינם שאי אפשר לקנות בכסף.', initials: 'ד' },
-              { name: 'מיכל ש.', role: 'צלמת חתונות · חיפה', text: 'הזיהוי עובד גם בתאורה של DJ בשעה 2 בלילה. ניסיתי שלושה מתחרים לפני — אף אחד לא מתקרב.', initials: 'מ' },
-              { name: 'עומר א.', role: 'מפיק אירועים · י-ם', text: 'הלקוחות שלי לא מורידים אפליקציות. נקודה. Pixflow עובד מהדפדפן ובזה סגרתם אותי.', initials: 'ע' },
-            ].map((r, i) => (
-              <Reveal key={i} delay={i * 100}>
-                <div className="lph-review">
-                  <div className="lph-review-stars">★★★★★</div>
-                  <p className="lph-review-text">{r.text}</p>
-                  <div className="lph-review-author">
-                    <div className="lph-review-avatar">{r.initials}</div>
-                    <div>
-                      <div className="lph-review-name">{r.name}</div>
-                      <div className="lph-review-role">{r.role}</div>
-                    </div>
+      {/* Testimonials */}
+      <section className="sec">
+        <div className="w">
+          <R><h2 className="sec-t">צלמים מדברים</h2></R>
+          <R d={80}>
+            <div className="revs">
+              {[
+                { n: 'דניאל כ.', r: 'צלם אירועים · ת״א', t: 'האורחים מקבלים תמונות עוד באירוע ושולחים סטוריז. שיווק חינם שאי אפשר לקנות בכסף.', i: 'ד' },
+                { n: 'מיכל ש.', r: 'צלמת חתונות · חיפה', t: 'הזיהוי עובד גם בתאורה של DJ בשעה 2 בלילה. ניסיתי שלושה מתחרים — אף אחד לא מתקרב.', i: 'מ' },
+                { n: 'עומר א.', r: 'מפיק אירועים · י-ם', t: 'הלקוחות שלי לא מורידים אפליקציות. נקודה. Pixflow עובד מהדפדפן ובזה סגרו אותי.', i: 'ע' },
+              ].map((rv, i) => (
+                <R key={i} d={i * 80}>
+                  <div className="rev">
+                    <div className="rev-stars">★★★★★</div>
+                    <p className="rev-txt">{rv.t}</p>
+                    <div className="rev-a"><div className="rev-av">{rv.i}</div><div><div className="rev-n">{rv.n}</div><div className="rev-r">{rv.r}</div></div></div>
                   </div>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── FAQ ─── */}
-      <section className="lph-section">
-        <div className="lph-wrap" style={{ maxWidth: 620 }}>
-          <Reveal>
-            <h2 className="lph-section-title">שאלות נפוצות</h2>
-          </Reveal>
-          <Reveal delay={80}>
-            <div>
-              <FaqItem q="כמה מדויק הזיהוי?" a="מעל 97%. עובד גם בתאורה חלשה, עם משקפיים, ומזהה פנים גם בקבוצות גדולות. משתמשים ב-AWS Rekognition — אותה טכנולוגיה שמפעילה את Amazon." />
-              <FaqItem q="האורחים צריכים להוריד משהו?" a="שום דבר. הם לוחצים על לינק, עושים סלפי מהדפדפן, ומקבלים את התמונות. אפילו סבתא תצליח." />
-              <FaqItem q="כמה תמונות אפשר להעלות?" a="ב-Essential עד 2,000. ב-Premium ו-Exclusive — כמה שבא לך, אין תקרה." />
-              <FaqItem q="מה עם פרטיות?" a="כל אורח רואה רק את התמונות שלו. הסלפי נמחק אוטומטית אחרי הזיהוי. עומדים ב-GDPR ובחוק הגנת הפרטיות הישראלי." />
-              <FaqItem q="אני יכול לשים את הלוגו שלי?" a="ב-Premium ומעלה — כן. לוגו, צבעים, טקסטים. הלקוח שלך רואה רק אותך." />
-              <FaqItem q="תוך כמה זמן הגלריה באוויר?" a="מרגע שמעלים את התמונות — הגלריה מוכנה לשיתוף. 1,000 תמונות = בערך 10-15 דקות." />
-              <FaqItem q="מה אם אני צריך עזרה?" a="מייל וווטסאפ, זמינים. ב-Exclusive מקבלים ליווי אישי כולל ייעוץ לפני האירוע." />
+                </R>
+              ))}
             </div>
-          </Reveal>
+          </R>
         </div>
       </section>
 
-      {/* ─── Final CTA ─── */}
-      <section style={{ padding: '80px 28px 120px', textAlign: 'center' }}>
-        <Reveal>
-          <h2 style={{ fontSize: 30, fontWeight: 800, margin: '0 0 14px', letterSpacing: -.5 }}>
-            מוכנים לשדרג את האירוע הבא?
-          </h2>
-          <p style={{ fontSize: 15, color: 'var(--muted)', margin: '0 0 36px' }}>
-            תנו לאורחים חוויה שהם ידברו עליה
-          </p>
-          <div className="lph-hero-btns">
-            <button onClick={signInWithGoogle} className="lph-btn-primary">יאלה, בואו</button>
-            <a href="/demo" className="lph-btn-ghost">תנסו דמו קודם</a>
-          </div>
-        </Reveal>
+      {/* FAQ */}
+      <section className="sec">
+        <div className="w" style={{ maxWidth: 600 }}>
+          <R><h2 className="sec-t">שאלות נפוצות</h2></R>
+          <R d={60}>
+            <div>
+              <Faq q="כמה מדויק הזיהוי?" a="מעל 97%. עובד גם בתאורה חלשה, עם משקפיים, ובקבוצות גדולות. משתמשים ב-AWS Rekognition." />
+              <Faq q="האורחים צריכים להוריד משהו?" a="שום דבר. לינק → סלפי → תמונות. אפילו סבתא תצליח." />
+              <Faq q="כמה תמונות אפשר להעלות?" a="ב-Essential עד 2,000. ב-Premium ו-Exclusive — כמה שבא לך." />
+              <Faq q="מה עם פרטיות?" a="כל אורח רואה רק את שלו. הסלפי נמחק אחרי הזיהוי. GDPR ✓ חוק הגנת הפרטיות ✓" />
+              <Faq q="אפשר לשים את הלוגו שלי?" a="ב-Premium ומעלה — לוגו, צבעים, טקסטים. הלקוח שלך רואה רק אותך." />
+              <Faq q="תוך כמה זמן הגלריה באוויר?" a="1,000 תמונות = בערך 10-15 דקות. מרגע שסיימת להעלות — הגלריה מוכנה." />
+            </div>
+          </R>
+        </div>
       </section>
 
-      {/* ─── Footer ─── */}
-      <footer className="lph-footer">
-        <div className="lph-footer-links">
+      {/* Final CTA */}
+      <section style={{ padding: '60px 28px 100px', textAlign: 'center' }}>
+        <R>
+          <h2 style={{ fontSize: 28, fontWeight: 800, margin: '0 0 12px', letterSpacing: -.5 }}>מוכנים לשדרג את האירוע הבא?</h2>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,.35)', margin: '0 0 32px' }}>תנו לאורחים חוויה שהם ידברו עליה</p>
+          <div className="hero-btns" style={{ justifyContent: 'center' }}>
+            <button onClick={signInWithGoogle} className="btn-p">יאלה, בואו</button>
+            <a href="/demo" className="btn-g">דמו קודם</a>
+          </div>
+        </R>
+      </section>
+
+      {/* Footer */}
+      <footer className="ft">
+        <div className="ft-links">
           <a href="/terms">תנאי שימוש</a>
           <a href="/privacy">פרטיות</a>
           <a href="mailto:support@pixflow-ai.com">צור קשר</a>
         </div>
-        <p className="lph-footer-copy">Pixflow AI by Eclipse Media &copy; 2026</p>
+        <p className="ft-copy">Pixflow AI by Eclipse Media &copy; 2026</p>
       </footer>
     </div>
   )
