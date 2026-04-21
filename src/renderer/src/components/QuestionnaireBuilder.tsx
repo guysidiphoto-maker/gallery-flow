@@ -22,6 +22,15 @@ interface Questionnaire {
   created_at: string
 }
 
+interface QuestionnaireResponse {
+  id: string
+  respondent_name: string
+  respondent_phone: string | null
+  respondent_email: string | null
+  answers: Record<string, string>
+  created_at: string
+}
+
 interface QuestionnaireBuilderProps {
   clientName: string
   projects: ProjectData[]
@@ -56,6 +65,9 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
   const [showForm, setShowForm] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [viewingResponses, setViewingResponses] = useState<Questionnaire | null>(null)
+  const [responses, setResponses] = useState<QuestionnaireResponse[]>([])
+  const [loadingResponses, setLoadingResponses] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -181,6 +193,18 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
     addToast('השאלון נמחק', 'info')
   }
 
+  const viewResponses = async (q: Questionnaire) => {
+    setViewingResponses(q)
+    setLoadingResponses(true)
+    const { data } = await supabase
+      .from('questionnaire_responses')
+      .select('*')
+      .eq('questionnaire_id', q.id)
+      .order('created_at', { ascending: false })
+    setResponses((data || []) as QuestionnaireResponse[])
+    setLoadingResponses(false)
+  }
+
   const copyLink = (id: string) => {
     const url = `${GALLERY_WEB_URL}/q/${id}`
     navigator.clipboard.writeText(url).then(() => {
@@ -276,7 +300,81 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
           </button>
         </div>
 
-        {showForm ? (
+        {viewingResponses ? (
+          <>
+            {/* Responses header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <button onClick={() => setViewingResponses(null)} style={{
+                width: 28, height: 28, borderRadius: 6, border: 'none',
+                background: 'rgba(255,255,255,.06)', color: 'rgba(255,255,255,.5)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="15 18 9 12 15 6"/>
+                </svg>
+              </button>
+              <div>
+                <span style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>תשובות — {viewingResponses.title}</span>
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,.25)', display: 'block' }}>
+                  {responses.length} תשובות
+                </span>
+              </div>
+            </div>
+
+            {loadingResponses ? (
+              <p style={{ textAlign: 'center', color: 'rgba(255,255,255,.3)', fontSize: 13 }}>טוען...</p>
+            ) : responses.length === 0 ? (
+              <p style={{ textAlign: 'center', color: 'rgba(255,255,255,.3)', fontSize: 13, lineHeight: 1.6, padding: '20px 0' }}>
+                אין תשובות עדיין לשאלון הזה.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {responses.map(r => (
+                  <div key={r.id} style={{
+                    padding: '14px 16px', borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,.08)',
+                    background: 'rgba(255,255,255,.02)',
+                  }}>
+                    {/* Respondent info */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{
+                          width: 28, height: 28, borderRadius: '50%',
+                          background: 'rgba(99,102,241,.15)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 11, fontWeight: 600, color: '#818cf8',
+                        }}>
+                          {r.respondent_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#fff', display: 'block' }}>{r.respondent_name}</span>
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,.25)' }}>
+                            {r.respondent_phone || ''}{r.respondent_phone && r.respondent_email ? ' · ' : ''}{r.respondent_email || ''}
+                          </span>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,.2)' }}>
+                        {new Date(r.created_at).toLocaleDateString('he-IL')} {new Date(r.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+
+                    {/* Answers */}
+                    {viewingResponses.questions.map(q => {
+                      const answer = r.answers[q.id]
+                      if (!answer) return null
+                      return (
+                        <div key={q.id} style={{ marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', display: 'block', marginBottom: 2 }}>{q.label}</span>
+                          <span style={{ fontSize: 13, color: 'rgba(255,255,255,.8)', lineHeight: 1.5 }}>{answer}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : showForm ? (
           <>
             {/* ── Title ── */}
             <div style={{ marginBottom: 12 }}>
@@ -519,6 +617,7 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
                       }}>
                         {copiedId === q.id ? 'הועתק!' : 'העתק לינק'}
                       </button>
+                      <button onClick={() => viewResponses(q)} style={{ ...btnSecondary, fontSize: 11, padding: '5px 10px' }}>תשובות</button>
                       <button onClick={() => startEdit(q)} style={{ ...btnSecondary, fontSize: 11, padding: '5px 10px' }}>ערוך</button>
                       <button onClick={() => handleDelete(q.id)} style={{
                         ...btnSecondary, fontSize: 11, padding: '5px 10px',

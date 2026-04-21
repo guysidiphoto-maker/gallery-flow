@@ -168,7 +168,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'Pixflow <onboarding@resend.dev>',
+            from: 'Pixflow <noreply@pixflow-ai.com>',
             to: [respondentEmail.trim()],
             subject: 'תודה שמילאת את השאלון 📸',
             html,
