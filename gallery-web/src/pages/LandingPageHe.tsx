@@ -317,18 +317,8 @@ export function LandingPageHe() {
         </R>
       </section>
 
-      {/* Ticker */}
-      <div className="ticker">
-        <div className="ticker-track">
-          {[...Array(2)].map((_, r) => (
-            <span key={r} style={{ display: 'contents' }}>
-              {['חתונות', 'בר מצוות', 'כנסים', 'ימי גיבוש', 'אירועי חברה', 'פסטיבלים', 'חגיגות', 'השקות'].map((t, i) => (
-                <span key={`${r}-${i}`} className="ticker-item">{t}</span>
-              ))}
-            </span>
-          ))}
-        </div>
-      </div>
+      {/* spacer */}
+      <div style={{ height: 1, background: 'var(--b)' }} />
 
       {/* How it works */}
       <section id="how" className="sec">
