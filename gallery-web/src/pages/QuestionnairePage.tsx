@@ -12,7 +12,8 @@ export function QuestionnairePage() {
   const [email, setEmail] = useState('')
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [errors, setErrors] = useState<Record<string, boolean>>({})
-  const [consent, setConsent] = useState(false)
+  const [consentTerms, setConsentTerms] = useState(false)
+  const [consentComms, setConsentComms] = useState(false)
 
   // Support both /q/{uuid} and /q/{slug}
   const questionnaireIdOrSlug = (() => {
@@ -49,7 +50,8 @@ export function QuestionnairePage() {
     if (!name.trim()) newErrors['_name'] = true
     if (config.send_method === 'sms' && !phone.trim()) newErrors['_phone'] = true
     if (config.send_method === 'email' && !email.trim()) newErrors['_email'] = true
-    if (!consent) newErrors['_consent'] = true
+    if (!consentTerms) newErrors['_consentTerms'] = true
+    if (!consentComms) newErrors['_consentComms'] = true
 
     for (const q of config.questions) {
       if (q.required && !answers[q.id]?.trim()) {
@@ -399,26 +401,47 @@ export function QuestionnairePage() {
               </div>
             ))}
 
-            {/* Consent */}
-            <div style={{ marginTop: 20, marginBottom: 4 }}>
+            {/* Consent 1 — Terms & Privacy */}
+            <div style={{ marginTop: 20, marginBottom: 10 }}>
               <label style={{
                 display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer',
                 direction: 'rtl', fontSize: 12, lineHeight: 1.6,
-                color: errors['_consent'] ? '#f87171' : theme.consentText,
+                color: errors['_consentTerms'] ? '#f87171' : theme.consentText,
               }}>
                 <input
                   type="checkbox"
-                  checked={consent}
-                  onChange={e => { setConsent(e.target.checked); setErrors(p => ({ ...p, _consent: false })) }}
+                  checked={consentTerms}
+                  onChange={e => { setConsentTerms(e.target.checked); setErrors(p => ({ ...p, _consentTerms: false })) }}
                   style={{ width: 16, height: 16, accentColor: '#6366f1', marginTop: 2, flexShrink: 0 }}
                 />
                 <span>
                   אני מסכים/ה ל<a href="/terms" target="_blank" style={{ color: theme.linkColor, textDecoration: 'underline' }}>תקנון השימוש</a> ול<a href="/privacy" target="_blank" style={{ color: theme.linkColor, textDecoration: 'underline' }}>מדיניות הפרטיות</a>.
+                </span>
+              </label>
+              {errors['_consentTerms'] && (
+                <p style={{ fontSize: 12, color: '#f87171', margin: '6px 0 0', direction: 'rtl' }}>יש לאשר את התקנון ומדיניות הפרטיות</p>
+              )}
+            </div>
+
+            {/* Consent 2 — Communications */}
+            <div style={{ marginBottom: 4 }}>
+              <label style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer',
+                direction: 'rtl', fontSize: 12, lineHeight: 1.6,
+                color: errors['_consentComms'] ? '#f87171' : theme.consentText,
+              }}>
+                <input
+                  type="checkbox"
+                  checked={consentComms}
+                  onChange={e => { setConsentComms(e.target.checked); setErrors(p => ({ ...p, _consentComms: false })) }}
+                  style={{ width: 16, height: 16, accentColor: '#6366f1', marginTop: 2, flexShrink: 0 }}
+                />
+                <span>
                   אני מאשר/ת שליחת הודעות הכוללות אישורים, הנחיות והודעות אחרות לכתובת הדואר האלקטרוני ומספר הטלפון שסיפקתי.
                 </span>
               </label>
-              {errors['_consent'] && (
-                <p style={{ fontSize: 12, color: '#f87171', margin: '6px 0 0', direction: 'rtl' }}>יש לאשר את התקנון ומדיניות הפרטיות</p>
+              {errors['_consentComms'] && (
+                <p style={{ fontSize: 12, color: '#f87171', margin: '6px 0 0', direction: 'rtl' }}>יש לאשר קבלת הודעות</p>
               )}
             </div>
 
