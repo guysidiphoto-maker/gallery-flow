@@ -145,7 +145,7 @@ export function LandingPageHe() {
   return (
     <div className="lp">
       <style>{`
-.lp{--a:#6366f1;min-height:100vh;background:linear-gradient(180deg,#f3e8ff 0%,#fce7f3 30%,#fff1f5 55%,#fff 80%);color:#0a0a0a;font-family:'Inter',-apple-system,sans-serif;direction:rtl;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+.lp{--a:#6366f1;min-height:100vh;background:linear-gradient(180deg,#f3e8ff 0%,#fce7f3 30%,#fff1f5 55%,#fff 80%);color:#0a0a0a;font-family:'Heebo','Inter',-apple-system,sans-serif;direction:rtl;overflow-x:hidden;-webkit-font-smoothing:antialiased}
 .lp *{box-sizing:border-box}.lp a{color:inherit}
 .w{max-width:1060px;margin:0 auto;padding:0 28px}
 
@@ -157,15 +157,13 @@ export function LandingPageHe() {
 .nav-r{display:flex;gap:2px;align-items:center}
 .nav-l{padding:8px 14px;font-size:13px;font-weight:500;color:#888;text-decoration:none;border-radius:20px;transition:color .2s}
 .nav-l:hover{color:#0a0a0a}
-.nav-cta{padding:10px 24px;border-radius:60px;border:none;cursor:pointer;background:#0a0a0a;color:#fff;font-size:13px;font-weight:600;font-family:inherit;transition:background .2s,transform .15s}
-.nav-cta:hover{background:var(--a);transform:scale(1.03)}
+.nav-cta{padding:8px 14px;border-radius:20px;border:none;cursor:pointer;background:transparent;color:#888;font-size:13px;font-weight:500;font-family:inherit;transition:color .2s;text-decoration:none}
+.nav-cta:hover{color:#0a0a0a}
 @media(max-width:640px){.nav-r .nav-l{display:none}}
 
 /* Hero — pinned by GSAP */
 .hero{min-height:100lvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 28px;text-align:center;position:relative}
-.hero h1{font-size:clamp(34px,6vw,64px);font-weight:900;line-height:1;margin:0 0 20px;letter-spacing:-2px;color:#0a0a0a}
-.hero-gr{background:linear-gradient(135deg,#6366f1,#a855f7,#ec4899);background-size:200% 200%;animation:gr 6s ease infinite;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-@keyframes gr{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.hero h1{font-size:clamp(36px,7vw,72px);font-weight:900;line-height:.95;margin:0 0 20px;letter-spacing:-2px;color:#0a0a0a}
 .hero p{font-size:clamp(15px,2vw,19px);line-height:1.65;color:#666;max-width:440px;margin:0 auto 32px}
 .hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:32px}
 .btn-b{padding:16px 44px;border-radius:60px;border:none;cursor:pointer;background:#0a0a0a;color:#fff;font-size:17px;font-weight:700;font-family:inherit;transition:all .2s;box-shadow:0 4px 20px rgba(0,0,0,.1)}
@@ -279,7 +277,7 @@ export function LandingPageHe() {
       {/* Hero — pinned, phone scales down on scroll */}
       <section className="hero" ref={heroRef}>
         <div ref={heroTextRef}>
-          <h1>סלפי אחד.<br /><span className="hero-gr">כל התמונות שלהם.</span></h1>
+          <h1>סלפי אחד.<br />כל התמונות שלהם.</h1>
           <p>מעלים תמונות מהאירוע, האורחים עושים סלפי, ותוך שנייה כל התמונות שלהם אצלם. בלי אפליקציה.</p>
           <div className="hero-btns">
             <button onClick={signInWithGoogle} className="btn-b">יאלה, מתחילים</button>
