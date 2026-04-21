@@ -288,7 +288,15 @@ export function QuestionnairePage() {
           paddingBottom: 40,
           animation: 'q-fadeIn .5s ease both',
           position: 'relative', zIndex: 1,
-          ...(hasDarkBg ? {} : {
+          ...(hasDarkBg ? {
+            background: 'rgba(0,0,0,.55)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            borderRadius: 20,
+            padding: '36px 28px',
+            marginTop: 20,
+            border: '1px solid rgba(255,255,255,.1)',
+          } : {
             background: '#fff',
             borderRadius: 20,
             padding: '36px 32px',
