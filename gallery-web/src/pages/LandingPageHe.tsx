@@ -162,19 +162,19 @@ export function LandingPageHe() {
 @media(max-width:640px){.nav-r .nav-l{display:none}}
 
 /* Hero — pinned by GSAP */
-.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:160px 28px 60px;text-align:center;position:relative}
-.hero h1{font-size:clamp(38px,7vw,76px);font-weight:900;line-height:.96;margin:0 0 22px;letter-spacing:-2.5px;color:#0a0a0a}
+.hero{min-height:100lvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 28px;text-align:center;position:relative}
+.hero h1{font-size:clamp(34px,6vw,64px);font-weight:900;line-height:1;margin:0 0 20px;letter-spacing:-2px;color:#0a0a0a}
 .hero-gr{background:linear-gradient(135deg,#6366f1,#a855f7,#ec4899);background-size:200% 200%;animation:gr 6s ease infinite;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 @keyframes gr{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
 .hero p{font-size:clamp(15px,2vw,19px);line-height:1.65;color:#666;max-width:440px;margin:0 auto 32px}
-.hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:48px}
+.hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:32px}
 .btn-b{padding:16px 44px;border-radius:60px;border:none;cursor:pointer;background:#0a0a0a;color:#fff;font-size:17px;font-weight:700;font-family:inherit;transition:all .2s;box-shadow:0 4px 20px rgba(0,0,0,.1)}
 .btn-b:hover{background:var(--a);transform:translateY(-2px);box-shadow:0 8px 30px rgba(99,102,241,.25)}
 .btn-w{padding:16px 44px;border-radius:60px;cursor:pointer;background:#fff;color:#0a0a0a;font-size:17px;font-weight:600;font-family:inherit;border:1px solid #e0e0e0;text-decoration:none;transition:all .2s}
 .btn-w:hover{border-color:#999;transform:translateY(-2px)}
 
 /* Phone */
-.hp{width:280px;height:560px;border-radius:48px;background:#111;position:relative;overflow:hidden;box-shadow:0 40px 100px rgba(0,0,0,.2),0 0 0 1px rgba(0,0,0,.08);border:3px solid #222}
+.hp{width:260px;height:520px;border-radius:44px;background:#0a0a0f;position:relative;overflow:hidden;box-shadow:0 40px 100px rgba(0,0,0,.25),0 0 0 1px rgba(0,0,0,.12);border:4px solid #1a1a1a}
 @media(max-width:640px){.hp{width:220px;height:440px;border-radius:38px}}
 .hp-notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:90px;height:26px;border-radius:14px;background:#000;z-index:5}
 .hp-scr{position:absolute;inset:3px;border-radius:44px;background:radial-gradient(ellipse at 50% 30%,#161624,#0b0b14);overflow:hidden}
