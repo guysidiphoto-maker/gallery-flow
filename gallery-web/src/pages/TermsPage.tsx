@@ -100,7 +100,46 @@ export function TermsPage() {
             <li>Resell or redistribute the Service without our written permission.</li>
           </ul>
 
-          <h2>6. Payment Terms</h2>
+          <h2>6. Questionnaires and Client Data Collection</h2>
+          <p>
+            The Service allows photographers ("Service Users") to create questionnaires and collect information
+            from their clients ("End Users"). By filling out a questionnaire on Pixflow, End Users acknowledge
+            and agree to the following:
+          </p>
+          <ul>
+            <li>The information submitted (including name, phone number, email, and questionnaire responses) is collected on behalf of the Service User (the photographer) who created the questionnaire.</li>
+            <li>Pixflow acts as a data processor on behalf of the Service User. The Service User is the data controller and is responsible for obtaining proper consent from their End Users.</li>
+            <li>Submitted data is stored securely on our servers and is accessible only to the Service User who created the questionnaire and to Pixflow for the purpose of providing the Service.</li>
+            <li>End Users may receive SMS messages or emails following questionnaire submission, if the Service User has enabled this feature. By submitting the questionnaire with the consent checkbox checked, the End User agrees to receive such communications.</li>
+            <li>End Users may request deletion of their submitted data by contacting the Service User or by emailing <a href="mailto:privacy@pixflow-ai.com">privacy@pixflow-ai.com</a>.</li>
+          </ul>
+          <p>
+            Service Users who create questionnaires agree to:
+          </p>
+          <ul>
+            <li>Use the questionnaire feature only for legitimate business purposes related to their photography services.</li>
+            <li>Not collect sensitive personal data (health information, political opinions, religious beliefs, etc.) through questionnaires.</li>
+            <li>Comply with all applicable data protection laws (including GDPR, Israeli Privacy Protection Law) when collecting and processing End User data.</li>
+            <li>Not sell, share, or transfer End User data to third parties without proper consent.</li>
+          </ul>
+
+          <h2>7. SMS and Email Communications</h2>
+          <p>
+            The Service may send SMS messages and/or emails to End Users on behalf of Service Users. These
+            communications are sent only when:
+          </p>
+          <ul>
+            <li>The Service User has enabled automatic messaging for a specific questionnaire.</li>
+            <li>The End User has explicitly consented by checking the consent checkbox before submitting the questionnaire.</li>
+            <li>The End User has provided their phone number (for SMS) or email address (for email).</li>
+          </ul>
+          <p>
+            SMS messages are sent via Twilio and emails via Resend. Standard messaging rates may apply.
+            End Users may opt out of future communications by contacting the Service User or by emailing{' '}
+            <a href="mailto:support@pixflow-ai.com">support@pixflow-ai.com</a>.
+          </p>
+
+          <h2>8. Payment Terms</h2>
           <p>
             Certain features of the Service require a paid subscription. Prices are listed on our website and are
             subject to change with 30 days' notice. All fees are charged in US dollars and are non-refundable
@@ -111,7 +150,7 @@ export function TermsPage() {
             date. You authorize us to charge your payment method on file for recurring subscription fees.
           </p>
 
-          <h2>7. Cancellation and Refunds</h2>
+          <h2>9. Cancellation and Refunds</h2>
           <p>
             You may cancel your subscription at any time from your account settings. Upon cancellation, you will
             retain access to paid features until the end of your current billing period. After that, your account
@@ -122,7 +161,7 @@ export function TermsPage() {
             in error, please contact us at support@pixflow-ai.com within 30 days of the charge.
           </p>
 
-          <h2>8. Limitation of Liability</h2>
+          <h2>10. Limitation of Liability</h2>
           <p>
             To the maximum extent permitted by law, Pixflow and its officers, employees, and affiliates shall not
             be liable for any indirect, incidental, special, consequential, or punitive damages, including but not
@@ -134,14 +173,14 @@ export function TermsPage() {
             exceed the amount you paid to us in the twelve (12) months preceding the claim.
           </p>
 
-          <h2>9. Changes to Terms</h2>
+          <h2>11. Changes to Terms</h2>
           <p>
             We may update these Terms from time to time. When we make material changes, we will notify you by
             email or through the Service at least 30 days before the changes take effect. Your continued use of
             the Service after the effective date of updated Terms constitutes your acceptance of those changes.
           </p>
 
-          <h2>10. Contact</h2>
+          <h2>12. Contact</h2>
           <p>
             If you have questions about these Terms, please contact us at{' '}
             <a href="mailto:support@pixflow-ai.com">support@pixflow-ai.com</a>.

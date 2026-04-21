@@ -99,7 +99,33 @@ export function PrivacyPage() {
             our servers within 30 days.
           </p>
 
-          <h2>6. Guest Data</h2>
+          <h2>6. Questionnaire Data</h2>
+          <p>
+            When End Users fill out a questionnaire created by a Service User (photographer), we collect:
+          </p>
+          <ul>
+            <li><strong>Contact information:</strong> Name, phone number, and/or email address as provided in the questionnaire.</li>
+            <li><strong>Questionnaire responses:</strong> Answers to questions defined by the Service User.</li>
+            <li><strong>Consent record:</strong> A record that the End User agreed to the Terms of Service and Privacy Policy before submitting.</li>
+          </ul>
+          <p>
+            This data is collected on behalf of the Service User (the photographer), who acts as the data controller.
+            Pixflow acts as a data processor. The data is:
+          </p>
+          <ul>
+            <li>Stored securely on our servers with encryption at rest and in transit.</li>
+            <li>Accessible only to the Service User who created the questionnaire.</li>
+            <li>Used to send SMS or email communications to the End User, only if the Service User has enabled this feature and the End User has given explicit consent.</li>
+            <li>Never sold, shared with third parties for marketing purposes, or used for AI model training.</li>
+            <li>Retained for as long as the Service User's account is active, or until deletion is requested.</li>
+          </ul>
+          <p>
+            End Users may request access to, correction of, or deletion of their submitted data by contacting
+            the Service User directly or by emailing{' '}
+            <a href="mailto:privacy@pixflow-ai.com">privacy@pixflow-ai.com</a>.
+          </p>
+
+          <h2>7. Guest Data</h2>
           <p>
             When your clients view a published gallery, we collect minimal data: the pages they visit and basic
             browser information for analytics. We do not track gallery visitors across other websites, do not
@@ -107,7 +133,7 @@ export function PrivacyPage() {
             party.
           </p>
 
-          <h2>7. Cookies</h2>
+          <h2>8. Cookies</h2>
           <p>
             The Pixflow web application uses essential cookies required for the Service to function (such as
             authentication tokens and gallery password sessions). We do not use advertising cookies or
@@ -115,7 +141,7 @@ export function PrivacyPage() {
             password-protected.
           </p>
 
-          <h2>8. Data Retention</h2>
+          <h2>9. Data Retention</h2>
           <p>
             We retain your account data for as long as your account is active. If you cancel your account, we
             will delete your personal data and photos within 30 days, except where we are required by law to
@@ -123,7 +149,7 @@ export function PrivacyPage() {
             compliance).
           </p>
 
-          <h2>9. Your Rights</h2>
+          <h2>10. Your Rights</h2>
           <p>
             Under GDPR and other applicable privacy laws, you have the right to:
           </p>
@@ -141,21 +167,21 @@ export function PrivacyPage() {
             request within 30 days.
           </p>
 
-          <h2>10. Children's Privacy</h2>
+          <h2>11. Children's Privacy</h2>
           <p>
             Pixflow is not intended for use by individuals under the age of 18. We do not knowingly collect
             personal data from children. If you believe we have collected data from a child, please contact
             us and we will promptly delete it.
           </p>
 
-          <h2>11. Changes to This Policy</h2>
+          <h2>12. Changes to This Policy</h2>
           <p>
             We may update this Privacy Policy from time to time. When we make material changes, we will
             notify you by email at least 30 days before the changes take effect. The "Effective date" at
             the top of this page indicates when the policy was last updated.
           </p>
 
-          <h2>12. Contact</h2>
+          <h2>13. Contact</h2>
           <p>
             If you have questions about this Privacy Policy or your data, please contact us at{' '}
             <a href="mailto:privacy@pixflow-ai.com">privacy@pixflow-ai.com</a>.
