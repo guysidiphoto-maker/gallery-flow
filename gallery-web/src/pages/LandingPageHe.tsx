@@ -182,10 +182,10 @@ export function LandingPageHe() {
 @media(max-width:580px){.nv-links .nv-l:not(:last-child){display:none}}
 
 /* Hero */
-.hero{height:100vh;position:relative;background:#000}
+.hero{min-height:100vh;position:relative;background:#000}
 .hero-video{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;will-change:transform}
 .hero-overlay{position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:80px 28px 120px}
-.hero h1{font-size:clamp(36px,7vw,64px);font-weight:800;line-height:1.15;margin:0 0 18px;letter-spacing:-0.5px;color:#fff;unicode-bidi:plaintext}
+.hero h1{font-size:clamp(32px,6vw,56px);font-weight:800;line-height:1.2;margin:0 0 16px;letter-spacing:0;color:#fff}
 .hero-sub{font-size:clamp(15px,2vw,19px);line-height:1.65;color:rgba(255,255,255,.55);max-width:420px;margin:0 auto 36px}
 .hero-cta{padding:16px 40px;border-radius:60px;border:none;cursor:pointer;background:#fff;color:#0a0a0a;font-size:16px;font-weight:700;font-family:inherit;transition:transform .2s,box-shadow .2s}
 .hero-cta:hover{transform:scale(1.04);box-shadow:0 8px 32px rgba(255,255,255,.15)}
