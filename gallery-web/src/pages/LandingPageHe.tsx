@@ -25,7 +25,7 @@ function Faq({ q, a }: { q: string; a: string }) {
     <div style={{ borderBottom: '1px solid #eee' }}>
       <button onClick={() => setOpen(!open)} style={{ width: '100%', padding: '22px 0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#0a0a0a', fontSize: 16, fontWeight: 600, fontFamily: 'inherit', textAlign: 'right' }}>
         <span>{q}</span>
-        <span style={{ fontSize: 22, transition: 'transform .2s', transform: open ? 'rotate(45deg)' : '', marginLeft: 16, flexShrink: 0, color: '#bbb' }}>+</span>
+        <span className={`faq-chev ${open ? 'faq-chev--open' : ''}`}>‹</span>
       </button>
       <div style={{ maxHeight: open ? 200 : 0, overflow: 'hidden', transition: 'max-height .3s ease' }}>
         <p style={{ fontSize: 15, lineHeight: 1.8, color: '#777', margin: 0, padding: '0 0 20px' }}>{a}</p>
@@ -157,28 +157,28 @@ export function LandingPageHe() {
   return (
     <div className="lp">
       <style>{`
-.lp{--a:#6366f1;min-height:100vh;color:#0a0a0a;font-family:'Heebo','Inter',-apple-system,sans-serif;direction:rtl;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+.lp{--a:#6366f1;min-height:100vh;color:#0a0a0a;font-family:'Heebo','Rubik','Assistant','Arial Hebrew',Arial,sans-serif;direction:rtl;overflow-x:hidden;-webkit-font-smoothing:antialiased}
 .lp *{box-sizing:border-box}.lp a{color:inherit}
 .wr{max-width:1060px;margin:0 auto;padding:0 28px}
+.num{unicode-bidi:isolate;direction:ltr;display:inline-block}
 
 /* Nav */
 .nv{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;width:calc(100% - 40px);max-width:680px}
-.nv-p{background:rgba(255,255,255,.82);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-radius:60px;padding:8px 24px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 20px rgba(0,0,0,.04);border:1px solid rgba(255,255,255,.5)}
-.nv-logo{font-size:19px;font-weight:900;text-decoration:none;letter-spacing:-.4px;color:#0a0a0a}
+.nv-p{background:rgba(255,255,255,.78);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-radius:60px;padding:8px 24px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 20px rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.04)}
+.nv-logo{font-size:19px;font-weight:800;text-decoration:none;letter-spacing:0;color:#0a0a0a}
 .nv-logo span{color:var(--a)}
 .nv-links{display:flex;gap:4px;align-items:center}
 .nv-l{padding:8px 14px;font-size:13px;font-weight:500;color:#888;text-decoration:none;transition:color .2s}
 .nv-l:hover{color:#0a0a0a}
 @media(max-width:580px){.nv-links .nv-l:not(:last-child){display:none}}
 
-/* Hero — dark, full viewport */
-.hero{height:100vh;position:relative;overflow:hidden;background:#000}
+/* Hero */
+.hero{height:100vh;position:relative;background:#000}
 .hero-video{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;will-change:transform}
-.hero-overlay{position:absolute;inset:0;background:rgba(0,0,0,.35);z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 28px}
-.hero h1{font-size:clamp(40px,9vw,88px);font-weight:900;line-height:.92;margin:0 0 18px;letter-spacing:-3px;color:#fff}
-.hero h1 br{display:block}
-.hero-sub{font-size:clamp(15px,2vw,20px);line-height:1.6;color:rgba(255,255,255,.55);max-width:420px;margin:0 auto 36px}
-.hero-cta{padding:16px 48px;border-radius:60px;border:none;cursor:pointer;background:#fff;color:#0a0a0a;font-size:17px;font-weight:700;font-family:inherit;transition:transform .2s,box-shadow .2s}
+.hero-overlay{position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:100px 28px 40px}
+.hero h1{font-size:clamp(36px,7vw,64px);font-weight:800;line-height:1.15;margin:0 0 18px;letter-spacing:-0.5px;color:#fff;unicode-bidi:plaintext}
+.hero-sub{font-size:clamp(15px,2vw,19px);line-height:1.65;color:rgba(255,255,255,.55);max-width:420px;margin:0 auto 36px}
+.hero-cta{padding:16px 40px;border-radius:60px;border:none;cursor:pointer;background:#fff;color:#0a0a0a;font-size:16px;font-weight:700;font-family:inherit;transition:transform .2s,box-shadow .2s}
 .hero-cta:hover{transform:scale(1.04);box-shadow:0 8px 32px rgba(255,255,255,.15)}
 
 /* Demo "video" */
@@ -212,34 +212,34 @@ export function LandingPageHe() {
 .after-hero{background:linear-gradient(180deg,#f3e8ff 0%,#fce7f3 30%,#fff1f5 55%,#fff 80%)}
 
 /* Stats */
-.stats{display:flex;justify-content:center;gap:80px;padding:100px 28px 80px;flex-wrap:wrap}
+.stats{display:flex;justify-content:center;gap:80px;padding:100px 28px 80px;flex-wrap:wrap;scroll-margin-top:80px}
 @media(max-width:500px){.stats{gap:40px;padding:60px 20px}}
 .stat{text-align:center}
-.stat-n{font-size:56px;font-weight:900;letter-spacing:-2px;display:block;color:#0a0a0a}
-.stat-l{font-size:13px;color:#aaa;margin-top:4px}
+.stat-n{font-size:48px;font-weight:800;letter-spacing:-0.5px;display:block;color:#0a0a0a}
+.stat-l{font-size:14px;color:#999;margin-top:6px}
 
 /* Section */
-.sec{padding:100px 28px}
-.sec-t{font-size:clamp(28px,4.5vw,48px);font-weight:800;text-align:center;margin:0 0 12px;letter-spacing:-1px;color:#0a0a0a}
-.sec-s{font-size:15px;color:#999;text-align:center;margin:0 auto 52px;max-width:380px;line-height:1.7}
+.sec{padding:100px 28px;scroll-margin-top:80px}
+.sec-t{font-size:clamp(26px,4vw,40px);font-weight:800;text-align:center;margin:0 0 12px;letter-spacing:0;color:#0a0a0a}
+.sec-s{font-size:16px;color:#999;text-align:center;margin:0 auto 52px;max-width:400px;line-height:1.7}
 
 /* Steps */
 .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:880px;margin:0 auto}
 @media(max-width:700px){.steps{grid-template-columns:1fr;max-width:400px}}
 .step{padding:44px 32px;border-radius:24px;background:#fff;border:1px solid rgba(0,0,0,.04);transition:transform .3s,box-shadow .3s}
 .step:hover{transform:translateY(-6px);box-shadow:0 20px 48px rgba(0,0,0,.06)}
-.step-n{font-size:60px;font-weight:900;color:rgba(0,0,0,.04);line-height:1;margin-bottom:20px}
-.step h3{font-size:18px;font-weight:700;margin:0 0 10px;color:#0a0a0a}
-.step p{font-size:14px;line-height:1.7;color:#999;margin:0}
+.step-n{font-size:48px;font-weight:800;color:rgba(0,0,0,.05);line-height:1;margin-bottom:20px;unicode-bidi:isolate;direction:ltr;display:inline-block}
+.step h3{font-size:18px;font-weight:700;margin:0 0 10px;color:#0a0a0a;letter-spacing:0}
+.step p{font-size:15px;line-height:1.7;color:#888;margin:0}
 
 /* Features */
 .feats{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;max-width:720px;margin:0 auto}
 @media(max-width:600px){.feats{grid-template-columns:1fr}}
 .feat{padding:32px 28px;border-radius:20px;background:#fff;border:1px solid rgba(0,0,0,.04);transition:transform .3s,box-shadow .3s}
 .feat:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,.04)}
-.feat h3{font-size:16px;font-weight:700;margin:0 0 8px;color:#0a0a0a;display:flex;align-items:center;gap:10px}
+.feat h3{font-size:16px;font-weight:700;margin:0 0 8px;color:#0a0a0a;display:flex;align-items:center;gap:10px;letter-spacing:0}
 .feat-d{width:8px;height:8px;border-radius:50%;background:var(--a);flex-shrink:0}
-.feat p{font-size:14px;line-height:1.7;color:#999;margin:0;padding-right:18px}
+.feat p{font-size:15px;line-height:1.7;color:#888;margin:0;padding-inline-start:18px}
 
 /* Pricing */
 .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:920px;margin:0 auto}
@@ -250,12 +250,12 @@ export function LandingPageHe() {
 .plan--p:hover{box-shadow:0 20px 48px rgba(99,102,241,.1)}
 .plan-badge{position:absolute;top:-13px;left:50%;transform:translateX(-50%);padding:5px 20px;border-radius:60px;font-size:11px;font-weight:700;background:var(--a);color:#fff}
 .plan h3{font-size:13px;font-weight:600;color:#bbb;margin:0 0 16px;text-transform:uppercase;letter-spacing:1.5px}
-.plan-price{font-size:52px;font-weight:900;letter-spacing:-2px;color:#0a0a0a}
-.plan-per{font-size:14px;color:#ccc;margin-right:4px}
+.plan-price{font-size:44px;font-weight:800;letter-spacing:-0.5px;color:#0a0a0a;unicode-bidi:isolate;direction:ltr;display:inline-block}
+.plan-per{font-size:14px;color:#ccc;margin-inline-start:4px}
 .plan ul{list-style:none;padding:0;margin:24px 0 28px}
-.plan li{font-size:14px;color:#777;padding:7px 0;display:flex;align-items:center;gap:10px}
+.plan li{font-size:15px;color:#777;padding:7px 0;display:flex;align-items:center;gap:10px}
 .plan li::before{content:'✓';color:var(--a);font-weight:700}
-.plan-b{width:100%;padding:16px;border-radius:60px;border:none;cursor:pointer;font-size:15px;font-weight:700;font-family:inherit;transition:all .2s}
+.plan-b{width:100%;padding:16px;border-radius:60px;border:none;cursor:pointer;font-size:16px;font-weight:700;font-family:inherit;transition:all .2s}
 .plan-b:hover{transform:translateY(-1px)}
 .plan-bf{background:#0a0a0a;color:#fff}.plan-bf:hover{background:var(--a);box-shadow:0 6px 20px rgba(99,102,241,.2)}
 .plan-bg{background:#f7f7f7;color:#666}.plan-bg:hover{background:#eee}
@@ -264,18 +264,22 @@ export function LandingPageHe() {
 .revs{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:920px;margin:0 auto}
 @media(max-width:700px){.revs{grid-template-columns:1fr}}
 .rev{padding:32px;border-radius:20px;background:#fff;border:1px solid rgba(0,0,0,.04)}
-.rev-stars{color:#fbbf24;font-size:14px;letter-spacing:2px;margin-bottom:14px}
-.rev-txt{font-size:14px;line-height:1.8;color:#777;margin:0 0 20px}
+.rev-stars{color:#fbbf24;font-size:14px;letter-spacing:2px;margin-bottom:14px;direction:ltr;unicode-bidi:isolate}
+.rev-txt{font-size:15px;line-height:1.8;color:#777;margin:0 0 20px}
 .rev-a{display:flex;align-items:center;gap:10px}
 .rev-av{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--a),#a855f7);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff}
-.rev-n{font-size:13px;font-weight:600;color:#0a0a0a}
-.rev-r{font-size:11px;color:#bbb}
+.rev-n{font-size:14px;font-weight:600;color:#0a0a0a}
+.rev-r{font-size:12px;color:#aaa}
+
+/* FAQ chevron */
+.faq-chev{font-size:18px;color:#ccc;transition:transform .25s ease;margin-inline-start:auto;flex-shrink:0}
+.faq-chev--open{transform:rotate(90deg)}
 
 /* Footer */
 .ft{padding:32px;text-align:center;border-top:1px solid #f0f0f0}
 .ft-links{display:flex;justify-content:center;gap:28px;margin-bottom:12px}
-.ft-links a{font-size:12px;color:#ccc;text-decoration:none}.ft-links a:hover{color:#888}
-.ft-copy{font-size:11px;color:#e0e0e0;margin:0}
+.ft-links a{font-size:14px;color:#aaa;text-decoration:none}.ft-links a:hover{color:#666}
+.ft-copy{font-size:13px;color:#ccc;margin:0}
       `}</style>
 
       {/* Nav */}
@@ -297,7 +301,7 @@ export function LandingPageHe() {
           <HeroDemo />
         </div>
         <div className="hero-overlay" ref={overlayRef}>
-          <h1>סלפי אחד.<br/>כל התמונות שלהם.</h1>
+          <h1 dir="rtl" lang="he">סלפי אחד<br/>כל התמונות שלהם</h1>
           <p className="hero-sub">מעלים תמונות מהאירוע, האורחים עושים סלפי, ותוך שנייה כל התמונות אצלם.</p>
           <button onClick={signInWithGoogle} className="hero-cta">התחילו בחינם</button>
         </div>
@@ -310,7 +314,7 @@ export function LandingPageHe() {
         <section>
           <div className="stats">
             {[{ n: '10K+', l: 'תמונות עובדו' }, { n: '2 שנ׳', l: 'זמן זיהוי ממוצע' }, { n: '97%', l: 'דיוק זיהוי' }].map((s, i) => (
-              <R key={i} d={i * 100}><div className="stat"><span className="stat-n">{s.n}</span><span className="stat-l">{s.l}</span></div></R>
+              <R key={i} d={i * 100}><div className="stat"><span className="stat-n num">{s.n}</span><span className="stat-l">{s.l}</span></div></R>
             ))}
           </div>
         </section>
