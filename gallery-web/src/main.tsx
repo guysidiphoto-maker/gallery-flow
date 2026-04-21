@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'
-import { LandingPage } from './pages/LandingPage'
+import { LandingPageHe } from './pages/LandingPageHe'
 import { DemoPage } from './pages/DemoPage'
 import { TermsPage } from './pages/TermsPage'
 import { PrivacyPage } from './pages/PrivacyPage'
@@ -16,7 +16,7 @@ import './styles.css'
 function Router() {
   const path = window.location.pathname
 
-  if (path === '/') return <LandingPage />
+  if (path === '/') return <LandingPageHe />
   if (path === '/demo') return <DemoPage />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
