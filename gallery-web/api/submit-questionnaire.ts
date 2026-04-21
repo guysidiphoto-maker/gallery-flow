@@ -154,12 +154,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : ''
 
         const html = `
-          <div dir="rtl" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0a0a0f;color:#fff;border-radius:16px;">
-            <h1 style="font-size:22px;font-weight:700;text-align:center;margin:0 0 8px;">תודה שמילאת את השאלון! 📸</h1>
-            <p style="font-size:15px;color:rgba(255,255,255,.5);text-align:center;margin:0 0 24px;">היי ${respondentName.trim()}, קיבלנו את התשובות שלך.</p>
-            <div style="text-align:center;">${galleryButton}</div>
-          </div>
-        `
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="480" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+        <tr><td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:28px 32px;text-align:center;">
+          <h1 style="margin:0;color:#fff;font-size:20px;font-weight:700;">Pixflow</h1>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <h2 style="margin:0 0 12px;font-size:18px;color:#1a1a2e;text-align:center;">תודה שמילאת את השאלון!</h2>
+          <p style="margin:0 0 24px;font-size:15px;color:#555;text-align:center;line-height:1.6;">
+            היי ${respondentName.trim()}, קיבלנו את התשובות שלך בהצלחה.
+          </p>
+          ${galleryUrl ? `<div style="text-align:center;margin:24px 0;">
+            <a href="${galleryUrl}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;">צפה בגלריה שלך</a>
+          </div>` : ''}
+        </td></tr>
+        <tr><td style="padding:16px 32px;background:#fafafa;border-top:1px solid #eee;text-align:center;">
+          <p style="margin:0;font-size:11px;color:#999;">
+            הודעה זו נשלחה מ-Pixflow · <a href="https://pixflow-ai.com/privacy" style="color:#6366f1;">מדיניות פרטיות</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
 
         const resp = await fetch('https://api.resend.com/emails', {
           method: 'POST',
