@@ -215,6 +215,8 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
 
   const isPrivate = faceSearchAvailable && facePrivacyMode === 'private'
   const showFindButton = faceSearchAvailable && facePrivacyMode !== null
+  const isMinimal = style === 'minimal'
+  const isCinematic = style === 'cinematic'
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
@@ -225,18 +227,160 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
     setTimeout(onEnter, 600)
   }
 
-  return (
+  // ── Shared content overlay (all styles) ──
+  const renderContent = () => (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 1000, background: '#000',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      opacity: entered ? 0 : 1, transition: 'opacity .7s ease',
-      overflow: 'hidden',
+      position: 'relative', zIndex: 2, textAlign: 'center',
+      padding: '0 24px', maxWidth: isMinimal ? 800 : 680,
     }}>
+      {/* Studio name */}
+      {studioName && (
+        <div style={{ animation: visible ? 'wcFadeUp .9s cubic-bezier(.16,1,.3,1) .3s both' : 'none' }}>
+          {studioWebsite ? (
+            <a href={studioWebsite.startsWith('http') ? studioWebsite : `https://${studioWebsite}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{
+                display: 'inline-block', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase',
+                color: 'rgba(255,255,255,.4)', margin: '0 0 20px', fontWeight: 500,
+                textDecoration: 'none', transition: 'color .2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,.8)' }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,.4)' }}
+              onClick={e => e.stopPropagation()}
+            >{studioName}</a>
+          ) : (
+            <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(255,255,255,.3)', margin: '0 0 20px', fontWeight: 500 }}>
+              {studioName}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Title */}
+      <div style={{
+        animation: visible
+          ? (isCinematic ? 'wcReveal 1.4s cubic-bezier(.16,1,.3,1) .5s both'
+            : isMinimal ? 'wcLetterSpace 1.2s cubic-bezier(.16,1,.3,1) .4s both'
+            : 'wcFadeUp 1s cubic-bezier(.16,1,.3,1) .5s both')
+          : 'none',
+      }}>
+        <h1 style={{
+          fontSize: isMinimal ? 'clamp(40px, 9vw, 88px)' : 'clamp(32px, 7vw, 68px)',
+          fontWeight: isMinimal ? 800 : 700, color: '#fff',
+          margin: 0,
+          lineHeight: isMinimal ? 1.02 : 1.08,
+          letterSpacing: isMinimal ? '0.04em' : '-0.025em',
+          textShadow: isCinematic ? '0 4px 60px rgba(0,0,0,.7)' : isMinimal ? 'none' : '0 2px 40px rgba(0,0,0,.5)',
+          textTransform: isMinimal ? 'uppercase' : 'none',
+        }}>{galleryTitle}</h1>
+      </div>
+
+      {/* Client name */}
+      {clientName && (
+        <div style={{ animation: visible ? 'wcFadeUp .9s cubic-bezier(.16,1,.3,1) .65s both' : 'none' }}>
+          <p style={{
+            fontSize: isMinimal ? 'clamp(12px, 1.5vw, 15px)' : 'clamp(14px, 2vw, 19px)',
+            color: isMinimal ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.45)',
+            margin: isMinimal ? '16px 0 0' : '10px 0 0', fontWeight: 400,
+            letterSpacing: isMinimal ? '0.15em' : '0.01em',
+            textTransform: isMinimal ? 'uppercase' : 'none',
+          }}>{clientName}</p>
+        </div>
+      )}
+
+      {/* Event meta */}
+      {(eventDate || eventLocation) && (
+        <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .8s both' : 'none' }}>
+          <p style={{
+            fontSize: 12, color: 'rgba(255,255,255,.25)', margin: '10px 0 0',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, letterSpacing: '0.03em',
+          }}>
+            {eventDate && <span>{eventDate}</span>}
+            {eventDate && eventLocation && <span style={{ opacity: .3 }}>{isMinimal ? '|' : '\u00b7'}</span>}
+            {eventLocation && <span>{eventLocation}</span>}
+          </p>
+        </div>
+      )}
+
+      {galleryDescription && (
+        <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .85s both' : 'none' }}>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,.22)', margin: '8px auto 0', maxWidth: 420 }}>
+            {galleryDescription}
+          </p>
+        </div>
+      )}
+
+      {/* Private mode notice */}
+      {isPrivate && (
+        <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .9s both' : 'none', marginTop: 20 }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '8px 18px', borderRadius: isMinimal ? 0 : 20,
+            background: 'rgba(99,102,241,.06)', border: '1px solid rgba(99,102,241,.12)',
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,.55)" strokeWidth="1.8" style={{ animation: 'wcFloat 2.5s ease-in-out infinite' }}>
+              <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', fontWeight: 400 }}>
+              Privacy mode — take a selfie to see your photos
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Buttons */}
+      <div style={{
+        display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', marginTop: 32,
+        animation: visible ? 'wcFadeUp .9s cubic-bezier(.16,1,.3,1) 1s both' : 'none',
+      }}>
+        {!isPrivate && (
+          <button onClick={handleEnter} style={{
+            padding: isMinimal ? '14px 48px' : '15px 44px',
+            borderRadius: isMinimal ? 0 : 50,
+            border: isMinimal ? '1px solid rgba(255,255,255,.25)' : '1px solid rgba(255,255,255,.18)',
+            background: isMinimal ? 'transparent' : 'rgba(255,255,255,.07)',
+            backdropFilter: isMinimal ? 'none' : 'blur(20px)',
+            color: '#fff',
+            fontSize: isMinimal ? 11 : 15,
+            fontWeight: isMinimal ? 500 : 600, cursor: 'pointer',
+            fontFamily: 'inherit',
+            letterSpacing: isMinimal ? '0.18em' : '0.01em',
+            textTransform: isMinimal ? 'uppercase' as const : 'none' as const,
+            transition: 'all .3s',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.background = isMinimal ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.16)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.35)'; e.currentTarget.style.transform = 'scale(1.03)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = isMinimal ? 'transparent' : 'rgba(255,255,255,.07)'; e.currentTarget.style.borderColor = isMinimal ? 'rgba(255,255,255,.25)' : 'rgba(255,255,255,.18)'; e.currentTarget.style.transform = 'scale(1)' }}
+          >View Gallery</button>
+        )}
+
+        {showFindButton && (
+          <button onClick={onFindMyPhotos} style={{
+            padding: isPrivate ? '16px 48px' : '15px 36px',
+            borderRadius: isMinimal ? 0 : 50, border: 'none',
+            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+            fontFamily: 'inherit', letterSpacing: '0.01em', transition: 'all .3s',
+            display: 'flex', alignItems: 'center', gap: 10,
+            animation: isPrivate ? 'wcGlow 3s ease-in-out infinite' : 'none',
+            position: 'relative', zIndex: 10,
+          }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05)' }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <circle cx="12" cy="8" r="4" /><path d="M5 20a7 7 0 0 1 14 0" />
+            </svg>
+            Find My Photos
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
+  // ── Mosaic background ──
+  const renderMosaicBg = () => (
+    <>
       <style>{`
-        @keyframes wcFadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes wcGlow { 0%, 100% { box-shadow: 0 0 24px rgba(99,102,241,.3); } 50% { box-shadow: 0 0 48px rgba(99,102,241,.5), 0 0 80px rgba(99,102,241,.15); } }
-        @keyframes wcFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
-        @keyframes wcLine { from { left: -30%; } to { left: 130%; } }
         @keyframes wcScroll { from { transform: translateY(0); } to { transform: translateY(-50%); } }
         .wc-col { display: flex; flex-direction: column; gap: 2px; }
         .wc-col img {
@@ -245,8 +389,6 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
         }
         .wc-col img.wc-loaded { opacity: 1; }
       `}</style>
-
-      {/* ── Scrolling mosaic columns ── */}
       <div style={{
         position: 'absolute', inset: 0,
         display: 'flex', gap: 2,
@@ -255,11 +397,8 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
         filter: isPrivate ? 'blur(40px) saturate(.3)' : 'none',
       }}>
         {(() => {
-          // Use 6 columns, fill each with shuffled images (no adjacent duplicates)
           const colCount = 6
           const allImgs = images.length > 0 ? images : []
-
-          // Seeded shuffle to keep stable across re-renders
           const shuffle = (arr: typeof images, seed: number) => {
             const a = [...arr]
             for (let i = a.length - 1; i > 0; i--) {
@@ -269,7 +408,6 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
             }
             return a
           }
-
           const columns = Array.from({ length: colCount }, (_, ci) => {
             const col: typeof images = []
             const shuffled = shuffle(allImgs, ci * 7919 + 1)
@@ -277,7 +415,6 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
             let lastId = ''
             for (let j = 0; col.length < needed; j++) {
               const img = shuffled[j % shuffled.length]
-              // Skip if same as previous to avoid adjacent duplicates
               if (img.id !== lastId || allImgs.length <= 1) {
                 col.push(img)
                 lastId = img.id
@@ -286,7 +423,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
             return col
           })
           return columns.map((col, ci) => {
-            const doubled = [...col, ...col] // duplicate for seamless loop
+            const doubled = [...col, ...col]
             const speed = 40 + (ci % 3) * 15
             const dir = ci % 2 === 0 ? 'normal' : 'reverse'
             return (
@@ -309,16 +446,123 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
           })
         })()}
       </div>
-
-      {/* ── Overlay layers ── */}
+      {/* Mosaic overlay */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none',
         background: isPrivate
           ? 'radial-gradient(ellipse at center, rgba(0,0,0,.55) 0%, rgba(0,0,0,.88) 100%)'
           : 'radial-gradient(ellipse at center, rgba(0,0,0,.35) 0%, rgba(0,0,0,.78) 100%)',
       }} />
+    </>
+  )
 
-      {/* Private mode: accent line */}
+  // ── Cinematic background ──
+  const renderCinematicBg = () => {
+    const bgSrc = coverImageUrl || (images.length > 0 ? getUrl(images[0].thumbnail_path || images[0].storage_path) : null)
+    return (
+      <>
+        <style>{`
+          @keyframes wcCineZoom { 0% { transform: scale(1.05); } 100% { transform: scale(1.12); } }
+          @keyframes wcParticle {
+            0% { transform: translateY(0) translateX(0); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-100vh) translateX(40px); opacity: 0; }
+          }
+        `}</style>
+        {bgSrc && (
+          <div style={{
+            position: 'absolute', inset: '-10%',
+            opacity: visible ? (isPrivate ? 0.08 : 0.55) : 0,
+            transition: 'opacity 2.5s ease .2s',
+            filter: isPrivate ? 'blur(50px) saturate(.2)' : 'blur(8px) saturate(1.1)',
+            animation: visible ? 'wcCineZoom 20s ease-in-out infinite alternate' : 'none',
+          }}>
+            <img
+              src={bgSrc}
+              alt=""
+              style={{
+                width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                ...(coverCrop ? { objectPosition: `${50 + (coverCrop.x || 0)}% ${50 + (coverCrop.y || 0)}%` } : {}),
+              }}
+            />
+          </div>
+        )}
+        {/* Heavy vignette */}
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          background: [
+            'radial-gradient(ellipse at center, rgba(0,0,0,.25) 0%, rgba(0,0,0,.85) 100%)',
+            'linear-gradient(to bottom, rgba(0,0,0,.3) 0%, transparent 30%, transparent 70%, rgba(0,0,0,.5) 100%)',
+          ].join(', '),
+        }} />
+        {/* Floating particles */}
+        {visible && !isPrivate && (
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+            {Array.from({ length: 20 }, (_, i) => (
+              <div key={i} style={{
+                position: 'absolute',
+                left: `${(i * 37 + 13) % 100}%`,
+                bottom: '-5%',
+                width: i % 3 === 0 ? 2 : 1,
+                height: i % 3 === 0 ? 2 : 1,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,.4)',
+                animation: `wcParticle ${8 + (i % 7) * 2}s linear ${i * 0.7}s infinite`,
+              }} />
+            ))}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  // ── Minimal background (pure black + subtle accent lines) ──
+  const renderMinimalBg = () => (
+    <>
+      <style>{`
+        @keyframes wcMinLine { 0% { transform: scaleX(0); } 100% { transform: scaleX(1); } }
+      `}</style>
+      {visible && (
+        <>
+          <div style={{
+            position: 'absolute', top: '38%', left: '10%', right: '10%', height: 1,
+            background: 'rgba(255,255,255,.04)', transformOrigin: 'left center',
+            animation: 'wcMinLine 1.5s cubic-bezier(.16,1,.3,1) .6s both',
+          }} />
+          <div style={{
+            position: 'absolute', top: '62%', left: '10%', right: '10%', height: 1,
+            background: 'rgba(255,255,255,.04)', transformOrigin: 'right center',
+            animation: 'wcMinLine 1.5s cubic-bezier(.16,1,.3,1) .8s both',
+          }} />
+        </>
+      )}
+    </>
+  )
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000, background: '#000',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      opacity: entered ? 0 : 1, transition: 'opacity .7s ease',
+      overflow: 'hidden',
+    }}>
+      {/* Shared keyframes */}
+      <style>{`
+        @keyframes wcFadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes wcGlow { 0%, 100% { box-shadow: 0 0 24px rgba(99,102,241,.3); } 50% { box-shadow: 0 0 48px rgba(99,102,241,.5), 0 0 80px rgba(99,102,241,.15); } }
+        @keyframes wcFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+        @keyframes wcLine { from { left: -30%; } to { left: 130%; } }
+        @keyframes wcReveal { from { opacity: 0; transform: translateY(30px) scale(.97); clip-path: inset(100% 0 0 0); } to { opacity: 1; transform: translateY(0) scale(1); clip-path: inset(0 0 0 0); } }
+        @keyframes wcLetterSpace { from { opacity: 0; letter-spacing: 0.12em; } to { opacity: 1; letter-spacing: 0.04em; } }
+      `}</style>
+
+      {/* Style-specific background */}
+      {style === 'mosaic' && renderMosaicBg()}
+      {style === 'cinematic' && renderCinematicBg()}
+      {style === 'minimal' && renderMinimalBg()}
+
+      {/* Private mode: accent line (all styles) */}
       {isPrivate && visible && (
         <div style={{
           position: 'absolute', top: '50%', width: '20%', height: 1,
@@ -328,142 +572,8 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
         }} />
       )}
 
-      {/* ── Content: centered ── */}
-      <div style={{
-        position: 'relative', zIndex: 2, textAlign: 'center',
-        padding: '0 24px', maxWidth: 680,
-      }}>
-        {/* Studio name */}
-        {studioName && (
-          <div style={{ animation: visible ? 'wcFadeUp .9s cubic-bezier(.16,1,.3,1) .3s both' : 'none' }}>
-            {studioWebsite ? (
-              <a href={studioWebsite.startsWith('http') ? studioWebsite : `https://${studioWebsite}`}
-                target="_blank" rel="noopener noreferrer"
-                style={{
-                  display: 'inline-block', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase',
-                  color: 'rgba(255,255,255,.4)', margin: '0 0 20px', fontWeight: 500,
-                  textDecoration: 'none', transition: 'color .2s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,.8)' }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,.4)' }}
-                onClick={e => e.stopPropagation()}
-              >{studioName}</a>
-            ) : (
-              <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(255,255,255,.3)', margin: '0 0 20px', fontWeight: 500 }}>
-                {studioName}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Title */}
-        <div style={{ animation: visible ? 'wcFadeUp 1s cubic-bezier(.16,1,.3,1) .5s both' : 'none' }}>
-          <h1 style={{
-            fontSize: 'clamp(32px, 7vw, 68px)', fontWeight: 700, color: '#fff',
-            margin: 0, lineHeight: 1.08, letterSpacing: '-0.025em',
-            textShadow: '0 2px 40px rgba(0,0,0,.5)',
-          }}>{galleryTitle}</h1>
-        </div>
-
-        {/* Client name */}
-        {clientName && (
-          <div style={{ animation: visible ? 'wcFadeUp .9s cubic-bezier(.16,1,.3,1) .65s both' : 'none' }}>
-            <p style={{
-              fontSize: 'clamp(14px, 2vw, 19px)', color: 'rgba(255,255,255,.45)',
-              margin: '10px 0 0', fontWeight: 400, letterSpacing: '0.01em',
-            }}>{clientName}</p>
-          </div>
-        )}
-
-        {/* Event meta */}
-        {(eventDate || eventLocation) && (
-          <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .8s both' : 'none' }}>
-            <p style={{
-              fontSize: 12, color: 'rgba(255,255,255,.25)', margin: '10px 0 0',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, letterSpacing: '0.03em',
-            }}>
-              {eventDate && <span>{eventDate}</span>}
-              {eventDate && eventLocation && <span style={{ opacity: .3 }}>·</span>}
-              {eventLocation && <span>{eventLocation}</span>}
-            </p>
-          </div>
-        )}
-
-        {galleryDescription && (
-          <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .85s both' : 'none' }}>
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,.22)', margin: '8px auto 0', maxWidth: 420 }}>
-              {galleryDescription}
-            </p>
-          </div>
-        )}
-
-        {/* Private mode notice */}
-        {isPrivate && (
-          <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .9s both' : 'none', marginTop: 20 }}>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              padding: '8px 18px', borderRadius: 20,
-              background: 'rgba(99,102,241,.06)', border: '1px solid rgba(99,102,241,.12)',
-            }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,.55)" strokeWidth="1.8" style={{ animation: 'wcFloat 2.5s ease-in-out infinite' }}>
-                <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', fontWeight: 400 }}>
-                Privacy mode — take a selfie to see your photos
-              </span>
-            </div>
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-              marginTop: 10, opacity: .5,
-            }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(34,197,94,.7)" strokeWidth="2">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-              </svg>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', letterSpacing: '.03em' }}>
-                Your photos are protected and secure
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Buttons */}
-        <div style={{
-          display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', marginTop: 32,
-          animation: visible ? 'wcFadeUp .9s cubic-bezier(.16,1,.3,1) 1s both' : 'none',
-        }}>
-          {!isPrivate && (
-            <button onClick={handleEnter} style={{
-              padding: '15px 44px', borderRadius: 50, border: '1px solid rgba(255,255,255,.18)',
-              background: 'rgba(255,255,255,.07)', backdropFilter: 'blur(20px)',
-              color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer',
-              fontFamily: 'inherit', letterSpacing: '0.01em', transition: 'all .3s',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.16)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.35)'; e.currentTarget.style.transform = 'scale(1.03)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.07)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.18)'; e.currentTarget.style.transform = 'scale(1)' }}
-            >View Gallery</button>
-          )}
-
-          {showFindButton && (
-            <button onClick={onFindMyPhotos} style={{
-              padding: isPrivate ? '16px 48px' : '15px 36px', borderRadius: 50, border: 'none',
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
-              fontFamily: 'inherit', letterSpacing: '0.01em', transition: 'all .3s',
-              display: 'flex', alignItems: 'center', gap: 10,
-              animation: isPrivate ? 'wcGlow 3s ease-in-out infinite' : 'none',
-              position: 'relative', zIndex: 10,
-            }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05)' }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <circle cx="12" cy="8" r="4" /><path d="M5 20a7 7 0 0 1 14 0" />
-              </svg>
-              Find My Photos
-            </button>
-          )}
-        </div>
-      </div>
+      {/* Content */}
+      {renderContent()}
     </div>
   )
 }
@@ -829,6 +939,7 @@ export function App() {
     return (
       <>
         <WelcomeScreen
+          style={rawSettings.welcomeStyle || 'mosaic'}
           galleryTitle={galleryTitle}
           galleryDescription={rawSettings.galleryDescription || ''}
           eventDate={rawSettings.eventDate || ''}
