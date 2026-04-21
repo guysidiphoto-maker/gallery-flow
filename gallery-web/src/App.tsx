@@ -192,7 +192,8 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
 
 // ─── Welcome Screen ─────────────────────────────────────────────────────────
 
-function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos }: {
+function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos }: {
+  style?: 'mosaic' | 'cinematic' | 'minimal'
   galleryTitle: string
   galleryDescription?: string
   eventDate?: string
