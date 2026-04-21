@@ -8,6 +8,7 @@ import { PrivacyPage } from './pages/PrivacyPage'
 import { ClientPage } from './pages/ClientPage'
 import { PortfolioPage } from './pages/PortfolioPage'
 import { ClientDashboard } from './pages/ClientDashboard'
+import { Dashboard } from './pages/Dashboard'
 import { VendorPortal } from './pages/VendorPortal'
 import { EventCapturePage } from './pages/EventCapturePage'
 import { QuestionnairePage } from './pages/QuestionnairePage'
@@ -18,6 +19,7 @@ function Router() {
 
   if (path === '/') return <LandingPageHe />
   if (path === '/demo') return <DemoPage />
+  if (path === '/dashboard') return <Dashboard />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
   // Questionnaire
