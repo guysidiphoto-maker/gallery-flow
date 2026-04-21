@@ -40,68 +40,86 @@ function Faq({ q, a }: { q: string; a: string }) {
 
 // ─── Animated Phone Mockup ──────────────────────────────────────────────────
 
+const THINK = ['רגע… מחפשים אותך', 'עוברים על התמונות 👀', 'יש מצב שתפסנו אותך…', 'עוד שנייה ויש לנו את זה']
+
 function PhoneMockup() {
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(0) // 0=selfie, 1=thinking, 2=found
+  const [line, setLine] = useState(0)
+
   useEffect(() => {
-    const timers = [
-      setTimeout(() => setStep(1), 2000),
-      setTimeout(() => setStep(2), 4000),
-      setTimeout(() => setStep(3), 5500),
-      setTimeout(() => setStep(0), 8000),
-    ]
-    const loop = setInterval(() => {
-      setTimeout(() => setStep(1), 100)
-      setTimeout(() => setStep(2), 2100)
-      setTimeout(() => setStep(3), 3600)
-      setTimeout(() => setStep(0), 6100)
-    }, 8000)
-    return () => { timers.forEach(clearTimeout); clearInterval(loop) }
+    let cancelled = false
+    const run = async () => {
+      while (!cancelled) {
+        setStep(0); setLine(0); await wait(2500)
+        if (cancelled) return
+        setStep(1)
+        for (let i = 0; i < THINK.length; i++) { await wait(700); if (cancelled) return; setLine(i + 1) }
+        await wait(800); if (cancelled) return
+        setStep(2); await wait(3500); if (cancelled) return
+      }
+    }
+    run()
+    return () => { cancelled = true }
   }, [])
 
   return (
     <div className="phone">
       <div className="phone-notch" />
       <div className="phone-screen">
-        {/* Step 0: Selfie screen */}
+        {/* Selfie */}
         <div className="phone-step" style={{ opacity: step === 0 ? 1 : 0 }}>
           <div className="phone-cam">
             <div className="phone-cam-ring" />
-            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="rgba(255,255,255,.6)" strokeWidth="1.5">
-              <circle cx="12" cy="12" r="9" /><circle cx="12" cy="10" r="3" /><path d="M6 20c0-3 3-5 6-5s6 2 6 5" />
+            <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="rgba(255,255,255,.5)" strokeWidth="1.5">
+              <circle cx="12" cy="10" r="4" /><path d="M5 20a7 7 0 0 1 14 0" />
             </svg>
           </div>
+          <div className="phone-capture" />
           <p className="phone-text">צלם סלפי</p>
         </div>
-        {/* Step 1: Scanning */}
+
+        {/* Thinking */}
         <div className="phone-step" style={{ opacity: step === 1 ? 1 : 0 }}>
-          <div className="phone-scan">
-            <div className="phone-scan-line" />
+          <div className="phone-selfie-circle">
+            <div className="phone-selfie-glow" />
+            <div className="phone-selfie-avatar">
+              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="1.5">
+                <circle cx="12" cy="10" r="4" /><path d="M5 20a7 7 0 0 1 14 0" />
+              </svg>
+            </div>
           </div>
-          <p className="phone-text">מזהה פנים...</p>
+          <div className="phone-lines" style={{ direction: 'rtl' }}>
+            {THINK.map((t, i) => (
+              <p key={i} style={{
+                opacity: i < line ? 1 : 0,
+                transform: `translateY(${i < line ? 0 : 8}px)`,
+                color: i === line - 1 ? 'rgba(255,255,255,.7)' : 'rgba(255,255,255,.25)',
+                fontWeight: i === line - 1 ? 500 : 400,
+                transition: 'all .5s ease', fontSize: 10, margin: '3px 0',
+              }}>{t}</p>
+            ))}
+          </div>
         </div>
-        {/* Step 2: Loading dots */}
+
+        {/* Found */}
         <div className="phone-step" style={{ opacity: step === 2 ? 1 : 0 }}>
-          <div className="phone-dots">
-            <span /><span /><span />
+          <div className="phone-found-icon">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
           </div>
-          <p className="phone-text">מחפש תמונות</p>
-        </div>
-        {/* Step 3: Results */}
-        <div className="phone-step" style={{ opacity: step === 3 ? 1 : 0 }}>
+          <p style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px', color: '#fff' }}>מצאנו אותך</p>
+          <p style={{ fontSize: 10, color: 'rgba(255,255,255,.4)', margin: '0 0 12px' }}>47 תמונות נמצאו</p>
           <div className="phone-results">
-            <div className="phone-thumb" style={{ animationDelay: '0s' }} />
-            <div className="phone-thumb" style={{ animationDelay: '.1s' }} />
-            <div className="phone-thumb" style={{ animationDelay: '.2s' }} />
-            <div className="phone-thumb" style={{ animationDelay: '.3s' }} />
-            <div className="phone-thumb" style={{ animationDelay: '.4s' }} />
-            <div className="phone-thumb" style={{ animationDelay: '.5s' }} />
+            {[0, 1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="phone-thumb" style={{ animationDelay: `${i * .08}s` }} />
+            ))}
           </div>
-          <p className="phone-text" style={{ color: '#22c55e' }}>נמצאו 47 תמונות!</p>
         </div>
       </div>
     </div>
   )
 }
+
+function wait(ms: number) { return new Promise(r => setTimeout(r, ms)) }
 
 // ─── Main ───────────────────────────────────────────────────────────────────
 
@@ -163,24 +181,26 @@ export function LandingPageHe() {
 @keyframes breathe{0%,100%{opacity:.08}50%{opacity:.18}}
 
 /* ── Phone ── */
-.phone{width:220px;height:440px;border-radius:36px;border:2px solid rgba(255,255,255,.1);background:#111;position:relative;overflow:hidden;flex-shrink:0;box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04),inset 0 1px 0 rgba(255,255,255,.06)}
-.phone-notch{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:60px;height:20px;border-radius:10px;background:#000;z-index:5}
-.phone-screen{position:absolute;inset:2px;border-radius:34px;background:linear-gradient(180deg,#0a0a14,#0e0e1a);overflow:hidden}
-.phone-step{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity .5s ease;padding:20px}
-.phone-text{font-size:13px;color:rgba(255,255,255,.5);margin:0;font-weight:500}
-.phone-cam{width:100px;height:100px;border-radius:50%;border:3px solid rgba(99,102,241,.3);display:flex;align-items:center;justify-content:center;position:relative}
-.phone-cam-ring{position:absolute;inset:-8px;border-radius:50%;border:2px solid rgba(99,102,241,.1);animation:cam-pulse 2s ease-in-out infinite}
-@keyframes cam-pulse{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.08);opacity:1}}
-.phone-scan{width:100px;height:100px;border-radius:50%;border:2px solid var(--a);position:relative;overflow:hidden}
-.phone-scan-line{position:absolute;top:0;left:0;right:0;height:3px;background:var(--a);box-shadow:0 0 12px var(--a);animation:scan 1.2s ease-in-out infinite}
-@keyframes scan{0%{top:0}50%{top:calc(100% - 3px)}100%{top:0}}
-.phone-dots{display:flex;gap:10px}
-.phone-dots span{width:10px;height:10px;border-radius:50%;background:var(--a);animation:dot-bounce .6s ease-in-out infinite alternate}
-.phone-dots span:nth-child(2){animation-delay:.15s}
-.phone-dots span:nth-child(3){animation-delay:.3s}
-@keyframes dot-bounce{0%{transform:translateY(0);opacity:.3}100%{transform:translateY(-8px);opacity:1}}
-.phone-results{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:140px}
-.phone-thumb{aspect-ratio:1;border-radius:6px;background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(168,85,247,.15));animation:thumb-in .4s ease both}
+.phone{width:240px;height:480px;border-radius:40px;border:2px solid rgba(255,255,255,.08);background:#0a0a0f;position:relative;overflow:hidden;flex-shrink:0;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.03)}
+@media(max-width:860px){.phone{width:200px;height:400px;border-radius:32px}}
+.phone-notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:70px;height:22px;border-radius:12px;background:#000;z-index:5}
+.phone-screen{position:absolute;inset:2px;border-radius:38px;background:radial-gradient(ellipse at center,#0e0e1a 0%,#07070d 100%);overflow:hidden}
+.phone-step{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;transition:opacity .6s ease;padding:24px}
+.phone-text{font-size:12px;color:rgba(255,255,255,.4);margin:0;font-weight:500}
+.phone-cam{width:90px;height:90px;border-radius:50%;border:2px solid rgba(99,102,241,.25);display:flex;align-items:center;justify-content:center;position:relative}
+.phone-cam-ring{position:absolute;inset:-10px;border-radius:50%;border:1.5px solid rgba(99,102,241,.08);animation:cam-pulse 2.5s ease-in-out infinite}
+@keyframes cam-pulse{0%,100%{transform:scale(1);opacity:.4}50%{transform:scale(1.1);opacity:.8}}
+.phone-capture{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.9);border:3px solid rgba(99,102,241,.3);margin-top:4px}
+.phone-selfie-circle{width:80px;height:80px;border-radius:50%;border:2px solid rgba(99,102,241,.4);position:relative;animation:selfie-glow 2.5s ease-in-out infinite;display:flex;align-items:center;justify-content:center}
+@keyframes selfie-glow{0%,100%{box-shadow:0 0 20px rgba(99,102,241,.15)}50%{box-shadow:0 0 40px rgba(99,102,241,.3)}}
+.phone-selfie-glow{position:absolute;inset:-12px;border-radius:50%;background:radial-gradient(circle,rgba(99,102,241,.12) 0%,transparent 70%);animation:glow-breathe 2.5s ease-in-out infinite}
+@keyframes glow-breathe{0%,100%{opacity:.4;transform:scale(1)}50%{opacity:.8;transform:scale(1.1)}}
+.phone-selfie-avatar{width:100%;height:100%;border-radius:50%;background:rgba(99,102,241,.08);display:flex;align-items:center;justify-content:center}
+.phone-lines{display:flex;flex-direction:column;align-items:center;margin-top:4px}
+.phone-found-icon{width:44px;height:44px;border-radius:50%;background:rgba(34,197,94,.1);border:2px solid rgba(34,197,94,.3);display:flex;align-items:center;justify-content:center;margin-bottom:8px;animation:found-pop .5s cubic-bezier(.16,1,.3,1) both}
+@keyframes found-pop{0%{transform:scale(0)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+.phone-results{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:130px}
+.phone-thumb{aspect-ratio:1;border-radius:6px;background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(168,85,247,.12));animation:thumb-in .35s ease both}
 @keyframes thumb-in{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
 
 /* ── Ticker ── */
@@ -282,7 +302,7 @@ export function LandingPageHe() {
 
         <div className="hero-txt" style={{ position: 'relative', zIndex: 1 }}>
           <R><div className="hero-badge">זיהוי פנים לאירועים</div></R>
-          <R d={80}><h1>סלפי אחד —<br /><span className="hero-gr">כל התמונות שלהם</span></h1></R>
+          <R d={80}><h1>סלפי אחד.<br /><span className="hero-gr">כל התמונות שלהם.</span></h1></R>
           <R d={160}><p>מעלים תמונות מהאירוע, האורח עושה סלפי, ותוך שנייה הוא מקבל את כל התמונות שלו. בלי אפליקציה.</p></R>
           <R d={240}>
             <div className="hero-btns">
