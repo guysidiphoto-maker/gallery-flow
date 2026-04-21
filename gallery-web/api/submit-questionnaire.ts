@@ -154,77 +154,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const html = `<!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f0f0f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f0f5;padding:32px 16px;">
+<body style="margin:0;padding:0;background:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:40px 16px;">
     <tr><td align="center">
-      <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.06);">
+      <table width="500" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;">
 
-        <!-- Header with gradient -->
-        <tr><td style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#a855f7 100%);padding:40px 32px 36px;text-align:center;">
-          <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
-            <!-- Camera icon -->
-            <div style="width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.2);margin:0 auto 16px;line-height:56px;font-size:26px;">📸</div>
-            <h1 style="margin:0 0 6px;color:#fff;font-size:22px;font-weight:800;letter-spacing:-0.3px;">תודה, ${name}!</h1>
-            <p style="margin:0;color:rgba(255,255,255,.75);font-size:14px;">קיבלנו את התשובות שלך בהצלחה</p>
-          </td></tr></table>
+        <!-- Logo bar -->
+        <tr><td style="padding:24px 32px;text-align:center;border-bottom:1px solid #eee;">
+          <span style="font-size:22px;font-weight:800;color:#1a1a2e;letter-spacing:-0.5px;">Pi<span style="color:#6366f1;">x</span>flow</span>
         </td></tr>
 
         <!-- Body -->
-        <tr><td style="padding:36px 32px 28px;">
-          <!-- Confirmation box -->
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f7ff;border-radius:12px;border:1px solid #ede9fe;">
-            <tr><td style="padding:20px 24px;text-align:center;">
-              <div style="font-size:28px;margin-bottom:8px;">✅</div>
-              <p style="margin:0;font-size:15px;color:#4c1d95;font-weight:600;">השאלון התקבל</p>
-              <p style="margin:6px 0 0;font-size:13px;color:#7c3aed;">נחזור אליך בהקדם</p>
-            </td></tr>
-          </table>
+        <tr><td style="padding:36px 32px 32px;">
+          <p style="margin:0 0 20px;font-size:16px;color:#1a1a2e;line-height:1.7;text-align:right;">
+            היי ${name},<br>תודה על הפרטים שמילאת!
+          </p>
 
           ${galleryUrl ? `
-          <!-- Gallery button -->
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
-            <tr><td align="center">
-              <a href="${galleryUrl}" style="display:inline-block;padding:16px 48px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#ffffff;border-radius:12px;text-decoration:none;font-weight:700;font-size:16px;box-shadow:0 4px 14px rgba(99,102,241,.35);">
-                📷&nbsp;&nbsp;צפה בגלריה שלך
-              </a>
+          <p style="margin:0 0 20px;font-size:14px;color:#555;line-height:1.7;text-align:right;">
+            הגלריה שלך מוכנה. לחץ על הכפתור למטה כדי לצפות בתמונות ולזהות את עצמך באמצעות זיהוי פנים.
+          </p>
+
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center" style="padding:8px 0 16px;">
+              <a href="${galleryUrl}" style="display:inline-block;padding:14px 40px;background:#6366f1;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;">צפה בגלריה</a>
             </td></tr>
           </table>
           ` : ''}
-
-          <!-- Divider -->
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;">
-            <tr><td style="border-top:1px solid #f0f0f5;padding-top:20px;text-align:center;">
-              <p style="margin:0;font-size:13px;color:#9ca3af;line-height:1.6;">
-                יש לך שאלות? ניתן להשיב על מייל זה<br>או לפנות אלינו בכל עת.
-              </p>
-            </td></tr>
-          </table>
         </td></tr>
 
         <!-- Footer -->
-        <tr><td style="padding:20px 32px;background:#fafafa;border-top:1px solid #f0f0f5;">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td style="text-align:right;">
-                <span style="font-size:14px;font-weight:700;color:#6366f1;">Pixflow</span>
-              </td>
-              <td style="text-align:left;">
-                <a href="https://pixflow-ai.com/terms" style="font-size:11px;color:#9ca3af;text-decoration:none;margin-left:12px;">תנאי שימוש</a>
-                <a href="https://pixflow-ai.com/privacy" style="font-size:11px;color:#9ca3af;text-decoration:none;">פרטיות</a>
-              </td>
-            </tr>
-          </table>
-        </td></tr>
-
-      </table>
-
-      <!-- Sub-footer -->
-      <table width="520" cellpadding="0" cellspacing="0" style="margin-top:16px;">
-        <tr><td align="center">
-          <p style="margin:0;font-size:11px;color:#b0b0b0;">
-            אקליפס מדיה · pixflow-ai.com
+        <tr><td style="padding:20px 32px;border-top:1px solid #eee;text-align:center;">
+          <p style="margin:0;font-size:12px;color:#aaa;line-height:1.6;">
+            Pixflow AI by Eclipse Media
           </p>
         </td></tr>
+
       </table>
     </td></tr>
   </table>
