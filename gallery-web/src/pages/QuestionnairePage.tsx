@@ -300,7 +300,7 @@ export function QuestionnairePage() {
                 />
                 <span>
                   אני מסכים/ה ל<a href="/terms" target="_blank" style={{ color: '#818cf8', textDecoration: 'underline' }}>תקנון השימוש</a> ול<a href="/privacy" target="_blank" style={{ color: '#818cf8', textDecoration: 'underline' }}>מדיניות הפרטיות</a>.
-                  המידע שלי יישמר בצורה מאובטחת ולא יועבר לצדדים שלישיים.
+                  אני מאשר/ת שליחת הודעות הכוללות אישורים, הנחיות והודעות אחרות לכתובת הדואר האלקטרוני ומספר הטלפון שסיפקתי.
                 </span>
               </label>
               {errors['_consent'] && (
