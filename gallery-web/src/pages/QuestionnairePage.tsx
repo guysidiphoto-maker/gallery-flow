@@ -107,6 +107,21 @@ export function QuestionnairePage() {
   // ── Render ──
 
   const bgUrl = config?.background_url
+  const bgAnim = config?.bg_animation
+
+  // TikTok 3D shapes config
+  const tiktokShapes = bgAnim === 'tiktok-3d' ? [
+    { shape: 'note', color: '#25F4EE', x: 8, y: 12, size: 90, dur: 18, delay: 0, rx: 25, ry: 40 },
+    { shape: 'note', color: '#FE2C55', x: 75, y: 8, size: 70, dur: 22, delay: 2, rx: -30, ry: 20 },
+    { shape: 'circle', color: '#25F4EE', x: 85, y: 65, size: 50, dur: 15, delay: 1, rx: 20, ry: -35 },
+    { shape: 'circle', color: '#FE2C55', x: 12, y: 70, size: 40, dur: 20, delay: 3, rx: -15, ry: 45 },
+    { shape: 'note', color: '#25F4EE', x: 45, y: 85, size: 60, dur: 24, delay: 4, rx: 35, ry: -25 },
+    { shape: 'arc', color: '#FE2C55', x: 60, y: 30, size: 110, dur: 28, delay: 1.5, rx: -20, ry: 30 },
+    { shape: 'arc', color: '#25F4EE', x: 20, y: 40, size: 80, dur: 19, delay: 5, rx: 40, ry: -15 },
+    { shape: 'circle', color: '#FE2C55', x: 90, y: 90, size: 35, dur: 16, delay: 2.5, rx: -25, ry: 50 },
+    { shape: 'note', color: '#25F4EE', x: 55, y: 55, size: 45, dur: 21, delay: 6, rx: 30, ry: 20 },
+    { shape: 'arc', color: '#FE2C55', x: 30, y: 15, size: 95, dur: 26, delay: 3.5, rx: -35, ry: -40 },
+  ] : []
 
   return (
     <div style={{
@@ -119,7 +134,7 @@ export function QuestionnairePage() {
       position: 'relative', overflow: 'hidden',
     }}>
       {/* Animated background image */}
-      {bgUrl && (
+      {bgUrl && !bgAnim && (
         <>
           <div style={{
             position: 'fixed', inset: '-10%',
@@ -135,11 +150,53 @@ export function QuestionnairePage() {
           }} />
         </>
       )}
+
+      {/* TikTok 3D floating shapes */}
+      {bgAnim === 'tiktok-3d' && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 0,
+          perspective: '800px', perspectiveOrigin: '50% 50%',
+          overflow: 'hidden',
+        }}>
+          {tiktokShapes.map((s, i) => (
+            <div key={i} style={{
+              position: 'absolute',
+              left: `${s.x}%`, top: `${s.y}%`,
+              width: s.size, height: s.size,
+              opacity: 0.35,
+              animation: `q-float-${i} ${s.dur}s ease-in-out ${s.delay}s infinite`,
+              transformStyle: 'preserve-3d',
+            }}>
+              <svg viewBox="0 0 100 100" width={s.size} height={s.size} style={{ filter: `drop-shadow(0 0 ${s.size / 4}px ${s.color}40)` }}>
+                {s.shape === 'note' && (
+                  <path d="M65 10 L65 65 Q65 80 50 80 Q35 80 35 65 Q35 50 50 50 Q58 50 60 55 L60 10 Z"
+                    fill="none" stroke={s.color} strokeWidth="4" strokeLinecap="round" />
+                )}
+                {s.shape === 'circle' && (
+                  <circle cx="50" cy="50" r="30" fill="none" stroke={s.color} strokeWidth="4" />
+                )}
+                {s.shape === 'arc' && (
+                  <path d="M20 80 Q20 20 80 20" fill="none" stroke={s.color} strokeWidth="5" strokeLinecap="round" />
+                )}
+              </svg>
+            </div>
+          ))}
+        </div>
+      )}
+
       <style>{`
         @keyframes q-fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes q-check { 0% { transform: scale(0); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
         @keyframes q-spin { to { transform: rotate(360deg); } }
         @keyframes q-ken-burns { 0% { transform: scale(1); } 50% { transform: scale(1.12); } 100% { transform: scale(1); } }
+        ${tiktokShapes.map((s, i) => `
+        @keyframes q-float-${i} {
+          0% { transform: translate3d(0,0,0) rotateX(0deg) rotateY(0deg) scale(1); }
+          25% { transform: translate3d(${s.rx}px,${-Math.abs(s.ry)/2}px,${s.size}px) rotateX(${s.rx}deg) rotateY(${s.ry}deg) scale(1.1); }
+          50% { transform: translate3d(${-s.rx/2}px,${s.ry}px,${s.size*1.5}px) rotateX(${-s.rx/2}deg) rotateY(${-s.ry}deg) scale(0.9); }
+          75% { transform: translate3d(${s.ry/3}px,${s.rx/2}px,${-s.size/2}px) rotateX(${s.ry}deg) rotateY(${s.rx/2}deg) scale(1.05); }
+          100% { transform: translate3d(0,0,0) rotateX(0deg) rotateY(0deg) scale(1); }
+        }`).join('')}
         .q-input:focus { border-color: rgba(99,102,241,.5) !important; }
         .q-input::placeholder { color: rgba(255,255,255,.2); }
         .q-textarea { resize: vertical; min-height: 80px; }

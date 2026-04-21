@@ -112,6 +112,7 @@ export interface QuestionnaireConfig {
   description: string | null
   questions: QuestionnaireQuestion[]
   background_url: string | null
+  bg_animation: string | null
   send_method: 'none' | 'email' | 'sms'
   is_active: boolean
   created_at: string
