@@ -162,7 +162,7 @@ export function LandingPageHe() {
 @media(max-width:640px){.nav-r .nav-l{display:none}}
 
 /* Hero — pinned by GSAP */
-.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:100px 28px 40px;text-align:center;position:relative}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:160px 28px 60px;text-align:center;position:relative}
 .hero h1{font-size:clamp(38px,7vw,76px);font-weight:900;line-height:.96;margin:0 0 22px;letter-spacing:-2.5px;color:#0a0a0a}
 .hero-gr{background:linear-gradient(135deg,#6366f1,#a855f7,#ec4899);background-size:200% 200%;animation:gr 6s ease infinite;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 @keyframes gr{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
