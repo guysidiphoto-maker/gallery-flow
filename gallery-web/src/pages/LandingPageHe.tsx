@@ -139,17 +139,26 @@ export function LandingPageHe() {
     if (mm.matches) return
 
     const ctx = gsap.context(() => {
-      const tl = gsap.timeline({
+      // Scale down the demo on scroll (no pin — simpler, no layout issues)
+      gsap.to(videoRef.current, {
+        scale: 0.5,
+        borderRadius: 24,
         scrollTrigger: {
           trigger: heroRef.current,
           start: 'top top',
-          end: '+=150%',
-          pin: true,
-          scrub: 1.2,
+          end: 'bottom top',
+          scrub: 1,
         },
       })
-      tl.to(videoRef.current, { scale: 0.45, borderRadius: 28, duration: 1, ease: 'none' }, 0)
-      tl.to(overlayRef.current, { opacity: 0, duration: .5, ease: 'none' }, 0)
+      gsap.to(overlayRef.current, {
+        opacity: 0,
+        scrollTrigger: {
+          trigger: heroRef.current,
+          start: '30% top',
+          end: '80% top',
+          scrub: 1,
+        },
+      })
     })
     return () => ctx.revert()
   }, [])
