@@ -100,12 +100,13 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                   decoding="async"
                   style={{
                     width: '100%', height: 'auto', display: 'block',
-                    cursor: selectMode ? 'pointer' : 'pointer',
-                    background: 'rgba(255,255,255,.03)',
-                    transition: 'opacity .15s',
-                    opacity: selectMode && !isSelected ? 0.6 : (clientMode && hiddenIds?.has(img.id)) ? 0.35 : 1,
+                    cursor: 'pointer',
+                    background: 'linear-gradient(135deg, rgba(255,255,255,.02), rgba(255,255,255,.05))',
+                    transition: 'opacity .35s ease, transform .4s cubic-bezier(.16,1,.3,1), filter .3s ease',
+                    opacity: selectMode && !isSelected ? 0.55 : (clientMode && hiddenIds?.has(img.id)) ? 0.3 : 1,
+                    filter: selectMode && !isSelected ? 'saturate(0.6)' : 'none',
                   }}
-                  onLoad={e => handleLoad(index, e.currentTarget)}
+                  onLoad={e => { handleLoad(index, e.currentTarget); e.currentTarget.style.animation = 'none' }}
                   onClick={() => selectMode ? onToggleSelect?.(img.id) : onImageClick(index)}
                 />
                 {/* Selection checkbox */}
@@ -113,15 +114,18 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                   <button
                     onClick={e => { e.stopPropagation(); onToggleSelect?.(img.id) }}
                     style={{
-                      position: 'absolute', top: 8, left: 8,
-                      width: 24, height: 24, borderRadius: '50%',
-                      border: isSelected ? 'none' : '2px solid rgba(255,255,255,.6)',
-                      background: isSelected ? '#6366f1' : 'rgba(0,0,0,.3)',
+                      position: 'absolute', top: 10, left: 10,
+                      width: 28, height: 28, borderRadius: '50%',
+                      border: isSelected ? '2px solid #818cf8' : '2px solid rgba(255,255,255,.5)',
+                      background: isSelected ? 'linear-gradient(135deg, #6366f1, #818cf8)' : 'rgba(0,0,0,.4)',
                       cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      backdropFilter: 'blur(4px)', transition: 'all .15s',
+                      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+                      transition: 'all .25s cubic-bezier(.16,1,.3,1)',
+                      transform: isSelected ? 'scale(1)' : 'scale(0.9)',
+                      boxShadow: isSelected ? '0 2px 12px rgba(99,102,241,.4)' : '0 2px 8px rgba(0,0,0,.3)',
                     }}
                   >
-                    {isSelected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                    {isSelected && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                   </button>
                 )}
                 {/* Client hide/unhide button */}
@@ -130,14 +134,15 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                     className="grid-item__dl"
                     onClick={e => { e.stopPropagation(); onToggleHide(img.id) }}
                     style={{
-                      position: 'absolute', top: 8, right: 8,
-                      width: 32, height: 32, borderRadius: '50%',
-                      border: 'none',
-                      background: hiddenIds?.has(img.id) ? 'rgba(239,68,68,.8)' : 'rgba(0,0,0,.5)',
-                      backdropFilter: 'blur(8px)',
+                      position: 'absolute', top: 10, right: 10,
+                      width: 34, height: 34, borderRadius: '50%',
+                      border: hiddenIds?.has(img.id) ? '1.5px solid rgba(239,68,68,.4)' : '1px solid rgba(255,255,255,.1)',
+                      background: hiddenIds?.has(img.id) ? 'rgba(239,68,68,.75)' : 'rgba(0,0,0,.45)',
+                      backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
                       cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                       opacity: hiddenIds?.has(img.id) ? 1 : undefined,
-                      transition: 'opacity .15s, background .15s',
+                      transition: 'all .25s cubic-bezier(.16,1,.3,1)',
+                      boxShadow: hiddenIds?.has(img.id) ? '0 2px 10px rgba(239,68,68,.3)' : '0 2px 8px rgba(0,0,0,.2)',
                     }}
                   >
                     {hiddenIds?.has(img.id) ? (
@@ -160,12 +165,16 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                     className="grid-item__dl"
                     onClick={e => { e.stopPropagation(); onDownload(img) }}
                     style={{
-                      position: 'absolute', bottom: 8, right: 8,
-                      width: 32, height: 32, borderRadius: '50%',
-                      border: 'none', background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(8px)',
+                      position: 'absolute', bottom: 10, right: 10,
+                      width: 34, height: 34, borderRadius: '50%',
+                      border: '1px solid rgba(255,255,255,.1)',
+                      background: 'rgba(0,0,0,.45)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
                       cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      opacity: 0, transition: 'opacity .15s',
+                      opacity: 0, transition: 'all .25s cubic-bezier(.16,1,.3,1)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,.25)',
                     }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,.7)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,.5)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,.45)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)' }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
@@ -402,6 +411,17 @@ function WelcomeScreen({ galleryTitle, galleryDescription, eventDate, eventLocat
                 Privacy mode — take a selfie to see your photos
               </span>
             </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              marginTop: 10, opacity: .5,
+            }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(34,197,94,.7)" strokeWidth="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', letterSpacing: '.03em' }}>
+                Your photos are protected and secure
+              </span>
+            </div>
           </div>
         )}
 
@@ -543,6 +563,13 @@ export function App() {
   // Snapshotting at click time means next/prev stays inside that subset and
   // doesn't break if the filter later changes.
   const [viewerList, setViewerList] = useState<GalleryImage[] | null>(null)
+
+  // Device detection for download UX
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+  const isAndroid = /Android/i.test(navigator.userAgent)
+
+  // Download progress tracking
+  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null)
 
   // Parse gallery ID from URL: /{slug}/gallery/{uuid} or /gallery/{uuid}
   const galleryId = (() => {
@@ -1002,10 +1029,12 @@ export function App() {
     // The user picks "Save X Images" and all photos go to the camera roll together.
     if (isMobile && navigator.share) {
       setDlProgress(`Preparing ${imgs.length} photos...`)
+      setDownloadProgress({ current: 0, total: imgs.length })
       try {
         const files: File[] = []
         for (let i = 0; i < imgs.length; i++) {
           setDlProgress(`Loading ${i + 1} / ${imgs.length}...`)
+          setDownloadProgress({ current: i + 1, total: imgs.length })
           try {
             const res = await fetch(downloadUrl(imgs[i]))
             const blob = await res.blob()
@@ -1014,6 +1043,7 @@ export function App() {
         }
         if (files.length > 0) {
           setDlProgress(null)
+          setDownloadProgress(null)
           // Web Share API with multiple files — native OS share sheet opens with
           // "Save to Photos" option that saves all at once.
           if (navigator.canShare && navigator.canShare({ files })) {
@@ -1025,17 +1055,21 @@ export function App() {
         // User cancelled or share failed — fall through to sequential downloads
       } finally {
         setDlProgress(null)
+        setDownloadProgress(null)
       }
     }
 
     // Desktop (or mobile fallback): sequential downloads
     setDlProgress(`Downloading ${imgs.length} photos...`)
+    setDownloadProgress({ current: 0, total: imgs.length })
     for (let i = 0; i < imgs.length; i++) {
       setDlProgress(`Downloading ${i + 1} / ${imgs.length}...`)
+      setDownloadProgress({ current: i + 1, total: imgs.length })
       handleDownload(downloadUrl(imgs[i]), imgs[i].filename)
       if (imgs.length > 1) await new Promise(r => setTimeout(r, 300))
     }
     setDlProgress(null)
+    setDownloadProgress(null)
   }
 
   // ── Cover image ─────────────────────────────────────────────────────────
@@ -1088,9 +1122,10 @@ export function App() {
             /* ── Personalized hero after face search ── */
             <>
               <div style={{
-                width: 52, height: 52, borderRadius: '50%', overflow: 'hidden',
-                border: '2px solid rgba(255,255,255,.15)',
-                marginBottom: 14,
+                width: 56, height: 56, borderRadius: '50%', overflow: 'hidden',
+                border: '2.5px solid rgba(255,255,255,.18)',
+                marginBottom: 16,
+                boxShadow: '0 4px 20px rgba(0,0,0,.3), 0 0 0 4px rgba(99,102,241,.12)',
               }}>
                 <img src={faceSelfieUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
@@ -1100,25 +1135,42 @@ export function App() {
               )}
               <h1 className="hero__title" style={{ fontSize: 'clamp(24px, 4vw, 44px)' }}>{galleryTitle}</h1>
 
+              {/* Secured badge for face-search hero */}
+              {facePrivacyMode === 'private' && (
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '4px 12px', borderRadius: 999, margin: '8px 0 4px',
+                  background: 'rgba(34,197,94,.06)', border: '1px solid rgba(34,197,94,.10)',
+                }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(34,197,94,.65)" strokeWidth="2.2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  </svg>
+                  <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase' as const, color: 'rgba(34,197,94,.6)' }}>
+                    Your photos are protected
+                  </span>
+                </div>
+              )}
+
               {/* ── Segmented toggle: Your Photos / All Photos ── */}
               <div style={{
-                marginTop: 14,
+                marginTop: 16,
                 display: 'inline-flex',
                 borderRadius: 999, padding: 3,
-                background: 'rgba(255,255,255,.06)',
-                border: '1px solid rgba(255,255,255,.08)',
+                background: 'rgba(255,255,255,.05)',
+                border: '1px solid rgba(255,255,255,.07)',
+                backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
               }}>
                 <button
                   onClick={() => setFaceFilterActive(true)}
                   style={{
-                    padding: '7px 16px', borderRadius: 999,
+                    padding: '8px 18px', borderRadius: 999,
                     border: 'none', cursor: 'pointer',
                     fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
                     letterSpacing: '.01em', whiteSpace: 'nowrap',
-                    transition: 'all .2s ease',
-                    background: faceFilterActive ? 'rgba(255,255,255,.13)' : 'transparent',
+                    transition: 'all .25s cubic-bezier(.16,1,.3,1)',
+                    background: faceFilterActive ? 'rgba(99,102,241,.25)' : 'transparent',
                     color: faceFilterActive ? '#fff' : 'rgba(255,255,255,.4)',
-                    boxShadow: faceFilterActive ? '0 1px 4px rgba(0,0,0,.2)' : 'none',
+                    boxShadow: faceFilterActive ? '0 1px 6px rgba(99,102,241,.2)' : 'none',
                   }}
                 >
                   Your Photos · {faceMatchIds.size}
@@ -1126,12 +1178,12 @@ export function App() {
                 <button
                   onClick={() => setFaceFilterActive(false)}
                   style={{
-                    padding: '7px 16px', borderRadius: 999,
+                    padding: '8px 18px', borderRadius: 999,
                     border: 'none', cursor: 'pointer',
                     fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
                     letterSpacing: '.01em', whiteSpace: 'nowrap',
-                    transition: 'all .2s ease',
-                    background: !faceFilterActive ? 'rgba(255,255,255,.13)' : 'transparent',
+                    transition: 'all .25s cubic-bezier(.16,1,.3,1)',
+                    background: !faceFilterActive ? 'rgba(255,255,255,.12)' : 'transparent',
                     color: !faceFilterActive ? '#fff' : 'rgba(255,255,255,.4)',
                     boxShadow: !faceFilterActive ? '0 1px 4px rgba(0,0,0,.2)' : 'none',
                   }}
@@ -1152,6 +1204,21 @@ export function App() {
               )}
               <div className="hero__meta">
                 <span className="hero__count">{images.length} {images.length === 1 ? 'photo' : 'photos'}</span>
+                {(accessType === 'password' || facePrivacyMode === 'private') && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '5px 12px', borderRadius: 999, marginLeft: 8,
+                    background: 'rgba(34,197,94,.06)', border: '1px solid rgba(34,197,94,.10)',
+                    backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+                    fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase' as const,
+                    color: 'rgba(34,197,94,.7)',
+                  }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    Secured
+                  </span>
+                )}
               </div>
             </>
           )}
@@ -1388,6 +1455,83 @@ export function App() {
             if (showWelcome) setShowWelcome(false)
           }}
         />
+      )}
+
+      {/* ── Download progress overlay ── */}
+      {downloadProgress && (
+        <div style={{
+          position: 'fixed', bottom: isMobile ? 80 : 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 900, padding: '12px 24px', borderRadius: 14,
+          background: 'rgba(10,10,15,.92)', border: '1px solid rgba(255,255,255,.1)',
+          backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+          display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 8,
+          minWidth: 220, boxShadow: '0 8px 32px rgba(0,0,0,.4)',
+          animation: 'fadeIn .25s ease',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+            <div className="loader" style={{ width: 16, height: 16, borderWidth: 2 }} />
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,.7)', fontWeight: 500, flex: 1 }}>
+              {dlProgress}
+            </span>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', fontVariantNumeric: 'tabular-nums' }}>
+              {Math.round((downloadProgress.current / downloadProgress.total) * 100)}%
+            </span>
+          </div>
+          {/* Progress bar */}
+          <div style={{
+            width: '100%', height: 3, borderRadius: 2,
+            background: 'rgba(255,255,255,.08)', overflow: 'hidden',
+          }}>
+            <div style={{
+              height: '100%', borderRadius: 2,
+              background: 'linear-gradient(90deg, rgba(99,102,241,.8), rgba(139,92,246,.8))',
+              width: `${(downloadProgress.current / downloadProgress.total) * 100}%`,
+              transition: 'width .3s ease',
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Floating mobile download bar ── */}
+      {isMobile && downloadsEnabled && !selectMode && viewerIndex === null && !showFaceSearch && !downloadProgress && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 800,
+          padding: '12px 16px', paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+          background: 'rgba(10,10,15,.92)',
+          borderTop: '1px solid rgba(255,255,255,.06)',
+          backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+          display: 'flex', alignItems: 'center', gap: 10,
+          animation: 'fadeIn .3s ease',
+        }}>
+          {/* Device-specific hint */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', margin: 0, lineHeight: 1.4 }}>
+              {isIOS
+                ? 'Tap to share \u2192 Save to Photos'
+                : 'Tap to save photos to your device'}
+            </p>
+          </div>
+
+          {/* Save All button */}
+          <button
+            onClick={() => handleBatchDownload(faceFilterActive && faceMatchIds ? visibleImages : images)}
+            disabled={!!dlProgress}
+            style={{
+              padding: '10px 22px', borderRadius: 10, border: 'none',
+              background: 'linear-gradient(135deg, rgba(99,102,241,.9), rgba(139,92,246,.9))',
+              color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 7,
+              boxShadow: '0 2px 12px rgba(99,102,241,.25)',
+              whiteSpace: 'nowrap' as const, flexShrink: 0,
+              transition: 'all .2s ease',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            {isIOS ? 'Save All' : 'Download All'}
+          </button>
+        </div>
       )}
     </>
   )

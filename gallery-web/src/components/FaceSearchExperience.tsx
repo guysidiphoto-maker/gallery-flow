@@ -29,9 +29,9 @@ const MAX_SELFIE_BYTES = 5 * 1024 * 1024
 
 // Thinking text lines — Hebrew, casual, human
 const THINKING_LINES = [
-  'רגע… מחפשים אותך',
-  'עוברים על התמונות 👀',
-  'יש מצב שתפסנו אותך…',
+  'רגע... מחפשים אותך',
+  'עוברים על התמונות',
+  'יש מצב שתפסנו אותך...',
   'עוד שנייה ויש לנו את זה',
 ]
 
@@ -230,33 +230,122 @@ export function FaceSearchExperience({
       overflow: 'hidden',
     }}>
       <style>{`
-        @keyframes fse-fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fse-fadeIn {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
         @keyframes fse-fadeOut { from { opacity: 1; } to { opacity: 0; } }
-        @keyframes fse-pulse { 0%, 100% { box-shadow: 0 0 30px rgba(99,102,241,.25), 0 0 60px rgba(99,102,241,.08); } 50% { box-shadow: 0 0 50px rgba(99,102,241,.4), 0 0 100px rgba(99,102,241,.15); } }
-        @keyframes fse-glow { 0%, 100% { opacity: .4; transform: scale(1); } 50% { opacity: .7; transform: scale(1.15); } }
-        @keyframes fse-lineIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fse-scaleIn { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
-        @keyframes fse-imgReveal { from { opacity: 0; transform: scale(.95) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-        @keyframes fse-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-        @keyframes fse-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+        @keyframes fse-pulse {
+          0%, 100% { box-shadow: 0 0 30px rgba(99,102,241,.2), 0 0 60px rgba(99,102,241,.06); transform: scale(1); }
+          50% { box-shadow: 0 0 50px rgba(99,102,241,.45), 0 0 100px rgba(99,102,241,.12); transform: scale(1.03); }
+        }
+        @keyframes fse-glow {
+          0%, 100% { opacity: .3; transform: scale(1); }
+          50% { opacity: .8; transform: scale(1.2); }
+        }
+        @keyframes fse-lineIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fse-scaleIn {
+          from { opacity: 0; transform: scale(.85); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes fse-imgReveal {
+          from { opacity: 0; transform: scale(.95) translateY(8px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        @keyframes fse-shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        @keyframes fse-breathe {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.02); }
+        }
+        @keyframes fse-orbit {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes fse-orbit-reverse {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
+        }
+        @keyframes fse-scanline {
+          0% { top: -2px; }
+          100% { top: calc(100% + 2px); }
+        }
+        @keyframes fse-successPop {
+          0% { opacity: 0; transform: scale(.6); }
+          50% { transform: scale(1.12); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes fse-successGlow {
+          0%, 100% { box-shadow: 0 0 20px rgba(34,197,94,.15), 0 0 40px rgba(34,197,94,.05); }
+          50% { box-shadow: 0 0 40px rgba(34,197,94,.3), 0 0 80px rgba(34,197,94,.1); }
+        }
+        @keyframes fse-confettiFloat {
+          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(-60px) rotate(180deg); opacity: 0; }
+        }
+        @keyframes fse-countUp {
+          from { opacity: 0; transform: scale(.5) translateY(10px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        @keyframes fse-viewfinderCorner {
+          0%, 100% { opacity: .5; }
+          50% { opacity: 1; }
+        }
+        @keyframes fse-dotPulse {
+          0%, 80%, 100% { opacity: .3; transform: scale(.8); }
+          40% { opacity: 1; transform: scale(1); }
+        }
         .fse-btn {
           padding: 16px 40px; border-radius: 50px; border: none;
           font-size: 15px; font-weight: 700; cursor: pointer;
           font-family: inherit; letter-spacing: .01em;
-          transition: transform .2s, box-shadow .2s;
+          transition: transform .25s cubic-bezier(.4,0,.2,1), box-shadow .25s cubic-bezier(.4,0,.2,1);
           display: inline-flex; align-items: center; gap: 10px;
+          position: relative; overflow: hidden;
         }
+        .fse-btn::after {
+          content: '';
+          position: absolute; inset: 0;
+          background: linear-gradient(135deg, rgba(255,255,255,.15) 0%, transparent 60%);
+          opacity: 0;
+          transition: opacity .25s;
+        }
+        .fse-btn:hover::after { opacity: 1; }
         .fse-btn:active { transform: scale(.97) !important; }
         .fse-btn--primary {
           background: linear-gradient(135deg, #6366f1, #8b5cf6);
           color: #fff;
+          box-shadow: 0 4px 20px rgba(99,102,241,.2);
         }
-        .fse-btn--primary:hover { transform: scale(1.03); box-shadow: 0 8px 32px rgba(99,102,241,.35); }
-        .fse-btn--secondary {
-          background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12);
+        .fse-btn--primary:hover {
+          transform: translateY(-1px) scale(1.02);
+          box-shadow: 0 8px 36px rgba(99,102,241,.35);
+        }
+        .fse-btn--success {
+          background: linear-gradient(135deg, #10b981, #34d399);
           color: #fff;
+          box-shadow: 0 4px 20px rgba(16,185,129,.25);
         }
-        .fse-btn--secondary:hover { background: rgba(255,255,255,.14); transform: scale(1.02); }
+        .fse-btn--success:hover {
+          transform: translateY(-1px) scale(1.02);
+          box-shadow: 0 8px 36px rgba(16,185,129,.35);
+        }
+        .fse-btn--secondary {
+          background: rgba(255,255,255,.06);
+          border: 1px solid rgba(255,255,255,.1);
+          color: rgba(255,255,255,.8);
+          backdrop-filter: blur(8px);
+        }
+        .fse-btn--secondary:hover {
+          background: rgba(255,255,255,.12);
+          transform: translateY(-1px) scale(1.01);
+          border-color: rgba(255,255,255,.18);
+        }
         .fse-btn--ghost {
           background: none; border: none; color: rgba(255,255,255,.45);
           padding: 12px 24px; font-size: 13px; font-weight: 500;
@@ -272,14 +361,14 @@ export function FaceSearchExperience({
           backgroundSize: 'cover', backgroundPosition: 'center',
           filter: 'blur(50px) saturate(.5) brightness(.3)',
           opacity: phase === 'thinking' ? .5 : .3,
-          transition: 'opacity 1s ease',
+          transition: 'opacity 1.2s cubic-bezier(.4,0,.2,1)',
         }} />
       )}
 
       {/* Dark overlay */}
       <div style={{
         position: 'absolute', inset: 0,
-        background: 'radial-gradient(ellipse at center, rgba(0,0,0,.4) 0%, rgba(0,0,0,.8) 100%)',
+        background: 'radial-gradient(ellipse at center, rgba(0,0,0,.35) 0%, rgba(0,0,0,.85) 100%)',
       }} />
 
       {/* ── Close button ── */}
@@ -288,58 +377,104 @@ export function FaceSearchExperience({
           onClick={onClose}
           aria-label="Close"
           style={{
-            position: 'absolute', top: 16, right: 16, zIndex: 10,
-            width: 40, height: 40, borderRadius: '50%',
+            position: 'absolute', top: 20, right: 20, zIndex: 10,
+            width: 44, height: 44, borderRadius: '50%',
             background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.08)',
             color: 'rgba(255,255,255,.5)', cursor: 'pointer',
-            fontSize: 20, lineHeight: 1,
+            fontSize: 18, lineHeight: 1,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'background .2s',
+            transition: 'all .25s cubic-bezier(.4,0,.2,1)',
+            backdropFilter: 'blur(12px)',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.12)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.06)' }}
-        >×</button>
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'rgba(255,255,255,.12)'
+            e.currentTarget.style.transform = 'scale(1.08)'
+            e.currentTarget.style.color = 'rgba(255,255,255,.8)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(255,255,255,.06)'
+            e.currentTarget.style.transform = 'scale(1)'
+            e.currentTarget.style.color = 'rgba(255,255,255,.5)'
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
       )}
 
       {/* ── Content ── */}
       <div style={{
         position: 'relative', zIndex: 2,
-        textAlign: 'center', padding: '0 24px',
+        textAlign: 'center', padding: '0 28px',
         maxWidth: 480, width: '100%',
         opacity: fadeOut ? 0 : 1,
-        transition: 'opacity .4s ease',
+        transition: 'opacity .45s cubic-bezier(.4,0,.2,1)',
       }}>
 
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {/* WELCOME                                                           */}
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {phase === 'welcome' && (
-          <div style={{ animation: 'fse-fadeIn .7s ease both' }}>
-            {/* Face icon */}
+          <div style={{ animation: 'fse-fadeIn .8s cubic-bezier(.16,1,.3,1) both' }}>
+            {/* Face icon with animated ring */}
             <div style={{
-              width: 72, height: 72, borderRadius: '50%', margin: '0 auto 28px',
-              background: 'rgba(99,102,241,.08)', border: '1px solid rgba(99,102,241,.15)',
+              width: 88, height: 88, borderRadius: '50%', margin: '0 auto 32px',
+              background: 'rgba(99,102,241,.06)',
+              border: '1.5px solid rgba(99,102,241,.12)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
+              position: 'relative',
             }}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,.7)" strokeWidth="1.8">
+              <div style={{
+                position: 'absolute', inset: -6, borderRadius: '50%',
+                border: '1.5px dashed rgba(99,102,241,.15)',
+                animation: 'fse-orbit 12s linear infinite',
+              }} />
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,.6)" strokeWidth="1.5" strokeLinecap="round">
                 <circle cx="12" cy="8" r="4" /><path d="M5 20a7 7 0 0 1 14 0" />
               </svg>
             </div>
 
-            <button
-              className="fse-btn fse-btn--primary"
-              onClick={() => setPhase('camera')}
-              style={{ fontSize: 17, padding: '18px 48px', marginBottom: 16 }}
-            >
-              Find my photos
-            </button>
+            <h1 style={{
+              fontSize: 26, fontWeight: 800, color: '#fff',
+              margin: '0 0 10px', letterSpacing: '-0.03em',
+              lineHeight: 1.2,
+            }}>
+              Find Your Photos
+            </h1>
 
             <p style={{
-              fontSize: 14, color: 'rgba(255,255,255,.4)',
-              margin: 0, direction: 'rtl', lineHeight: 1.6,
+              fontSize: 15, color: 'rgba(255,255,255,.4)',
+              margin: '0 0 32px', direction: 'rtl', lineHeight: 1.7,
+              maxWidth: 280, marginInline: 'auto',
             }}>
               צלם סלפי קטן ונמצא לך את התמונות שלך
             </p>
+
+            <button
+              className="fse-btn fse-btn--primary"
+              onClick={() => setPhase('camera')}
+              style={{ fontSize: 16, padding: '18px 52px', marginBottom: 16 }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+              Find my photos
+            </button>
+
+            {/* Privacy assurance */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              marginTop: 8, opacity: .55,
+            }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(34,197,94,.8)" strokeWidth="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,.4)', letterSpacing: '.02em' }}>
+                Your photos are protected — selfies are never stored
+              </span>
+            </div>
           </div>
         )}
 
@@ -347,74 +482,127 @@ export function FaceSearchExperience({
         {/* CAMERA                                                            */}
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {phase === 'camera' && (
-          <div style={{ animation: 'fse-fadeIn .5s ease both' }}>
+          <div style={{ animation: 'fse-fadeIn .5s cubic-bezier(.16,1,.3,1) both' }}>
             <p style={{
-              fontSize: 15, color: 'rgba(255,255,255,.5)',
-              margin: '0 0 24px', direction: 'rtl', lineHeight: 1.6,
+              fontSize: 14, color: 'rgba(255,255,255,.45)',
+              margin: '0 0 28px', direction: 'rtl', lineHeight: 1.7,
+              letterSpacing: '.01em',
             }}>
               צלם סלפי כדי למצוא את התמונות שלך
             </p>
 
             {/* Camera viewfinder */}
             <div style={{
-              width: 220, height: 220, borderRadius: '50%',
-              margin: '0 auto 28px', overflow: 'hidden',
-              border: '3px solid rgba(99,102,241,.35)',
-              background: '#0a0a0f',
+              width: 240, height: 240, borderRadius: '50%',
+              margin: '0 auto 32px',
               position: 'relative',
             }}>
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                style={{
-                  width: '100%', height: '100%', objectFit: 'cover',
-                  transform: 'scaleX(-1)',
-                }}
-              />
-              {/* Subtle overlay ring */}
+              {/* Outer ring */}
               <div style={{
-                position: 'absolute', inset: 0, borderRadius: '50%',
-                boxShadow: 'inset 0 0 30px rgba(0,0,0,.3)',
-                pointerEvents: 'none',
+                position: 'absolute', inset: -8, borderRadius: '50%',
+                border: '1.5px dashed rgba(99,102,241,.2)',
+                animation: 'fse-orbit 8s linear infinite',
               }} />
+              {/* Inner viewfinder */}
+              <div style={{
+                width: '100%', height: '100%', borderRadius: '50%',
+                overflow: 'hidden',
+                border: '3px solid rgba(99,102,241,.3)',
+                background: '#0a0a0f',
+                position: 'relative',
+                boxShadow: '0 0 40px rgba(99,102,241,.08), inset 0 0 40px rgba(0,0,0,.3)',
+              }}>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{
+                    width: '100%', height: '100%', objectFit: 'cover',
+                    transform: 'scaleX(-1)',
+                  }}
+                />
+                {/* Viewfinder crosshair overlay */}
+                <div style={{
+                  position: 'absolute', inset: 0, borderRadius: '50%',
+                  pointerEvents: 'none',
+                }}>
+                  {/* Corner brackets */}
+                  {[
+                    { top: '15%', left: '15%', borderTop: '2px solid rgba(255,255,255,.35)', borderLeft: '2px solid rgba(255,255,255,.35)', borderRadius: '4px 0 0 0' },
+                    { top: '15%', right: '15%', borderTop: '2px solid rgba(255,255,255,.35)', borderRight: '2px solid rgba(255,255,255,.35)', borderRadius: '0 4px 0 0' },
+                    { bottom: '15%', left: '15%', borderBottom: '2px solid rgba(255,255,255,.35)', borderLeft: '2px solid rgba(255,255,255,.35)', borderRadius: '0 0 0 4px' },
+                    { bottom: '15%', right: '15%', borderBottom: '2px solid rgba(255,255,255,.35)', borderRight: '2px solid rgba(255,255,255,.35)', borderRadius: '0 0 4px 0' },
+                  ].map((s, i) => (
+                    <div key={i} style={{
+                      position: 'absolute', width: 20, height: 20,
+                      animation: 'fse-viewfinderCorner 2s ease-in-out infinite',
+                      animationDelay: `${i * 0.15}s`,
+                      ...s,
+                    } as React.CSSProperties} />
+                  ))}
+                </div>
+                {/* Subtle vignette */}
+                <div style={{
+                  position: 'absolute', inset: 0, borderRadius: '50%',
+                  boxShadow: 'inset 0 0 40px rgba(0,0,0,.4)',
+                  pointerEvents: 'none',
+                }} />
+              </div>
             </div>
 
             {/* Capture button */}
             <button
               onClick={captureSelfie}
               style={{
-                width: 68, height: 68, borderRadius: '50%',
-                background: '#fff', border: '4px solid rgba(99,102,241,.4)',
-                cursor: 'pointer', margin: '0 auto 16px',
+                width: 72, height: 72, borderRadius: '50%',
+                background: 'transparent', border: '3px solid rgba(255,255,255,.7)',
+                cursor: 'pointer', margin: '0 auto 20px',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'transform .15s, box-shadow .15s',
-                boxShadow: '0 4px 24px rgba(0,0,0,.3)',
+                transition: 'all .2s cubic-bezier(.4,0,.2,1)',
+                padding: 0,
+                position: 'relative',
               }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; e.currentTarget.style.boxShadow = '0 4px 32px rgba(99,102,241,.3)' }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 24px rgba(0,0,0,.3)' }}
+              onMouseEnter={e => {
+                e.currentTarget.style.transform = 'scale(1.06)'
+                e.currentTarget.style.borderColor = 'rgba(99,102,241,.8)'
+                e.currentTarget.style.boxShadow = '0 0 24px rgba(99,102,241,.2)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = 'scale(1)'
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,.7)'
+                e.currentTarget.style.boxShadow = 'none'
+              }}
               aria-label="Take selfie"
             >
               <div style={{
-                width: 52, height: 52, borderRadius: '50%',
-                background: '#fff', border: '2px solid rgba(0,0,0,.08)',
+                width: 56, height: 56, borderRadius: '50%',
+                background: '#fff',
+                transition: 'all .15s',
               }} />
             </button>
 
             <p style={{
-              fontSize: 12, color: 'rgba(255,255,255,.25)', margin: '8px 0 0',
+              fontSize: 13, color: 'rgba(255,255,255,.3)', margin: '4px 0 0',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             }}>
-              or{' '}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  background: 'none', border: 'none', color: 'rgba(99,102,241,.6)',
-                  cursor: 'pointer', fontSize: 12, textDecoration: 'underline',
-                  padding: 0, fontFamily: 'inherit',
-                }}
-              >upload a photo</button>
+              <span style={{ width: 24, height: 1, background: 'rgba(255,255,255,.1)', display: 'inline-block' }} />
+              or
+              <span style={{ width: 24, height: 1, background: 'rgba(255,255,255,.1)', display: 'inline-block' }} />
             </p>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                background: 'none', border: 'none', color: 'rgba(99,102,241,.55)',
+                cursor: 'pointer', fontSize: 13, fontWeight: 500,
+                padding: '8px 16px', fontFamily: 'inherit',
+                transition: 'color .2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'rgba(99,102,241,.85)' }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'rgba(99,102,241,.55)' }}
+            >
+              Upload a photo
+            </button>
           </div>
         )}
 
@@ -423,50 +611,95 @@ export function FaceSearchExperience({
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {phase === 'thinking' && (
           <div style={{ animation: 'fse-fadeIn .4s ease both' }}>
-            {/* Selfie circle with glow */}
+            {/* Selfie circle with orbital animation */}
             {selfieUrl && (
               <div style={{
-                width: 140, height: 140, borderRadius: '50%',
-                margin: '0 auto 32px', overflow: 'hidden',
-                border: '3px solid rgba(99,102,241,.4)',
-                animation: 'fse-pulse 2.5s ease-in-out infinite',
+                width: 150, height: 150,
+                margin: '0 auto 36px',
                 position: 'relative',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                {/* Glow ring behind */}
+                {/* Outer orbit ring */}
                 <div style={{
-                  position: 'absolute', inset: -15, borderRadius: '50%',
-                  background: 'radial-gradient(circle, rgba(99,102,241,.15) 0%, transparent 70%)',
+                  position: 'absolute', inset: -18, borderRadius: '50%',
+                  border: '1.5px solid transparent',
+                  borderTopColor: 'rgba(99,102,241,.4)',
+                  borderRightColor: 'rgba(99,102,241,.15)',
+                  animation: 'fse-orbit 2s linear infinite',
+                }} />
+                {/* Middle orbit ring */}
+                <div style={{
+                  position: 'absolute', inset: -10, borderRadius: '50%',
+                  border: '1px solid transparent',
+                  borderBottomColor: 'rgba(139,92,246,.3)',
+                  borderLeftColor: 'rgba(139,92,246,.1)',
+                  animation: 'fse-orbit-reverse 3s linear infinite',
+                }} />
+                {/* Pulsing glow behind */}
+                <div style={{
+                  position: 'absolute', inset: -25, borderRadius: '50%',
+                  background: 'radial-gradient(circle, rgba(99,102,241,.12) 0%, transparent 70%)',
                   animation: 'fse-glow 2.5s ease-in-out infinite',
                   pointerEvents: 'none',
                 }} />
-                <img
-                  src={selfieUrl}
-                  alt=""
-                  style={{
-                    width: '100%', height: '100%', objectFit: 'cover',
-                    animation: 'fse-breathe 3s ease-in-out infinite',
-                  }}
-                />
+                {/* Selfie image */}
+                <div style={{
+                  width: 140, height: 140, borderRadius: '50%',
+                  overflow: 'hidden',
+                  border: '3px solid rgba(99,102,241,.35)',
+                  animation: 'fse-pulse 3s ease-in-out infinite',
+                  position: 'relative',
+                }}>
+                  <img
+                    src={selfieUrl}
+                    alt=""
+                    style={{
+                      width: '100%', height: '100%', objectFit: 'cover',
+                    }}
+                  />
+                  {/* Scan line effect */}
+                  <div style={{
+                    position: 'absolute', left: 0, right: 0, height: 2,
+                    background: 'linear-gradient(90deg, transparent, rgba(99,102,241,.5), transparent)',
+                    animation: 'fse-scanline 2s ease-in-out infinite',
+                    pointerEvents: 'none',
+                  }} />
+                </div>
               </div>
             )}
 
+            {/* Animated dots */}
+            <div style={{
+              display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 24,
+            }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: 'rgba(99,102,241,.6)',
+                  animation: 'fse-dotPulse 1.4s ease-in-out infinite',
+                  animationDelay: `${i * 0.2}s`,
+                }} />
+              ))}
+            </div>
+
             {/* Thinking text lines */}
             <div style={{
-              minHeight: 100, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', gap: 8, direction: 'rtl',
+              minHeight: 110, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', gap: 10, direction: 'rtl',
             }}>
               {THINKING_LINES.map((line, i) => (
                 <p
                   key={i}
                   style={{
-                    fontSize: 15, margin: 0, lineHeight: 1.6,
+                    fontSize: 15, margin: 0, lineHeight: 1.7,
                     color: i === visibleLines - 1
-                      ? 'rgba(255,255,255,.7)'
-                      : 'rgba(255,255,255,.3)',
+                      ? 'rgba(255,255,255,.75)'
+                      : 'rgba(255,255,255,.25)',
                     opacity: i < visibleLines ? 1 : 0,
-                    transform: i < visibleLines ? 'translateY(0)' : 'translateY(10px)',
-                    transition: 'all .5s cubic-bezier(.16,1,.3,1)',
-                    fontWeight: i === visibleLines - 1 ? 500 : 400,
+                    transform: i < visibleLines ? 'translateY(0)' : 'translateY(12px)',
+                    transition: 'all .6s cubic-bezier(.16,1,.3,1)',
+                    fontWeight: i === visibleLines - 1 ? 600 : 400,
+                    letterSpacing: '.01em',
                   }}
                 >
                   {line}
@@ -480,31 +713,69 @@ export function FaceSearchExperience({
         {/* FOUND                                                             */}
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {phase === 'found' && (
-          <div style={{ animation: 'fse-scaleIn .6s cubic-bezier(.16,1,.3,1) both' }}>
-            {/* Selfie with success ring */}
+          <div style={{ animation: 'fse-scaleIn .7s cubic-bezier(.16,1,.3,1) both' }}>
+            {/* Selfie with success celebration */}
             {selfieUrl && (
               <div style={{
-                width: 100, height: 100, borderRadius: '50%',
-                margin: '0 auto 24px', overflow: 'hidden',
-                border: '3px solid rgba(34,197,94,.5)',
-                boxShadow: '0 0 30px rgba(34,197,94,.2)',
-                animation: 'fse-scaleIn .5s cubic-bezier(.16,1,.3,1) .1s both',
+                position: 'relative',
+                width: 110, height: 110,
+                margin: '0 auto 28px',
               }}>
-                <img src={selfieUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                {/* Success glow ring */}
+                <div style={{
+                  position: 'absolute', inset: -12, borderRadius: '50%',
+                  background: 'radial-gradient(circle, rgba(34,197,94,.15) 0%, transparent 70%)',
+                  animation: 'fse-glow 2s ease-in-out infinite',
+                }} />
+                {/* Image */}
+                <div style={{
+                  width: '100%', height: '100%', borderRadius: '50%',
+                  overflow: 'hidden',
+                  border: '3px solid rgba(34,197,94,.5)',
+                  animation: 'fse-successGlow 2.5s ease-in-out infinite',
+                }}>
+                  <img src={selfieUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+                {/* Checkmark badge */}
+                <div style={{
+                  position: 'absolute', bottom: -4, right: -4,
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #10b981, #34d399)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(16,185,129,.3)',
+                  animation: 'fse-successPop .5s cubic-bezier(.16,1,.3,1) .3s both',
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+                {/* Confetti-like particles */}
+                {[0, 1, 2, 3, 4, 5].map(i => (
+                  <div key={i} style={{
+                    position: 'absolute',
+                    width: 4, height: 4, borderRadius: '50%',
+                    background: i % 2 === 0 ? 'rgba(34,197,94,.6)' : 'rgba(99,102,241,.6)',
+                    top: '50%', left: '50%',
+                    animation: `fse-confettiFloat 1s cubic-bezier(.16,1,.3,1) ${0.2 + i * 0.08}s both`,
+                    marginTop: Math.sin(i * 60 * Math.PI / 180) * 55,
+                    marginLeft: Math.cos(i * 60 * Math.PI / 180) * 55,
+                  }} />
+                ))}
               </div>
             )}
 
             <h2 style={{
-              fontSize: 28, fontWeight: 800, color: '#fff',
+              fontSize: 30, fontWeight: 800, color: '#fff',
               margin: '0 0 8px', direction: 'rtl',
-              animation: 'fse-fadeIn .5s ease .15s both',
+              animation: 'fse-fadeIn .5s cubic-bezier(.16,1,.3,1) .15s both',
+              letterSpacing: '-0.03em',
             }}>
-              מצאנו אותך 🔥
+              !מצאנו אותך
             </h2>
 
             <p style={{
-              fontSize: 15, color: 'rgba(255,255,255,.45)',
-              margin: '0 0 12px', direction: 'rtl', lineHeight: 1.6,
+              fontSize: 15, color: 'rgba(255,255,255,.4)',
+              margin: '0 0 16px', direction: 'rtl', lineHeight: 1.7,
               animation: 'fse-fadeIn .5s ease .25s both',
             }}>
               יש פה רגעים שלך — יאללה, תתחיל/י לעבור
@@ -512,28 +783,34 @@ export function FaceSearchExperience({
 
             {/* Photo count badge */}
             <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              padding: '8px 20px', borderRadius: 20,
-              background: 'rgba(34,197,94,.08)', border: '1px solid rgba(34,197,94,.15)',
-              margin: '0 0 28px',
-              animation: 'fse-fadeIn .5s ease .3s both',
+              display: 'inline-flex', alignItems: 'center', gap: 10,
+              padding: '10px 24px', borderRadius: 24,
+              background: 'rgba(34,197,94,.06)', border: '1px solid rgba(34,197,94,.12)',
+              margin: '0 0 32px',
+              animation: 'fse-countUp .5s cubic-bezier(.16,1,.3,1) .35s both',
             }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(34,197,94,.7)" strokeWidth="2">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                <circle cx="12" cy="13" r="4" />
-              </svg>
-              <span style={{ fontSize: 14, color: 'rgba(34,197,94,.8)', fontWeight: 600 }}>
-                {matchCount} Your photos
+              <div style={{
+                width: 28, height: 28, borderRadius: '50%',
+                background: 'rgba(34,197,94,.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(34,197,94,.7)" strokeWidth="2" strokeLinecap="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+              </div>
+              <span style={{ fontSize: 15, color: 'rgba(34,197,94,.85)', fontWeight: 700, letterSpacing: '.01em' }}>
+                {matchCount} photos found
               </span>
             </div>
 
-            <div style={{ animation: 'fse-fadeIn .5s ease .4s both' }}>
+            <div style={{ animation: 'fse-fadeIn .5s ease .45s both' }}>
               <button
-                className="fse-btn fse-btn--primary"
+                className="fse-btn fse-btn--success"
                 onClick={handleViewPhotos}
-                style={{ width: '100%', justifyContent: 'center', maxWidth: 320 }}
+                style={{ width: '100%', justifyContent: 'center', maxWidth: 320, fontSize: 16, padding: '18px 40px' }}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <circle cx="8.5" cy="8.5" r="1.5" />
                   <polyline points="21 15 16 10 5 21" />
@@ -548,13 +825,14 @@ export function FaceSearchExperience({
         {/* NOT FOUND — Regular gallery                                       */}
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {phase === 'not-found' && (
-          <div style={{ animation: 'fse-fadeIn .6s ease both' }}>
+          <div style={{ animation: 'fse-fadeIn .6s cubic-bezier(.16,1,.3,1) both' }}>
             {selfieUrl && (
               <div style={{
                 width: 90, height: 90, borderRadius: '50%',
-                margin: '0 auto 24px', overflow: 'hidden',
-                border: '3px solid rgba(255,255,255,.1)',
-                opacity: .6,
+                margin: '0 auto 28px', overflow: 'hidden',
+                border: '2px solid rgba(255,255,255,.08)',
+                opacity: .5,
+                filter: 'grayscale(.4)',
               }}>
                 <img src={selfieUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
@@ -562,19 +840,47 @@ export function FaceSearchExperience({
 
             <h2 style={{
               fontSize: 24, fontWeight: 700, color: '#fff',
-              margin: '0 0 10px', direction: 'rtl',
+              margin: '0 0 12px', direction: 'rtl',
+              letterSpacing: '-0.02em',
             }}>
-              מוזר… לא מצאנו אותך לפי הסלפי 🤔
+              לא מצאנו התאמה
             </h2>
 
             <p style={{
-              fontSize: 14, color: 'rgba(255,255,255,.4)',
-              margin: '0 0 32px', direction: 'rtl', lineHeight: 1.6,
+              fontSize: 14, color: 'rgba(255,255,255,.38)',
+              margin: '0 0 12px', direction: 'rtl', lineHeight: 1.7,
+              maxWidth: 300, marginInline: 'auto',
             }}>
-              אם אתה בטוח שהצטלמת — שווה לעבור על כל הגלריה
+              לא הצלחנו למצוא אותך לפי הסלפי.
+              <br />
+              אפשר לנסות שוב עם תאורה טובה יותר, או לעבור על כל הגלריה.
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+            {/* Tips */}
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 6,
+              margin: '0 auto 28px', maxWidth: 280,
+              padding: '14px 18px', borderRadius: 14,
+              background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.05)',
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.3)', marginBottom: 2, direction: 'rtl' }}>
+                Tips for a better match:
+              </div>
+              {['Make sure your face is well-lit', 'Remove sunglasses or hats', 'Face the camera directly'].map((tip, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  fontSize: 12, color: 'rgba(255,255,255,.3)',
+                }}>
+                  <div style={{
+                    width: 4, height: 4, borderRadius: '50%',
+                    background: 'rgba(99,102,241,.4)', flexShrink: 0,
+                  }} />
+                  {tip}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
               <button
                 className="fse-btn fse-btn--primary"
                 onClick={onBrowseAll}
@@ -587,6 +893,9 @@ export function FaceSearchExperience({
                 onClick={retry}
                 style={{ width: '100%', justifyContent: 'center', maxWidth: 320 }}
               >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M23 4v6h-6" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
                 נסה שוב
               </button>
             </div>
@@ -597,15 +906,16 @@ export function FaceSearchExperience({
         {/* NOT FOUND — Private gallery                                       */}
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {phase === 'not-found-private' && (
-          <div style={{ animation: 'fse-fadeIn .6s ease both' }}>
+          <div style={{ animation: 'fse-fadeIn .6s cubic-bezier(.16,1,.3,1) both' }}>
             {/* Lock icon */}
             <div style={{
-              width: 64, height: 64, borderRadius: '50%',
-              margin: '0 auto 24px',
-              background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
+              width: 72, height: 72, borderRadius: '50%',
+              margin: '0 auto 28px',
+              background: 'rgba(255,255,255,.03)',
+              border: '1px solid rgba(255,255,255,.06)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" strokeWidth="1.8">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.3)" strokeWidth="1.5" strokeLinecap="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
@@ -613,29 +923,35 @@ export function FaceSearchExperience({
 
             <h2 style={{
               fontSize: 22, fontWeight: 700, color: '#fff',
-              margin: '0 0 10px', direction: 'rtl',
+              margin: '0 0 12px', direction: 'rtl',
+              letterSpacing: '-0.02em',
             }}>
-              לא הצלחנו לזהות אותך לפי הסלפי
+              לא הצלחנו לזהות אותך
             </h2>
 
             <p style={{
-              fontSize: 14, color: 'rgba(255,255,255,.35)',
-              margin: '0 0 32px', direction: 'rtl', lineHeight: 1.6,
+              fontSize: 14, color: 'rgba(255,255,255,.32)',
+              margin: '0 0 32px', direction: 'rtl', lineHeight: 1.7,
+              maxWidth: 280, marginInline: 'auto',
             }}>
-              יכול להיות שהתמונות שלך לא זמינות בגלריה הזו
+              יכול להיות שהתמונות שלך לא זמינות בגלריה הזו, או שהסלפי לא היה ברור מספיק
             </p>
 
             <button
               className="fse-btn fse-btn--secondary"
               onClick={retry}
-              style={{ width: '100%', justifyContent: 'center', maxWidth: 320, marginBottom: 16 }}
+              style={{ width: '100%', justifyContent: 'center', maxWidth: 320, marginBottom: 20 }}
             >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M23 4v6h-6" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
               צלם שוב
             </button>
 
             <p style={{
-              fontSize: 12, color: 'rgba(255,255,255,.22)',
+              fontSize: 12, color: 'rgba(255,255,255,.2)',
               margin: 0, direction: 'rtl',
+              lineHeight: 1.6,
             }}>
               אם נראה לך שיש טעות — דבר עם הצלם
             </p>

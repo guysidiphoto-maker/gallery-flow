@@ -26,6 +26,16 @@ export interface DeliverySettings {
   showStories: boolean
   faceIndexEnabled?: boolean
   facePrivacyMode?: 'open' | 'private'
+  // Client privacy
+  clientHidePhotosEnabled?: boolean
+  requireGalleryCode?: boolean
+  galleryCode?: string
+  // Download tracking
+  trackDownloads?: boolean
+  // Feed display
+  feedLayout?: 'grid' | 'masonry' | 'carousel'
+  // Welcome screen
+  welcomeStyle?: 'mosaic' | 'cinematic' | 'minimal'
   // Backward compat fields from old settings
   allowDownloads?: boolean
   autoGenerateStories?: boolean
