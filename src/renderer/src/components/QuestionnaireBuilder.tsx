@@ -205,6 +205,34 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
     setLoadingResponses(false)
   }
 
+  const exportToExcel = (q: Questionnaire, data: QuestionnaireResponse[]) => {
+    if (data.length === 0) return
+
+    // Build CSV with BOM for Hebrew Excel support
+    const headers = ['תאריך', 'שם מלא', 'טלפון', 'אימייל', ...q.questions.map(qq => qq.label)]
+    const rows = data.map(r => [
+      new Date(r.created_at).toLocaleDateString('he-IL') + ' ' + new Date(r.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+      r.respondent_name,
+      r.respondent_phone || '',
+      r.respondent_email || '',
+      ...q.questions.map(qq => (r.answers[qq.id] || '').replace(/"/g, '""')),
+    ])
+
+    const csvContent = '\uFEFF' + [
+      headers.map(h => `"${h}"`).join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+    ].join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${q.title} - תשובות.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    addToast('הקובץ הורד בהצלחה', 'success')
+  }
+
   const copyLink = (id: string) => {
     const url = `${GALLERY_WEB_URL}/q/${id}`
     navigator.clipboard.writeText(url).then(() => {
@@ -313,12 +341,24 @@ export function QuestionnaireBuilder({ clientName, projects, onClose }: Question
                   <polyline points="15 18 9 12 15 6"/>
                 </svg>
               </button>
-              <div>
+              <div style={{ flex: 1 }}>
                 <span style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>תשובות — {viewingResponses.title}</span>
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,.25)', display: 'block' }}>
                   {responses.length} תשובות
                 </span>
               </div>
+              {responses.length > 0 && (
+                <button onClick={() => exportToExcel(viewingResponses, responses)} style={{
+                  ...btnSecondary, fontSize: 11, padding: '7px 14px',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Excel
+                </button>
+              )}
             </div>
 
             {loadingResponses ? (
