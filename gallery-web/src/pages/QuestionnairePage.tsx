@@ -109,18 +109,21 @@ export function QuestionnairePage() {
   const bgUrl = config?.background_url
   const bgAnim = config?.bg_animation
 
-  // TikTok 3D shapes config
-  const tiktokShapes = bgAnim === 'tiktok-3d' ? [
-    { shape: 'note', color: '#25F4EE', x: 8, y: 12, size: 90, dur: 18, delay: 0, rx: 25, ry: 40 },
-    { shape: 'note', color: '#FE2C55', x: 75, y: 8, size: 70, dur: 22, delay: 2, rx: -30, ry: 20 },
-    { shape: 'circle', color: '#25F4EE', x: 85, y: 65, size: 50, dur: 15, delay: 1, rx: 20, ry: -35 },
-    { shape: 'circle', color: '#FE2C55', x: 12, y: 70, size: 40, dur: 20, delay: 3, rx: -15, ry: 45 },
-    { shape: 'note', color: '#25F4EE', x: 45, y: 85, size: 60, dur: 24, delay: 4, rx: 35, ry: -25 },
-    { shape: 'arc', color: '#FE2C55', x: 60, y: 30, size: 110, dur: 28, delay: 1.5, rx: -20, ry: 30 },
-    { shape: 'arc', color: '#25F4EE', x: 20, y: 40, size: 80, dur: 19, delay: 5, rx: 40, ry: -15 },
-    { shape: 'circle', color: '#FE2C55', x: 90, y: 90, size: 35, dur: 16, delay: 2.5, rx: -25, ry: 50 },
-    { shape: 'note', color: '#25F4EE', x: 55, y: 55, size: 45, dur: 21, delay: 6, rx: 30, ry: 20 },
-    { shape: 'arc', color: '#FE2C55', x: 30, y: 15, size: 95, dur: 26, delay: 3.5, rx: -35, ry: -40 },
+  // TikTok logo path — the exact "d" music note shape
+  const ttNotePath = 'M50 2 C50 2 62 8 68 18 L68 18 L56 18 C56 18 53 12 50 10 L50 55 C50 72 38 82 24 78 C10 74 4 60 10 48 C16 36 30 32 42 38 C46 40 48 43 48 47 L48 10 Z'
+
+  // Each logo instance: position, size, rotation, animation timing
+  const tiktokLogos = bgAnim === 'tiktok-3d' ? [
+    { x: 5,  y: -5,  size: 180, rot: -25, dur: 22, delay: 0,  drift: { x: 30, y: 40, z: 80 } },
+    { x: 70, y: 5,   size: 140, rot: 15,  dur: 26, delay: 1.5, drift: { x: -25, y: 35, z: 60 } },
+    { x: 40, y: 30,  size: 100, rot: 45,  dur: 18, delay: 3,  drift: { x: 40, y: -30, z: 120 } },
+    { x: 80, y: 45,  size: 160, rot: -10, dur: 24, delay: 0.5, drift: { x: -35, y: 25, z: 90 } },
+    { x: 15, y: 55,  size: 120, rot: 30,  dur: 20, delay: 4,  drift: { x: 20, y: -40, z: 70 } },
+    { x: 55, y: 70,  size: 90,  rot: -40, dur: 28, delay: 2,  drift: { x: -30, y: 20, z: 100 } },
+    { x: -5, y: 80,  size: 150, rot: 20,  dur: 23, delay: 5,  drift: { x: 35, y: -25, z: 50 } },
+    { x: 85, y: 85,  size: 110, rot: -35, dur: 19, delay: 1,  drift: { x: -20, y: 45, z: 110 } },
+    { x: 35, y: 95,  size: 130, rot: 10,  dur: 25, delay: 3.5, drift: { x: 25, y: -35, z: 85 } },
+    { x: 60, y: -10, size: 85,  rot: 50,  dur: 21, delay: 6,  drift: { x: -40, y: 30, z: 65 } },
   ] : []
 
   return (
@@ -151,33 +154,41 @@ export function QuestionnairePage() {
         </>
       )}
 
-      {/* TikTok 3D floating shapes */}
+      {/* TikTok 3D floating logos */}
       {bgAnim === 'tiktok-3d' && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 0,
-          perspective: '800px', perspectiveOrigin: '50% 50%',
+          perspective: '1200px', perspectiveOrigin: '50% 50%',
           overflow: 'hidden',
         }}>
-          {tiktokShapes.map((s, i) => (
+          {tiktokLogos.map((logo, i) => (
             <div key={i} style={{
               position: 'absolute',
-              left: `${s.x}%`, top: `${s.y}%`,
-              width: s.size, height: s.size,
-              opacity: 0.35,
-              animation: `q-float-${i} ${s.dur}s ease-in-out ${s.delay}s infinite`,
+              left: `${logo.x}%`, top: `${logo.y}%`,
+              width: logo.size, height: logo.size,
+              animation: `q-float-${i} ${logo.dur}s ease-in-out ${logo.delay}s infinite`,
               transformStyle: 'preserve-3d',
+              transform: `rotate(${logo.rot}deg)`,
             }}>
-              <svg viewBox="0 0 100 100" width={s.size} height={s.size} style={{ filter: `drop-shadow(0 0 ${s.size / 4}px ${s.color}40)` }}>
-                {s.shape === 'note' && (
-                  <path d="M65 10 L65 65 Q65 80 50 80 Q35 80 35 65 Q35 50 50 50 Q58 50 60 55 L60 10 Z"
-                    fill="none" stroke={s.color} strokeWidth="4" strokeLinecap="round" />
-                )}
-                {s.shape === 'circle' && (
-                  <circle cx="50" cy="50" r="30" fill="none" stroke={s.color} strokeWidth="4" />
-                )}
-                {s.shape === 'arc' && (
-                  <path d="M20 80 Q20 20 80 20" fill="none" stroke={s.color} strokeWidth="5" strokeLinecap="round" />
-                )}
+              {/* Pink layer — offset for glitch */}
+              <svg viewBox="0 0 80 90" width={logo.size} height={logo.size}
+                style={{
+                  position: 'absolute', top: 0, left: 0,
+                  filter: `drop-shadow(0 0 ${logo.size / 5}px rgba(254,44,85,.4))`,
+                  animation: `q-glitch-pink ${logo.dur * 0.7}s ease-in-out ${logo.delay}s infinite`,
+                  opacity: 0.5,
+                }}>
+                <path d={ttNotePath} fill="none" stroke="#FE2C55" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              {/* Cyan layer — offset opposite */}
+              <svg viewBox="0 0 80 90" width={logo.size} height={logo.size}
+                style={{
+                  position: 'absolute', top: 0, left: 0,
+                  filter: `drop-shadow(0 0 ${logo.size / 5}px rgba(37,244,238,.4))`,
+                  animation: `q-glitch-cyan ${logo.dur * 0.7}s ease-in-out ${logo.delay + 0.3}s infinite`,
+                  opacity: 0.5,
+                }}>
+                <path d={ttNotePath} fill="none" stroke="#25F4EE" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
           ))}
@@ -189,13 +200,27 @@ export function QuestionnairePage() {
         @keyframes q-check { 0% { transform: scale(0); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
         @keyframes q-spin { to { transform: rotate(360deg); } }
         @keyframes q-ken-burns { 0% { transform: scale(1); } 50% { transform: scale(1.12); } 100% { transform: scale(1); } }
-        ${tiktokShapes.map((s, i) => `
+        @keyframes q-glitch-pink {
+          0%, 100% { transform: translate(0, 0); }
+          20% { transform: translate(3px, -2px); }
+          40% { transform: translate(-2px, 3px); }
+          60% { transform: translate(4px, 1px); }
+          80% { transform: translate(-1px, -3px); }
+        }
+        @keyframes q-glitch-cyan {
+          0%, 100% { transform: translate(0, 0); }
+          20% { transform: translate(-3px, 2px); }
+          40% { transform: translate(2px, -3px); }
+          60% { transform: translate(-4px, -1px); }
+          80% { transform: translate(1px, 3px); }
+        }
+        ${tiktokLogos.map((logo, i) => `
         @keyframes q-float-${i} {
-          0% { transform: translate3d(0,0,0) rotateX(0deg) rotateY(0deg) scale(1); }
-          25% { transform: translate3d(${s.rx}px,${-Math.abs(s.ry)/2}px,${s.size}px) rotateX(${s.rx}deg) rotateY(${s.ry}deg) scale(1.1); }
-          50% { transform: translate3d(${-s.rx/2}px,${s.ry}px,${s.size*1.5}px) rotateX(${-s.rx/2}deg) rotateY(${-s.ry}deg) scale(0.9); }
-          75% { transform: translate3d(${s.ry/3}px,${s.rx/2}px,${-s.size/2}px) rotateX(${s.ry}deg) rotateY(${s.rx/2}deg) scale(1.05); }
-          100% { transform: translate3d(0,0,0) rotateX(0deg) rotateY(0deg) scale(1); }
+          0% { transform: rotate(${logo.rot}deg) translate3d(0,0,0) rotateX(0deg) rotateY(0deg); }
+          25% { transform: rotate(${logo.rot + 8}deg) translate3d(${logo.drift.x}px,${-logo.drift.y}px,${logo.drift.z}px) rotateX(15deg) rotateY(-10deg); }
+          50% { transform: rotate(${logo.rot - 5}deg) translate3d(${-logo.drift.x/2}px,${logo.drift.y}px,${logo.drift.z * 1.3}px) rotateX(-10deg) rotateY(20deg); }
+          75% { transform: rotate(${logo.rot + 3}deg) translate3d(${logo.drift.y/2}px,${logo.drift.x/3}px,${-logo.drift.z/2}px) rotateX(8deg) rotateY(-15deg); }
+          100% { transform: rotate(${logo.rot}deg) translate3d(0,0,0) rotateX(0deg) rotateY(0deg); }
         }`).join('')}
         .q-input:focus { border-color: rgba(99,102,241,.5) !important; }
         .q-input::placeholder { color: rgba(255,255,255,.2); }
