@@ -182,16 +182,16 @@ export function LandingPageHe() {
 @media(max-width:580px){.nv-links .nv-l:not(:last-child){display:none}}
 
 /* Hero */
-.hero{min-height:100vh;position:relative;background:#000}
-.hero-video{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;will-change:transform}
-.hero-overlay{position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:80px 28px 120px}
+.hero{height:100vh;height:100dvh;position:relative;background:#0a0a0f;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:80px 28px 40px;overflow:hidden}
+.hero-bg{position:absolute;inset:0;z-index:0;overflow:hidden}
+.hero-content{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center}
 .hero h1{font-size:clamp(32px,6vw,56px);font-weight:800;line-height:1.2;margin:0 0 16px;letter-spacing:0;color:#fff}
-.hero-sub{font-size:clamp(15px,2vw,19px);line-height:1.65;color:rgba(255,255,255,.55);max-width:420px;margin:0 auto 36px}
+.hero-sub{font-size:clamp(15px,2vw,18px);line-height:1.65;color:rgba(255,255,255,.5);max-width:420px;margin:0 auto 32px}
 .hero-cta{padding:16px 40px;border-radius:60px;border:none;cursor:pointer;background:#fff;color:#0a0a0a;font-size:16px;font-weight:700;font-family:inherit;transition:transform .2s,box-shadow .2s}
 .hero-cta:hover{transform:scale(1.04);box-shadow:0 8px 32px rgba(255,255,255,.15)}
 
 /* Demo "video" */
-.demo{width:100%;height:100%;position:relative}
+.demo{position:absolute;inset:0}
 .demo-s{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;transition:opacity .6s ease;padding:40px}
 .demo-face-ring{width:100px;height:100px;border-radius:50%;border:2px solid rgba(99,102,241,.2);display:flex;align-items:center;justify-content:center}
 .demo-title{font-size:22px;font-weight:700;color:#fff;margin:12px 0 4px}
@@ -304,14 +304,12 @@ export function LandingPageHe() {
         </div>
       </nav>
 
-      {/* Hero — dark full-screen with animated demo */}
+      {/* Hero */}
       <section className="hero" ref={heroRef}>
-        <div className="hero-video" ref={videoRef}>
-          <HeroDemo />
-        </div>
-        <div className="hero-overlay" ref={overlayRef}>
-          <h1 dir="rtl" lang="he">סלפי אחד<br/>כל התמונות שלהם</h1>
-          <p className="hero-sub">מעלים תמונות מהאירוע, האורחים עושים סלפי, ותוך שנייה כל התמונות אצלם.</p>
+        <div className="hero-bg" ref={videoRef}><HeroDemo /></div>
+        <div className="hero-content" ref={overlayRef}>
+          <h1>סלפי אחד<br/>כל התמונות שלהם</h1>
+          <p className="hero-sub">מעלים תמונות מהאירוע, האורחים עושים סלפי, ותוך שנייה כל התמונות אצלם</p>
           <button onClick={signInWithGoogle} className="hero-cta">התחילו בחינם</button>
         </div>
       </section>
