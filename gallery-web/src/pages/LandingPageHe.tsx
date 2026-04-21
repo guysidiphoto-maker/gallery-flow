@@ -1,444 +1,608 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { signInWithGoogle } from '../lib/auth'
 
-// ─── Fade-up on scroll ──────────────────────────────────────────────────────
+// ─── Scroll reveal ──────────────────────────────────────────────────────────
 
-function FadeUp({ children, delay = 0 }: { children: ReactNode; delay?: number }) {
+function Reveal({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = ref.current
     if (!el) return
     const obs = new IntersectionObserver(([e]) => {
       if (e.isIntersecting) {
-        setTimeout(() => {
-          el.style.opacity = '1'
-          el.style.transform = 'translateY(0)'
-        }, delay)
+        setTimeout(() => { el.classList.add('lph-visible') }, delay)
         obs.unobserve(el)
       }
-    }, { threshold: 0.1 })
+    }, { threshold: 0.08 })
     obs.observe(el)
     return () => obs.disconnect()
   }, [delay])
-  return (
-    <div ref={ref} style={{ opacity: 0, transform: 'translateY(24px)', transition: 'opacity .6s ease, transform .6s ease' }}>
-      {children}
-    </div>
-  )
+  return <div ref={ref} className={`lph-reveal ${className || ''}`}>{children}</div>
 }
 
-// ─── FAQ Accordion ──────────────────────────────────────────────────────────
+// ─── FAQ ─────────────────────────────────────────────────────────────────────
 
 function FaqItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <div style={{
-      borderBottom: '1px solid rgba(255,255,255,.06)', padding: '20px 0',
-    }}>
-      <button onClick={() => setOpen(!open)} style={{
-        width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        color: '#fff', fontSize: 16, fontWeight: 600, fontFamily: 'inherit',
-        textAlign: 'right', direction: 'rtl', padding: 0,
-      }}>
+    <div className="lph-faq-item">
+      <button onClick={() => setOpen(!open)} className="lph-faq-q">
         <span>{q}</span>
-        <span style={{
-          transform: open ? 'rotate(45deg)' : 'none',
-          transition: 'transform .2s', fontSize: 22, color: '#6366f1', flexShrink: 0, marginLeft: 16,
-        }}>+</span>
+        <span className={`lph-faq-icon ${open ? 'lph-faq-icon--open' : ''}`}>+</span>
       </button>
-      {open && (
-        <p style={{
-          margin: '12px 0 0', fontSize: 14, lineHeight: 1.8, color: 'rgba(255,255,255,.5)',
-          direction: 'rtl',
-        }}>{a}</p>
-      )}
+      <div className={`lph-faq-a ${open ? 'lph-faq-a--open' : ''}`}>
+        <p>{a}</p>
+      </div>
     </div>
   )
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
+// ─── Number counter ─────────────────────────────────────────────────────────
 
-const S = {
-  page: {
-    minHeight: '100vh', background: '#0a0a0f', color: '#fff',
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-    direction: 'rtl' as const, overflow: 'hidden',
-  },
-  container: { maxWidth: 1100, margin: '0 auto', padding: '0 24px' },
-  nav: {
-    position: 'fixed' as const, top: 0, left: 0, right: 0, zIndex: 100,
-    background: 'rgba(10,10,15,.8)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-    borderBottom: '1px solid rgba(255,255,255,.06)',
-  },
-  navInner: {
-    maxWidth: 1100, margin: '0 auto', padding: '16px 24px',
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  },
-  logo: { fontSize: 22, fontWeight: 800, color: '#fff', textDecoration: 'none', letterSpacing: -0.5 },
-  logoX: { color: '#6366f1' },
-  btn: {
-    padding: '12px 28px', borderRadius: 10, border: 'none', cursor: 'pointer',
-    background: '#6366f1', color: '#fff', fontSize: 15, fontWeight: 700,
-    fontFamily: 'inherit', transition: 'transform .15s, box-shadow .15s',
-  },
-  btnOutline: {
-    padding: '12px 28px', borderRadius: 10, cursor: 'pointer',
-    background: 'transparent', color: '#fff', fontSize: 15, fontWeight: 600,
-    fontFamily: 'inherit', border: '1px solid rgba(255,255,255,.15)',
-  },
-  sectionTitle: {
-    fontSize: 32, fontWeight: 800, textAlign: 'center' as const, margin: '0 0 16px',
-    letterSpacing: -0.5,
-  },
-  sectionSub: {
-    fontSize: 16, color: 'rgba(255,255,255,.45)', textAlign: 'center' as const,
-    margin: '0 auto 48px', maxWidth: 500, lineHeight: 1.7,
-  },
+function CountUp({ target, suffix = '' }: { target: number; suffix?: string }) {
+  const [count, setCount] = useState(0)
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) {
+        let start = 0
+        const step = Math.ceil(target / 40)
+        const timer = setInterval(() => {
+          start += step
+          if (start >= target) { setCount(target); clearInterval(timer) }
+          else setCount(start)
+        }, 30)
+        obs.unobserve(el)
+      }
+    }, { threshold: 0.3 })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [target])
+  return <span ref={ref}>{count.toLocaleString()}{suffix}</span>
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function LandingPageHe() {
   const [scrolled, setScrolled] = useState(false)
+  const [mobileMenu, setMobileMenu] = useState(false)
+
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40)
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
+    const fn = () => setScrolled(window.scrollY > 50)
+    window.addEventListener('scroll', fn, { passive: true })
+    return () => window.removeEventListener('scroll', fn)
   }, [])
 
   return (
-    <div style={S.page}>
+    <div className="lph">
       <style>{`
-        @keyframes lph-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-        @keyframes lph-pulse { 0%,100% { opacity: .15; } 50% { opacity: .3; } }
-        @keyframes lph-gradient { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-        .lph-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(99,102,241,.3); }
-        .lph-card:hover { border-color: rgba(99,102,241,.3); transform: translateY(-4px); }
-        .lph-plan:hover { border-color: rgba(99,102,241,.4); }
-        .lph-plan--pop { border-color: #6366f1; position: relative; }
+        /* ── Base ── */
+        .lph {
+          --bg: #07070d; --card: #0e0e18; --border: rgba(255,255,255,.06);
+          --text: #fff; --muted: rgba(255,255,255,.45); --faint: rgba(255,255,255,.2);
+          --accent: #6366f1; --accent-glow: rgba(99,102,241,.15);
+          min-height: 100vh; background: var(--bg); color: var(--text);
+          font-family: 'Inter', -apple-system, sans-serif; direction: rtl;
+          overflow-x: hidden; -webkit-font-smoothing: antialiased;
+        }
+        .lph *, .lph *::before, .lph *::after { box-sizing: border-box; }
+        .lph a { color: inherit; }
+        .lph-wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
+
+        /* ── Reveal ── */
+        .lph-reveal { opacity: 0; transform: translateY(28px); transition: opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1); }
+        .lph-visible { opacity: 1; transform: translateY(0); }
+
+        /* ── Nav ── */
+        .lph-nav {
+          position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+          padding: 18px 0; transition: background .3s, border-color .3s, padding .3s;
+        }
+        .lph-nav--solid {
+          background: rgba(7,7,13,.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+          border-bottom: 1px solid var(--border); padding: 12px 0;
+        }
+        .lph-nav-inner {
+          max-width: 1080px; margin: 0 auto; padding: 0 28px;
+          display: flex; align-items: center; justify-content: space-between;
+        }
+        .lph-logo { font-size: 24px; font-weight: 900; text-decoration: none; letter-spacing: -.7px; }
+        .lph-logo-x { color: var(--accent); }
+        .lph-nav-links { display: flex; gap: 6px; align-items: center; }
+        .lph-nav-link {
+          padding: 8px 16px; font-size: 14px; font-weight: 500; color: var(--muted);
+          text-decoration: none; border-radius: 8px; transition: color .2s;
+        }
+        .lph-nav-link:hover { color: var(--text); }
+        .lph-nav-cta {
+          padding: 10px 24px; border-radius: 10px; border: none; cursor: pointer;
+          background: var(--accent); color: #fff; font-size: 14px; font-weight: 700;
+          font-family: inherit; transition: transform .15s, box-shadow .15s;
+        }
+        .lph-nav-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(99,102,241,.3); }
+
+        @media (max-width: 640px) {
+          .lph-nav-links { display: none; }
+          .lph-mobile-btn { display: flex !important; }
+        }
+        .lph-mobile-btn {
+          display: none; width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border);
+          background: transparent; color: var(--muted); cursor: pointer;
+          align-items: center; justify-content: center; font-size: 18px;
+        }
+
+        /* ── Hero ── */
+        .lph-hero {
+          padding: 180px 28px 120px; text-align: center; position: relative;
+        }
+        @media (max-width: 640px) { .lph-hero { padding: 140px 20px 80px; } }
+        .lph-hero-badge {
+          display: inline-block; padding: 6px 18px; border-radius: 100px;
+          background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.15);
+          font-size: 13px; font-weight: 600; color: #818cf8; margin-bottom: 28px;
+          letter-spacing: .2px;
+        }
+        .lph-hero h1 {
+          font-size: clamp(34px, 5.5vw, 52px); font-weight: 900; line-height: 1.1;
+          margin: 0 auto 24px; max-width: 650px; letter-spacing: -1.2px;
+        }
+        .lph-hero-gradient {
+          background: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #818cf8 100%);
+          background-size: 200% 200%; animation: lph-grad 5s ease infinite;
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        @keyframes lph-grad { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+        .lph-hero p {
+          font-size: 17px; line-height: 1.7; color: var(--muted);
+          max-width: 440px; margin: 0 auto 44px;
+        }
+        .lph-hero-btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+        .lph-btn-primary {
+          padding: 16px 40px; border-radius: 12px; border: none; cursor: pointer;
+          background: var(--accent); color: #fff; font-size: 17px; font-weight: 700;
+          font-family: inherit; transition: transform .15s, box-shadow .15s;
+          box-shadow: 0 4px 20px rgba(99,102,241,.2);
+        }
+        .lph-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(99,102,241,.35); }
+        .lph-btn-ghost {
+          padding: 16px 40px; border-radius: 12px; cursor: pointer;
+          background: transparent; color: var(--text); font-size: 17px; font-weight: 600;
+          font-family: inherit; border: 1px solid rgba(255,255,255,.1);
+          text-decoration: none; transition: border-color .2s;
+        }
+        .lph-btn-ghost:hover { border-color: rgba(255,255,255,.25); }
+
+        /* Hero glow */
+        .lph-glow {
+          position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none;
+          animation: lph-breathe 7s ease-in-out infinite;
+        }
+        @keyframes lph-breathe { 0%,100% { opacity: .12; } 50% { opacity: .22; } }
+
+        /* ── Stats ── */
+        .lph-stats {
+          display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+          max-width: 640px; margin: 0 auto;
+          background: var(--border); border-radius: 16px; overflow: hidden;
+        }
+        .lph-stat {
+          padding: 32px 20px; text-align: center; background: var(--card);
+        }
+        .lph-stat-num { font-size: 36px; font-weight: 900; display: block; margin-bottom: 4px; }
+        .lph-stat-label { font-size: 13px; color: var(--muted); }
+        @media (max-width: 480px) {
+          .lph-stats { grid-template-columns: 1fr; }
+          .lph-stat { padding: 20px; }
+          .lph-stat-num { font-size: 28px; }
+        }
+
+        /* ── Section ── */
+        .lph-section { padding: 100px 28px; }
+        .lph-section-title {
+          font-size: 30px; font-weight: 800; text-align: center; margin: 0 0 10px;
+          letter-spacing: -.5px;
+        }
+        .lph-section-sub {
+          font-size: 15px; color: var(--muted); text-align: center;
+          margin: 0 auto 52px; max-width: 420px; line-height: 1.7;
+        }
+
+        /* ── Steps ── */
+        .lph-steps {
+          display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;
+          max-width: 880px; margin: 0 auto;
+          background: var(--border); border-radius: 20px; overflow: hidden;
+        }
+        @media (max-width: 700px) { .lph-steps { grid-template-columns: 1fr; } }
+        .lph-step {
+          padding: 40px 32px; background: var(--card);
+        }
+        .lph-step-num {
+          font-size: 48px; font-weight: 900; color: rgba(99,102,241,.12);
+          line-height: 1; margin-bottom: 20px;
+        }
+        .lph-step h3 { font-size: 17px; font-weight: 700; margin: 0 0 10px; }
+        .lph-step p { font-size: 14px; line-height: 1.7; color: var(--muted); margin: 0; }
+
+        /* ── Features ── */
+        .lph-features {
+          display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;
+          max-width: 700px; margin: 0 auto;
+        }
+        @media (max-width: 600px) { .lph-features { grid-template-columns: 1fr; } }
+        .lph-feature {
+          padding: 28px 24px; border-radius: 16px;
+          background: var(--card); border: 1px solid var(--border);
+          transition: border-color .25s;
+        }
+        .lph-feature:hover { border-color: rgba(99,102,241,.2); }
+        .lph-feature h3 {
+          font-size: 15px; font-weight: 700; margin: 0 0 8px;
+          display: flex; align-items: center; gap: 10px;
+        }
+        .lph-feature-dot {
+          width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
+        }
+        .lph-feature p { font-size: 13px; line-height: 1.7; color: var(--muted); margin: 0; padding-right: 18px; }
+
+        /* ── Pricing ── */
+        .lph-plans {
+          display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+          max-width: 900px; margin: 0 auto;
+        }
+        @media (max-width: 760px) { .lph-plans { grid-template-columns: 1fr; max-width: 380px; } }
+        .lph-plan {
+          padding: 36px 28px; border-radius: 20px;
+          background: var(--card); border: 1px solid var(--border);
+          transition: border-color .25s, transform .25s;
+          position: relative;
+        }
+        .lph-plan:hover { transform: translateY(-4px); }
+        .lph-plan--pop { border-color: var(--accent); background: rgba(99,102,241,.04); }
+        .lph-plan-badge {
+          position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+          padding: 5px 18px; border-radius: 100px; font-size: 11px; font-weight: 700;
+          background: var(--accent); color: #fff; white-space: nowrap;
+        }
+        .lph-plan h3 { font-size: 16px; font-weight: 700; margin: 0 0 16px; color: var(--muted); }
+        .lph-plan-price { font-size: 44px; font-weight: 900; letter-spacing: -1px; }
+        .lph-plan-per { font-size: 14px; color: var(--faint); margin-right: 4px; }
+        .lph-plan ul { list-style: none; padding: 0; margin: 24px 0; }
+        .lph-plan li {
+          font-size: 14px; color: var(--muted); padding: 7px 0;
+          display: flex; align-items: center; gap: 10px;
+        }
+        .lph-plan li::before { content: '✓'; color: var(--accent); font-weight: 700; font-size: 13px; }
+        .lph-plan-btn {
+          width: 100%; padding: 14px; border-radius: 10px; border: none; cursor: pointer;
+          font-size: 15px; font-weight: 700; font-family: inherit;
+          transition: transform .15s, box-shadow .15s;
+        }
+        .lph-plan-btn:hover { transform: translateY(-1px); }
+        .lph-plan-btn--fill { background: var(--accent); color: #fff; box-shadow: 0 4px 16px rgba(99,102,241,.2); }
+        .lph-plan-btn--fill:hover { box-shadow: 0 6px 24px rgba(99,102,241,.35); }
+        .lph-plan-btn--ghost { background: rgba(255,255,255,.04); color: var(--muted); border: 1px solid var(--border); }
+
+        /* ── Testimonials ── */
+        .lph-reviews {
+          display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+          max-width: 900px; margin: 0 auto;
+        }
+        @media (max-width: 700px) { .lph-reviews { grid-template-columns: 1fr; } }
+        .lph-review {
+          padding: 28px; border-radius: 16px;
+          background: var(--card); border: 1px solid var(--border);
+        }
+        .lph-review-stars { color: #fbbf24; font-size: 13px; letter-spacing: 2px; margin-bottom: 14px; }
+        .lph-review-text { font-size: 14px; line-height: 1.75; color: var(--muted); margin: 0 0 18px; }
+        .lph-review-author { display: flex; align-items: center; gap: 10px; }
+        .lph-review-avatar {
+          width: 34px; height: 34px; border-radius: 50%;
+          background: linear-gradient(135deg, var(--accent), #a855f7);
+          display: flex; align-items: center; justify-content: center;
+          font-size: 13px; font-weight: 700;
+        }
+        .lph-review-name { font-size: 13px; font-weight: 600; }
+        .lph-review-role { font-size: 11px; color: var(--faint); }
+
+        /* ── FAQ ── */
+        .lph-faq-item { border-bottom: 1px solid var(--border); }
+        .lph-faq-q {
+          width: 100%; padding: 22px 0; background: none; border: none; cursor: pointer;
+          display: flex; justify-content: space-between; align-items: center;
+          color: var(--text); font-size: 15px; font-weight: 600; font-family: inherit;
+          text-align: right;
+        }
+        .lph-faq-icon {
+          font-size: 22px; color: var(--accent); flex-shrink: 0; margin-left: 16px;
+          transition: transform .25s;
+        }
+        .lph-faq-icon--open { transform: rotate(45deg); }
+        .lph-faq-a {
+          max-height: 0; overflow: hidden; transition: max-height .3s ease;
+        }
+        .lph-faq-a--open { max-height: 300px; }
+        .lph-faq-a p {
+          font-size: 14px; line-height: 1.8; color: var(--muted);
+          margin: 0; padding: 0 0 20px;
+        }
+
+        /* ── Footer ── */
+        .lph-footer {
+          padding: 28px; border-top: 1px solid var(--border); text-align: center;
+        }
+        .lph-footer-links { display: flex; justify-content: center; gap: 28px; margin-bottom: 14px; }
+        .lph-footer-links a { font-size: 13px; color: var(--faint); text-decoration: none; }
+        .lph-footer-links a:hover { color: var(--muted); }
+        .lph-footer-copy { font-size: 11px; color: rgba(255,255,255,.12); margin: 0; }
       `}</style>
 
       {/* ─── Nav ─── */}
-      <nav style={{ ...S.nav, borderBottomColor: scrolled ? 'rgba(255,255,255,.06)' : 'transparent' }}>
-        <div style={S.navInner}>
-          <a href="/" style={S.logo}>Pi<span style={S.logoX}>x</span>flow</a>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <a href="#pricing" style={{ ...S.btnOutline, padding: '10px 20px', fontSize: 13, border: 'none', color: 'rgba(255,255,255,.6)' }}>מחירים</a>
-            <a href="/demo" style={{ ...S.btnOutline, padding: '10px 20px', fontSize: 13, border: 'none', color: 'rgba(255,255,255,.6)' }}>דמו</a>
-            <button onClick={signInWithGoogle} className="lph-btn" style={{ ...S.btn, padding: '10px 22px', fontSize: 13 }}>כניסה</button>
+      <nav className={`lph-nav ${scrolled ? 'lph-nav--solid' : ''}`}>
+        <div className="lph-nav-inner">
+          <a href="/" className="lph-logo">Pi<span className="lph-logo-x">x</span>flow</a>
+          <div className="lph-nav-links">
+            <a href="#how" className="lph-nav-link">איך זה עובד</a>
+            <a href="#pricing" className="lph-nav-link">מחירים</a>
+            <a href="/demo" className="lph-nav-link">דמו חי</a>
+            <button onClick={signInWithGoogle} className="lph-nav-cta">התחברות</button>
           </div>
+          <button className="lph-mobile-btn" onClick={() => setMobileMenu(!mobileMenu)}>☰</button>
         </div>
+        {mobileMenu && (
+          <div style={{
+            padding: '16px 28px 20px', display: 'flex', flexDirection: 'column', gap: 8,
+            background: 'rgba(7,7,13,.95)', borderTop: '1px solid var(--border)',
+          }}>
+            <a href="#how" className="lph-nav-link" onClick={() => setMobileMenu(false)}>איך זה עובד</a>
+            <a href="#pricing" className="lph-nav-link" onClick={() => setMobileMenu(false)}>מחירים</a>
+            <a href="/demo" className="lph-nav-link" onClick={() => setMobileMenu(false)}>דמו חי</a>
+            <button onClick={() => { setMobileMenu(false); signInWithGoogle() }} className="lph-nav-cta" style={{ marginTop: 8 }}>התחברות</button>
+          </div>
+        )}
       </nav>
 
       {/* ─── Hero ─── */}
-      <section style={{ padding: '160px 24px 100px', textAlign: 'center', position: 'relative' }}>
-        {/* Ambient orbs */}
-        <div style={{
-          position: 'absolute', top: '10%', right: '15%', width: 400, height: 400,
-          borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,.12) 0%, transparent 70%)',
-          filter: 'blur(60px)', animation: 'lph-pulse 6s ease-in-out infinite', pointerEvents: 'none',
-        }} />
-        <div style={{
-          position: 'absolute', top: '30%', left: '10%', width: 300, height: 300,
-          borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,.1) 0%, transparent 70%)',
-          filter: 'blur(50px)', animation: 'lph-pulse 8s ease-in-out infinite 2s', pointerEvents: 'none',
-        }} />
+      <section className="lph-hero">
+        <div className="lph-glow" style={{ width: 500, height: 500, top: '5%', right: '10%', background: 'var(--accent)' }} />
+        <div className="lph-glow" style={{ width: 350, height: 350, top: '35%', left: '5%', background: '#a855f7', animationDelay: '3s' }} />
 
         <div style={{ position: 'relative', zIndex: 1 }}>
-          <FadeUp>
-            <div style={{
-              display: 'inline-block', padding: '8px 20px', borderRadius: 100,
-              background: 'rgba(99,102,241,.1)', border: '1px solid rgba(99,102,241,.2)',
-              fontSize: 13, fontWeight: 600, color: '#818cf8', marginBottom: 24,
-            }}>
-              הכלי של צלמי האירועים בישראל
-            </div>
-          </FadeUp>
+          <Reveal>
+            <div className="lph-hero-badge">פלטפורמת הזיהוי פנים לצלמי אירועים</div>
+          </Reveal>
 
-          <FadeUp delay={100}>
-            <h1 style={{
-              fontSize: 'clamp(36px, 6vw, 56px)', fontWeight: 900, lineHeight: 1.15,
-              margin: '0 auto 20px', maxWidth: 700, letterSpacing: -1,
-            }}>
-              האורחים שלך<br />
-              <span style={{
-                background: 'linear-gradient(135deg, #6366f1, #a855f7, #6366f1)',
-                backgroundSize: '200% 200%',
-                animation: 'lph-gradient 4s ease infinite',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-              }}>מוצאים את עצמם</span><br />
-              בשנייה
+          <Reveal delay={80}>
+            <h1>
+              סלפי אחד —<br />
+              <span className="lph-hero-gradient">כל התמונות שלהם</span>
             </h1>
-          </FadeUp>
+          </Reveal>
 
-          <FadeUp delay={200}>
-            <p style={{
-              fontSize: 18, lineHeight: 1.7, color: 'rgba(255,255,255,.45)',
-              maxWidth: 480, margin: '0 auto 40px',
-            }}>
-              מעלים תמונות מהאירוע, האורחים עושים סלפי —
-              והתמונות שלהם כבר אצלם. בלי אפליקציות, בלי סיפורים.
+          <Reveal delay={160}>
+            <p>
+              מעלים את התמונות מהאירוע, שולחים לינק לאורחים,
+              והם מוצאים את עצמם תוך שנייה. בלי אפליקציה, בלי סיפורים.
             </p>
-          </FadeUp>
+          </Reveal>
 
-          <FadeUp delay={300}>
-            <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button onClick={signInWithGoogle} className="lph-btn" style={{
-                ...S.btn, padding: '16px 36px', fontSize: 17,
-                boxShadow: '0 4px 20px rgba(99,102,241,.25)',
-              }}>
-                בואו נתחיל
-              </button>
-              <a href="/demo" style={{ ...S.btnOutline, padding: '16px 36px', fontSize: 17, textDecoration: 'none' }}>
-                תראו דמו
-              </a>
+          <Reveal delay={240}>
+            <div className="lph-hero-btns">
+              <button onClick={signInWithGoogle} className="lph-btn-primary">יאלה, מתחילים</button>
+              <a href="/demo" className="lph-btn-ghost">תנסו דמו חי</a>
             </div>
-          </FadeUp>
+          </Reveal>
         </div>
+      </section>
+
+      {/* ─── Stats ─── */}
+      <section style={{ padding: '0 28px 80px' }}>
+        <Reveal>
+          <div className="lph-stats">
+            <div className="lph-stat">
+              <span className="lph-stat-num"><CountUp target={97} suffix="%" /></span>
+              <span className="lph-stat-label">דיוק זיהוי</span>
+            </div>
+            <div className="lph-stat">
+              <span className="lph-stat-num"><CountUp target={2} suffix=" שנ׳" /></span>
+              <span className="lph-stat-label">זמן זיהוי ממוצע</span>
+            </div>
+            <div className="lph-stat">
+              <span className="lph-stat-num">0</span>
+              <span className="lph-stat-label">אפליקציות להורדה</span>
+            </div>
+          </div>
+        </Reveal>
       </section>
 
       {/* ─── How it works ─── */}
-      <section style={{ padding: '80px 24px' }}>
-        <div style={S.container}>
-          <FadeUp>
-            <h2 style={S.sectionTitle}>איך זה עובד?</h2>
-            <p style={S.sectionSub}>שלושה צעדים, אפס כאבי ראש</p>
-          </FadeUp>
+      <section id="how" className="lph-section">
+        <div className="lph-wrap">
+          <Reveal>
+            <h2 className="lph-section-title">שלושה שלבים, אפס כאב ראש</h2>
+            <p className="lph-section-sub">פשוט עד שזה כמעט חשוד</p>
+          </Reveal>
 
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-            gap: 24, maxWidth: 900, margin: '0 auto',
-          }}>
-            {[
-              { num: '01', title: 'מעלים תמונות', desc: 'מעלים את כל התמונות מהאירוע לגלריה. בלי הגבלה, בלי דחיסה.' },
-              { num: '02', title: 'משתפים לינק', desc: 'שולחים QR או לינק לאורחים — בווטסאפ, SMS, או מייל. הם לא צריכים להוריד כלום.' },
-              { num: '03', title: 'סלפי = תמונות', desc: 'האורח עושה סלפי, זיהוי הפנים מוצא את כל התמונות שלו תוך שניות.' },
-            ].map((step, i) => (
-              <FadeUp key={i} delay={i * 120}>
-                <div className="lph-card" style={{
-                  padding: '32px 28px', borderRadius: 16,
-                  background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)',
-                  transition: 'border-color .2s, transform .2s',
-                }}>
-                  <span style={{
-                    fontSize: 40, fontWeight: 900, color: 'rgba(99,102,241,.2)',
-                    display: 'block', marginBottom: 16,
-                  }}>{step.num}</span>
-                  <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 10px' }}>{step.title}</h3>
-                  <p style={{ fontSize: 14, lineHeight: 1.7, color: 'rgba(255,255,255,.4)', margin: 0 }}>{step.desc}</p>
-                </div>
-              </FadeUp>
-            ))}
-          </div>
+          <Reveal delay={100}>
+            <div className="lph-steps">
+              <div className="lph-step">
+                <div className="lph-step-num">01</div>
+                <h3>תעלו את התמונות</h3>
+                <p>סיימתם לצלם? מעלים הכל לגלריה. אנחנו מטפלים בשאר.</p>
+              </div>
+              <div className="lph-step">
+                <div className="lph-step-num">02</div>
+                <h3>תשלחו לינק</h3>
+                <p>QR, ווטסאפ, SMS, מייל — איך שנוח. האורחים לוחצים ומגיעים.</p>
+              </div>
+              <div className="lph-step">
+                <div className="lph-step-num">03</div>
+                <h3>הם עושים סלפי</h3>
+                <p>סלפי אחד מהטלפון, והמערכת מוצאת את כל התמונות שלהם. נקודה.</p>
+              </div>
+            </div>
+          </Reveal>
         </div>
       </section>
 
-      {/* ─── Why Pixflow ─── */}
-      <section style={{ padding: '60px 24px 80px' }}>
-        <div style={S.container}>
-          <FadeUp>
-            <h2 style={S.sectionTitle}>למה Pixflow?</h2>
-            <p style={S.sectionSub}>כי מגיע לאורחים שלך חוויה ברמה אחרת</p>
-          </FadeUp>
+      {/* ─── Features ─── */}
+      <section className="lph-section">
+        <div className="lph-wrap">
+          <Reveal>
+            <h2 className="lph-section-title">למה צלמים עוברים אלינו</h2>
+            <p className="lph-section-sub">לא סתם עוד גלריה אונליין</p>
+          </Reveal>
 
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: 20, maxWidth: 900, margin: '0 auto',
-          }}>
+          <div className="lph-features">
             {[
-              { icon: '⚡', title: 'מהיר בטירוף', desc: 'זיהוי פנים תוך 2 שניות. לא דקות, לא שעות.' },
-              { icon: '🎨', title: 'מיתוג שלך', desc: 'לוגו, צבעים, עיצוב מותאם — הגלריה נראית כאילו אתה בנית אותה.' },
-              { icon: '🔒', title: 'פרטיות מלאה', desc: 'כל אורח רואה רק את התמונות שלו. GDPR compliant.' },
-              { icon: '📱', title: 'בלי אפליקציה', desc: 'עובד מהדפדפן. בלי הורדות, בלי רישום, בלי חיכוך.' },
+              { t: 'זיהוי ב-2 שניות', d: 'לא דקות. לא "מעבד". האורח עושה סלפי ומקבל תוצאות עוד לפני שהוריד את היד.' },
+              { t: 'הלוגו שלך, הצבעים שלך', d: 'הגלריה נראית כאילו בנית אותה בעצמך. הלקוח לא רואה את Pixflow — הוא רואה אותך.' },
+              { t: 'פרטיות ברמה אחרת', d: 'כל אורח רואה רק את התמונות שלו. הסלפי נמחק אחרי חיפוש. GDPR? סגור.' },
+              { t: 'אפס חיכוך', d: 'בלי אפליקציה, בלי הרשמה, בלי "הכנס קוד". האורח לוחץ, מצלם סלפי, מקבל. זהו.' },
             ].map((f, i) => (
-              <FadeUp key={i} delay={i * 100}>
-                <div style={{
-                  padding: '28px 24px', borderRadius: 14,
-                  background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.05)',
-                  textAlign: 'center',
-                }}>
-                  <span style={{ fontSize: 32, display: 'block', marginBottom: 14 }}>{f.icon}</span>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 8px' }}>{f.title}</h3>
-                  <p style={{ fontSize: 13, lineHeight: 1.6, color: 'rgba(255,255,255,.4)', margin: 0 }}>{f.desc}</p>
+              <Reveal key={i} delay={i * 80}>
+                <div className="lph-feature">
+                  <h3><span className="lph-feature-dot" /> {f.t}</h3>
+                  <p>{f.d}</p>
                 </div>
-              </FadeUp>
+              </Reveal>
             ))}
           </div>
         </div>
       </section>
 
       {/* ─── Pricing ─── */}
-      <section id="pricing" style={{ padding: '80px 24px', background: 'rgba(255,255,255,.01)' }}>
-        <div style={S.container}>
-          <FadeUp>
-            <h2 style={S.sectionTitle}>תמחור</h2>
-            <p style={S.sectionSub}>משלמים פעם אחת לאירוע. בלי מנויים, בלי הפתעות.</p>
-          </FadeUp>
+      <section id="pricing" className="lph-section">
+        <div className="lph-wrap">
+          <Reveal>
+            <h2 className="lph-section-title">תמחור</h2>
+            <p className="lph-section-sub">תשלום חד פעמי לאירוע. בלי מנויים, בלי קאצ'.</p>
+          </Reveal>
 
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-            gap: 20, maxWidth: 900, margin: '0 auto',
-          }}>
-            {[
-              {
-                name: 'Essential', price: '599', pop: false,
-                features: ['עד 2,000 תמונות', 'זיהוי פנים AI', 'שאלון ללקוח', 'שיתוף QR + לינק', '3 חודשי אחסון'],
-              },
-              {
-                name: 'Premium', price: '799', pop: true,
-                features: ['תמונות ללא הגבלה', 'זיהוי פנים AI', 'שאלון + מיתוג מותאם', 'SMS + מייל אוטומטי', '6 חודשי אחסון', 'תמיכה מועדפת'],
-              },
-              {
-                name: 'Exclusive', price: '1,199', pop: false,
-                features: ['הכל מ-Premium', 'עיצוב גלריה VIP', 'מסך לייב באירוע', 'שנה אחסון', 'תמיכה VIP + ייעוץ'],
-              },
-            ].map((plan, i) => (
-              <FadeUp key={i} delay={i * 120}>
-                <div className={`lph-plan ${plan.pop ? 'lph-plan--pop' : ''}`} style={{
-                  padding: '36px 28px', borderRadius: 16,
-                  background: plan.pop ? 'rgba(99,102,241,.06)' : 'rgba(255,255,255,.02)',
-                  border: `1px solid ${plan.pop ? '#6366f1' : 'rgba(255,255,255,.06)'}`,
-                  transition: 'border-color .2s',
-                  position: 'relative',
-                }}>
-                  {plan.pop && (
-                    <div style={{
-                      position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)',
-                      padding: '4px 16px', borderRadius: 100, fontSize: 11, fontWeight: 700,
-                      background: '#6366f1', color: '#fff',
-                    }}>הכי פופולרי</div>
-                  )}
-                  <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px' }}>{plan.name}</h3>
-                  <div style={{ margin: '0 0 20px' }}>
-                    <span style={{ fontSize: 40, fontWeight: 900 }}>₪{plan.price}</span>
-                    <span style={{ fontSize: 14, color: 'rgba(255,255,255,.35)', marginRight: 6 }}>/אירוע</span>
-                  </div>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px' }}>
-                    {plan.features.map((f, j) => (
-                      <li key={j} style={{
-                        fontSize: 14, color: 'rgba(255,255,255,.55)', padding: '6px 0',
-                        display: 'flex', alignItems: 'center', gap: 8,
-                      }}>
-                        <span style={{ color: '#6366f1', fontSize: 14 }}>✓</span> {f}
-                      </li>
-                    ))}
-                  </ul>
-                  <button onClick={signInWithGoogle} className="lph-btn" style={{
-                    ...S.btn, width: '100%',
-                    background: plan.pop ? '#6366f1' : 'rgba(255,255,255,.06)',
-                    color: plan.pop ? '#fff' : 'rgba(255,255,255,.7)',
-                  }}>
-                    להתחיל
-                  </button>
-                </div>
-              </FadeUp>
-            ))}
-          </div>
+          <Reveal delay={100}>
+            <div className="lph-plans">
+              <div className="lph-plan">
+                <h3>Essential</h3>
+                <div><span className="lph-plan-price">₪599</span><span className="lph-plan-per">/אירוע</span></div>
+                <ul>
+                  <li>עד 2,000 תמונות</li>
+                  <li>זיהוי פנים AI</li>
+                  <li>שאלון ללקוח</li>
+                  <li>שיתוף QR + לינק</li>
+                  <li>3 חודשי אחסון</li>
+                </ul>
+                <button onClick={signInWithGoogle} className="lph-plan-btn lph-plan-btn--ghost">להתחיל</button>
+              </div>
+
+              <div className="lph-plan lph-plan--pop">
+                <div className="lph-plan-badge">הכי נבחר</div>
+                <h3>Premium</h3>
+                <div><span className="lph-plan-price">₪799</span><span className="lph-plan-per">/אירוע</span></div>
+                <ul>
+                  <li>תמונות ללא הגבלה</li>
+                  <li>זיהוי פנים AI</li>
+                  <li>מיתוג מלא — לוגו + צבעים</li>
+                  <li>SMS + מייל אוטומטי</li>
+                  <li>שאלון מותאם אישית</li>
+                  <li>6 חודשי אחסון</li>
+                </ul>
+                <button onClick={signInWithGoogle} className="lph-plan-btn lph-plan-btn--fill">להתחיל</button>
+              </div>
+
+              <div className="lph-plan">
+                <h3>Exclusive</h3>
+                <div><span className="lph-plan-price">₪1,199</span><span className="lph-plan-per">/אירוע</span></div>
+                <ul>
+                  <li>הכל מ-Premium</li>
+                  <li>עיצוב גלריה VIP</li>
+                  <li>מסך לייב באירוע</li>
+                  <li>שנה אחסון</li>
+                  <li>תמיכה VIP + ייעוץ</li>
+                </ul>
+                <button onClick={signInWithGoogle} className="lph-plan-btn lph-plan-btn--ghost">להתחיל</button>
+              </div>
+            </div>
+          </Reveal>
         </div>
       </section>
 
       {/* ─── Testimonials ─── */}
-      <section style={{ padding: '80px 24px' }}>
-        <div style={S.container}>
-          <FadeUp>
-            <h2 style={S.sectionTitle}>מה אומרים עלינו</h2>
-            <p style={S.sectionSub}>צלמים שכבר עובדים עם Pixflow</p>
-          </FadeUp>
+      <section className="lph-section">
+        <div className="lph-wrap">
+          <Reveal>
+            <h2 className="lph-section-title">צלמים מדברים</h2>
+          </Reveal>
 
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            gap: 20, maxWidth: 900, margin: '0 auto',
-          }}>
+          <div className="lph-reviews">
             {[
-              { name: 'דניאל כ.', role: 'צלם אירועים, תל אביב', text: 'מאז שעברתי ל-Pixflow האורחים פשוט מתלהבים. הם מקבלים את התמונות עוד באירוע ושולחים לכולם. שיווק חינם.' },
-              { name: 'מיכל ש.', role: 'צלמת חתונות, חיפה', text: 'הזיהוי פנים עובד מטורף. גם בתאורה נמוכה, גם עם משקפיים. האורחים לא מאמינים שזה אמיתי.' },
-              { name: 'עומר א.', role: 'מפיק אירועים, ירושלים', text: 'הייתי צריך משהו שעובד בלי אפליקציה. הלקוחות שלי לא רוצים להוריד כלום. Pixflow פתר את זה מושלם.' },
-            ].map((t, i) => (
-              <FadeUp key={i} delay={i * 120}>
-                <div style={{
-                  padding: '28px', borderRadius: 16,
-                  background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.06)',
-                }}>
-                  <p style={{ fontSize: 14, lineHeight: 1.7, color: 'rgba(255,255,255,.55)', margin: '0 0 20px' }}>
-                    "{t.text}"
-                  </p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{
-                      width: 36, height: 36, borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 14, fontWeight: 700, color: '#fff',
-                    }}>{t.name[0]}</div>
+              { name: 'דניאל כ.', role: 'צלם אירועים · ת״א', text: 'האורחים מקבלים את התמונות עוד באירוע ושולחים סטוריז. שיווק חינם שאי אפשר לקנות בכסף.', initials: 'ד' },
+              { name: 'מיכל ש.', role: 'צלמת חתונות · חיפה', text: 'הזיהוי עובד גם בתאורה של DJ בשעה 2 בלילה. ניסיתי שלושה מתחרים לפני — אף אחד לא מתקרב.', initials: 'מ' },
+              { name: 'עומר א.', role: 'מפיק אירועים · י-ם', text: 'הלקוחות שלי לא מורידים אפליקציות. נקודה. Pixflow עובד מהדפדפן ובזה סגרתם אותי.', initials: 'ע' },
+            ].map((r, i) => (
+              <Reveal key={i} delay={i * 100}>
+                <div className="lph-review">
+                  <div className="lph-review-stars">★★★★★</div>
+                  <p className="lph-review-text">{r.text}</p>
+                  <div className="lph-review-author">
+                    <div className="lph-review-avatar">{r.initials}</div>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,.3)' }}>{t.role}</div>
+                      <div className="lph-review-name">{r.name}</div>
+                      <div className="lph-review-role">{r.role}</div>
                     </div>
                   </div>
                 </div>
-              </FadeUp>
+              </Reveal>
             ))}
           </div>
         </div>
       </section>
 
       {/* ─── FAQ ─── */}
-      <section style={{ padding: '80px 24px' }}>
-        <div style={{ ...S.container, maxWidth: 650 }}>
-          <FadeUp>
-            <h2 style={S.sectionTitle}>שאלות ותשובות</h2>
-          </FadeUp>
-
-          <FadeUp delay={100}>
+      <section className="lph-section">
+        <div className="lph-wrap" style={{ maxWidth: 620 }}>
+          <Reveal>
+            <h2 className="lph-section-title">שאלות נפוצות</h2>
+          </Reveal>
+          <Reveal delay={80}>
             <div>
-              <FaqItem q="כמה מדויק זיהוי הפנים?" a="מעל 97% דיוק. המערכת עובדת גם בתאורה חלשה, גם עם משקפיים, וגם כשיש המון אנשים בתמונה." />
-              <FaqItem q="האורחים צריכים להוריד אפליקציה?" a="לא. הכל עובד מהדפדפן. האורח לוחץ על הלינק, עושה סלפי, ומקבל את התמונות. זהו." />
-              <FaqItem q="כמה תמונות אפשר להעלות?" a="בחבילת Essential עד 2,000 תמונות. ב-Premium וב-Exclusive — ללא הגבלה." />
-              <FaqItem q="מה קורה עם הפרטיות?" a="כל אורח רואה רק את התמונות שלו. תמונות הסלפי נמחקות אוטומטית אחרי החיפוש. אנחנו עומדים ב-GDPR ובחוק הגנת הפרטיות." />
-              <FaqItem q="כמה זמן לוקח להעלות אירוע?" a="תלוי בכמות התמונות ובמהירות האינטרנט. 1,000 תמונות עולות בממוצע תוך 10-15 דקות." />
-              <FaqItem q="אפשר להוסיף את הלוגו שלי?" a="כן. בחבילת Premium ומעלה אתה יכול להתאים צבעים, לוגו, וטקסט — הגלריה נראית שלך." />
-              <FaqItem q="יש תמיכה?" a="כן, דרך מייל וווטסאפ. בחבילת Exclusive מקבלים תמיכה VIP עם ייעוץ אישי." />
+              <FaqItem q="כמה מדויק הזיהוי?" a="מעל 97%. עובד גם בתאורה חלשה, עם משקפיים, ומזהה פנים גם בקבוצות גדולות. משתמשים ב-AWS Rekognition — אותה טכנולוגיה שמפעילה את Amazon." />
+              <FaqItem q="האורחים צריכים להוריד משהו?" a="שום דבר. הם לוחצים על לינק, עושים סלפי מהדפדפן, ומקבלים את התמונות. אפילו סבתא תצליח." />
+              <FaqItem q="כמה תמונות אפשר להעלות?" a="ב-Essential עד 2,000. ב-Premium ו-Exclusive — כמה שבא לך, אין תקרה." />
+              <FaqItem q="מה עם פרטיות?" a="כל אורח רואה רק את התמונות שלו. הסלפי נמחק אוטומטית אחרי הזיהוי. עומדים ב-GDPR ובחוק הגנת הפרטיות הישראלי." />
+              <FaqItem q="אני יכול לשים את הלוגו שלי?" a="ב-Premium ומעלה — כן. לוגו, צבעים, טקסטים. הלקוח שלך רואה רק אותך." />
+              <FaqItem q="תוך כמה זמן הגלריה באוויר?" a="מרגע שמעלים את התמונות — הגלריה מוכנה לשיתוף. 1,000 תמונות = בערך 10-15 דקות." />
+              <FaqItem q="מה אם אני צריך עזרה?" a="מייל וווטסאפ, זמינים. ב-Exclusive מקבלים ליווי אישי כולל ייעוץ לפני האירוע." />
             </div>
-          </FadeUp>
+          </Reveal>
         </div>
       </section>
 
       {/* ─── Final CTA ─── */}
-      <section style={{ padding: '80px 24px 100px', textAlign: 'center' }}>
-        <FadeUp>
-          <h2 style={{ fontSize: 32, fontWeight: 800, margin: '0 0 16px' }}>
-            מוכנים להתחיל?
+      <section style={{ padding: '80px 28px 120px', textAlign: 'center' }}>
+        <Reveal>
+          <h2 style={{ fontSize: 30, fontWeight: 800, margin: '0 0 14px', letterSpacing: -.5 }}>
+            מוכנים לשדרג את האירוע הבא?
           </h2>
-          <p style={{ fontSize: 16, color: 'rgba(255,255,255,.4)', margin: '0 0 32px', lineHeight: 1.7 }}>
-            תנו לאורחים שלכם חוויה שהם לא ישכחו
+          <p style={{ fontSize: 15, color: 'var(--muted)', margin: '0 0 36px' }}>
+            תנו לאורחים חוויה שהם ידברו עליה
           </p>
-          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={signInWithGoogle} className="lph-btn" style={{
-              ...S.btn, padding: '16px 40px', fontSize: 17,
-              boxShadow: '0 4px 20px rgba(99,102,241,.25)',
-            }}>
-              יאלה, בואו
-            </button>
-            <a href="/demo" style={{ ...S.btnOutline, padding: '16px 40px', fontSize: 17, textDecoration: 'none' }}>
-              תראו דמו קודם
-            </a>
+          <div className="lph-hero-btns">
+            <button onClick={signInWithGoogle} className="lph-btn-primary">יאלה, בואו</button>
+            <a href="/demo" className="lph-btn-ghost">תנסו דמו קודם</a>
           </div>
-        </FadeUp>
+        </Reveal>
       </section>
 
       {/* ─── Footer ─── */}
-      <footer style={{
-        padding: '32px 24px', borderTop: '1px solid rgba(255,255,255,.06)',
-        textAlign: 'center',
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginBottom: 16 }}>
-          <a href="/terms" style={{ fontSize: 13, color: 'rgba(255,255,255,.3)', textDecoration: 'none' }}>תנאי שימוש</a>
-          <a href="/privacy" style={{ fontSize: 13, color: 'rgba(255,255,255,.3)', textDecoration: 'none' }}>מדיניות פרטיות</a>
-          <a href="mailto:support@pixflow-ai.com" style={{ fontSize: 13, color: 'rgba(255,255,255,.3)', textDecoration: 'none' }}>צור קשר</a>
+      <footer className="lph-footer">
+        <div className="lph-footer-links">
+          <a href="/terms">תנאי שימוש</a>
+          <a href="/privacy">פרטיות</a>
+          <a href="mailto:support@pixflow-ai.com">צור קשר</a>
         </div>
-        <p style={{ fontSize: 12, color: 'rgba(255,255,255,.2)', margin: 0 }}>
-          Pixflow AI by Eclipse Media &copy; 2026
-        </p>
+        <p className="lph-footer-copy">Pixflow AI by Eclipse Media &copy; 2026</p>
       </footer>
     </div>
   )
