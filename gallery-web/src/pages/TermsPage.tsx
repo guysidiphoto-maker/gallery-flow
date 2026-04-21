@@ -21,8 +21,6 @@ function Nav() {
           <a href="/#features" className="lp-nav-link">Features</a>
           <a href="/#pricing" className="lp-nav-link">Pricing</a>
           <a href="/demo" className="lp-nav-link">Demo</a>
-          <a href="#" className="lp-nav-link">Download</a>
-          <a href="#" className="lp-nav-link">Sign in</a>
         </div>
       </div>
     </nav>
@@ -34,7 +32,7 @@ function Footer() {
     <footer className="lp-footer">
       <div className="lp-container">
         <div className="lp-footer-bottom">
-          <p>&copy; 2026 Pixflow. All rights reserved.</p>
+          <p>&copy; 2026 Pixflow — אקליפס מדיה. כל הזכויות שמורות.</p>
         </div>
       </div>
     </footer>
@@ -48,142 +46,187 @@ export function TermsPage() {
     <div className="lp-root">
       <Nav />
       <section className="lp-legal">
-        <div className="lp-container lp-legal-container">
-          <h1>Terms of Service</h1>
-          <p className="lp-legal-date">Effective date: April 2026</p>
+        <div className="lp-container lp-legal-container" style={{ direction: 'rtl', textAlign: 'right' }}>
+          <h1>תנאי שימוש — Pixflow</h1>
+          <p className="lp-legal-date">עודכן לאחרונה: אפריל 2026</p>
 
-          <h2>1. Acceptance of Terms</h2>
           <p>
-            By accessing or using the Pixflow application and related services ("Service"), you agree to be bound
-            by these Terms of Service ("Terms"). If you do not agree to these Terms, you may not use the Service.
+            ברוך הבא! בשימוש בשירותי Pixflow, אתה מאשר את התנאים המפורטים להלן. אנא קרא אותם בעיון.
           </p>
 
-          <h2>2. Description of Service</h2>
+          <h2>1. כללי</h2>
           <p>
-            Pixflow is a desktop application for macOS that enables professional photographers to organize, curate,
-            and publish client galleries online. The Service includes the desktop application, cloud hosting of
-            published galleries, and related features such as AI Stories generation.
+            1.1. מסמך זה מנוסח בלשון זכר מטעמי נוחות בלבד ומתייחס לכל המינים באופן שווה.
+          </p>
+          <p>
+            1.2. מסמך זה מהווה הסכם מחייב בינך, כמשתמש בשירות — בין אם כצלם, כמארגן אירוע, כספק שירותים
+            או כלקוח קצה — לבין העסק אקליפס מדיה (עוסק מורשה, מס' 207383308) ונציגיו (להלן: "המפעיל").
+            הסכם זה מתייחס לשימוש בפלטפורמה המקוונת Pixflow דרך האתר{' '}
+            <a href="https://pixflow-ai.com">pixflow-ai.com</a> ודומיינים נוספים שיתווספו בעתיד.
+          </p>
+          <p>
+            1.3. השירות מיועד להעלאת תמונות, יצירת גלריות מקוונות, ניהול לקוחות, יצירת שאלונים,
+            ושיתוף תמונות עם לקוחות ומשתתפי אירועים (להלן: "השירות").
+          </p>
+          <p>
+            1.4. השימוש בשירות מהווה הסכמה מלאה ובלתי חוזרת לתנאים המפורטים במסמך זה.
           </p>
 
-          <h2>3. User Accounts and Responsibilities</h2>
+          <h2>2. אופן השימוש בשירות</h2>
           <p>
-            You must provide accurate and complete information when creating an account. You are responsible for
-            maintaining the confidentiality of your account credentials and for all activity that occurs under your
-            account. You agree to notify us immediately of any unauthorized use of your account.
+            2.1. המפעיל מעניק למשתמש רישיון מוגבל לשימוש בשירות, הניתן לביטול בכל עת ואינו ניתן להעברה,
+            בכפוף לתנאים המפורטים במסמך זה.
           </p>
           <p>
-            You must be at least 18 years old to create an account and use the Service. By using the Service, you
-            represent that you meet this age requirement.
-          </p>
-
-          <h2>4. Intellectual Property</h2>
-          <p>
-            You retain all ownership rights to the photographs and other content you upload to Pixflow. We do not
-            claim any intellectual property rights over your content. By using the Service, you grant us a limited
-            license to host, display, and transmit your content solely for the purpose of providing the Service
-            to you and your clients.
+            2.2. כדי להשתמש בשירות, על המשתמש להירשם למערכת באמצעות יצירת חשבון. לאחר ההרשמה, המשתמש
+            יכול ליצור גלריות, להעלות תמונות, ליצור שאלונים ולשתף קישורים עם לקוחותיו.
           </p>
           <p>
-            The Pixflow application, including its design, features, code, and documentation, is the intellectual
-            property of Pixflow and is protected by applicable copyright and trademark laws. You may not copy,
-            modify, distribute, or reverse-engineer any part of the application without our prior written consent.
+            2.3. לצורך קבלת גישה לשירות, על המשתמש לספק פרטים מזהים כגון שם, טלפון ודוא"ל.
+            המשתמש מתחייב כי המידע שיסופק יהיה מדויק ואמיתי, ושיש לו את הזכויות הנדרשות
+            לשימוש בתמונות ובמידע שיעלה למערכת.
           </p>
-
-          <h2>5. Prohibited Uses</h2>
-          <p>You agree not to use the Service to:</p>
-          <ul>
-            <li>Upload, share, or distribute content that is illegal, harmful, threatening, abusive, defamatory, or otherwise objectionable.</li>
-            <li>Infringe upon the intellectual property rights of others.</li>
-            <li>Distribute malware, viruses, or any other harmful software.</li>
-            <li>Attempt to gain unauthorized access to our systems or other users' accounts.</li>
-            <li>Use the Service for any purpose other than its intended use as a photography gallery platform.</li>
-            <li>Resell or redistribute the Service without our written permission.</li>
-          </ul>
-
-          <h2>6. Questionnaires and Client Data Collection</h2>
           <p>
-            The Service allows photographers ("Service Users") to create questionnaires and collect information
-            from their clients ("End Users"). By filling out a questionnaire on Pixflow, End Users acknowledge
-            and agree to the following:
+            2.4. המפעיל שומר לעצמו את הזכות לגבות תשלום עבור השימוש בשירות או חלק ממנו.
+            מידע על מחירים יפורסם באתר לפני החיוב.
+          </p>
+          <p>
+            2.5. המשתמש מתחייב שלא לבצע את הפעולות הבאות:
           </p>
           <ul>
-            <li>The information submitted (including name, phone number, email, and questionnaire responses) is collected on behalf of the Service User (the photographer) who created the questionnaire.</li>
-            <li>Pixflow acts as a data processor on behalf of the Service User. The Service User is the data controller and is responsible for obtaining proper consent from their End Users.</li>
-            <li>Submitted data is stored securely on our servers and is accessible only to the Service User who created the questionnaire and to Pixflow for the purpose of providing the Service.</li>
-            <li>End Users may receive SMS messages or emails following questionnaire submission, if the Service User has enabled this feature. By submitting the questionnaire with the consent checkbox checked, the End User agrees to receive such communications.</li>
-            <li>End Users may request deletion of their submitted data by contacting the Service User or by emailing <a href="mailto:privacy@pixflow-ai.com">privacy@pixflow-ai.com</a>.</li>
+            <li>לא לאפשר לאחרים להשתמש בשירות תחת זהותו.</li>
+            <li>לא להשתמש בשירות להעברת תכנים בלתי חוקיים, פוגעניים או מפרים זכויות של אחרים.</li>
+            <li>לא לשנות, להעתיק או לנסות לגשת לקוד המקור של השירות.</li>
+            <li>לא למכור או להעביר את השירות ללא אישור המפעיל.</li>
+            <li>לא להשתמש בשירות באופן שעלול להפריע לשירות או למשתמשים אחרים.</li>
           </ul>
           <p>
-            Service Users who create questionnaires agree to:
+            2.6. השירות אינו מיועד לאחסון ארוך טווח של תמונות. על המשתמש לדאוג לגיבוי תמונותיו באופן עצמאי.
+          </p>
+
+          <h2>3. שאלונים ואיסוף מידע מלקוחות</h2>
+          <p>
+            3.1. השירות מאפשר לצלמים ולמארגני אירועים (להלן: "משתמשי השירות") ליצור שאלונים ולאסוף מידע
+            מלקוחותיהם (להלן: "לקוחות קצה").
+          </p>
+          <p>
+            3.2. מילוי שאלון על ידי לקוח קצה מהווה הסכמה לתנאים הבאים:
           </p>
           <ul>
-            <li>Use the questionnaire feature only for legitimate business purposes related to their photography services.</li>
-            <li>Not collect sensitive personal data (health information, political opinions, religious beliefs, etc.) through questionnaires.</li>
-            <li>Comply with all applicable data protection laws (including GDPR, Israeli Privacy Protection Law) when collecting and processing End User data.</li>
-            <li>Not sell, share, or transfer End User data to third parties without proper consent.</li>
+            <li>המידע שנמסר (שם, טלפון, דוא"ל ותשובות לשאלון) נאסף עבור משתמש השירות שיצר את השאלון.</li>
+            <li>המפעיל משמש כמעבד מידע בלבד. משתמש השירות הוא בעל השליטה במידע ואחראי לקבלת הסכמה מלקוחות הקצה.</li>
+            <li>המידע מאוחסן בצורה מאובטחת ונגיש רק למשתמש השירות שיצר את השאלון.</li>
+            <li>לקוחות קצה רשאים לבקש מחיקת המידע שנמסר באמצעות פנייה למשתמש השירות או ישירות למפעיל.</li>
+          </ul>
+          <p>
+            3.3. משתמשי השירות היוצרים שאלונים מתחייבים:
+          </p>
+          <ul>
+            <li>להשתמש בשאלונים למטרות עסקיות לגיטימיות בלבד.</li>
+            <li>לא לאסוף מידע רגיש (מידע רפואי, דעות פוליטיות, אמונות דתיות וכדומה) דרך השאלונים.</li>
+            <li>לעמוד בכל דיני הגנת הפרטיות החלים, לרבות חוק הגנת הפרטיות הישראלי ותקנות GDPR.</li>
+            <li>לא למכור, לשתף או להעביר מידע של לקוחות קצה לצדדים שלישיים ללא הסכמה מתאימה.</li>
           </ul>
 
-          <h2>7. SMS and Email Communications</h2>
+          <h2>4. הודעות SMS ודוא"ל</h2>
           <p>
-            The Service may send SMS messages and/or emails to End Users on behalf of Service Users. These
-            communications are sent only when:
+            4.1. השירות עשוי לשלוח הודעות SMS ו/או דוא"ל ללקוחות קצה בשם משתמשי השירות. הודעות אלה נשלחות
+            אך ורק כאשר:
           </p>
           <ul>
-            <li>The Service User has enabled automatic messaging for a specific questionnaire.</li>
-            <li>The End User has explicitly consented by checking the consent checkbox before submitting the questionnaire.</li>
-            <li>The End User has provided their phone number (for SMS) or email address (for email).</li>
+            <li>משתמש השירות הפעיל שליחה אוטומטית עבור שאלון ספציפי.</li>
+            <li>לקוח הקצה נתן הסכמה מפורשת על ידי סימון תיבת ההסכמה לפני שליחת השאלון.</li>
+            <li>לקוח הקצה סיפק מספר טלפון (עבור SMS) או כתובת דוא"ל (עבור מייל).</li>
           </ul>
           <p>
-            SMS messages are sent via Twilio and emails via Resend. Standard messaging rates may apply.
-            End Users may opt out of future communications by contacting the Service User or by emailing{' '}
+            4.2. הודעות SMS נשלחות באמצעות Twilio והודעות דוא"ל באמצעות Resend. עלויות הודעות SMS
+            סטנדרטיות עשויות לחול. לקוחות קצה רשאים לבקש הפסקת קבלת הודעות באמצעות פנייה למשתמש
+            השירות או למפעיל בכתובת{' '}
             <a href="mailto:support@pixflow-ai.com">support@pixflow-ai.com</a>.
           </p>
 
-          <h2>8. Payment Terms</h2>
+          <h2>5. זכויות קניין רוחני</h2>
           <p>
-            Certain features of the Service require a paid subscription. Prices are listed on our website and are
-            subject to change with 30 days' notice. All fees are charged in US dollars and are non-refundable
-            except as required by law or as described in Section 7.
+            5.1. כל זכויות הקניין הרוחני הנוגעות לשירות — לרבות עיצוב, תוכנה, קוד, גרפיקה וחומרים נלווים —
+            הינן בבעלות הבלעדית של המפעיל.
           </p>
           <p>
-            Subscriptions automatically renew at the end of each billing cycle unless cancelled before the renewal
-            date. You authorize us to charge your payment method on file for recurring subscription fees.
-          </p>
-
-          <h2>9. Cancellation and Refunds</h2>
-          <p>
-            You may cancel your subscription at any time from your account settings. Upon cancellation, you will
-            retain access to paid features until the end of your current billing period. After that, your account
-            will revert to the Starter (free) plan.
+            5.2. המשתמש שומר על מלוא הבעלות על התמונות והתכנים שהעלה לשירות. המפעיל לא ישתמש בתמונות
+            המשתמש לשיווק, פרסום או אימון מודלים של בינה מלאכותית.
           </p>
           <p>
-            We do not provide prorated refunds for partial billing periods. If you believe you have been charged
-            in error, please contact us at support@pixflow-ai.com within 30 days of the charge.
+            5.3. אין להעתיק, לשכפל, להפיץ או לשנות כל חלק מהשירות ללא אישור כתוב מראש מהמפעיל.
           </p>
 
-          <h2>10. Limitation of Liability</h2>
+          <h2>6. תשלומים וביטולים</h2>
           <p>
-            To the maximum extent permitted by law, Pixflow and its officers, employees, and affiliates shall not
-            be liable for any indirect, incidental, special, consequential, or punitive damages, including but not
-            limited to loss of profits, data, or business opportunities, arising from your use of or inability to
-            use the Service.
+            6.1. חלק מהתכונות בשירות דורשות מנוי בתשלום. המחירים מפורסמים באתר וכפופים לשינויים
+            עם הודעה מוקדמת של 30 יום.
           </p>
           <p>
-            Our total aggregate liability to you for all claims arising from or related to the Service shall not
-            exceed the amount you paid to us in the twelve (12) months preceding the claim.
+            6.2. ניתן לבטל מנוי בכל עת מהגדרות החשבון. לאחר ביטול, הגישה לתכונות בתשלום תישמר
+            עד סוף תקופת החיוב הנוכחית.
           </p>
-
-          <h2>11. Changes to Terms</h2>
           <p>
-            We may update these Terms from time to time. When we make material changes, we will notify you by
-            email or through the Service at least 30 days before the changes take effect. Your continued use of
-            the Service after the effective date of updated Terms constitutes your acceptance of those changes.
-          </p>
-
-          <h2>12. Contact</h2>
-          <p>
-            If you have questions about these Terms, please contact us at{' '}
+            6.3. ביטול עסקה בהתאם לחוק הגנת הצרכן: ניתן לבטל עסקה תוך 14 ימים ממועד הרכישה,
+            ובלבד שהשירות טרם נוצל. הביטול ייעשה בפנייה בכתב לכתובת{' '}
             <a href="mailto:support@pixflow-ai.com">support@pixflow-ai.com</a>.
+          </p>
+
+          <h2>7. הגבלת אחריות</h2>
+          <p>
+            7.1. המפעיל אינו מתחייב לגבי זמינות השירות, איכותו או כל מאפיין אחר שלו. אין הבטחה כי
+            השירות יפעל ללא תקלות.
+          </p>
+          <p>
+            7.2. המפעיל אינו אחראי לנזקים ישירים או עקיפים הנובעים מהשימוש בשירות. במקרה שייקבע כי
+            המפעיל אחראי, אחריותו תוגבל לסכום ששולם עבור השירות ב-12 החודשים האחרונים.
+          </p>
+          <p>
+            7.3. האחריות על כמות, איכות ותוכן התמונות שהועלו מוטלת על המשתמש בלבד.
+          </p>
+
+          <h2>8. שיפוי</h2>
+          <p>
+            במידה והמפעיל יעמוד בפני תביעה או דרישה מצד שלישי כתוצאה מפעולות של המשתמש הסותרות
+            את תנאי השימוש, המשתמש מתחייב לשפות את המפעיל בגין כל נזק, עלות או הפסד שייגרמו.
+          </p>
+
+          <h2>9. שינוי או הפסקת השירות</h2>
+          <p>
+            9.1. המפעיל רשאי לשנות, לעדכן או להתאים את השירות בכל עת, ללא הודעה מוקדמת.
+          </p>
+          <p>
+            9.2. המפעיל שומר לעצמו את הזכות להפסיק את השירות, באופן מלא או חלקי, זמנית או לצמיתות,
+            לפי שיקול דעתו הבלעדי.
+          </p>
+
+          <h2>10. הגבלת גיל</h2>
+          <p>
+            השימוש בשירות מותר לבני 18 שנים ומעלה בלבד. שימוש בשירות מהווה הצהרה כי המשתמש בגיר.
+          </p>
+
+          <h2>11. שונות</h2>
+          <p>
+            11.1. המפעיל רשאי לשנות תנאים אלו מעת לעת. שינויים מהותיים יפורסמו באתר. המשך השימוש
+            בשירות מהווה הסכמה לתנאים המעודכנים.
+          </p>
+          <p>
+            11.2. בהתאם לסעיף 19 לחוק ההתיישנות, התשי"ח-1958, מוסכם כי כל תביעה הנובעת מהשירות
+            תוגש תוך שנה אחת מיום שנודעה עילת התביעה.
+          </p>
+          <p>
+            11.3. תנאים אלה כפופים לחוקי מדינת ישראל, וסמכות השיפוט הבלעדית תהיה לבתי המשפט המוסמכים בישראל.
+          </p>
+          <p>
+            11.4. אם בית המשפט יקבע שתנאי כלשהו אינו חוקי, יתר התנאים יישארו בתוקפם.
+          </p>
+
+          <h2>12. פרטי קשר</h2>
+          <p>
+            שם העסק: אקליפס מדיה | עוסק מורשה: 207383308 | דוא"ל:{' '}
+            <a href="mailto:support@pixflow-ai.com">support@pixflow-ai.com</a> |{' '}
+            אתר: <a href="https://pixflow-ai.com">pixflow-ai.com</a>
           </p>
         </div>
       </section>

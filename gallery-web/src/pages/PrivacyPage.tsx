@@ -21,8 +21,6 @@ function Nav() {
           <a href="/#features" className="lp-nav-link">Features</a>
           <a href="/#pricing" className="lp-nav-link">Pricing</a>
           <a href="/demo" className="lp-nav-link">Demo</a>
-          <a href="#" className="lp-nav-link">Download</a>
-          <a href="#" className="lp-nav-link">Sign in</a>
         </div>
       </div>
     </nav>
@@ -34,7 +32,7 @@ function Footer() {
     <footer className="lp-footer">
       <div className="lp-container">
         <div className="lp-footer-bottom">
-          <p>&copy; 2026 Pixflow. All rights reserved.</p>
+          <p>&copy; 2026 Pixflow — אקליפס מדיה. כל הזכויות שמורות.</p>
         </div>
       </div>
     </footer>
@@ -48,143 +46,187 @@ export function PrivacyPage() {
     <div className="lp-root">
       <Nav />
       <section className="lp-legal">
-        <div className="lp-container lp-legal-container">
-          <h1>Privacy Policy</h1>
-          <p className="lp-legal-date">Effective date: April 2026</p>
+        <div className="lp-container lp-legal-container" style={{ direction: 'rtl', textAlign: 'right' }}>
+          <h1>מדיניות פרטיות — Pixflow</h1>
+          <p className="lp-legal-date">עודכן לאחרונה: אפריל 2026</p>
 
-          <h2>1. What Data We Collect</h2>
-          <p>We collect the following categories of information:</p>
-          <ul>
-            <li><strong>Account information:</strong> Your name, email address, and payment details when you create an account or subscribe to a paid plan.</li>
-            <li><strong>Photos and content:</strong> The photographs and gallery content you upload through the Pixflow application for hosting and delivery.</li>
-            <li><strong>Usage analytics:</strong> Anonymized data about how you use the application, including feature usage, gallery views, and performance metrics. We use this to improve the product.</li>
-            <li><strong>Device information:</strong> Basic information about your Mac (OS version, app version) for compatibility and troubleshooting purposes.</li>
-          </ul>
-
-          <h2>2. How We Use Your Data</h2>
-          <p>We use your data to:</p>
-          <ul>
-            <li>Provide and maintain the Service, including hosting and delivering your galleries.</li>
-            <li>Process payments and manage your subscription.</li>
-            <li>Send you important service-related communications (billing confirmations, security alerts, feature updates).</li>
-            <li>Improve and develop new features based on aggregated, anonymized usage patterns.</li>
-            <li>Provide customer support when you contact us.</li>
-          </ul>
-
-          <h2>3. Data Storage and Security</h2>
           <p>
-            Your data is stored on infrastructure provided by Supabase and AWS. All data is encrypted at rest
-            and in transit using industry-standard encryption protocols (TLS 1.2+ for transit, AES-256 for
-            storage). We implement appropriate technical and organizational measures to protect your data
-            against unauthorized access, alteration, disclosure, or destruction.
+            Pixflow, המופעל על ידי אקליפס מדיה (עוסק מורשה 207383308), היא פלטפורמה טכנולוגית
+            המספקת פתרונות לצלמים מקצועיים — ניהול גלריות מקוונות, שיתוף תמונות עם לקוחות,
+            יצירת שאלונים ואיסוף מידע מלקוחות. אנו מכבדים את פרטיותך ומתחייבים להגן עליה.
+            מדיניות זו מפרטת כיצד אנו אוספים, משתמשים ומגנים על המידע שלך.
+          </p>
+          <p>
+            מדיניות זו מנוסחת בלשון זכר מטעמי נוחות בלבד ומיועדת לכל המינים.
+            השימוש בשירות מהווה הסכמה מלאה לתנאי מדיניות פרטיות זו.
           </p>
 
-          <h2>4. Third-Party Services</h2>
-          <p>We use the following third-party services to operate Pixflow:</p>
-          <ul>
-            <li><strong>Supabase:</strong> Database and authentication infrastructure.</li>
-            <li><strong>Vercel:</strong> Web hosting for published gallery pages.</li>
-            <li><strong>Payment provider:</strong> For processing subscription payments. We do not store your full credit card details on our servers.</li>
-          </ul>
+          <h2>1. כללי</h2>
           <p>
-            Each third-party provider has their own privacy policy. We only share the minimum data necessary
-            for them to provide their services.
+            1.1. מדיניות פרטיות זו מהווה הסכם מחייב בין המשתמש לבין Pixflow. השימוש בשירות כפוף
+            למדיניות זו ומעיד על הסכמתך לה ולשינויים שיבוצעו בה.
+          </p>
+          <p>
+            1.2. המפעיל עשוי לאסוף מידע על המשתמשים באמצעות השימוש בשירות, באופן עצמאי או בעזרת
+            ספקי שירותי צד שלישי.
+          </p>
+          <p>
+            1.3. מדיניות זו מהווה חלק בלתי נפרד מתנאי השימוש. המפעיל רשאי לשנות את מדיניות הפרטיות
+            מעת לעת בהתאם לשיקול דעתו.
           </p>
 
-          <h2>5. Your Photos</h2>
+          <h2>2. אילו סוגי מידע אנו אוספים</h2>
+          <p><strong>מידע אישי</strong> — נתונים המאפשרים זיהוי של אדם, כגון:</p>
+          <ul>
+            <li>שם מלא, כתובת דוא"ל, מספר טלפון.</li>
+            <li>פרטי תשלום (מעובדים על ידי ספק סליקה חיצוני — איננו מאחסנים פרטי כרטיס אשראי).</li>
+            <li>תמונות ותכנים שהועלו לשירות.</li>
+            <li>תשובות לשאלונים שנוצרו על ידי משתמשי השירות.</li>
+            <li>כתובת IP, מזהה מכשיר והיסטוריית שימוש.</li>
+          </ul>
+          <p><strong>מידע סטטיסטי</strong> — מידע אנונימי שאינו מזהה אישית, כגון:</p>
+          <ul>
+            <li>סוג דפדפן ומערכת הפעלה.</li>
+            <li>דפוסי שימוש באתר ובשירות.</li>
+            <li>מיקום גיאוגרפי כללי.</li>
+            <li>זמני גלישה ודפים שנצפו.</li>
+          </ul>
+
+          <h2>3. כיצד אנו אוספים מידע</h2>
+          <p><strong>רישום לשירות:</strong> בעת יצירת חשבון תתבקש לספק שם, דוא"ל וסיסמה.</p>
+          <p><strong>מילוי שאלונים:</strong> לקוחות קצה מספקים שם, טלפון, דוא"ל ותשובות לשאלות בעת מילוי שאלון.</p>
+          <p><strong>קובצי יומן:</strong> אנו אוספים מידע טכני כגון כתובת IP, סוג דפדפן, דפי הפניה ומידע שהדפדפן שולח אוטומטית.</p>
           <p>
-            You retain full ownership of all photographs and content you upload to Pixflow. We will never use
-            your photos for marketing, advertising, AI model training, or any purpose other than providing the
-            Service to you. When you delete a gallery or your account, your photos are permanently removed from
-            our servers within 30 days.
+            <strong>קובצי Cookie:</strong> אנו משתמשים בקובצי Cookie חיוניים לתפקוד השירות (כגון אימות כניסה).
+            איננו משתמשים בעוגיות פרסומיות או עוגיות מעקב של צדדים שלישיים. רוב הדפדפנים מאפשרים
+            שליטה על קובצי Cookie, כולל מחיקתם.
           </p>
 
-          <h2>6. Questionnaire Data</h2>
+          <h2>4. כיצד אנו משתמשים במידע</h2>
+          <p>אנו משתמשים במידע שנאסף למטרות הבאות:</p>
+          <ul>
+            <li>הפעלה ותחזוקה של השירות, לרבות אירוח גלריות ושליחת שאלונים.</li>
+            <li>עיבוד תשלומים וניהול מנויים.</li>
+            <li>שליחת הודעות הקשורות לשירות (אישורים, התראות אבטחה, עדכונים).</li>
+            <li>שליחת הודעות SMS או דוא"ל ללקוחות קצה בשם משתמשי השירות, בהתאם להגדרות השאלון ולהסכמת לקוח הקצה.</li>
+            <li>שיפור ופיתוח תכונות חדשות על בסיס נתונים מצטברים ואנונימיים.</li>
+            <li>מתן תמיכה טכנית.</li>
+          </ul>
+
+          <h2>5. מידע מלקוחות קצה (שאלונים)</h2>
           <p>
-            When End Users fill out a questionnaire created by a Service User (photographer), we collect:
+            כאשר לקוח קצה ממלא שאלון שנוצר על ידי משתמש השירות (צלם/מארגן), אנו אוספים:
           </p>
           <ul>
-            <li><strong>Contact information:</strong> Name, phone number, and/or email address as provided in the questionnaire.</li>
-            <li><strong>Questionnaire responses:</strong> Answers to questions defined by the Service User.</li>
-            <li><strong>Consent record:</strong> A record that the End User agreed to the Terms of Service and Privacy Policy before submitting.</li>
+            <li><strong>פרטי קשר:</strong> שם, טלפון ו/או דוא"ל כפי שסופקו בשאלון.</li>
+            <li><strong>תשובות לשאלון:</strong> תשובות לשאלות שהוגדרו על ידי משתמש השירות.</li>
+            <li><strong>רישום הסכמה:</strong> תיעוד שלקוח הקצה אישר את תנאי השימוש ומדיניות הפרטיות.</li>
           </ul>
-          <p>
-            This data is collected on behalf of the Service User (the photographer), who acts as the data controller.
-            Pixflow acts as a data processor. The data is:
-          </p>
+          <p>מידע זה נאסף עבור משתמש השירות, המשמש כבעל השליטה במידע. Pixflow משמש כמעבד מידע. המידע:</p>
           <ul>
-            <li>Stored securely on our servers with encryption at rest and in transit.</li>
-            <li>Accessible only to the Service User who created the questionnaire.</li>
-            <li>Used to send SMS or email communications to the End User, only if the Service User has enabled this feature and the End User has given explicit consent.</li>
-            <li>Never sold, shared with third parties for marketing purposes, or used for AI model training.</li>
-            <li>Retained for as long as the Service User's account is active, or until deletion is requested.</li>
+            <li>מאוחסן בצורה מאובטחת עם הצפנה בתנועה ובמנוחה.</li>
+            <li>נגיש רק למשתמש השירות שיצר את השאלון.</li>
+            <li>לעולם לא יימכר לצדדים שלישיים או ישמש לשיווק על ידי המפעיל.</li>
+            <li>נשמר כל עוד חשבון משתמש השירות פעיל, או עד לבקשת מחיקה.</li>
           </ul>
           <p>
-            End Users may request access to, correction of, or deletion of their submitted data by contacting
-            the Service User directly or by emailing{' '}
+            לקוחות קצה רשאים לבקש עיון, תיקון או מחיקה של המידע שנמסר באמצעות פנייה ישירה
+            למשתמש השירות או בפנייה לכתובת{' '}
             <a href="mailto:privacy@pixflow-ai.com">privacy@pixflow-ai.com</a>.
           </p>
 
-          <h2>7. Guest Data</h2>
+          <h2>6. תמונות המשתמש</h2>
           <p>
-            When your clients view a published gallery, we collect minimal data: the pages they visit and basic
-            browser information for analytics. We do not track gallery visitors across other websites, do not
-            use third-party advertising trackers, and do not sell or share guest browsing data with any third
-            party.
+            המשתמש שומר על מלוא הבעלות על תמונותיו. לעולם לא נשתמש בתמונות לשיווק, פרסום,
+            אימון מודלים של בינה מלאכותית, או לכל מטרה שאינה מתן השירות. בעת מחיקת גלריה
+            או חשבון, התמונות יוסרו לצמיתות משרתינו תוך 30 יום.
           </p>
 
-          <h2>8. Cookies</h2>
+          <h2>7. נתוני צפייה בגלריות</h2>
           <p>
-            The Pixflow web application uses essential cookies required for the Service to function (such as
-            authentication tokens and gallery password sessions). We do not use advertising cookies or
-            third-party tracking cookies. Gallery viewers may receive a session cookie if the gallery is
-            password-protected.
+            כאשר לקוחות צופים בגלריה מפורסמת, אנו אוספים נתונים מינימליים: דפים שנצפו ומידע
+            בסיסי על הדפדפן לצרכי אנליטיקה. איננו עוקבים אחר צופי גלריות באתרים אחרים, איננו
+            משתמשים בעוגיות פרסומיות, ואיננו מוכרים או משתפים נתוני גלישה של צופים.
           </p>
 
-          <h2>9. Data Retention</h2>
-          <p>
-            We retain your account data for as long as your account is active. If you cancel your account, we
-            will delete your personal data and photos within 30 days, except where we are required by law to
-            retain certain records (such as billing history, which we retain for up to 7 years for tax
-            compliance).
-          </p>
-
-          <h2>10. Your Rights</h2>
-          <p>
-            Under GDPR and other applicable privacy laws, you have the right to:
-          </p>
+          <h2>8. שיתוף מידע עם צדדים שלישיים</h2>
+          <p>איננו מוכרים, משכירים או משתפים מידע אישי עם צדדים שלישיים, למעט במקרים הבאים:</p>
           <ul>
-            <li><strong>Access:</strong> Request a copy of the personal data we hold about you.</li>
-            <li><strong>Delete:</strong> Request deletion of your personal data and account.</li>
-            <li><strong>Export:</strong> Request a machine-readable export of your data.</li>
-            <li><strong>Rectify:</strong> Request correction of inaccurate personal data.</li>
-            <li><strong>Restrict:</strong> Request restriction of processing of your personal data.</li>
-            <li><strong>Object:</strong> Object to processing of your personal data for certain purposes.</li>
+            <li><strong>ספקי שירות:</strong> אנו משתפים מידע עם ספקים הנדרשים להפעלת השירות (ראו סעיף 9).</li>
+            <li><strong>דרישות חוקיות:</strong> כאשר נדרש על פי חוק, צו בית משפט, או להגנה על זכויות ובטיחות.</li>
+            <li><strong>מיזוג או רכישה:</strong> במקרה של שינוי בבעלות העסק, המידע יועבר לרוכש בכפוף לדיני הפרטיות.</li>
+          </ul>
+
+          <h2>9. ספקי שירות חיצוניים</h2>
+          <p>אנו משתמשים בספקי השירות הבאים:</p>
+          <ul>
+            <li><strong>Supabase:</strong> תשתית מסד נתונים ואימות.</li>
+            <li><strong>Vercel:</strong> אירוח אתרים ופונקציות שרת.</li>
+            <li><strong>Twilio:</strong> שליחת הודעות SMS.</li>
+            <li><strong>Resend:</strong> שליחת הודעות דוא"ל.</li>
+            <li><strong>ספק סליקה:</strong> עיבוד תשלומים (איננו מאחסנים פרטי כרטיס אשראי).</li>
           </ul>
           <p>
-            To exercise any of these rights, please contact us at{' '}
-            <a href="mailto:privacy@pixflow-ai.com">privacy@pixflow-ai.com</a>. We will respond to your
-            request within 30 days.
+            כל ספק מחויב למדיניות פרטיות משלו. אנו משתפים רק את המידע המינימלי הנדרש לאספקת השירות.
+            המידע עשוי להיות מאוחסן מחוץ לישראל, לרבות בארצות הברית ובאיחוד האירופי.
           </p>
 
-          <h2>11. Children's Privacy</h2>
+          <h2>10. שמירת מידע ומחיקתו</h2>
           <p>
-            Pixflow is not intended for use by individuals under the age of 18. We do not knowingly collect
-            personal data from children. If you believe we have collected data from a child, please contact
-            us and we will promptly delete it.
+            אנו שומרים מידע אישי כל עוד החשבון פעיל. בעת ביטול חשבון, המידע האישי והתמונות
+            יימחקו תוך 30 יום, למעט רישומי חיוב הנשמרים עד 7 שנים בהתאם לדרישות מס.
+          </p>
+          <p>
+            תשובות לשאלונים נשמרות כל עוד חשבון משתמש השירות פעיל, או עד לבקשת מחיקה מלקוח הקצה.
           </p>
 
-          <h2>12. Changes to This Policy</h2>
+          <h2>11. אבטחת מידע</h2>
           <p>
-            We may update this Privacy Policy from time to time. When we make material changes, we will
-            notify you by email at least 30 days before the changes take effect. The "Effective date" at
-            the top of this page indicates when the policy was last updated.
+            אנו נוקטים באמצעים טכניים וארגוניים מקובלים להגנה על המידע, כולל הצפנת TLS 1.2+
+            בתעבורה, הצפנת AES-256 באחסון, ושרתים מוגנים בסיסמה וחומת אש. עם זאת, איננו יכולים
+            להבטיח הגנה מוחלטת מפני חדירות בלתי מורשות.
           </p>
 
-          <h2>13. Contact</h2>
+          <h2>12. זכויות המשתמש</h2>
+          <p>בהתאם לחוק הגנת הפרטיות ולתקנות GDPR, עומדות לך הזכויות הבאות:</p>
+          <ul>
+            <li><strong>עיון:</strong> לבקש עותק של המידע האישי שברשותנו.</li>
+            <li><strong>תיקון:</strong> לבקש תיקון של מידע שגוי.</li>
+            <li><strong>מחיקה:</strong> לבקש מחיקת המידע האישי והחשבון.</li>
+            <li><strong>ייצוא:</strong> לבקש ייצוא המידע בפורמט קריא-מכונה.</li>
+            <li><strong>הגבלה:</strong> לבקש הגבלת עיבוד המידע.</li>
+            <li><strong>התנגדות:</strong> להתנגד לעיבוד מידע למטרות מסוימות.</li>
+          </ul>
           <p>
-            If you have questions about this Privacy Policy or your data, please contact us at{' '}
+            למימוש זכויות אלו, ניתן לפנות בדוא"ל ל-
             <a href="mailto:privacy@pixflow-ai.com">privacy@pixflow-ai.com</a>.
+            נשיב לפנייתך תוך 30 יום. במקרים מסוימים ייתכן שנבקש פרטי זיהוי לאימות הבקשה.
+          </p>
+
+          <h2>13. פרטיות ילדים</h2>
+          <p>
+            השירות אינו מיועד לקטינים מתחת לגיל 18. איננו אוספים ביודעין מידע מקטינים.
+            אם הורה או אפוטרופוס מגלה שקטין מסר מידע ללא הסכמה, יש לפנות אלינו ונסיר
+            את המידע בהקדם.
+          </p>
+
+          <h2>14. שינויים במדיניות</h2>
+          <p>
+            אנו עשויים לעדכן מדיניות זו מעת לעת. שינויים מהותיים יפורסמו באתר לפחות 30 יום
+            לפני כניסתם לתוקף. התאריך בראש הדף מציין את העדכון האחרון.
+          </p>
+
+          <h2>15. סמכות שיפוט</h2>
+          <p>
+            מדיניות פרטיות זו כפופה לדיני מדינת ישראל. כל סכסוך הנוגע לה יתברר בבית המשפט
+            המוסמך בישראל.
+          </p>
+
+          <h2>16. יצירת קשר</h2>
+          <p>
+            שם העסק: אקליפס מדיה | עוסק מורשה: 207383308 | דוא"ל:{' '}
+            <a href="mailto:privacy@pixflow-ai.com">privacy@pixflow-ai.com</a> |{' '}
+            אתר: <a href="https://pixflow-ai.com">pixflow-ai.com</a>
           </p>
         </div>
       </section>
