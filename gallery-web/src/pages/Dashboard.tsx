@@ -78,21 +78,50 @@ export function Dashboard() {
   async function createGallery() {
     if (!newName.trim()) return
     setCreating(true)
-    const { error } = await supabase.from('galleries').insert({
+    console.log('Creating gallery with user ID:', user!.id)
+    const insertPayload = {
       name: newName.trim(),
-      event_date: newDate || null,
       business_id: user!.id,
       status: 'draft',
       image_count: 0,
-      delivery_settings: {
-        welcomeStyle,
-        clientHidePhotosEnabled,
-        requireGalleryCode,
-        galleryCode: requireGalleryCode ? galleryCode : null,
-        trackDownloads,
-        feedLayout,
-      },
-    })
+    } as Record<string, unknown>
+    if (newDate) insertPayload.event_date = newDate
+    // Only add delivery_settings if column exists
+    insertPayload.delivery_settings = {
+      accessType: 'public',
+      password: null,
+      downloadsEnabled: true,
+      bulkDownloadEnabled: false,
+      downloadQuality: 'web',
+      studioName: '',
+      logoUrl: null,
+      showFooterCredit: true,
+      galleryTitle: newName.trim(),
+      clientName: '',
+      coverImageId: null,
+      coverImageUrl: null,
+      coverCrop: null,
+      galleryDescription: '',
+      eventDate: newDate || '',
+      eventLocation: '',
+      eventType: '',
+      clientSelectionEnabled: false,
+      clientCode: '',
+      layoutMode: '2-col',
+      imageSpacing: 'small',
+      cornerStyle: 'rounded',
+      generateStories: false,
+      showStories: true,
+      welcomeStyle,
+      clientHidePhotosEnabled,
+      requireGalleryCode,
+      galleryCode: requireGalleryCode ? galleryCode : '',
+      trackDownloads,
+      feedLayout,
+    }
+    console.log('Insert payload:', insertPayload)
+    const { data: insertData, error } = await supabase.from('galleries').insert(insertPayload).select()
+    console.log('Insert result:', { data: insertData, error })
     setCreating(false)
     if (error) {
       console.error('Gallery creation failed:', error)
