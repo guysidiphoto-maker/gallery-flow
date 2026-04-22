@@ -64,11 +64,13 @@ export function Dashboard() {
 
   async function fetchGalleries() {
     setLoadingGalleries(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('galleries')
       .select('id, name, image_count, published_at, status')
       .eq('business_id', user!.id)
       .order('created_at', { ascending: false })
+    console.log('fetchGalleries:', { data, error, userId: user!.id })
+    if (error) console.error('Fetch galleries error:', error)
     setGalleries(data ?? [])
     setLoadingGalleries(false)
   }
