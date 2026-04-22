@@ -76,7 +76,7 @@ export function Dashboard() {
   async function createGallery() {
     if (!newName.trim()) return
     setCreating(true)
-    await supabase.from('galleries').insert({
+    const { error } = await supabase.from('galleries').insert({
       name: newName.trim(),
       event_date: newDate || null,
       business_id: user!.id,
@@ -92,6 +92,11 @@ export function Dashboard() {
       },
     })
     setCreating(false)
+    if (error) {
+      console.error('Gallery creation failed:', error)
+      alert(`שגיאה ביצירת גלריה: ${error.message}`)
+      return
+    }
     setShowModal(false)
     setNewName('')
     setNewDate('')
