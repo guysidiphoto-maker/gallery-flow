@@ -767,7 +767,7 @@ export function Dashboard() {
                           }}>
                             <div style={{
                               width: 20, height: 20, borderRadius: '50%', background: '#fff',
-                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(-20px)' : 'translateX(0)',
+                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
                               transition: 'transform .2s',
                             }} />
                           </button>
@@ -794,7 +794,7 @@ export function Dashboard() {
                           }}>
                             <div style={{
                               width: 20, height: 20, borderRadius: '50%', background: '#fff',
-                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(-20px)' : 'translateX(0)',
+                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
                               transition: 'transform .2s',
                             }} />
                           </button>
@@ -825,7 +825,7 @@ export function Dashboard() {
                           }}>
                             <div style={{
                               width: 20, height: 20, borderRadius: '50%', background: '#fff',
-                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(-20px)' : 'translateX(0)',
+                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
                               transition: 'transform .2s',
                             }} />
                           </button>
@@ -866,7 +866,7 @@ export function Dashboard() {
                           }}>
                             <div style={{
                               width: 20, height: 20, borderRadius: '50%', background: '#fff',
-                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(-20px)' : 'translateX(0)',
+                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
                               transition: 'transform .2s',
                             }} />
                           </button>
