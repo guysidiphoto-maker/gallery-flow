@@ -761,12 +761,12 @@ export function Dashboard() {
                             <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
                           </div>
                           <button onClick={() => updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key]))} style={{
-                            width: 44, height: 24, borderRadius: 24, border: 'none', cursor: 'pointer', padding: 2,
+                            minWidth: 48, width: 48, height: 28, borderRadius: 28, border: 'none', cursor: 'pointer', padding: 3, flexShrink: 0,
                             background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
                             transition: 'background .2s', display: 'flex', alignItems: 'center',
                           }}>
                             <div style={{
-                              width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                              width: 22, height: 22, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.3)',
                               transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
                               transition: 'transform .2s',
                             }} />
@@ -788,12 +788,12 @@ export function Dashboard() {
                             <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
                           </div>
                           <button onClick={() => updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key]))} style={{
-                            width: 44, height: 24, borderRadius: 24, border: 'none', cursor: 'pointer', padding: 2,
+                            minWidth: 48, width: 48, height: 28, borderRadius: 28, border: 'none', cursor: 'pointer', padding: 3, flexShrink: 0,
                             background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
                             transition: 'background .2s', display: 'flex', alignItems: 'center',
                           }}>
                             <div style={{
-                              width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                              width: 22, height: 22, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.3)',
                               transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
                               transition: 'transform .2s',
                             }} />
@@ -819,12 +819,12 @@ export function Dashboard() {
                             // Also update the gallery-level column
                             await supabase.from('galleries').update({ face_index_enabled: newVal }).eq('id', editingGallery.id)
                           }} style={{
-                            width: 44, height: 24, borderRadius: 24, border: 'none', cursor: 'pointer', padding: 2,
+                            minWidth: 48, width: 48, height: 28, borderRadius: 28, border: 'none', cursor: 'pointer', padding: 3, flexShrink: 0,
                             background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
                             transition: 'background .2s', display: 'flex', alignItems: 'center',
                           }}>
                             <div style={{
-                              width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                              width: 22, height: 22, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.3)',
                               transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
                               transition: 'transform .2s',
                             }} />
@@ -860,12 +860,12 @@ export function Dashboard() {
                             <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
                           </div>
                           <button onClick={() => updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key]))} style={{
-                            width: 44, height: 24, borderRadius: 24, border: 'none', cursor: 'pointer', padding: 2,
+                            minWidth: 48, width: 48, height: 28, borderRadius: 28, border: 'none', cursor: 'pointer', padding: 3, flexShrink: 0,
                             background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
                             transition: 'background .2s', display: 'flex', alignItems: 'center',
                           }}>
                             <div style={{
-                              width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                              width: 22, height: 22, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.3)',
                               transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
                               transition: 'transform .2s',
                             }} />
