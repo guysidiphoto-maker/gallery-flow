@@ -48,6 +48,7 @@ export function Dashboard() {
   const [newDate, setNewDate] = useState('')
   const [creating, setCreating] = useState(false)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
+  const [businessId, setBusinessId] = useState<string | null>(null)
 
   // New delivery settings state
   const [welcomeStyle, setWelcomeStyle] = useState<'mosaic' | 'cinematic' | 'minimal'>('mosaic')
@@ -59,17 +60,60 @@ export function Dashboard() {
 
   useEffect(() => {
     if (!user) return
-    fetchGalleries()
+    initBusiness()
   }, [user])
+
+  async function initBusiness() {
+    // Look up existing business for this user
+    const { data: biz } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('user_id', user!.id)
+      .maybeSingle()
+
+    if (biz) {
+      setBusinessId(biz.id)
+    } else {
+      // Auto-create a business record for new users
+      const displayName = user!.user_metadata?.full_name || user!.user_metadata?.name || user!.email || 'Studio'
+      const slug = displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36)
+      const { data: newBiz, error } = await supabase
+        .from('businesses')
+        .insert({ user_id: user!.id, business_name: displayName, slug })
+        .select('id')
+        .single()
+      if (error) {
+        console.error('Failed to create business:', error)
+      } else if (newBiz) {
+        setBusinessId(newBiz.id)
+      }
+    }
+    fetchGalleries()
+  }
 
   async function fetchGalleries() {
     setLoadingGalleries(true)
+    // First get business ID if not yet loaded
+    let bId = businessId
+    if (!bId) {
+      const { data: biz } = await supabase
+        .from('businesses')
+        .select('id')
+        .eq('user_id', user!.id)
+        .maybeSingle()
+      bId = biz?.id ?? null
+      if (bId) setBusinessId(bId)
+    }
+    if (!bId) {
+      setGalleries([])
+      setLoadingGalleries(false)
+      return
+    }
     const { data, error } = await supabase
       .from('galleries')
       .select('id, name, image_count, published_at, status')
-      .eq('business_id', user!.id)
+      .eq('business_id', bId)
       .order('created_at', { ascending: false })
-    console.log('fetchGalleries:', { data, error, userId: user!.id })
     if (error) console.error('Fetch galleries error:', error)
     setGalleries(data ?? [])
     setLoadingGalleries(false)
@@ -77,15 +121,49 @@ export function Dashboard() {
 
   async function createGallery() {
     if (!newName.trim()) return
-    setCreating(true)
-    // Step 1: Try minimal insert first to find which columns exist
-    const payload: Record<string, unknown> = {
-      name: newName.trim(),
-      business_id: user!.id,
+    if (!businessId) {
+      alert('שגיאה: לא נמצא חשבון עסקי. נסו לרענן את הדף.')
+      return
     }
-    console.log('Attempting insert with payload:', payload)
-    const { data: insertData, error } = await supabase.from('galleries').insert(payload).select()
-    console.log('Insert result:', { data: insertData, error })
+    setCreating(true)
+    const { error } = await supabase.from('galleries').insert({
+      name: newName.trim(),
+      business_id: businessId,
+      status: 'draft',
+      image_count: 0,
+      delivery_settings: {
+        accessType: 'public',
+        password: null,
+        downloadsEnabled: true,
+        bulkDownloadEnabled: false,
+        downloadQuality: 'web',
+        studioName: '',
+        logoUrl: null,
+        showFooterCredit: true,
+        galleryTitle: newName.trim(),
+        clientName: '',
+        coverImageId: null,
+        coverImageUrl: null,
+        coverCrop: null,
+        galleryDescription: '',
+        eventDate: newDate || '',
+        eventLocation: '',
+        eventType: '',
+        clientSelectionEnabled: false,
+        clientCode: '',
+        layoutMode: '2-col',
+        imageSpacing: 'small',
+        cornerStyle: 'rounded',
+        generateStories: false,
+        showStories: true,
+        welcomeStyle,
+        clientHidePhotosEnabled,
+        requireGalleryCode,
+        galleryCode: requireGalleryCode ? galleryCode : '',
+        trackDownloads,
+        feedLayout,
+      },
+    })
     setCreating(false)
     if (error) {
       console.error('Gallery creation failed:', error)
