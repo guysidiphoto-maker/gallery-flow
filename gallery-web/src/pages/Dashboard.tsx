@@ -477,6 +477,7 @@ export function Dashboard() {
                     position: 'relative' as const,
                     overflow: 'hidden',
                   }}
+                  onClick={() => window.location.href = `/gallery/${g.id}`}
                   onMouseEnter={() => setHoveredCard(g.id)}
                   onMouseLeave={() => setHoveredCard(null)}
                 >
