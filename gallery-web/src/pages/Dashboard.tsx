@@ -8,6 +8,16 @@ interface Gallery {
   image_count: number
   published_at: string | null
   status: string
+  delivery_settings?: Record<string, unknown>
+}
+
+interface GalleryImage {
+  id: string
+  filename: string
+  storage_path: string
+  thumbnail_path: string | null
+  is_top_pick: boolean
+  sort_order: number
 }
 
 const accent = '#6366f1'
@@ -49,6 +59,13 @@ export function Dashboard() {
   const [creating, setCreating] = useState(false)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [businessId, setBusinessId] = useState<string | null>(null)
+  // Gallery editor
+  const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'welcome'>('photos')
+  const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // New delivery settings state
   const [welcomeStyle, setWelcomeStyle] = useState<'mosaic' | 'cinematic' | 'minimal'>('mosaic')
@@ -181,6 +198,70 @@ export function Dashboard() {
     setFeedLayout('grid')
     fetchGalleries()
   }
+
+  async function openGalleryEditor(g: Gallery) {
+    setEditingGallery(g)
+    setEditTab('photos')
+    const { data } = await supabase
+      .from('images')
+      .select('id, filename, storage_path, thumbnail_path, is_top_pick, sort_order')
+      .eq('gallery_id', g.id)
+      .order('sort_order', { ascending: true })
+    setGalleryImages(data ?? [])
+  }
+
+  async function handleFileUpload(files: FileList | null) {
+    if (!files || !editingGallery || !businessId) return
+    setUploading(true)
+    const total = files.length
+    let done = 0
+    for (const file of Array.from(files)) {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = `${editingGallery.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: uploadErr } = await supabase.storage
+        .from('gallery-images')
+        .upload(path, file, { contentType: file.type })
+      if (!uploadErr) {
+        await supabase.from('images').insert({
+          gallery_id: editingGallery.id,
+          filename: file.name,
+          storage_path: path,
+          is_top_pick: false,
+          sort_order: galleryImages.length + done,
+        })
+      }
+      done++
+      setUploadProgress(Math.round((done / total) * 100))
+    }
+    // Update image count
+    await supabase.from('galleries').update({ image_count: galleryImages.length + done }).eq('id', editingGallery.id)
+    // Refresh
+    const { data } = await supabase
+      .from('images')
+      .select('id, filename, storage_path, thumbnail_path, is_top_pick, sort_order')
+      .eq('gallery_id', editingGallery.id)
+      .order('sort_order', { ascending: true })
+    setGalleryImages(data ?? [])
+    setUploading(false)
+    setUploadProgress(0)
+    fetchGalleries()
+  }
+
+  async function updateGallerySetting(key: string, value: unknown) {
+    if (!editingGallery) return
+    const settings = { ...(editingGallery.delivery_settings || {}), [key]: value }
+    await supabase.from('galleries').update({ delivery_settings: settings }).eq('id', editingGallery.id)
+    setEditingGallery({ ...editingGallery, delivery_settings: settings })
+  }
+
+  async function publishGallery() {
+    if (!editingGallery) return
+    await supabase.from('galleries').update({ status: 'live', published_at: new Date().toISOString() }).eq('id', editingGallery.id)
+    setEditingGallery({ ...editingGallery, status: 'live', published_at: new Date().toISOString() })
+    fetchGalleries()
+  }
+
+  const imgUrl = (path: string) => `https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/gallery-images/${path}`
 
   /* ---------- Loading state ---------- */
   if (loading) {
@@ -477,7 +558,7 @@ export function Dashboard() {
                     position: 'relative' as const,
                     overflow: 'hidden',
                   }}
-                  onClick={() => window.location.href = `/gallery/${g.id}`}
+                  onClick={() => openGalleryEditor(g)}
                   onMouseEnter={() => setHoveredCard(g.id)}
                   onMouseLeave={() => setHoveredCard(null)}
                 >
@@ -525,6 +606,303 @@ export function Dashboard() {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* ======= Gallery Editor Modal ======= */}
+        {editingGallery && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            background: 'rgba(0,0,0,.8)', backdropFilter: 'blur(8px)',
+            display: 'flex', alignItems: 'stretch', justifyContent: 'center',
+            animation: 'overlayIn .2s ease both',
+          }} onClick={() => setEditingGallery(null)}>
+            <div style={{
+              background: bg, width: '100%', maxWidth: 1000, margin: '20px',
+              borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              border: `1px solid ${border}`, animation: 'modalIn .3s ease both',
+            }} onClick={e => e.stopPropagation()}>
+              {/* Editor header */}
+              <div style={{
+                padding: '20px 28px', borderBottom: `1px solid ${border}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <button onClick={() => setEditingGallery(null)} style={{
+                    background: 'none', border: 'none', color: textSecondary, cursor: 'pointer', fontSize: 20, padding: 4,
+                  }}>←</button>
+                  <div>
+                    <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>{editingGallery.name}</h2>
+                    <p style={{ fontSize: 12, color: textMuted, margin: '2px 0 0' }}>{galleryImages.length} תמונות · {editingGallery.status === 'live' ? 'פורסם' : 'טיוטה'}</p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <a href={`/gallery/${editingGallery.id}`} target="_blank" style={{
+                    padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600,
+                    background: glass, border: `1px solid ${border}`, color: textSecondary,
+                    textDecoration: 'none', fontFamily: 'inherit',
+                  }}>👁 תצוגה מקדימה</a>
+                  {editingGallery.status !== 'live' && (
+                    <button onClick={publishGallery} style={{
+                      padding: '8px 20px', borderRadius: 10, fontSize: 12, fontWeight: 700,
+                      background: `linear-gradient(135deg, ${accent}, ${accentLight})`, border: 'none',
+                      color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
+                      boxShadow: `0 4px 16px ${accentGlow}`,
+                    }}>🚀 פרסם גלריה</button>
+                  )}
+                </div>
+              </div>
+
+              {/* Editor tabs */}
+              <div style={{
+                display: 'flex', gap: 4, padding: '12px 28px', borderBottom: `1px solid ${border}`,
+                background: bgSubtle,
+              }}>
+                {([
+                  { id: 'photos' as const, label: '📷 תמונות', },
+                  { id: 'settings' as const, label: '⚙️ הגדרות', },
+                  { id: 'welcome' as const, label: '🎬 מסך וואלקם', },
+                ]).map(t => (
+                  <button key={t.id} onClick={() => setEditTab(t.id)} style={{
+                    padding: '8px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                    fontSize: 13, fontWeight: editTab === t.id ? 600 : 400, fontFamily: 'inherit',
+                    background: editTab === t.id ? `rgba(99,102,241,.2)` : 'transparent',
+                    color: editTab === t.id ? accentLight : textSecondary,
+                    transition: 'all .15s',
+                  }}>{t.label}</button>
+                ))}
+              </div>
+
+              {/* Editor content */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: 28 }}>
+
+                {/* ── Photos Tab ── */}
+                {editTab === 'photos' && (
+                  <div>
+                    {/* Upload area */}
+                    <input ref={fileInputRef} type="file" multiple accept="image/*" style={{ display: 'none' }}
+                      onChange={e => handleFileUpload(e.target.files)} />
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = accent }}
+                      onDragLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)' }}
+                      onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; handleFileUpload(e.dataTransfer.files) }}
+                      style={{
+                        border: '2px dashed rgba(255,255,255,.1)', borderRadius: 16,
+                        padding: '48px 28px', textAlign: 'center', cursor: 'pointer',
+                        background: glass, transition: 'border-color .2s, background .2s',
+                        marginBottom: 28,
+                      }}
+                    >
+                      {uploading ? (
+                        <div>
+                          <div style={{ fontSize: 14, color: accentLight, fontWeight: 600, marginBottom: 8 }}>מעלה תמונות... {uploadProgress}%</div>
+                          <div style={{ width: '100%', height: 4, borderRadius: 4, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
+                            <div style={{ width: `${uploadProgress}%`, height: '100%', background: `linear-gradient(90deg, ${accent}, ${accentLight})`, borderRadius: 4, transition: 'width .3s' }} />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.5 }}>📁</div>
+                          <div style={{ fontSize: 16, fontWeight: 600, color: textPrimary, marginBottom: 4 }}>גררו תמונות לכאן</div>
+                          <div style={{ fontSize: 13, color: textMuted }}>או לחצו לבחירת קבצים · JPG, PNG, WebP</div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Image grid */}
+                    {galleryImages.length > 0 && (
+                      <div style={{
+                        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6,
+                        borderRadius: 12, overflow: 'hidden',
+                      }}>
+                        {galleryImages.map(img => (
+                          <div key={img.id} style={{ position: 'relative', aspectRatio: '1', overflow: 'hidden', background: 'rgba(255,255,255,.03)' }}>
+                            <img
+                              src={imgUrl(img.thumbnail_path || img.storage_path)}
+                              alt="" loading="lazy"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            />
+                            {img.is_top_pick && (
+                              <div style={{
+                                position: 'absolute', top: 4, right: 4,
+                                background: 'rgba(99,102,241,.85)', color: '#fff',
+                                fontSize: 8, padding: '2px 6px', borderRadius: 4, fontWeight: 700,
+                              }}>★</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {galleryImages.length === 0 && !uploading && (
+                      <p style={{ textAlign: 'center', color: textMuted, fontSize: 14, padding: '40px 0' }}>
+                        אין עדיין תמונות בגלריה הזו. העלו תמונות למעלה.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Settings Tab ── */}
+                {editTab === 'settings' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: textPrimary }}>הגדרות גלריה</h3>
+
+                    {/* Downloads */}
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>📥 הורדות</div>
+                      {[
+                        { key: 'downloadsEnabled', label: 'אפשר הורדת תמונות', desc: 'אורחים יוכלו להוריד תמונות בודדות' },
+                        { key: 'bulkDownloadEnabled', label: 'הורדה מרוכזת', desc: 'אפשר הורדת כל התמונות בבת אחת' },
+                        { key: 'trackDownloads', label: 'מעקב הורדות', desc: 'עקוב מי הוריד ומתי' },
+                      ].map(opt => (
+                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
+                            <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
+                          </div>
+                          <button onClick={() => updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key]))} style={{
+                            width: 44, height: 24, borderRadius: 24, border: 'none', cursor: 'pointer', padding: 2,
+                            background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
+                            transition: 'background .2s', display: 'flex', alignItems: 'center',
+                          }}>
+                            <div style={{
+                              width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(-20px)' : 'translateX(0)',
+                              transition: 'transform .2s',
+                            }} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Privacy */}
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🔒 פרטיות</div>
+                      {[
+                        { key: 'clientHidePhotosEnabled', label: 'אפשר לאורחים להסתיר תמונות', desc: 'כל אורח יכול להסתיר תמונות שלו מאחרים' },
+                        { key: 'clientSelectionEnabled', label: 'בחירת תמונות', desc: 'אפשר ללקוח לבחור תמונות מועדפות' },
+                      ].map(opt => (
+                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
+                            <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
+                          </div>
+                          <button onClick={() => updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key]))} style={{
+                            width: 44, height: 24, borderRadius: 24, border: 'none', cursor: 'pointer', padding: 2,
+                            background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
+                            transition: 'background .2s', display: 'flex', alignItems: 'center',
+                          }}>
+                            <div style={{
+                              width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(-20px)' : 'translateX(0)',
+                              transition: 'transform .2s',
+                            }} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Layout */}
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🎨 תצוגה</div>
+                      <div style={{ fontSize: 12, color: textMuted, marginBottom: 10 }}>סגנון פיד</div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {(['grid', 'masonry', 'carousel'] as const).map(l => (
+                          <button key={l} onClick={() => updateGallerySetting('feedLayout', l)} style={{
+                            padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                            fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                            background: (editingGallery.delivery_settings?.feedLayout || 'grid') === l ? `rgba(99,102,241,.2)` : glass,
+                            color: (editingGallery.delivery_settings?.feedLayout || 'grid') === l ? accentLight : textSecondary,
+                            transition: 'all .15s',
+                          }}>{l === 'grid' ? 'רשת' : l === 'masonry' ? 'מוזאיקה' : 'קרוסלה'}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Welcome Screen Tab ── */}
+                {editTab === 'welcome' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: textPrimary }}>מסך וואלקם</h3>
+                    <p style={{ fontSize: 13, color: textMuted, margin: 0 }}>בחרו את הסגנון שיראו האורחים כשנכנסים לגלריה</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+                      {([
+                        { id: 'mosaic' as const, label: 'מוזאיקה', desc: 'תמונות גוללות ברקע', emoji: '🖼' },
+                        { id: 'cinematic' as const, label: 'קולנועי', desc: 'תמונת רקע עם אפקט זום', emoji: '🎬' },
+                        { id: 'minimal' as const, label: 'מינימלי', desc: 'רקע שחור, טיפוגרפיה בלבד', emoji: '✨' },
+                      ]).map(s => {
+                        const active = (editingGallery.delivery_settings?.welcomeStyle || 'mosaic') === s.id
+                        return (
+                          <button key={s.id} onClick={() => updateGallerySetting('welcomeStyle', s.id)} style={{
+                            padding: '24px 16px', borderRadius: 16, border: `2px solid ${active ? accent : 'rgba(255,255,255,.06)'}`,
+                            background: active ? `rgba(99,102,241,.08)` : glass, cursor: 'pointer',
+                            textAlign: 'center', fontFamily: 'inherit', transition: 'all .2s',
+                            boxShadow: active ? `0 0 20px ${accentGlow}` : 'none',
+                          }}>
+                            <div style={{ fontSize: 32, marginBottom: 8 }}>{s.emoji}</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: active ? accentLight : textPrimary, marginBottom: 4 }}>{s.label}</div>
+                            <div style={{ fontSize: 11, color: textMuted }}>{s.desc}</div>
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Cover image for cinematic */}
+                    {(editingGallery.delivery_settings?.welcomeStyle || 'mosaic') === 'cinematic' && galleryImages.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>בחרו תמונת רקע</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 6 }}>
+                          {galleryImages.slice(0, 20).map(img => {
+                            const isCover = editingGallery.delivery_settings?.coverImageUrl === imgUrl(img.storage_path)
+                            return (
+                              <div key={img.id}
+                                onClick={() => updateGallerySetting('coverImageUrl', imgUrl(img.storage_path))}
+                                style={{
+                                  aspectRatio: '4/3', borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
+                                  border: `2px solid ${isCover ? accent : 'transparent'}`,
+                                  opacity: isCover ? 1 : 0.6, transition: 'all .15s',
+                                }}>
+                                <img src={imgUrl(img.thumbnail_path || img.storage_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Gallery title */}
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: textSecondary, display: 'block', marginBottom: 6 }}>כותרת גלריה</label>
+                      <input
+                        value={(editingGallery.delivery_settings?.galleryTitle as string) || editingGallery.name}
+                        onChange={e => updateGallerySetting('galleryTitle', e.target.value)}
+                        style={{
+                          width: '100%', padding: '10px 14px', borderRadius: 10,
+                          background: glass, border: `1px solid rgba(255,255,255,.08)`,
+                          color: '#fff', fontSize: 14, fontFamily: 'inherit', outline: 'none',
+                          direction: 'rtl',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: textSecondary, display: 'block', marginBottom: 6 }}>שם לקוח</label>
+                      <input
+                        value={(editingGallery.delivery_settings?.clientName as string) || ''}
+                        onChange={e => updateGallerySetting('clientName', e.target.value)}
+                        placeholder="שם הלקוח או שם האירוע"
+                        style={{
+                          width: '100%', padding: '10px 14px', borderRadius: 10,
+                          background: glass, border: `1px solid rgba(255,255,255,.08)`,
+                          color: '#fff', fontSize: 14, fontFamily: 'inherit', outline: 'none',
+                          direction: 'rtl',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
