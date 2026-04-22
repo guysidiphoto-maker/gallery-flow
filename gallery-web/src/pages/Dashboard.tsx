@@ -43,6 +43,11 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
     @keyframes fadeInUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
     @keyframes modalIn  { from { opacity:0; transform:scale(.96) translateY(10px); } to { opacity:1; transform:scale(1) translateY(0); } }
     @keyframes shimmer  { from { background-position: -400px 0; } to { background-position: 400px 0; } }
+    .dash-toggle { min-width:52px !important; width:52px !important; height:30px !important; border-radius:30px !important; border:none !important; cursor:pointer; padding:3px !important; flex-shrink:0; display:flex !important; align-items:center !important; transition:background .2s; }
+    .dash-toggle-off { background:rgba(255,255,255,.12) !important; }
+    .dash-toggle-on  { background:#6366f1 !important; }
+    .dash-toggle-knob { width:24px !important; height:24px !important; border-radius:50% !important; background:#fff !important; box-shadow:0 1px 6px rgba(0,0,0,.35); transition:transform .25s cubic-bezier(.4,.2,.2,1); }
+    .dash-toggle-on .dash-toggle-knob { transform:translateX(22px); }
     @keyframes pulse    { 0%,100% { opacity:.4; } 50% { opacity:1; } }
     @keyframes overlayIn { from { opacity:0; } to { opacity:1; } }
   `
@@ -760,17 +765,10 @@ export function Dashboard() {
                             <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
                             <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
                           </div>
-                          <button onClick={() => updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key]))} style={{
-                            minWidth: 48, width: 48, height: 28, borderRadius: 28, border: 'none', cursor: 'pointer', padding: 3, flexShrink: 0,
-                            background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
-                            transition: 'background .2s', display: 'flex', alignItems: 'center',
-                          }}>
-                            <div style={{
-                              width: 22, height: 22, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.3)',
-                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
-                              transition: 'transform .2s',
-                            }} />
-                          </button>
+                          <div className={`dash-toggle ${editingGallery.delivery_settings?.[opt.key] ? 'dash-toggle-on' : 'dash-toggle-off'}`}
+                            onClick={(e) => { e.stopPropagation(); updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key])) }}>
+                            <div className="dash-toggle-knob" />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -787,17 +785,10 @@ export function Dashboard() {
                             <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
                             <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
                           </div>
-                          <button onClick={() => updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key]))} style={{
-                            minWidth: 48, width: 48, height: 28, borderRadius: 28, border: 'none', cursor: 'pointer', padding: 3, flexShrink: 0,
-                            background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
-                            transition: 'background .2s', display: 'flex', alignItems: 'center',
-                          }}>
-                            <div style={{
-                              width: 22, height: 22, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.3)',
-                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
-                              transition: 'transform .2s',
-                            }} />
-                          </button>
+                          <div className={`dash-toggle ${editingGallery.delivery_settings?.[opt.key] ? 'dash-toggle-on' : 'dash-toggle-off'}`}
+                            onClick={(e) => { e.stopPropagation(); updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key])) }}>
+                            <div className="dash-toggle-knob" />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -813,22 +804,15 @@ export function Dashboard() {
                             <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
                             <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
                           </div>
-                          <button onClick={async () => {
-                            const newVal = !(editingGallery.delivery_settings?.[opt.key])
-                            await updateGallerySetting(opt.key, newVal)
-                            // Also update the gallery-level column
-                            await supabase.from('galleries').update({ face_index_enabled: newVal }).eq('id', editingGallery.id)
-                          }} style={{
-                            minWidth: 48, width: 48, height: 28, borderRadius: 28, border: 'none', cursor: 'pointer', padding: 3, flexShrink: 0,
-                            background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
-                            transition: 'background .2s', display: 'flex', alignItems: 'center',
-                          }}>
-                            <div style={{
-                              width: 22, height: 22, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.3)',
-                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
-                              transition: 'transform .2s',
-                            }} />
-                          </button>
+                          <div className={`dash-toggle ${editingGallery.delivery_settings?.[opt.key] ? 'dash-toggle-on' : 'dash-toggle-off'}`}
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              const newVal = !(editingGallery.delivery_settings?.[opt.key])
+                              await updateGallerySetting(opt.key, newVal)
+                              await supabase.from('galleries').update({ face_index_enabled: newVal }).eq('id', editingGallery.id)
+                            }}>
+                            <div className="dash-toggle-knob" />
+                          </div>
                         </div>
                       ))}
                       {editingGallery.delivery_settings?.faceIndexEnabled && (
@@ -859,17 +843,10 @@ export function Dashboard() {
                             <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
                             <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
                           </div>
-                          <button onClick={() => updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key]))} style={{
-                            minWidth: 48, width: 48, height: 28, borderRadius: 28, border: 'none', cursor: 'pointer', padding: 3, flexShrink: 0,
-                            background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
-                            transition: 'background .2s', display: 'flex', alignItems: 'center',
-                          }}>
-                            <div style={{
-                              width: 22, height: 22, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.3)',
-                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(20px)' : 'translateX(0)',
-                              transition: 'transform .2s',
-                            }} />
-                          </button>
+                          <div className={`dash-toggle ${editingGallery.delivery_settings?.[opt.key] ? 'dash-toggle-on' : 'dash-toggle-off'}`}
+                            onClick={(e) => { e.stopPropagation(); updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key])) }}>
+                            <div className="dash-toggle-knob" />
+                          </div>
                         </div>
                       ))}
                     </div>
