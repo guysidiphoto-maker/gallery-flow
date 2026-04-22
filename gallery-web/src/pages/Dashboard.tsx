@@ -78,49 +78,13 @@ export function Dashboard() {
   async function createGallery() {
     if (!newName.trim()) return
     setCreating(true)
-    console.log('Creating gallery with user ID:', user!.id)
-    const insertPayload = {
+    // Step 1: Try minimal insert first to find which columns exist
+    const payload: Record<string, unknown> = {
       name: newName.trim(),
       business_id: user!.id,
-      status: 'draft',
-      image_count: 0,
-    } as Record<string, unknown>
-    if (newDate) insertPayload.event_date = newDate
-    // Only add delivery_settings if column exists
-    insertPayload.delivery_settings = {
-      accessType: 'public',
-      password: null,
-      downloadsEnabled: true,
-      bulkDownloadEnabled: false,
-      downloadQuality: 'web',
-      studioName: '',
-      logoUrl: null,
-      showFooterCredit: true,
-      galleryTitle: newName.trim(),
-      clientName: '',
-      coverImageId: null,
-      coverImageUrl: null,
-      coverCrop: null,
-      galleryDescription: '',
-      eventDate: newDate || '',
-      eventLocation: '',
-      eventType: '',
-      clientSelectionEnabled: false,
-      clientCode: '',
-      layoutMode: '2-col',
-      imageSpacing: 'small',
-      cornerStyle: 'rounded',
-      generateStories: false,
-      showStories: true,
-      welcomeStyle,
-      clientHidePhotosEnabled,
-      requireGalleryCode,
-      galleryCode: requireGalleryCode ? galleryCode : '',
-      trackDownloads,
-      feedLayout,
     }
-    console.log('Insert payload:', insertPayload)
-    const { data: insertData, error } = await supabase.from('galleries').insert(insertPayload).select()
+    console.log('Attempting insert with payload:', payload)
+    const { data: insertData, error } = await supabase.from('galleries').insert(payload).select()
     console.log('Insert result:', { data: insertData, error })
     setCreating(false)
     if (error) {
