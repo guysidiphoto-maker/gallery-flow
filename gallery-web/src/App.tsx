@@ -766,7 +766,7 @@ export function App() {
       .from('galleries')
       .select('*')
       .eq('id', id)
-      .eq('status', 'live')
+      .in('status', ['live', 'published', 'draft'])
       .single()
 
     if (ge || !g) {
