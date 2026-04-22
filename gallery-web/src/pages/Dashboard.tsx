@@ -802,6 +802,78 @@ export function Dashboard() {
                       ))}
                     </div>
 
+                    {/* Face Recognition */}
+                    <div style={{ padding: 20, borderRadius: 14, background: 'linear-gradient(135deg, rgba(99,102,241,.06), rgba(139,92,246,.04))', border: `1px solid rgba(99,102,241,.15)` }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🤖 זיהוי פנים AI</div>
+                      {[
+                        { key: 'faceIndexEnabled', label: 'הפעל זיהוי פנים', desc: 'אורחים יוכלו למצוא את עצמם בסלפי' },
+                      ].map(opt => (
+                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
+                            <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
+                          </div>
+                          <button onClick={async () => {
+                            const newVal = !(editingGallery.delivery_settings?.[opt.key])
+                            await updateGallerySetting(opt.key, newVal)
+                            // Also update the gallery-level column
+                            await supabase.from('galleries').update({ face_index_enabled: newVal }).eq('id', editingGallery.id)
+                          }} style={{
+                            width: 44, height: 24, borderRadius: 24, border: 'none', cursor: 'pointer', padding: 2,
+                            background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
+                            transition: 'background .2s', display: 'flex', alignItems: 'center',
+                          }}>
+                            <div style={{
+                              width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(-20px)' : 'translateX(0)',
+                              transition: 'transform .2s',
+                            }} />
+                          </button>
+                        </div>
+                      ))}
+                      {editingGallery.delivery_settings?.faceIndexEnabled && (
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ fontSize: 12, color: textMuted, marginBottom: 8 }}>מצב פרטיות</div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {([
+                              { id: 'open', label: 'פתוח', desc: 'כולם רואים את כל התמונות + אופציה לחיפוש' },
+                              { id: 'private', label: 'פרטי', desc: 'כל אורח רואה רק את התמונות שלו' },
+                            ] as const).map(m => (
+                              <button key={m.id} onClick={() => updateGallerySetting('facePrivacyMode', m.id)} style={{
+                                flex: 1, padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
+                                border: `2px solid ${(editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? accent : 'rgba(255,255,255,.06)'}`,
+                                background: (editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? 'rgba(99,102,241,.08)' : glass,
+                                fontFamily: 'inherit', textAlign: 'right' as const,
+                              }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: (editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? accentLight : textPrimary, marginBottom: 2 }}>{m.label}</div>
+                                <div style={{ fontSize: 10, color: textMuted }}>{m.desc}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                      ].map(opt => (
+                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
+                            <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
+                          </div>
+                          <button onClick={() => updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key]))} style={{
+                            width: 44, height: 24, borderRadius: 24, border: 'none', cursor: 'pointer', padding: 2,
+                            background: editingGallery.delivery_settings?.[opt.key] ? accent : 'rgba(255,255,255,.1)',
+                            transition: 'background .2s', display: 'flex', alignItems: 'center',
+                          }}>
+                            <div style={{
+                              width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                              transform: editingGallery.delivery_settings?.[opt.key] ? 'translateX(-20px)' : 'translateX(0)',
+                              transition: 'transform .2s',
+                            }} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
                     {/* Layout */}
                     <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
                       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🎨 תצוגה</div>
