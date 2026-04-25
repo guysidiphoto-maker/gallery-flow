@@ -94,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     coverUrl = s.coverImageUrl as string
   } else {
     const { data: imgs } = await supabase
-      .from('images').select('storage_path')
+      .from('images').select('storage_path:web_preview_path')
       .eq('gallery_id', gallery.id as string).order('sort_order').limit(1)
     if (imgs?.[0]) {
       coverUrl = `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${imgs[0].storage_path}`

@@ -36,8 +36,10 @@ const SEARCH_RATE_LIMIT_PER_HOUR = 10
 const SEARCH_RATE_WINDOW_MS = 60 * 60 * 1000
 const SEARCH_MAX_SELFIE_BYTES = 5 * 1024 * 1024
 /** Minimum similarity % to count as a match. AWS recommends 80 for general
- *  use; lower = more matches + more false positives. */
-const SEARCH_FACE_MATCH_THRESHOLD = 80
+ *  use; lower = more matches + more false positives. Event galleries skew
+ *  toward recall (better to over-include than miss someone), so we run a bit
+ *  below the AWS default. */
+const SEARCH_FACE_MATCH_THRESHOLD = 70
 /** Max matches returned from the collection per selfie search.
  *  Passed to Rekognition as MaxFaces — default is 1, which is WAY too low. */
 const SEARCH_MAX_RESULTS = 100
@@ -184,7 +186,7 @@ async function processGallery(
 ): Promise<void> {
   const { data: imgs } = await sb
     .from('images')
-    .select('id, storage_path, face_indexed_at')
+    .select('id, storage_path:web_preview_path, face_indexed_at')
     .eq('gallery_id', galleryId)
     .is('face_indexed_at', null)
     .order('sort_order', { ascending: true })
@@ -418,7 +420,21 @@ async function actionSearch(req: Request): Promise<Response> {
   }
 
   await sb.from('rekognition_search_log').insert({ gallery_id: gallery.id, ip_hash: ipHash })
-  return json({ matches })
+
+  // Hydrate matched image rows server-side. In private galleries, anon RLS
+  // blocks the public images SELECT, so the client cannot fetch these on its
+  // own — we have to return them here. Service-role bypasses RLS.
+  let images: Array<Record<string, unknown>> = []
+  if (matches.length > 0) {
+    const ids = matches.map(m => m.imageId)
+    const { data: rows } = await sb
+      .from('images')
+      .select('id, filename, storage_path:web_preview_path, original_path, thumbnail_path, is_top_pick, sort_order, section_id')
+      .in('id', ids)
+    images = rows ?? []
+  }
+
+  return json({ matches, images })
 }
 
 // ─── Dispatcher ─────────────────────────────────────────────────────────────

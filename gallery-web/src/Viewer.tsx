@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import type { GalleryImage } from './types'
 
 interface ViewerProps {
@@ -16,9 +16,26 @@ interface ViewerProps {
 export function Viewer({ images, index, webUrl, downloadUrl, allowDownloads, downloadLabel, onClose, onNavigate, onDownload }: ViewerProps) {
   const img = images[index]
   const total = images.length
+  const currentSrc = webUrl(img)
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
 
   const prev = useCallback(() => onNavigate((index - 1 + total) % total), [index, total, onNavigate])
   const next = useCallback(() => onNavigate((index + 1) % total), [index, total, onNavigate])
+
+  // Reset loaded state on navigation so the previous image clears immediately
+  useEffect(() => {
+    setLoadedSrc(null)
+  }, [currentSrc])
+
+  // Preload next 5 photos
+  useEffect(() => {
+    if (total <= 1) return
+    const count = Math.min(5, total - 1)
+    for (let i = 1; i <= count; i++) {
+      const img = new Image()
+      img.src = webUrl(images[(index + i) % total])
+    }
+  }, [index, total, images, webUrl])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -67,7 +84,14 @@ export function Viewer({ images, index, webUrl, downloadUrl, allowDownloads, dow
           </svg>
         </button>
 
-        <img className="viewer__img" src={webUrl(img)} alt="" />
+        <img
+          key={currentSrc}
+          className="viewer__img"
+          src={currentSrc}
+          alt=""
+          onLoad={() => setLoadedSrc(currentSrc)}
+          style={{ visibility: loadedSrc === currentSrc ? 'visible' : 'hidden' }}
+        />
 
         <button className="viewer__nav viewer__nav--next" onClick={next} aria-label="Next">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

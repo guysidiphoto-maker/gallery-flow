@@ -152,6 +152,17 @@ export async function publishGallery(
 
   const faceIndexEnabled = !!deliverySettings.faceIndexEnabled
 
+  // Plaintext gallery passwords must never be persisted in the anon-readable
+  // delivery_settings JSONB. Pull it out here and hand it to the
+  // set_gallery_password RPC after the row exists so it gets bcrypted into
+  // the dedicated password_hash column.
+  const plaintextPassword =
+    typeof deliverySettings.password === 'string' && deliverySettings.password.length > 0
+      ? deliverySettings.password
+      : null
+  const sanitizedSettings = { ...deliverySettings }
+  delete (sanitizedSettings as Record<string, unknown>).password
+
   const galleryPayload = {
     business_id: businessId,
     local_id: localGalleryId,
@@ -160,7 +171,7 @@ export async function publishGallery(
     client_name: clientName,
     status: 'publishing',
     image_count: imagePaths.length,
-    delivery_settings: deliverySettings,
+    delivery_settings: sanitizedSettings,
     face_index_enabled: faceIndexEnabled,
     face_index_status: faceIndexEnabled ? 'pending' : null,
   }
@@ -179,8 +190,19 @@ export async function publishGallery(
   store.setPublicUrl(publicUrl)
   log('gallery-created', galleryId)
 
+  if (plaintextPassword) {
+    const { error: pwErr } = await supabase.rpc('set_gallery_password', {
+      p_gallery_id: galleryId,
+      p_password: plaintextPassword,
+    })
+    if (pwErr) {
+      store.setPublishStatus('failed')
+      throw new Error(`Failed to set gallery password: ${pwErr.message}`)
+    }
+  }
+
   // ── Step 2a: Upload custom cover image if provided ────────────────────
-  const coverImageUrl = deliverySettings.coverImageUrl as string | null
+  const coverImageUrl = sanitizedSettings.coverImageUrl as string | null
   if (coverImageUrl && typeof coverImageUrl === 'string' && !coverImageUrl.startsWith('http')) {
     // It's a local file path — upload to storage
     try {
@@ -194,9 +216,9 @@ export async function publishGallery(
         if (!coverErr) {
           // Update delivery_settings with the storage URL
           const coverStorageUrl = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${coverPath}`
-          deliverySettings.coverImageUrl = coverStorageUrl
+          sanitizedSettings.coverImageUrl = coverStorageUrl
           await supabase.from('galleries').update({
-            delivery_settings: deliverySettings,
+            delivery_settings: sanitizedSettings,
           }).eq('id', galleryId)
           log('cover-uploaded', coverPath)
         }
@@ -426,6 +448,8 @@ export async function publishGallery(
 
   log('inserting-records', compressedImages.length)
 
+  let insertedCount = 0
+  let firstInsertError: string | null = null
   for (let i = 0; i < imagePaths.length; i++) {
     // IMPORTANT: use the sanitized filename from imageRecords, not the raw
     // basename of imagePaths. compressedMap + the upload queue are both
@@ -439,7 +463,7 @@ export async function publishGallery(
     const payload = {
       gallery_id: galleryId,
       filename,
-      storage_path: `${slug}/${galleryId}/web/${filename}`,
+      web_preview_path: `${slug}/${galleryId}/web/${filename}`,
       original_path: `${slug}/${galleryId}/originals/${filename}`,
       thumbnail_path: `${slug}/${galleryId}/thumbs/${filename}`,
       is_top_pick: isTopPick,
@@ -450,7 +474,19 @@ export async function publishGallery(
     const { error: imgError } = await supabase.from('images').insert(payload).select('id')
     if (imgError) {
       console.error(`[image-insert] FAILED ${filename}:`, imgError.message)
+      if (!firstInsertError) firstInsertError = imgError.message
+    } else {
+      insertedCount++
     }
+  }
+
+  // If every insert failed (e.g. schema drift, RLS denial), don't quietly
+  // mark the gallery live with zero images — fail loudly so the photographer
+  // sees it and we don't ship empty galleries to clients.
+  if (insertedCount === 0 && compressedImages.length > 0) {
+    store.setPublishStatus('failed')
+    await supabase.from('galleries').update({ status: 'failed' }).eq('id', galleryId)
+    throw new Error(`No image records were saved (${compressedImages.length} attempted). First error: ${firstInsertError ?? 'unknown'}`)
   }
 
   // ── Step 8: Mark preview_live ─────────────────────────────────────────
@@ -654,7 +690,7 @@ export async function deleteGalleryFromCloud(
   await deleteCollection(galleryDbId)
 
   // 1. Get all images to delete from storage (paths stored in DB)
-  const { data: imgs } = await supabase.from('images').select('filename, storage_path, original_path, thumbnail_path').eq('gallery_id', galleryDbId)
+  const { data: imgs } = await supabase.from('images').select('filename, storage_path:web_preview_path, original_path, thumbnail_path').eq('gallery_id', galleryDbId)
 
   if (imgs && imgs.length > 0) {
     // 2. Delete files from storage using DB-stored paths
@@ -699,7 +735,7 @@ export async function deleteImageFromCloud(
   // Delete from storage using DB-stored paths; also clean up face records
   // in Rekognition (best-effort) before the image row goes away.
   const { data: imgRow } = await supabase.from('images')
-    .select('id, storage_path, original_path, thumbnail_path')
+    .select('id, storage_path:web_preview_path, original_path, thumbnail_path')
     .eq('gallery_id', galleryDbId).eq('filename', filename).maybeSingle()
   if (imgRow) {
     await deleteImageFaces(galleryDbId, imgRow.id)
@@ -755,7 +791,7 @@ export async function updateGalleryImages(
     // Fetch DB-stored paths for removed images, then delete from storage + DB
     await Promise.all(removed.map(async (filename) => {
       const { data: imgRow } = await supabase.from('images')
-        .select('id, storage_path, original_path, thumbnail_path')
+        .select('id, storage_path:web_preview_path, original_path, thumbnail_path')
         .eq('gallery_id', galleryDbId).eq('filename', filename).maybeSingle()
       if (imgRow) {
         await deleteImageFaces(galleryDbId, imgRow.id)
@@ -818,7 +854,7 @@ export async function updateGalleryImages(
         await supabase.from('images').insert({
           gallery_id: galleryDbId,
           filename,
-          storage_path: webPath,
+          web_preview_path: webPath,
           original_path: origPath,
           thumbnail_path: thumbPath,
           is_top_pick: false,
@@ -985,9 +1021,21 @@ export async function updateGallerySettings(
     return { error: findError?.message || `No live gallery found with local_id=${localGalleryId}` }
   }
 
+  // Strip plaintext password before persisting; route it through the
+  // bcrypt-backed RPC so it never lands in the anon-readable JSONB.
+  const sanitizedSettings = { ...deliverySettings }
+  const plaintextPassword =
+    typeof sanitizedSettings.password === 'string' && sanitizedSettings.password.length > 0
+      ? sanitizedSettings.password
+      : null
+  delete sanitizedSettings.password
+
+  const row = Array.isArray(existing) ? existing[0] : existing
+  const galleryId = (row as { id?: string } | null)?.id
+
   const { error: updateError } = await supabase
     .from('galleries')
-    .update({ delivery_settings: deliverySettings })
+    .update({ delivery_settings: sanitizedSettings })
     .eq('local_id', localGalleryId)
     .eq('status', 'live')
     .select('id')
@@ -995,5 +1043,17 @@ export async function updateGallerySettings(
   if (updateError) {
     return { error: `${updateError.code}: ${updateError.message}` }
   }
+
+  if (galleryId) {
+    // Always call the RPC: when the photographer toggles back to "Public"
+    // we want to clear any previously-stored hash. plaintextPassword === null
+    // means clear.
+    const { error: pwErr } = await supabase.rpc('set_gallery_password', {
+      p_gallery_id: galleryId,
+      p_password: plaintextPassword,
+    })
+    if (pwErr) return { error: `password update failed: ${pwErr.message}` }
+  }
+
   return { error: null }
 }

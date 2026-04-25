@@ -244,17 +244,19 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
   facePrivacyMode: 'open' | 'private' | null
   onFindMyPhotos: () => void
 }) {
-  const [visible, setVisible] = useState(false)
+  // Initial render must already have animations applied. Otherwise the first
+  // paint shows every element at its default style (opacity 1), then the
+  // animation flips them to opacity 0 ("from" via fill-mode both), then they
+  // fade back in — that's the visible flash. Starting `visible` true means
+  // fill-mode both pins each element to opacity 0 during its start delay
+  // from frame one.
+  const [visible] = useState(true)
   const [entered, setEntered] = useState(false)
 
   const isPrivate = faceSearchAvailable && facePrivacyMode === 'private'
   const showFindButton = faceSearchAvailable && facePrivacyMode !== null
   const isMinimal = style === 'minimal'
   const isCinematic = style === 'cinematic'
-
-  useEffect(() => {
-    requestAnimationFrame(() => setVisible(true))
-  }, [])
 
   const handleEnter = () => {
     setEntered(true)
@@ -476,6 +478,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
     <>
       <style>{`
         @keyframes wcScroll { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+        @keyframes wcBgFadeIn { from { opacity: 0; } to { opacity: var(--wc-bg-target, 0.45); } }
         .wc-col { display: flex; flex-direction: column; gap: 2px; }
         .wc-col img {
           width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block;
@@ -486,8 +489,8 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
       <div style={{
         position: 'absolute', inset: 0,
         display: 'flex', gap: 2,
-        opacity: visible ? (isPrivate ? 0.06 : 0.45) : 0,
-        transition: 'opacity 2s ease .2s',
+        ['--wc-bg-target' as string]: isPrivate ? 0.06 : 0.45,
+        animation: 'wcBgFadeIn 2s ease .2s both',
         filter: isPrivate ? 'blur(40px) saturate(.3)' : 'none',
       }}>
         {(() => {
@@ -557,6 +560,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
       <>
         <style>{`
           @keyframes wcCineZoom { 0% { transform: scale(1.05); } 100% { transform: scale(1.12); } }
+          @keyframes wcCineFadeIn { from { opacity: 0; } to { opacity: var(--wc-cine-target, 0.55); } }
           @keyframes wcParticle {
             0% { transform: translateY(0) translateX(0); opacity: 0; }
             10% { opacity: 1; }
@@ -567,10 +571,9 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
         {bgSrc && (
           <div style={{
             position: 'absolute', inset: '-10%',
-            opacity: visible ? (isPrivate ? 0.08 : 0.55) : 0,
-            transition: 'opacity 2.5s ease .2s',
+            ['--wc-cine-target' as string]: isPrivate ? 0.08 : 0.55,
             filter: isPrivate ? 'blur(50px) saturate(.2)' : 'blur(8px) saturate(1.1)',
-            animation: visible ? 'wcCineZoom 20s ease-in-out infinite alternate' : 'none',
+            animation: 'wcCineFadeIn 2.5s ease .2s both, wcCineZoom 20s ease-in-out infinite alternate',
           }}>
             <img
               src={bgSrc}
@@ -881,30 +884,40 @@ export function App() {
       setError('Gallery not found')
       return
     }
-    setGallery(g)
 
-    // Check if already unlocked via sessionStorage
     if (isGalleryUnlocked(id)) {
       setUnlocked(true)
     }
 
-    const { data: imgs } = await supabase
-      .from('images')
-      .select('id, filename, storage_path, original_path, thumbnail_path, is_top_pick, sort_order, section_id')
-      .eq('gallery_id', id)
-      .order('sort_order', { ascending: true })
+    // In private face-search mode, anon RLS blocks the bulk image fetch — the
+    // matched rows come back from the rekognition edge function instead. The
+    // server is the source of truth here; do NOT fall back to a public fetch.
+    const isPrivateFaceMode =
+      ((g.delivery_settings as { facePrivacyMode?: string } | null)?.facePrivacyMode) === 'private'
 
-    setImages(imgs || [])
+    // Fetch images + sections in parallel. We commit them together with the
+    // gallery in a single setState burst so the first render after the loader
+    // already has the data the welcome screen needs — no empty-grid flash.
+    const [imgsRes, secsRes] = await Promise.all([
+      isPrivateFaceMode
+        ? Promise.resolve({ data: [] as GalleryImage[] })
+        : supabase
+            .from('images')
+            .select('id, filename, storage_path:web_preview_path, original_path, thumbnail_path, is_top_pick, sort_order, section_id')
+            .eq('gallery_id', id)
+            .order('sort_order', { ascending: true }),
+      supabase
+        .from('gallery_sections')
+        .select('id, name, sort_order')
+        .eq('gallery_id', id)
+        .order('sort_order', { ascending: true }),
+    ])
+    setImages((imgsRes.data as GalleryImage[]) || [])
+    setSections(secsRes.data || [])
+    setGallery(g)
 
-    // Fetch sections (may be empty for galleries published before sections existed)
-    const { data: secs } = await supabase
-      .from('gallery_sections')
-      .select('id, name, sort_order')
-      .eq('gallery_id', id)
-      .order('sort_order', { ascending: true })
-
-    setSections(secs || [])
-
+    // Stories load after — they appear behind a toggle in section-nav, so
+    // they don't affect the initial welcome screen render.
     const { data: st } = await supabase
       .from('stories')
       .select('*')
@@ -997,7 +1010,6 @@ export function App() {
   const raw: Partial<DeliverySettings> = (gallery.delivery_settings || {}) as Partial<DeliverySettings>
 
   const accessType       = s(raw, 'accessType', 'public')
-  const password         = s(raw, 'password', null)
   const galleryTitle     = s(raw, 'galleryTitle', '') || gallery.name
   const clientName       = s(raw, 'clientName', '') || gallery.client_name
   const coverImageId     = s(raw, 'coverImageId', null)
@@ -1020,12 +1032,14 @@ export function App() {
   const facePrivacyMode = ((raw as Record<string, unknown>).facePrivacyMode as 'open' | 'private') || 'open'
 
   // ── Password gate ──────────────────────────────────────────────────────
-  if (accessType === 'password' && password && !unlocked) {
+  // We no longer have the plaintext password on the client; the gate calls
+  // verify_gallery_password() RPC. We rely on accessType alone to know
+  // whether a gate is required.
+  if (accessType === 'password' && !unlocked) {
     return (
       <PasswordGate
         galleryId={gallery.id}
         galleryName={galleryTitle}
-        password={password}
         onUnlock={handleUnlock}
       />
     )
@@ -1103,10 +1117,15 @@ export function App() {
             lang={lang}
             onClose={() => setShowFaceSearch(false)}
             onSelfieCapture={(url) => setFaceSelfieUrl(url)}
-            onMatches={(ids) => {
+            onMatches={(ids, serverImages) => {
               setFaceMatchIds(new Set(ids))
               setFaceFilterActive(true)
               setShowFaceSearch(false)
+              // In private mode the bulk image fetch was skipped, so the only
+              // images we have are the ones the server hydrated for matches.
+              if (facePrivacyMode === 'private' && serverImages.length > 0) {
+                setImages(serverImages as unknown as GalleryImage[])
+              }
               if (ids.length > 0) setShowWelcome(false)
             }}
             onBrowseAll={() => {
@@ -1729,10 +1748,13 @@ export function App() {
           privacyMode={facePrivacyMode}
           onClose={() => setShowFaceSearch(false)}
           onSelfieCapture={(url) => setFaceSelfieUrl(url)}
-          onMatches={(ids) => {
+          onMatches={(ids, serverImages) => {
             setFaceMatchIds(new Set(ids))
             setFaceFilterActive(true)
             setShowFaceSearch(false)
+            if (facePrivacyMode === 'private' && serverImages.length > 0) {
+              setImages(serverImages as unknown as GalleryImage[])
+            }
             if (showWelcome && ids.length > 0) setShowWelcome(false)
           }}
           onBrowseAll={() => {

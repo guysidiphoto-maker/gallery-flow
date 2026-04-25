@@ -50,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Fallback: first image thumbnail
     const gid = gallery.id as string
     const { data: imgs } = await supabase
-      .from('images').select('storage_path')
+      .from('images').select('storage_path:web_preview_path')
       .eq('gallery_id', gid).order('sort_order').limit(1)
     if (imgs && imgs[0]) {
       coverUrl = `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${imgs[0].storage_path}`

@@ -29,26 +29,26 @@ const faceTexts = {
   },
   he: {
     findYourPhotos: 'מצא את התמונות שלך',
-    takeSelfie: '{ft.takeSelfie}',
+    takeSelfie: 'צלם סלפי מהיר ונמצא את התמונות שלך',
     findMyPhotos: 'מצא את התמונות שלי',
     selfiePrivacy: 'התמונות שלך מוגנות — סלפי לא נשמר',
-    cameraTip: '{ft.cameraTip}',
+    cameraTip: 'צלם סלפי כדי למצוא את התמונות שלך',
     or: 'או',
     uploadPhoto: 'העלה תמונה',
     photosFound: 'תמונות נמצאו',
-    viewYourPhotos: '{ft.viewYourPhotos}',
-    noMatch: '{ft.noMatch}',
+    viewYourPhotos: 'צפה בתמונות שלך',
+    noMatch: 'לא נמצאה התאמה',
     noMatchMsg: 'לא הצלחנו למצוא אותך לפי הסלפי. אפשר לנסות שוב עם תאורה טובה יותר, או לעבור על כל הגלריה.',
     tipsTitle: 'טיפים לזיהוי טוב יותר:',
     tip1: 'ודא שהפנים מוארות היטב',
     tip2: 'הסר משקפי שמש או כובע',
     tip3: 'הסתכל ישר למצלמה',
-    browseAll: '{ft.browseAll}',
-    tryAgain: '{ft.tryAgain}',
-    privateNoMatch: '{ft.privateNoMatch}',
-    privateNoMatchMsg: '{ft.privateNoMatchMsg}',
-    talkToPhotographer: '{ft.talkToPhotographer}',
-    retake: '{ft.retake}',
+    browseAll: 'עבור על כל התמונות',
+    tryAgain: 'נסה שוב',
+    privateNoMatch: 'לא הצלחנו לזהות אותך',
+    privateNoMatchMsg: 'ייתכן שהתמונות שלך אינן זמינות בגלריה זו, או שהסלפי לא היה ברור מספיק',
+    talkToPhotographer: 'אם זה נראה שגוי — דבר עם הצלם',
+    retake: 'צלם שוב',
   },
 }
 
@@ -62,10 +62,48 @@ interface FaceSearchExperienceProps {
   privacyMode: 'open' | 'private'
   /** Gallery language */
   lang?: 'en' | 'he'
-  onMatches: (imageIds: string[]) => void
+  /**
+   * Called with matched image IDs and the hydrated image rows from the server.
+   * In private mode the parent has no other source of image rows, so it must
+   * adopt these as its `images` state.
+   */
+  onMatches: (imageIds: string[], images: ServerImageRow[]) => void
   onBrowseAll: () => void
   onClose: () => void
   onSelfieCapture?: (url: string) => void
+}
+
+interface ServerImageRow {
+  id: string
+  filename: string
+  storage_path: string
+  original_path: string | null
+  thumbnail_path: string | null
+  is_top_pick: boolean
+  sort_order: number
+  section_id: string | null
+}
+
+// Runtime guard for image rows hydrated by the rekognition edge function.
+// The function runs with service-role and is trusted, but we still validate
+// shape + types here so a malformed response (or a future schema drift) can't
+// inject arbitrary objects into `images` state, which feeds <img src> URLs
+// and download handlers.
+function isServerImageRow(v: unknown): v is ServerImageRow {
+  if (!v || typeof v !== 'object') return false
+  const r = v as Record<string, unknown>
+  const isStr = (x: unknown) => typeof x === 'string'
+  const isStrOrNull = (x: unknown) => x === null || typeof x === 'string'
+  return (
+    isStr(r.id) &&
+    isStr(r.filename) &&
+    isStr(r.storage_path) &&
+    isStrOrNull(r.original_path) &&
+    isStrOrNull(r.thumbnail_path) &&
+    typeof r.is_top_pick === 'boolean' &&
+    typeof r.sort_order === 'number' &&
+    isStrOrNull(r.section_id)
+  )
 }
 
 type Phase =
@@ -112,6 +150,7 @@ export function FaceSearchExperience({
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null)
   const [matchCount, setMatchCount] = useState(0)
   const [matchIds, setMatchIds] = useState<string[]>([])
+  const [matchImages, setMatchImages] = useState<ServerImageRow[]>([])
   const [visibleLines, setVisibleLines] = useState(0)
   const [fadeOut, setFadeOut] = useState(false)
 
@@ -177,6 +216,10 @@ export function FaceSearchExperience({
       if (data?.error) throw new Error(String(data.error))
 
       const matches: Array<{ imageId: string; similarity: number }> = data?.matches ?? []
+      const rawImages: unknown = data?.images ?? []
+      const images: ServerImageRow[] = Array.isArray(rawImages)
+        ? rawImages.filter(isServerImageRow)
+        : []
 
       // Clear timers
       lineTimers.forEach(t => clearTimeout(t))
@@ -187,6 +230,7 @@ export function FaceSearchExperience({
       if (matches.length > 0) {
         const ids = matches.map(m => m.imageId)
         setMatchIds(ids)
+        setMatchImages(images)
         setMatchCount(ids.length)
         // Fade out thinking, then show found
         setFadeOut(true)
@@ -270,7 +314,7 @@ export function FaceSearchExperience({
   // ── Handle found CTA ─────────────────────────────────────────────────────
 
   const handleViewPhotos = () => {
-    onMatches(matchIds)
+    onMatches(matchIds, matchImages)
   }
 
   // ── Background images (blurred) ───────────────────────────────────────────

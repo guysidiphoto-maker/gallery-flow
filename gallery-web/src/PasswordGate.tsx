@@ -1,17 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { supabase } from './supabase'
 
 interface PasswordGateProps {
   galleryId: string
   galleryName: string
-  password: string
   onUnlock: () => void
 }
 
 const STORAGE_KEY_PREFIX = 'gf_unlocked_'
 
-export function PasswordGate({ galleryId, galleryName, password, onUnlock }: PasswordGateProps) {
+type VerifyResponse = { ok: boolean; retry_after_seconds?: number }
+
+export function PasswordGate({ galleryId, galleryName, onUnlock }: PasswordGateProps) {
   const [value, setValue] = useState('')
   const [error, setError] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [cooldownLeft, setCooldownLeft] = useState(0)
+  const tickRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (sessionStorage.getItem(STORAGE_KEY_PREFIX + galleryId) === '1') {
@@ -19,16 +24,49 @@ export function PasswordGate({ galleryId, galleryName, password, onUnlock }: Pas
     }
   }, [galleryId, onUnlock])
 
-  function handleSubmit(e: React.FormEvent) {
+  // Tick the cooldown countdown each second.
+  useEffect(() => {
+    if (cooldownLeft <= 0) return
+    tickRef.current = window.setTimeout(() => {
+      setCooldownLeft(s => Math.max(0, s - 1))
+    }, 1000)
+    return () => {
+      if (tickRef.current !== null) window.clearTimeout(tickRef.current)
+    }
+  }, [cooldownLeft])
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (value === password) {
+    if (submitting || cooldownLeft > 0) return
+    setSubmitting(true)
+    const { data, error: rpcErr } = await supabase.rpc('verify_gallery_password', {
+      p_gallery_id: galleryId,
+      p_password: value,
+    })
+    setSubmitting(false)
+
+    const res = (data ?? {}) as VerifyResponse
+    if (!rpcErr && res.ok === true) {
       sessionStorage.setItem(STORAGE_KEY_PREFIX + galleryId, '1')
       onUnlock()
+      return
+    }
+
+    if (res.retry_after_seconds && res.retry_after_seconds > 0) {
+      setCooldownLeft(res.retry_after_seconds)
+      setError(false)
     } else {
       setError(true)
-      setValue('')
     }
+    setValue('')
   }
+
+  const locked = cooldownLeft > 0
+  const btnLabel = submitting
+    ? 'Checking…'
+    : locked
+      ? `Wait ${cooldownLeft}s`
+      : 'View Gallery'
 
   return (
     <div className="pw-gate">
@@ -54,9 +92,17 @@ export function PasswordGate({ galleryId, galleryName, password, onUnlock }: Pas
           value={value}
           onChange={(e) => { setValue(e.target.value); setError(false) }}
           autoFocus
+          disabled={locked}
         />
-        {error && <p className="pw-gate__error">Incorrect password</p>}
-        <button className="pw-gate__btn" type="submit">View Gallery</button>
+        {locked && (
+          <p className="pw-gate__error">
+            Too many attempts. Try again in {cooldownLeft}s.
+          </p>
+        )}
+        {error && !locked && <p className="pw-gate__error">Incorrect password</p>}
+        <button className="pw-gate__btn" type="submit" disabled={submitting || locked}>
+          {btnLabel}
+        </button>
       </form>
     </div>
   )

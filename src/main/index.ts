@@ -124,8 +124,8 @@ function createWindow(): void {
   mainWindow = win
   win.on('closed', () => { mainWindow = null })
 
-  if (isDev) {
-    win.loadURL('http://localhost:5173')
+  if (isDev && process.env.ELECTRON_RENDERER_URL) {
+    win.loadURL(process.env.ELECTRON_RENDERER_URL)
     win.webContents.openDevTools({ mode: 'bottom' })
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
@@ -567,9 +567,8 @@ ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
     const size = img.getSize()
     if (size.width === 0 || size.height === 0) return null
 
-    // Web version: max 2000px on longest side, JPEG quality 80
-    // Optimized for fast upload while maintaining visual quality
-    const maxWeb = 2000
+    // Web version: max 1600px on longest side, JPEG quality 78
+    const maxWeb = 1600
     let webImg = img
     if (size.width > maxWeb || size.height > maxWeb) {
       if (size.width >= size.height) {
@@ -578,7 +577,7 @@ ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
         webImg = img.resize({ height: maxWeb, quality: 'good' })
       }
     }
-    const webJpeg = webImg.toJPEG(80)
+    const webJpeg = webImg.toJPEG(78)
 
     // Thumbnail: max 600px wide, JPEG quality 70 — small and fast
     let thumbImg = img

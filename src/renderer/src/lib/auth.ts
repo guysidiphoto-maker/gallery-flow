@@ -72,14 +72,13 @@ type GoogleOAuthApi = {
 }
 
 // Redirect URL the BrowserWindow watches for. The page itself never has to
-// load — the main process intercepts the navigation and extracts the OAuth
-// payload from query / fragment. This URL must be added to Supabase →
-// Authentication → URL Configuration → Redirect URLs.
-// Use the current window origin so it works regardless of which port the
-// dev server picks (5173, 5174, …) and also in production (file:// origin).
-const OAUTH_REDIRECT_URL = typeof window !== 'undefined' && window.location.origin.startsWith('http')
-  ? `${window.location.origin}/auth/callback`
-  : 'http://localhost:5173/auth/callback'
+// load — the main process intercepts the navigation via webRequest and
+// extracts the OAuth payload from query / fragment before any HTTP request
+// fires. This URL must be added to Supabase → Authentication → URL
+// Configuration → Redirect URLs. It is intentionally fixed (not derived from
+// window.location.origin) so it stays in sync with what's registered in
+// Supabase regardless of which port electron-vite serves the renderer on.
+const OAUTH_REDIRECT_URL = 'http://localhost:5173/auth/callback'
 
 // Electron-friendly Google OAuth: ask Supabase for the authorize URL with
 // skipBrowserRedirect, open it in a child BrowserWindow via IPC, capture the
