@@ -689,6 +689,7 @@ function SectionNav({
   sections,
   sectionCounts,
   totalCount,
+  showAllPill,
   activeId,
   onJump,
   centerToolbar,
@@ -697,6 +698,7 @@ function SectionNav({
   sections: GallerySection[]
   sectionCounts: Record<string, number>
   totalCount: number
+  showAllPill?: boolean
   activeId: string
   onJump: (id: string) => void
   centerToolbar?: React.ReactNode
@@ -707,6 +709,15 @@ function SectionNav({
     <nav className="section-nav">
       <div className="section-nav__inner">
         <div className="section-nav__items">
+          {hasSections && showAllPill && (
+            <button
+              className={`section-nav__item ${activeId === 'all-images' ? 'section-nav__item--active' : ''}`}
+              onClick={() => onJump('all-images')}
+            >
+              <span className="section-nav__label">All Photos</span>
+              <span className="section-nav__count">{totalCount}</span>
+            </button>
+          )}
           {hasSections && (
             <>
               {sections.map(sec => {
@@ -815,7 +826,7 @@ export function App() {
   useEffect(() => {
     if (sections.length === 0 || showWelcome) return
     const ids = sections.length > 0
-      ? sections.map(sec => `section-${sec.id}`)
+      ? ['all-images', ...sections.map(sec => `section-${sec.id}`)]
       : ['all-images']
     const elements = ids
       .map(id => document.getElementById(id))
@@ -1538,6 +1549,7 @@ export function App() {
             acc[sec.id] = images.filter(im => im.section_id === sec.id).length
             return acc
           }, {})}
+          showAllPill={sections.length > 0}
           totalCount={images.length}
           activeId={activeSectionAnchor}
           onJump={(id) => {
@@ -1642,37 +1654,6 @@ export function App() {
         </section>
       )}
 
-      {/* All Images section — only shown when there are no sections */}
-      <section id="all-images" className="gallery-section gallery-section--all" style={sections.length > 0 ? { display: 'none' } : undefined}>
-        {(() => {
-          const mainGridImages = viewerRole === 'client' ? images : visibleImages
-          return (
-        <MasonryGrid
-          images={mainGridImages}
-          thumbUrl={thumbUrl}
-          layoutMode={layoutMode}
-          imageSpacing={imageSpacing}
-          cornerStyle={cornerStyle}
-          onImageClick={(idx) => {
-            setViewerList(mainGridImages)
-            setViewerIndex(idx)
-          }}
-          onDownload={downloadsEnabled ? (img) => handleDownload(downloadUrl(img), img.filename) : undefined}
-          selectMode={selectMode}
-          selectedIds={selectedIds}
-          onToggleSelect={(id) => setSelectedIds(prev => {
-            const next = new Set(prev)
-            if (next.has(id)) next.delete(id); else next.add(id)
-            return next
-          })}
-          clientMode={viewerRole === 'client'}
-          hiddenIds={hiddenImageIds}
-          onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
-        />
-          )
-        })()}
-      </section>
-
       {sections.length > 0 && sections.map(sec => {
         const sectionImages = visibleImages.filter(img => img.section_id === sec.id)
         if (sectionImages.length === 0) return null
@@ -1709,6 +1690,44 @@ export function App() {
           </section>
         )
       })}
+
+      {/* All Images section — always rendered. When sections exist it acts as
+          the "All Photos" view rendered after the per-section grids. */}
+      <section id="all-images" className="gallery-section gallery-section--all">
+        {sections.length > 0 && (
+          <h2 className="gallery-section__heading">
+            <span className="gallery-section__name">All Photos</span>
+            <span className="gallery-section__count">{images.length} {images.length === 1 ? 'photo' : 'photos'}</span>
+          </h2>
+        )}
+        {(() => {
+          const mainGridImages = viewerRole === 'client' ? images : visibleImages
+          return (
+        <MasonryGrid
+          images={mainGridImages}
+          thumbUrl={thumbUrl}
+          layoutMode={layoutMode}
+          imageSpacing={imageSpacing}
+          cornerStyle={cornerStyle}
+          onImageClick={(idx) => {
+            setViewerList(mainGridImages)
+            setViewerIndex(idx)
+          }}
+          onDownload={downloadsEnabled ? (img) => handleDownload(downloadUrl(img), img.filename) : undefined}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
+          onToggleSelect={(id) => setSelectedIds(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id); else next.add(id)
+            return next
+          })}
+          clientMode={viewerRole === 'client'}
+          hiddenIds={hiddenImageIds}
+          onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
+        />
+          )
+        })()}
+      </section>
 
       {/* Footer */}
       {showFooter && (
