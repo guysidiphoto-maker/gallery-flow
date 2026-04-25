@@ -167,6 +167,16 @@ export interface GalleryState {
   openRandomizeModal: () => void
   closeRandomizeModal: () => void
   executeRandomize: (shuffled: ImageFile[], mode: 'all' | 'picks-only') => Promise<void>
+
+  // Filtering
+  searchQuery: string
+  dateFilter: { from: string | null; to: string | null }  // YYYY-MM-DD strings
+  setSearchQuery: (q: string) => void
+  setDateFilter: (filter: { from: string | null; to: string | null }) => void
+  clearFilters: () => void
+
+  // Rename single image (used by keyboard shortcut: select + type number + Enter)
+  renameImage: (imageId: string, requestedBaseName: string) => Promise<{ success: boolean; finalFilename?: string; error?: string }>
 }
 
 export const useGallery = create<GalleryState>((set, get) => ({
@@ -196,6 +206,8 @@ export const useGallery = create<GalleryState>((set, get) => ({
   showRandomizeModal: false,
   showTopPicksTray: false,
   showExportPanel: false,
+  searchQuery: '',
+  dateFilter: { from: null, to: null },
 
   // ── Folder Loading ──────────────────────────────────────────────────────
 
@@ -214,8 +226,8 @@ export const useGallery = create<GalleryState>((set, get) => ({
     set({ isLoading: true, loadError: null })
     try {
       const raw = await window.api.scanFolder(folderPath)
-      // Sort by filename by default
-      raw.sort((a, b) => a.filename.localeCompare(b.filename))
+      // Sort by filename by default — natural sort like Finder (img2 before img10)
+      raw.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }))
       const images: ImageFile[] = raw.map(r => ({
         id: r.path,  // stable ID = original path
         ...r
@@ -269,7 +281,8 @@ export const useGallery = create<GalleryState>((set, get) => ({
 
     switch (mode) {
       case 'filename':
-        sorted.sort((a, b) => a.filename.localeCompare(b.filename))
+        // Natural sort like macOS Finder: "img2.jpg" < "img10.jpg"
+        sorted.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }))
         break
       case 'date-asc':
         sorted.sort((a, b) => {
@@ -701,4 +714,76 @@ export const useGallery = create<GalleryState>((set, get) => ({
   // ── Export Panel ──────────────────────────────────────────────────────────
   openExportPanel: () => set({ showExportPanel: true }),
   closeExportPanel: () => set({ showExportPanel: false }),
+
+  // ── Filters ───────────────────────────────────────────────────────────────
+  setSearchQuery: (q) => set({ searchQuery: q }),
+  setDateFilter: (filter) => set({ dateFilter: filter }),
+  clearFilters: () => set({ searchQuery: '', dateFilter: { from: null, to: null } }),
+
+  // ── Single image rename (keyboard shortcut: number + Enter) ───────────────
+  // If the requested name collides with an existing file in the same folder,
+  // appends a numeric suffix (`_001`, `_002`, …) so the new file sorts right
+  // after the existing one — matches the smart-rename convention.
+  renameImage: async (imageId, requestedBaseName) => {
+    const { images } = get()
+    const img = images.find(i => i.id === imageId)
+    if (!img) return { success: false, error: 'Image not found' }
+
+    // Build the desired filename. If user typed pure digits, zero-pad to 4
+    // to match the standard NNNN.ext convention used elsewhere.
+    const trimmed = requestedBaseName.trim()
+    if (!trimmed) return { success: false, error: 'Empty name' }
+    const isPureDigits = /^\d+$/.test(trimmed)
+    const baseName = isPureDigits ? trimmed.padStart(4, '0') : trimmed
+    const desired = `${baseName}${img.ext.toLowerCase()}`
+
+    // Build set of existing names in the same folder (lowercased), excluding self.
+    const existingNames = new Set(
+      images
+        .filter(i => i.folderPath === img.folderPath && i.id !== imageId)
+        .map(i => i.filename.toLowerCase())
+    )
+
+    // If the desired name is free, use it; otherwise insert-after the conflict.
+    let finalFilename = desired
+    if (existingNames.has(desired.toLowerCase())) {
+      finalFilename = generateInsertAfterName(desired, img.ext.toLowerCase(), existingNames)
+    }
+
+    if (finalFilename.toLowerCase() === img.filename.toLowerCase()) {
+      // No-op rename
+      return { success: true, finalFilename: img.filename }
+    }
+
+    const newPath = join(img.folderPath, finalFilename)
+    const result = await window.api.renameFile(img.path, newPath)
+    if (!result.success) {
+      get().addToast(`Rename failed: ${result.error ?? 'unknown error'}`, 'error')
+      return { success: false, error: result.error }
+    }
+
+    // Update store: filename + path, keep stable id
+    const historyEntry: RenameHistoryEntry = {
+      id: nanoid(),
+      timestamp: Date.now(),
+      description: `Renamed "${img.filename}" → "${finalFilename}"`,
+      operations: [{
+        imageId: img.id,
+        oldPath: img.path,
+        oldFilename: img.filename,
+        newPath,
+        newFilename: finalFilename,
+      }]
+    }
+
+    set(state => ({
+      images: state.images.map(i =>
+        i.id === imageId ? { ...i, filename: finalFilename, path: newPath } : i
+      ),
+      renameHistory: [historyEntry, ...state.renameHistory].slice(0, 50),
+    }))
+
+    get().addToast(`Renamed to ${finalFilename}`, 'success', historyEntry.id)
+    return { success: true, finalFilename }
+  },
 }))

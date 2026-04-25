@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGallery } from '../store/gallery'
 import { useSections } from '../store/sections'
 
@@ -25,7 +25,13 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
     viewerImageId,
     toggleTopPicksTray,
     showTopPicksTray,
+    renameImage,
   } = useGallery()
+
+  // Buffered numeric input for rename-by-number shortcut.
+  // Active only while exactly one image is selected.
+  const renameBufferRef = useRef<string>('')
+  const [renameBuffer, setRenameBuffer] = useState<string>('')
 
   const { sections, addSection, assignImagesToSection, isPanelOpen, togglePanel } = useSections()
 
@@ -87,6 +93,44 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
         e.preventDefault()
         prepareApplyOrder()
         return
+      }
+
+      // ── Rename-by-number shortcut ─────────────────────────────────────
+      // While exactly one image is selected:
+      //   - typing a digit appends to the buffer
+      //   - Backspace pops the last digit
+      //   - Enter commits the rename (e.g. "5" → "0005.jpg"; collisions get _001, _002, …)
+      //   - Escape clears the buffer
+      const singleSelectedId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null
+      if (singleSelectedId && !meta) {
+        if (/^[0-9]$/.test(e.key)) {
+          e.preventDefault()
+          const next = (renameBufferRef.current + e.key).slice(0, 8)
+          renameBufferRef.current = next
+          setRenameBuffer(next)
+          return
+        }
+        if (renameBufferRef.current && e.key === 'Backspace') {
+          e.preventDefault()
+          const next = renameBufferRef.current.slice(0, -1)
+          renameBufferRef.current = next
+          setRenameBuffer(next)
+          return
+        }
+        if (renameBufferRef.current && e.key === 'Escape') {
+          e.preventDefault()
+          renameBufferRef.current = ''
+          setRenameBuffer('')
+          return
+        }
+        if (renameBufferRef.current && e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault()
+          const requested = renameBufferRef.current
+          renameBufferRef.current = ''
+          setRenameBuffer('')
+          renameImage(singleSelectedId as string, requested)
+          return
+        }
       }
 
       // Delete / Backspace: delete selected
@@ -256,6 +300,15 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
     togglePreviewMode, prepareApplyOrder,
     toggleTopPickSelected, removeTopPickSelected, openStoryModal, toggleTopPicksTray,
     addSection, assignImagesToSection, isPanelOpen, togglePanel,
+    renameImage,
     options?.onShowShortcuts
   ])
+
+  // Clear the rename buffer if selection changes
+  useEffect(() => {
+    renameBufferRef.current = ''
+    setRenameBuffer('')
+  }, [selectedIds])
+
+  return { renameBuffer }
 }

@@ -27,6 +27,7 @@ import { StatusBar } from './components/StatusBar'
 import { TopPicksTray } from './components/TopPicksTray'
 import { ExportPanel } from './components/ExportPanel'
 import { RenameFab } from './components/RenameFab'
+import { FilterBar } from './components/FilterBar'
 import { ClientGalleryPage } from './components/ClientGalleryPage'
 import { PublishPanel } from './components/PublishPanel'
 import { toLocalURL } from './utils/imageUtils'
@@ -438,7 +439,7 @@ function MainApp({ business }: { business: Business | null }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings>(DEFAULT_BUSINESS_SETTINGS)
   // Register keyboard shortcuts
-  useKeyboardShortcuts({ onShowShortcuts: () => setShowShortcuts(s => !s) })
+  const { renameBuffer } = useKeyboardShortcuts({ onShowShortcuts: () => setShowShortcuts(s => !s) })
 
   const currentProject = projects.find(p => p.id === currentProjectId) || null
 
@@ -1747,6 +1748,7 @@ function MainApp({ business }: { business: Business | null }) {
 
           {/* Main gallery or empty state */}
           <div className={`app__main ${isSectionsPanelOpen ? 'app__main--sections-open' : ''} ${showDuplicatesPanel ? 'app__main--sidebar-open' : ''}`}>
+            {!isLoading && <FilterBar />}
             <div className="gallery-scroll">
               {isLoading ? <GallerySkeleton thumbnailSize={thumbnailSize} /> : <GalleryGrid />}
             </div>
@@ -1875,6 +1877,15 @@ function MainApp({ business }: { business: Business | null }) {
       )}
       <ToastStack />
       <StatusBar />
+
+      {/* Rename-by-number hint (appears while typing digits with one image selected) */}
+      {renameBuffer && (
+        <div className="rename-hint">
+          Rename to:
+          <span className="rename-hint__num">{renameBuffer}</span>
+          <span className="rename-hint__hint">Enter to apply · Esc to cancel</span>
+        </div>
+      )}
 
       {/* Export progress indicator */}
       {exportProgress && (

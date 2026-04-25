@@ -70,6 +70,8 @@ export function GalleryGrid() {
     selectedIds,
     topPickIds,
     thumbnailSize,
+    searchQuery,
+    dateFilter,
     moveToTop,
     moveToBottom,
     selectImage,
@@ -129,6 +131,22 @@ export function GalleryGrid() {
     displayImages = sec
       ? sec.imageIds.map(id => imgMap.get(id)).filter((i): i is ImageFile => !!i)
       : images
+  }
+
+  // Apply name + date filters from the FilterBar
+  const trimmedQuery = searchQuery.trim().toLowerCase()
+  const fromMs = dateFilter.from ? new Date(dateFilter.from + 'T00:00:00').getTime() : null
+  const toMs = dateFilter.to ? new Date(dateFilter.to + 'T23:59:59.999').getTime() : null
+  if (trimmedQuery || fromMs !== null || toMs !== null) {
+    displayImages = displayImages.filter(img => {
+      if (trimmedQuery && !img.filename.toLowerCase().includes(trimmedQuery)) return false
+      if (fromMs !== null || toMs !== null) {
+        const t = img.captureTime ?? img.birthtimeMs ?? img.mtimeMs
+        if (fromMs !== null && t < fromMs) return false
+        if (toMs !== null && t > toMs) return false
+      }
+      return true
+    })
   }
 
   // ── Section membership map ──────────────────────────────────────────────────
