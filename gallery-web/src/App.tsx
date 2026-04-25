@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import JSZip from 'jszip'
 import { supabase, storageUrl } from './supabase'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
 import { Viewer } from './Viewer'
@@ -1355,17 +1356,49 @@ export function App() {
       }
     }
 
-    // Desktop (or mobile fallback): sequential downloads
-    setDlProgress(`Downloading ${imgs.length} photos...`)
+    // Desktop (or mobile fallback): bundle all photos into a single ZIP
+    setDlProgress(`Preparing ${imgs.length} photos...`)
     setDownloadProgress({ current: 0, total: imgs.length })
-    for (let i = 0; i < imgs.length; i++) {
-      setDlProgress(`Downloading ${i + 1} / ${imgs.length}...`)
-      setDownloadProgress({ current: i + 1, total: imgs.length })
-      handleDownload(downloadUrl(imgs[i]), imgs[i].filename)
-      if (imgs.length > 1) await new Promise(r => setTimeout(r, 300))
+    try {
+      const zip = new JSZip()
+      const usedNames = new Set<string>()
+      for (let i = 0; i < imgs.length; i++) {
+        setDlProgress(`Downloading ${i + 1} / ${imgs.length}...`)
+        setDownloadProgress({ current: i + 1, total: imgs.length })
+        try {
+          const res = await fetch(downloadUrl(imgs[i]))
+          const blob = await res.blob()
+          let name = imgs[i].filename || `photo-${i + 1}.jpg`
+          if (usedNames.has(name)) {
+            const dot = name.lastIndexOf('.')
+            const base = dot > 0 ? name.slice(0, dot) : name
+            const ext = dot > 0 ? name.slice(dot) : ''
+            name = `${base}-${i + 1}${ext}`
+          }
+          usedNames.add(name)
+          zip.file(name, blob)
+        } catch { /* skip failed image */ }
+      }
+      setDlProgress(`Creating ZIP...`)
+      const zipBlob = await zip.generateAsync(
+        { type: 'blob' },
+        (meta) => setDlProgress(`Creating ZIP ${Math.round(meta.percent)}%...`),
+      )
+      const safeTitle = (galleryTitle || 'gallery').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '') || 'gallery'
+      const url = URL.createObjectURL(zipBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${safeTitle}.zip`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('ZIP download failed:', err)
+    } finally {
+      setDlProgress(null)
+      setDownloadProgress(null)
     }
-    setDlProgress(null)
-    setDownloadProgress(null)
   }
 
   // ── Cover image ─────────────────────────────────────────────────────────
