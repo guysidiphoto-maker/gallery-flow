@@ -833,6 +833,88 @@ function MainApp({ business }: { business: Business | null }) {
     ))
   }, [images, currentProjectId])
 
+  // Auto-sync deletions to cloud for live galleries.
+  // When the user removes an image from a published gallery, also remove the
+  // matching record + storage objects from Supabase so the public link reflects
+  // the change without needing to click "Update Changes".
+  const lastSeenRef = useRef<{ projectId: string; ids: Set<string> } | null>(null)
+  useEffect(() => {
+    if (!currentProjectId) {
+      lastSeenRef.current = null
+      return
+    }
+    const currentIds = new Set(images.map(i => i.id))
+
+    // Project switched (or first run): just snapshot, don't compare.
+    if (!lastSeenRef.current || lastSeenRef.current.projectId !== currentProjectId) {
+      lastSeenRef.current = { projectId: currentProjectId, ids: currentIds }
+      return
+    }
+
+    const prevIds = lastSeenRef.current.ids
+    const removedIds: string[] = []
+    for (const id of prevIds) if (!currentIds.has(id)) removedIds.push(id)
+    lastSeenRef.current = { projectId: currentProjectId, ids: currentIds }
+
+    if (removedIds.length === 0) return
+
+    const project = projectsRef.current.find(p => p.id === currentProjectId)
+    if (!project) return
+    const ps = project.publishState
+    if (!ps || ps.status !== 'live' || !ps.galleryDbId) return
+
+    // Only sync removals that were actually in the published snapshot.
+    const publishedSet = new Set(ps.publishedImageIds || [])
+    const toDelete = removedIds.filter(id => publishedSet.has(id))
+    if (toDelete.length === 0) return
+
+    const galleryDbId = ps.galleryDbId
+    ;(async () => {
+      const filenames: string[] = []
+      for (const id of toDelete) {
+        const reg = imageRegistry[id]
+        if (reg?.filename) filenames.push(reg.filename)
+      }
+      if (filenames.length === 0) return
+
+      const results = await Promise.all(
+        filenames.map(fn => deleteImageFromCloud(galleryDbId, fn))
+      )
+      const failed = results.filter(r => r.error).length
+      const succeeded = filenames.length - failed
+
+      if (succeeded > 0) {
+        // Update the published snapshot so a later "Update Changes" doesn't
+        // try to delete the same files again.
+        setProjects(prev => prev.map(p => {
+          if (p.id !== currentProjectId) return p
+          if (!p.publishState) return p
+          const remaining = (p.publishState.publishedImageIds || []).filter(id => !toDelete.includes(id))
+          return {
+            ...p,
+            publishState: {
+              ...p.publishState,
+              publishedImageIds: remaining,
+              lastSyncedAt: new Date().toISOString(),
+            },
+          }
+        }))
+        useGallery.getState().addToast(
+          succeeded === 1
+            ? `Removed 1 photo from the live gallery`
+            : `Removed ${succeeded} photos from the live gallery`,
+          'success'
+        )
+      }
+      if (failed > 0) {
+        useGallery.getState().addToast(
+          `Failed to remove ${failed} photo(s) from cloud — try "Update Changes"`,
+          'error'
+        )
+      }
+    })()
+  }, [images, currentProjectId, imageRegistry])
+
   // Load projects + image registry from prefs on startup
   useEffect(() => {
     ;(async () => {
