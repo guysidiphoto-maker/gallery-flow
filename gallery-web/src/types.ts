@@ -14,6 +14,7 @@ export interface DeliverySettings {
   coverImageUrl: string | null
   coverCrop: { zoom: number; x: number; y: number } | null
   galleryDescription: string
+  welcomeMessage?: string
   eventDate: string
   eventLocation: string
   eventType: string

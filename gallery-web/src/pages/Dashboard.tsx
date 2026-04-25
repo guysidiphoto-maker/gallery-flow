@@ -837,19 +837,6 @@ export function Dashboard() {
                         </div>
                       )}
                     </div>
-                      ].map(opt => (
-                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
-                            <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
-                          </div>
-                          <div className={`dash-toggle ${editingGallery.delivery_settings?.[opt.key] ? 'dash-toggle-on' : 'dash-toggle-off'}`}
-                            onClick={(e) => { e.stopPropagation(); updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key])) }}>
-                            <div className="dash-toggle-knob" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
 
                     {/* Layout */}
                     <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>

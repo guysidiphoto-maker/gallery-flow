@@ -1,0 +1,58 @@
+export type Lang = 'en' | 'he'
+
+const translations = {
+  en: {
+    viewGallery: 'View Gallery',
+    findMyPhotos: 'Find My Photos',
+    photos: 'photos',
+    allImages: 'All Images',
+    downloadAll: 'Download all',
+    saveAll: 'Save All',
+    select: 'Select',
+    selected: 'selected',
+    download: 'Download',
+    save: 'Save',
+    cancel: 'Cancel',
+    downloadOriginal: 'Download Original',
+    saveOriginal: 'Save Original',
+    saving: 'Saving...',
+    deliveredWith: 'Delivered with Pixflow',
+    tapToShare: 'Tap to share → Save to Photos',
+    tapToSave: 'Tap to save photos to your device',
+    howToView: 'How would you like to view this gallery?',
+    guest: 'Guest',
+    imTheClient: "I'm the Client",
+    enterClientCode: 'Enter your client code',
+    invalidCode: 'Invalid code',
+    enter: 'Enter',
+  },
+  he: {
+    viewGallery: 'צפה בגלריה',
+    findMyPhotos: 'מצא את התמונות שלי',
+    photos: 'תמונות',
+    allImages: 'כל התמונות',
+    downloadAll: 'הורד הכל',
+    saveAll: 'שמור הכל',
+    select: 'בחירה',
+    selected: 'נבחרו',
+    download: 'הורד',
+    save: 'שמור',
+    cancel: 'ביטול',
+    downloadOriginal: 'הורד מקור',
+    saveOriginal: 'שמור מקור',
+    saving: 'שומר...',
+    deliveredWith: 'Delivered with Pixflow',
+    tapToShare: 'שתף ← שמור לתמונות',
+    tapToSave: 'לחץ לשמירה למכשיר',
+    howToView: 'איך תרצה לצפות בגלריה?',
+    guest: 'אורח',
+    imTheClient: 'אני הלקוח',
+    enterClientCode: 'הכנס קוד לקוח',
+    invalidCode: 'קוד שגוי',
+    enter: 'כניסה',
+  },
+} as const
+
+export function t(lang: Lang) {
+  return translations[lang] || translations.he
+}

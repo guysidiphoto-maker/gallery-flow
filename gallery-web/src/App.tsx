@@ -4,6 +4,36 @@ import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } f
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
 import { FaceSearchExperience } from './components/FaceSearchExperience'
+import { t, type Lang } from './i18n'
+
+// ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
+
+function ScrollReveal({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const mobile = window.innerWidth < 768
+    const strength = mobile ? 1 : 0.5
+    const thresholds = Array.from({ length: 21 }, (_, i) => i / 20)
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      const ratio = entry.intersectionRatio
+      const isAbove = entry.boundingClientRect.top + entry.boundingClientRect.height / 2 < window.innerHeight / 2
+      const abs = 1 - ratio
+      const opacity = Math.max(0.15, 1 - abs * 0.85 * strength)
+      const rotateX = (isAbove ? 1 : -1) * abs * 5 * strength
+      const scale = 1 + 0.03 * strength - abs * 0.1 * strength
+      const translateY = (isAbove ? -1 : 1) * abs * 20 * strength
+      el.style.opacity = `${opacity}`
+      el.style.transform = `perspective(600px) rotateX(${rotateX}deg) scale(${scale}) translateY(${translateY}px)`
+    }, { threshold: thresholds })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  return <div ref={ref} style={{ willChange: 'opacity, transform', transformStyle: 'preserve-3d' }}>{children}</div>
+}
 
 // ─── Order-preserving Masonry Grid ──────────────────────────────────────────
 
@@ -90,8 +120,8 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
         <div key={ci} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap }}>
           {col.map(({ img, index }) => {
             const isSelected = selectMode && selectedIds?.has(img.id)
-            return (
-              <div key={img.id} className="grid-item" style={{ position: 'relative', borderRadius: rounded ? 8 : 0, overflow: 'hidden' }}>
+            const gridItem = (
+              <div className="grid-item" style={{ position: 'relative', borderRadius: rounded ? 8 : 0, overflow: 'hidden' }}>
                 <img
                   ref={el => { if (el) imgRefs.current.set(img.id, el) }}
                   src={thumbUrl(img)}
@@ -183,6 +213,7 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                 )}
               </div>
             )
+            return <ScrollReveal key={img.id}>{gridItem}</ScrollReveal>
           })}
         </div>
       ))}
@@ -192,10 +223,13 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
 
 // ─── Welcome Screen ─────────────────────────────────────────────────────────
 
-function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos }: {
+function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, welcomeMessage, textAnimation = 'blur', animationSpeed = 'normal', eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos }: {
   style?: 'mosaic' | 'cinematic' | 'minimal'
   galleryTitle: string
   galleryDescription?: string
+  welcomeMessage?: string
+  textAnimation?: 'blur' | 'typewriter' | 'slide'
+  animationSpeed?: 'slow' | 'normal' | 'fast'
   eventDate?: string
   eventLocation?: string
   clientName: string
@@ -288,6 +322,62 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
         </div>
       )}
 
+      {/* Welcome message — animated */}
+      {welcomeMessage && (() => {
+        // Split into tokens: words + line breaks
+        const tokens: Array<{ text: string; isBreak: boolean }> = []
+        welcomeMessage.split('\n').forEach((line, li) => {
+          if (li > 0) tokens.push({ text: '', isBreak: true })
+          line.split(' ').filter(Boolean).forEach(w => tokens.push({ text: w, isBreak: false }))
+        })
+        const wordCount = tokens.filter(t => !t.isBreak).length
+        const msgRTL = /[\u0590-\u05FF\u0600-\u06FF]/.test(welcomeMessage.charAt(0))
+        const speedMul = animationSpeed === 'slow' ? 1.5 : animationSpeed === 'fast' ? 0.6 : 1
+        const baseDelay = 0.8 * speedMul
+        const perWord = Math.min(0.12, 2 / wordCount) * speedMul
+
+        const animKeyframes = {
+          blur: `@keyframes wcWordIn { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: blur(0); } }`,
+          typewriter: `@keyframes wcWordIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`,
+          slide: `@keyframes wcWordIn { from { opacity: 0; transform: translateX(${msgRTL ? '20px' : '-20px'}); } to { opacity: 1; transform: translateX(0); } }`,
+        }
+        const wordDuration = textAnimation === 'typewriter' ? 0.3 : textAnimation === 'slide' ? 0.5 : 0.4
+
+        return (<>
+          <style>{animKeyframes[textAnimation]}</style>
+          <div style={{
+            marginTop: 24, maxWidth: 520, padding: '0 20px',
+            direction: msgRTL ? 'rtl' : 'ltr',
+            textAlign: 'center',
+          }}>
+            <p style={{
+              fontSize: 'clamp(15px, 2vw, 20px)',
+              color: 'rgba(255,255,255,.7)',
+              margin: 0, fontWeight: 400,
+              lineHeight: 1.7,
+              fontStyle: 'italic',
+              letterSpacing: '0.01em',
+            }}>
+              {(() => {
+                let wordIdx = 0
+                return tokens.map((token, ti) => {
+                  if (token.isBreak) return <br key={`br-${ti}`} />
+                  const wi = wordIdx++
+                  return (
+                    <span key={ti} style={{
+                      opacity: 0,
+                      animation: visible ? `wcWordIn ${wordDuration}s cubic-bezier(.16,1,.3,1) ${baseDelay + wi * perWord}s both` : 'none',
+                    }}>
+                      {token.text}{' '}
+                    </span>
+                  )
+                })
+              })()}
+            </p>
+          </div>
+        </>)
+      })()}
+
       {/* Event meta */}
       {(eventDate || eventLocation) && (
         <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .8s both' : 'none' }}>
@@ -328,10 +418,14 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, eve
         </div>
       )}
 
-      {/* Buttons */}
+      {/* Buttons — delayed until welcome message is half done */}
       <div style={{
         display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', marginTop: 32,
-        animation: visible ? 'wcFadeUp .9s cubic-bezier(.16,1,.3,1) 1s both' : 'none',
+        animation: visible ? `wcFadeUp .9s cubic-bezier(.16,1,.3,1) ${
+          welcomeMessage
+            ? (() => { const wc = welcomeMessage.split(/\s+/).filter(Boolean).length; return 2.2 + wc * Math.min(0.12, 2 / wc) * 0.6 })()
+            : 1
+        }s both` : 'none',
       }}>
         {!isPrivate && (
           <button onClick={handleEnter} style={{
@@ -612,13 +706,6 @@ function SectionNav({
         <div className="section-nav__items">
           {hasSections && (
             <>
-              <button
-                className={`section-nav__item ${activeId === 'all-images' ? 'section-nav__item--active' : ''}`}
-                onClick={() => onJump('all-images')}
-              >
-                <span className="section-nav__label">All Images</span>
-                <span className="section-nav__count">{totalCount}</span>
-              </button>
               {sections.map(sec => {
                 const id = `section-${sec.id}`
                 return (
@@ -669,6 +756,7 @@ export function App() {
   const [faceFilterActive, setFaceFilterActive] = useState(false)
   const [showFaceSearch, setShowFaceSearch] = useState(false)
   const [faceSelfieUrl, setFaceSelfieUrl] = useState<string | null>(null)
+  const [savingPhoto, setSavingPhoto] = useState(false)
   // When the fullscreen viewer opens, it navigates through whichever list
   // the clicked tile belonged to (full gallery / face-match filter / section).
   // Snapshotting at click time means next/prev stays inside that subset and
@@ -682,30 +770,50 @@ export function App() {
   // Download progress tracking
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null)
 
-  // Parse gallery ID from URL: /{slug}/gallery/{uuid} or /gallery/{uuid}
-  const galleryId = (() => {
-    const path = window.location.pathname.replace(/\/$/, '')
-    const slugMatch = path.match(/^\/[^/]+\/gallery\/([^/]+)$/)
-    if (slugMatch) return slugMatch[1]
-    const directMatch = path.match(/^\/gallery\/([^/]+)$/)
-    if (directMatch) return directMatch[1]
-    return ''
-  })()
+  // Parse gallery from URL
+  const galleryRef = useMemo(() => {
+    const path = window.location.pathname.replace(/\/+$/, '')
+    const legacy = path.match(/^\/[^/]+\/gallery\/([^/]+)$/)
+    if (legacy) return { type: 'id' as const, value: legacy[1] }
+    const direct = path.match(/^\/gallery\/([^/]+)$/)
+    if (direct) return { type: 'id' as const, value: direct[1] }
+    const clean = path.match(/^\/([^/]+)\/([^/]+)$/)
+    if (clean) return { type: 'slug' as const, businessSlug: clean[1], gallerySlug: clean[2] }
+    return null
+  }, [])
 
   useEffect(() => {
-    if (!galleryId || galleryId === '') {
-      setError('No gallery ID in URL')
-      return
+    if (!galleryRef) { setError('No gallery ID in URL'); return }
+    if (galleryRef.type === 'id') {
+      loadGallery(galleryRef.value)
+    } else {
+      (async () => {
+        try {
+          const { data: bizRows } = await supabase.rpc('get_business_by_slug', { p_slug: galleryRef.businessSlug })
+          const biz = bizRows?.[0]
+          if (!biz) { setError('Gallery not found'); return }
+          const { data: g } = await supabase.from('galleries').select('*')
+            .eq('business_id', biz.id).eq('slug', galleryRef.gallerySlug)
+            .in('status', ['live', 'published', 'draft']).single()
+          if (g) { loadGallery(g.id); return }
+          const { data: byName } = await supabase.from('galleries').select('*')
+            .eq('business_id', biz.id).in('status', ['live', 'published', 'draft'])
+            .ilike('name', galleryRef.gallerySlug.replace(/-/g, '%')).limit(1)
+          if (byName?.[0]) { loadGallery(byName[0].id); return }
+          setError('Gallery not found')
+        } catch { setError('Gallery not found') }
+      })()
     }
-    loadGallery(galleryId)
-  }, [galleryId])
+  }, [galleryRef])
 
   // Scroll-spy: track which section is in view and update activeSectionAnchor.
   // We watch the All Images section + every section block. The first one
   // intersecting wins.
   useEffect(() => {
     if (sections.length === 0 || showWelcome) return
-    const ids = ['all-images', ...sections.map(sec => `section-${sec.id}`)]
+    const ids = sections.length > 0
+      ? sections.map(sec => `section-${sec.id}`)
+      : ['all-images']
     const elements = ids
       .map(id => document.getElementById(id))
       .filter((e): e is HTMLElement => !!e)
@@ -860,6 +968,15 @@ export function App() {
 
   const faceSearchAvailable = gallery?.face_index_status === 'done'
 
+  const lang = (((gallery?.delivery_settings || {}) as Record<string, unknown>).language as Lang) || 'he'
+  const txt = t(lang)
+
+  useEffect(() => {
+    if (!gallery) return
+    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr'
+    document.documentElement.lang = lang
+  }, [gallery, lang])
+
   if (error) {
     return (
       <div className="center-msg">
@@ -884,9 +1001,13 @@ export function App() {
   const galleryTitle     = s(raw, 'galleryTitle', '') || gallery.name
   const clientName       = s(raw, 'clientName', '') || gallery.client_name
   const coverImageId     = s(raw, 'coverImageId', null)
-  const layoutMode       = s(raw, 'layoutMode', '2-col')
-  const imageSpacing     = s(raw, 'imageSpacing', 'small')
-  const cornerStyle      = s(raw, 'cornerStyle', 'sharp')
+  const feedLayout       = (raw as Record<string, unknown>).feedLayout as string || null
+  const isFeedSetting    = feedLayout === 'feed'
+  const isMobileDevice   = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  const isFeedMode       = isFeedSetting && isMobileDevice
+  const layoutMode       = isFeedMode ? '1-col' : s(raw, 'layoutMode', '2-col')
+  const imageSpacing     = isFeedMode ? 'none' : s(raw, 'imageSpacing', 'small')
+  const cornerStyle      = isFeedMode ? 'sharp' : s(raw, 'cornerStyle', 'sharp')
   const studioName       = s(raw, 'studioName', '')
   const studioWebsite    = (raw as Record<string, unknown>).studioWebsite as string || ''
   const showFooterCredit = s(raw, 'showFooterCredit', true)
@@ -912,7 +1033,20 @@ export function App() {
 
   // ── Welcome screen (collage of top picks) ──────────────────────────────
   const topPicks = images.filter(img => img.is_top_pick)
-  const welcomeImages = images.slice(0, 30)
+  // Welcome screen mosaic: take images evenly from all sections
+  const welcomeImages = (() => {
+    if (sections.length <= 1) return images.slice(0, 60)
+    const perSection = Math.ceil(60 / sections.length)
+    const result: GalleryImage[] = []
+    for (const sec of sections) {
+      const secImgs = images.filter(img => img.section_id === sec.id)
+      result.push(...secImgs.slice(0, perSection))
+    }
+    // Add unsectioned images if needed
+    const unsectioned = images.filter(img => !img.section_id)
+    result.push(...unsectioned.slice(0, Math.max(0, 60 - result.length)))
+    return result.slice(0, 60)
+  })()
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   // Demo galleries store their images in the 'demo-uploads' bucket instead
@@ -942,6 +1076,9 @@ export function App() {
           style={rawSettings.welcomeStyle || 'mosaic'}
           galleryTitle={galleryTitle}
           galleryDescription={rawSettings.galleryDescription || ''}
+          welcomeMessage={(rawSettings as Record<string, unknown>).welcomeMessage as string || ''}
+          textAnimation={((rawSettings as Record<string, unknown>).welcomeTextAnimation as 'blur' | 'typewriter' | 'slide') || 'blur'}
+          animationSpeed={((rawSettings as Record<string, unknown>).welcomeAnimationSpeed as 'slow' | 'normal' | 'fast') || 'normal'}
           eventDate={rawSettings.eventDate || ''}
           eventLocation={rawSettings.eventLocation || ''}
           clientName={clientName || ''}
@@ -963,6 +1100,7 @@ export function App() {
             backgroundImages={images.slice(0, 6)}
             storageUrl={(path: string) => storageUrl(imgBucket, path)}
             privacyMode={facePrivacyMode}
+            lang={lang}
             onClose={() => setShowFaceSearch(false)}
             onSelfieCapture={(url) => setFaceSelfieUrl(url)}
             onMatches={(ids) => {
@@ -995,7 +1133,7 @@ export function App() {
           </p>
         )}
         <h2 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: '0 0 8px' }}>{galleryTitle}</h2>
-        <p style={{ fontSize: 14, color: 'rgba(255,255,255,.4)', margin: '0 0 36px' }}>How would you like to view this gallery?</p>
+        <p style={{ fontSize: 14, color: 'rgba(255,255,255,.4)', margin: '0 0 36px' }}>{txt.howToView}</p>
 
         <div style={{ display: 'flex', gap: 14, marginBottom: 24 }}>
           <button
@@ -1009,11 +1147,10 @@ export function App() {
             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.1)' }}
             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.05)' }}
           >
-            Guest
+            {txt.guest}
           </button>
           <button
             onClick={() => {
-              // Show code input
               const el = document.getElementById('client-code-section')
               if (el) el.style.display = 'block'
             }}
@@ -1027,13 +1164,13 @@ export function App() {
             onMouseEnter={e => { e.currentTarget.style.opacity = '0.9' }}
             onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
           >
-            I'm the Client
+            {txt.imTheClient}
           </button>
         </div>
 
         {/* Client code input */}
         <div id="client-code-section" style={{ display: 'none', textAlign: 'center' }}>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', marginBottom: 10 }}>Enter your client code</p>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', marginBottom: 10 }}>{txt.enterClientCode}</p>
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               type="text"
@@ -1078,7 +1215,7 @@ export function App() {
             </button>
           </div>
           {clientCodeError && (
-            <p style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>Invalid code</p>
+            <p style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>{txt.invalidCode}</p>
           )}
         </div>
       </div>
@@ -1114,19 +1251,35 @@ export function App() {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
 
   async function handleDownload(url: string, filename: string) {
+    if (isMobile) {
+      setSavingPhoto(true)
+      try {
+        const res = await fetch(url)
+        const blob = await res.blob()
+        const cleanName = filename.replace(/\.[^.]+$/, '') + '.jpg'
+        const file = new File([blob], cleanName, { type: 'image/jpeg' })
+        if (navigator.share && navigator.canShare?.({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: galleryTitle,
+          })
+        } else {
+          // Fallback: direct download
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(blob)
+          a.download = cleanName
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+        }
+      } catch { /* user cancelled share sheet */ }
+      finally { setSavingPhoto(false) }
+      return
+    }
+
+    // Desktop: fetch blob → trigger download
     const res = await fetch(url)
     const blob = await res.blob()
-
-    // Mobile: use Web Share API → opens native share sheet → "Save to Photos"
-    if (isMobile && navigator.share) {
-      try {
-        const file = new File([blob], filename, { type: blob.type || 'image/jpeg' })
-        await navigator.share({ files: [file] })
-        return
-      } catch {
-        // User cancelled or share failed — fall through to regular download
-      }
-    }
 
     // Desktop / fallback: regular download
     const a = document.createElement('a')
@@ -1150,7 +1303,8 @@ export function App() {
           try {
             const res = await fetch(downloadUrl(imgs[i]))
             const blob = await res.blob()
-            files.push(new File([blob], imgs[i].filename, { type: blob.type || 'image/jpeg' }))
+            const cleanName = imgs[i].filename.replace(/\.[^.]+$/, '') + '.jpg'
+            files.push(new File([blob], cleanName, { type: 'image/jpeg' }))
           } catch { /* skip failed image */ }
         }
         if (files.length > 0) {
@@ -1159,7 +1313,7 @@ export function App() {
           // Web Share API with multiple files — native OS share sheet opens with
           // "Save to Photos" option that saves all at once.
           if (navigator.canShare && navigator.canShare({ files })) {
-            await navigator.share({ files })
+            await navigator.share({ files, title: galleryTitle })
             return
           }
         }
@@ -1198,7 +1352,7 @@ export function App() {
 
   // ── Footer visibility ──────────────────────────────────────────────────
   const showFooter = showFooterCredit || !!studioName
-  const footerText = studioName || 'Delivered with Pixflow'
+  const footerText = studioName || txt.deliveredWith
 
   // ── Should we show stories? ────────────────────────────────────────────
   const showStoriesSection = showStories !== false && stories.length > 0
@@ -1206,8 +1360,8 @@ export function App() {
   // ── Download label (smart: only say "Original" if originals are actually available) ──
   const someOriginalsReady = images.some(img => img.original_path)
   const downloadLabel = isMobile
-    ? (downloadQuality === 'original' && someOriginalsReady ? 'Save Original' : 'Save')
-    : (downloadQuality === 'original' && someOriginalsReady ? 'Download Original' : 'Download')
+    ? (downloadQuality === 'original' && someOriginalsReady ? txt.saveOriginal : txt.save)
+    : (downloadQuality === 'original' && someOriginalsReady ? txt.downloadOriginal : txt.download)
 
   // Hero background image: prefer the photographer's chosen cover; otherwise
   // fall back to the first photo of the gallery (heavily blurred + dimmed)
@@ -1220,7 +1374,27 @@ export function App() {
   return (
     <>
       {/* Hero */}
-      <header className={`hero ${heroBgUrl ? 'hero--has-bg' : ''} ${hasCustomCover ? 'hero--cover' : 'hero--blurred'}`}>
+      {/* Feed mode: mobile sticky header */}
+      {isFeedMode && (
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 100,
+          background: 'linear-gradient(to bottom, rgba(7,7,13,.98), rgba(7,7,13,.92))',
+          backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+          borderBottom: '1px solid rgba(255,255,255,.05)',
+          padding: '16px 20px', textAlign: 'center',
+        }}>
+          <h1 style={{
+            fontFamily: "'Playfair Display', Georgia, serif",
+            fontSize: 20, fontWeight: 700, color: '#fff', margin: 0, lineHeight: 1.2,
+          }}>{galleryTitle}</h1>
+          {studioName && (
+            <p style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', margin: '4px 0 0', fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' as const }}>{studioName}</p>
+          )}
+        </div>
+      )}
+
+      {/* Hero */}
+      <header className={`hero ${heroBgUrl ? 'hero--has-bg' : ''} ${hasCustomCover ? 'hero--cover' : 'hero--blurred'}`} style={isFeedMode ? { display: 'none' } : undefined}>
         {heroBgUrl && (
           <div
             className="hero__bg"
@@ -1385,7 +1559,7 @@ export function App() {
                 className={`gallery-toolbar__btn ${selectMode ? 'gallery-toolbar__btn--active' : ''}`}
                 onClick={() => { setSelectMode(!selectMode); setSelectedIds(new Set()) }}
               >
-                {selectMode ? `${selectedIds.size} selected` : 'Select'}
+                {selectMode ? `${selectedIds.size} ${txt.selected}` : txt.select}
               </button>}
               {selectMode && selectedIds.size > 0 && (
                 <button
@@ -1398,7 +1572,7 @@ export function App() {
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                   </svg>
-                  {isMobile ? 'Save' : 'Download'} {selectedIds.size}
+                  {isMobile ? txt.save : txt.download} {selectedIds.size}
                 </button>
               )}
               {downloadsEnabled && !selectMode && (
@@ -1410,14 +1584,14 @@ export function App() {
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                   </svg>
-                  {dlProgress || (isMobile ? 'Save All' : 'Download all')}
+                  {dlProgress || (isMobile ? txt.saveAll : txt.downloadAll)}
                 </button>
               )}
               {selectMode && (
                 <button
                   className="gallery-toolbar__btn gallery-toolbar__btn--ghost"
                   onClick={() => { setSelectMode(false); setSelectedIds(new Set()) }}
-                >Cancel</button>
+                >{txt.cancel}</button>
               )}
             </>
           ) : null}
@@ -1449,9 +1623,8 @@ export function App() {
         </section>
       )}
 
-      {/* All Images section — heading suppressed because the sticky nav
-          already labels and counts it. */}
-      <section id="all-images" className="gallery-section gallery-section--all">
+      {/* All Images section — only shown when there are no sections */}
+      <section id="all-images" className="gallery-section gallery-section--all" style={sections.length > 0 ? { display: 'none' } : undefined}>
         {(() => {
           const mainGridImages = viewerRole === 'client' ? images : visibleImages
           return (
@@ -1569,6 +1742,21 @@ export function App() {
         />
       )}
 
+      {/* ── Saving photo indicator (mobile) ── */}
+      {savingPhoto && (
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          zIndex: 9999, padding: '20px 32px', borderRadius: 16,
+          background: 'rgba(0,0,0,.85)', backdropFilter: 'blur(20px)',
+          display: 'flex', alignItems: 'center', gap: 12,
+          boxShadow: '0 8px 40px rgba(0,0,0,.5)',
+          animation: 'fadeIn .2s ease',
+        }}>
+          <div className="loader" style={{ width: 20, height: 20 }} />
+          <span style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{txt.saving}</span>
+        </div>
+      )}
+
       {/* ── Download progress overlay ── */}
       {downloadProgress && (
         <div style={{
@@ -1619,8 +1807,8 @@ export function App() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', margin: 0, lineHeight: 1.4 }}>
               {isIOS
-                ? 'Tap to share \u2192 Save to Photos'
-                : 'Tap to save photos to your device'}
+                ? txt.tapToShare
+                : txt.tapToSave}
             </p>
           </div>
 
@@ -1641,7 +1829,7 @@ export function App() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            {isIOS ? 'Save All' : 'Download All'}
+            {isIOS ? txt.saveAll : txt.downloadAll}
           </button>
         </div>
       )}

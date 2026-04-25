@@ -72,6 +72,7 @@ export interface DeliverySettings {
   eventDate: string
   eventLocation: string
   eventType: string
+  welcomeMessage?: string
   clientSelectionEnabled: boolean
   clientCode: string
   layoutMode: '1-col' | '2-col' | '3-col'
@@ -86,6 +87,12 @@ export interface DeliverySettings {
    *  'open' = everyone sees all photos, selfie search is a bonus feature
    *  'private' = viewers must take a selfie and only see their own photos */
   facePrivacyMode: 'open' | 'private'
+  faceIndexSections?: string[]
+  language?: 'en' | 'he'
+  /** Welcome screen animation controls */
+  feedLayout?: 'grid' | 'feed'
+  welcomeTextAnimation?: 'blur' | 'typewriter' | 'slide'
+  welcomeAnimationSpeed?: 'slow' | 'normal' | 'fast'
   creditsSystem: 'locked'
   // Legacy compat
   allowDownloads?: boolean
@@ -111,6 +118,7 @@ export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
   galleryDescription: '',
   eventDate: '',
   eventLocation: '',
+  welcomeMessage: '',
   eventType: '',
   clientSelectionEnabled: false,
   clientCode: '',
@@ -121,6 +129,12 @@ export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
   showStories: true,
   faceIndexEnabled: false,
   facePrivacyMode: 'open',
+  faceIndexSections: undefined,
+  language: 'he',
+  welcomeMessage: '',
+  feedLayout: 'grid',
+  welcomeTextAnimation: 'blur',
+  welcomeAnimationSpeed: 'normal',
   creditsSystem: 'locked',
 }
 
@@ -1786,6 +1800,7 @@ function MainApp({ business }: { business: Business | null }) {
             projectImages={project.imageIds.map(id => imageRegistry[id]).filter(Boolean).map(img => ({ id: img.id, path: toLocalURL(img.path) }))}
             isAlreadyLive={project.publishState?.status === 'live'}
             galleryDbId={project.publishState?.galleryDbId}
+            sections={(project.sections || []).map(sec => ({ id: sec.id, name: sec.name, imageCount: sec.imageIds.length }))}
             onSettingsChange={(s) => {
               setProjects(prev => prev.map(p => p.id === publishProjectId ? { ...p, deliverySettings: s } : p))
               saveLastUsedSettings(s)

@@ -32,6 +32,7 @@ interface PublishPanelProps {
   /** Cloud UUID of the published gallery (only set when editing a live one).
    *  Needed for actions like re-running face indexing on demand. */
   galleryDbId?: string
+  sections?: Array<{ id: string; name: string; imageCount: number }>
 }
 
 // ─── Face Index Progress (shown in publishing + done phases) ────────────────
@@ -570,6 +571,279 @@ function InputField({ value, onChange, placeholder, type = 'text', style: extraS
   )
 }
 
+// ─── Welcome Screen Live Preview ───────────────────────────────────────────
+
+function WelcomePreview({ settings, projectName, clientName }: {
+  settings: DeliverySettings; projectName: string; clientName: string | null
+}) {
+  const [playing, setPlaying] = useState(false)
+  const [key, setKey] = useState(0)
+
+  const title = settings.galleryTitle || projectName || 'Gallery Title'
+  const studio = settings.studioName || 'Studio Name'
+  const client = settings.clientName || clientName || ''
+  const msg = settings.welcomeMessage || ''
+  const anim = settings.welcomeTextAnimation || 'blur'
+  const speed = settings.welcomeAnimationSpeed || 'normal'
+  const speedMul = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.6 : 1
+
+  const replay = () => { setPlaying(false); setTimeout(() => { setKey(k => k + 1); setPlaying(true) }, 50) }
+
+  // Auto-play on mount
+  useEffect(() => { setPlaying(true) }, [])
+
+  const words = msg ? msg.split(' ') : []
+  const perWord = words.length > 0 ? Math.min(0.12, 2 / words.length) * speedMul : 0
+  const baseDelay = 1.6 * speedMul
+  const titleDelay = 0.4 * speedMul
+  const clientDelay = (baseDelay - 0.3) * speedMul
+  const msgEnd = baseDelay + words.length * perWord
+  const btnDelay = msg ? msgEnd * 0.6 : 0.8 * speedMul
+
+  const wordAnim = (wi: number) => {
+    if (!playing) return 'none'
+    const d = baseDelay + wi * perWord
+    if (anim === 'typewriter') return `wcPrevType .3s ease ${d}s both`
+    if (anim === 'slide') return `wcPrevSlide .5s cubic-bezier(.16,1,.3,1) ${d}s both`
+    return `wcPrevBlur .4s ease ${d}s both`
+  }
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ ...S.label, fontSize: 11 }}>Live Preview</div>
+        <button onClick={replay} style={{
+          padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(99,102,241,.25)',
+          background: 'rgba(99,102,241,.1)', color: '#818cf8', fontSize: 10, fontWeight: 600,
+          cursor: 'pointer', fontFamily: 'inherit',
+        }}>▶ Replay</button>
+      </div>
+
+      <style>{`
+        @keyframes wcPrevFade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes wcPrevBlur { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: blur(0); } }
+        @keyframes wcPrevType { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes wcPrevSlide { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+      `}</style>
+
+      {/* Phone frame */}
+      <div key={key} style={{
+        width: '100%', maxWidth: 260, margin: '0 auto',
+        aspectRatio: '9/16', borderRadius: 20,
+        background: '#000', border: '2px solid rgba(255,255,255,.08)',
+        overflow: 'hidden', position: 'relative',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: 20, textAlign: 'center',
+      }}>
+        {/* Mosaic hint bg */}
+        <div style={{
+          position: 'absolute', inset: 0, opacity: 0.12,
+          background: 'linear-gradient(135deg, #1a1a2e 25%, #16213e 50%, #0f3460 75%, #1a1a2e 100%)',
+        }} />
+
+        {/* Studio */}
+        <div style={{
+          position: 'relative', zIndex: 1,
+          fontSize: 6, letterSpacing: '0.2em', textTransform: 'uppercase' as const,
+          color: 'rgba(255,255,255,.3)', fontWeight: 500, marginBottom: 8,
+          opacity: 0,
+          animation: playing ? `wcPrevFade .6s ease ${0.2 * speedMul}s both` : 'none',
+        }}>{studio}</div>
+
+        {/* Title */}
+        <div style={{
+          position: 'relative', zIndex: 1,
+          fontSize: 18, fontWeight: 800, color: '#fff', lineHeight: 1.1,
+          fontFamily: "'Playfair Display', Georgia, serif",
+          opacity: 0,
+          animation: playing ? `wcPrevFade .8s cubic-bezier(.16,1,.3,1) ${titleDelay}s both` : 'none',
+        }}>{title}</div>
+
+        {/* Client */}
+        {client && (
+          <div style={{
+            position: 'relative', zIndex: 1,
+            fontSize: 8, color: 'rgba(255,255,255,.4)', marginTop: 6,
+            letterSpacing: '0.1em', textTransform: 'uppercase' as const,
+            opacity: 0,
+            animation: playing ? `wcPrevFade .6s ease ${clientDelay}s both` : 'none',
+          }}>{client}</div>
+        )}
+
+        {/* Welcome message */}
+        {msg && (
+          <div style={{
+            position: 'relative', zIndex: 1,
+            marginTop: 12, fontSize: 8, color: 'rgba(255,255,255,.6)',
+            fontStyle: 'italic', lineHeight: 1.6, maxWidth: '90%',
+          }}>
+            {words.map((w, wi) => (
+              <span key={wi} style={{ opacity: 0, animation: wordAnim(wi) }}>{w} </span>
+            ))}
+          </div>
+        )}
+
+        {/* Button */}
+        <div style={{
+          position: 'relative', zIndex: 1,
+          marginTop: 16, padding: '6px 20px', borderRadius: 20,
+          background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.15)',
+          color: '#fff', fontSize: 8, fontWeight: 600,
+          opacity: 0,
+          animation: playing ? `wcPrevFade .6s ease ${btnDelay}s both` : 'none',
+        }}>View Gallery</div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Side Preview Panel ─────────────────────────────────────────────────────
+
+function SidePreview({ settings, projectName, clientName }: {
+  settings: DeliverySettings; projectName: string; clientName: string | null
+}) {
+  const [viewMode, setViewMode] = useState<'mobile' | 'desktop'>('mobile')
+  const [key, setKey] = useState(0)
+
+  const title = settings.galleryTitle || projectName || 'Gallery Title'
+  const studio = settings.studioName || 'Studio Name'
+  const client = settings.clientName || clientName || ''
+  const msg = settings.welcomeMessage || ''
+  const anim = settings.welcomeTextAnimation || 'blur'
+  const speed = settings.welcomeAnimationSpeed || 'normal'
+  const speedMul = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.6 : 1
+
+  const words = msg ? msg.split(' ') : []
+  const perWord = words.length > 0 ? Math.min(0.12, 2 / words.length) * speedMul : 0
+  const baseDelay = 1.4 * speedMul
+  const msgEnd = baseDelay + words.length * perWord
+  const btnDelay = msg ? msgEnd * 0.6 : 0.7 * speedMul
+
+  const wordAnim = (wi: number) => {
+    const d = baseDelay + wi * perWord
+    if (anim === 'typewriter') return `wcPrevType .3s ease ${d}s both`
+    if (anim === 'slide') return `wcPrevSlide .5s cubic-bezier(.16,1,.3,1) ${d}s both`
+    return `wcPrevBlur .4s ease ${d}s both`
+  }
+
+  // Re-key on any settings change to replay
+  const settingsKey = `${title}|${studio}|${client}|${msg}|${anim}|${speed}|${settings.welcomeStyle}`
+  useEffect(() => { setKey(k => k + 1) }, [settingsKey])
+
+  const isMobile = viewMode === 'mobile'
+  const frameW = isMobile ? 180 : 280
+  const frameH = isMobile ? 320 : 175
+  const titleSize = isMobile ? 16 : 14
+  const studioSize = isMobile ? 5 : 5
+  const clientSize = isMobile ? 7 : 6
+  const msgSize = isMobile ? 7 : 6
+  const btnSize = isMobile ? 7 : 6
+
+  return (
+    <div style={{
+      width: 300, flexShrink: 0, borderLeft: '1px solid rgba(255,255,255,.06)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      padding: '16px 12px', background: 'rgba(0,0,0,.15)',
+      overflowY: 'auto',
+    }}>
+      {/* Mobile / Desktop toggle */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+        {(['mobile', 'desktop'] as const).map(m => (
+          <button key={m} onClick={() => setViewMode(m)} style={{
+            padding: '4px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            fontSize: 10, fontWeight: viewMode === m ? 600 : 400, fontFamily: 'inherit',
+            background: viewMode === m ? 'rgba(99,102,241,.15)' : 'transparent',
+            color: viewMode === m ? '#818cf8' : 'rgba(255,255,255,.35)',
+          }}>
+            {m === 'mobile' ? '📱 Mobile' : '💻 Desktop'}
+          </button>
+        ))}
+        <button onClick={() => setKey(k => k + 1)} style={{
+          padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(99,102,241,.2)',
+          background: 'rgba(99,102,241,.08)', color: '#818cf8', fontSize: 10,
+          cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+        }}>▶</button>
+      </div>
+
+      <style>{`
+        @keyframes wcPrevFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes wcPrevBlur { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: blur(0); } }
+        @keyframes wcPrevType { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes wcPrevSlide { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes wcPrevGlow { 0%,100% { text-shadow: 0 0 20px rgba(99,102,241,0); } 50% { text-shadow: 0 0 30px rgba(99,102,241,.15); } }
+      `}</style>
+
+      {/* Frame */}
+      <div key={key} style={{
+        width: frameW, height: frameH,
+        borderRadius: isMobile ? 18 : 10,
+        background: '#000', border: '2px solid rgba(255,255,255,.08)',
+        overflow: 'hidden', position: 'relative',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: isMobile ? '16px 14px' : '12px 20px', textAlign: 'center',
+      }}>
+        {/* BG hint */}
+        <div style={{
+          position: 'absolute', inset: 0, opacity: 0.15,
+          background: 'linear-gradient(135deg, #1a1a2e, #16213e, #0f3460)',
+        }} />
+
+        {/* Studio */}
+        <div style={{
+          position: 'relative', zIndex: 1,
+          fontSize: studioSize, letterSpacing: '0.18em', textTransform: 'uppercase' as const,
+          color: 'rgba(255,255,255,.3)', fontWeight: 500, marginBottom: 6,
+          opacity: 0, animation: `wcPrevFade .5s ease ${0.2 * speedMul}s both`,
+        }}>{studio}</div>
+
+        {/* Title */}
+        <div style={{
+          position: 'relative', zIndex: 1,
+          fontSize: titleSize, fontWeight: 900, color: '#fff', lineHeight: 1.08,
+          fontFamily: "'Playfair Display', Georgia, serif",
+          opacity: 0, animation: `wcPrevFade .7s cubic-bezier(.16,1,.3,1) ${0.3 * speedMul}s both`,
+        }}>{title}</div>
+
+        {/* Client */}
+        {client && (
+          <div style={{
+            position: 'relative', zIndex: 1,
+            fontSize: clientSize, color: 'rgba(255,255,255,.35)', marginTop: 5,
+            letterSpacing: '0.1em', textTransform: 'uppercase' as const,
+            opacity: 0, animation: `wcPrevFade .5s ease ${0.8 * speedMul}s both`,
+          }}>{client}</div>
+        )}
+
+        {/* Message */}
+        {msg && (
+          <div style={{
+            position: 'relative', zIndex: 1,
+            marginTop: 8, fontSize: msgSize, color: 'rgba(255,255,255,.55)',
+            fontStyle: 'italic', lineHeight: 1.5, maxWidth: '95%',
+          }}>
+            {words.map((w, wi) => (
+              <span key={wi} style={{ opacity: 0, animation: wordAnim(wi) }}>{w} </span>
+            ))}
+          </div>
+        )}
+
+        {/* Button */}
+        <div style={{
+          position: 'relative', zIndex: 1,
+          marginTop: 10, padding: '4px 16px', borderRadius: 16,
+          background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.12)',
+          color: '#fff', fontSize: btnSize, fontWeight: 600,
+          opacity: 0, animation: `wcPrevFade .5s ease ${btnDelay}s both`,
+        }}>View Gallery</div>
+      </div>
+
+      <p style={{ fontSize: 9, color: 'rgba(255,255,255,.2)', marginTop: 8, textAlign: 'center' }}>
+        Live preview — changes update automatically
+      </p>
+    </div>
+  )
+}
+
 // ─── Progress Step ──────────────────────────────────────────────────────────
 
 function PublishStep({ title, detail, state, percent }: {
@@ -605,7 +879,7 @@ export function PublishPanel({
   projectName, clientName, imageCount, topPickCount,
   settings, onSettingsChange, onPublish, onClose, phase,
   error, publicUrl, onRetry, onHide, onCancel, projectImages, isAlreadyLive,
-  galleryDbId,
+  galleryDbId, sections: availableSections,
 }: PublishPanelProps) {
   const pub = usePublish()
   const { progress, publishStatus, isPaused, queueItems, startedAt } = pub
@@ -698,7 +972,7 @@ export function PublishPanel({
 
   return (
     <div className="pub-overlay" onClick={phase === 'settings' || phase === 'editing' || phase === 'done' || phase === 'error' ? onClose : undefined}>
-      <div className="pub" onClick={e => e.stopPropagation()} style={phase === 'settings' || phase === 'editing' ? { maxHeight: '90vh', display: 'flex', flexDirection: 'column' } : undefined}>
+      <div className="pub" onClick={e => e.stopPropagation()} style={phase === 'settings' || phase === 'editing' ? { maxHeight: '90vh', display: 'flex', flexDirection: 'column', maxWidth: 820, width: '95vw' } : undefined}>
         {/* Header */}
         <div className="pub__header">
           <h2 className="pub__title">
@@ -717,11 +991,15 @@ export function PublishPanel({
           )}
         </div>
 
-        <div className="pub__body" style={phase === 'settings' || phase === 'editing' ? { overflowY: 'auto', flex: 1, minHeight: 0 } : undefined}>
+        <div className="pub__body" style={phase === 'settings' || phase === 'editing' ? { overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex' } : undefined}>
 
           {/* ═══ Settings phase ═══ */}
-          {(phase === 'settings' || phase === 'editing') && (
-            <>
+          {(phase === 'settings' || phase === 'editing') && (<>
+            {/* Right side: Live Preview (sticky) */}
+            <SidePreview settings={settings} projectName={projectName} clientName={clientName} />
+
+            {/* Left side: Settings (scrollable) */}
+            <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10,
                 padding: '10px 14px', marginBottom: 16,
@@ -868,6 +1146,18 @@ export function PublishPanel({
                 </div>
               </div>
 
+              {/* Language + Welcome Message */}
+              <div style={S.section}>
+                <p style={S.sectionTitle}>Language & Welcome</p>
+                <div style={S.row}>
+                  <div style={S.label}>Gallery language</div>
+                  <SegmentedControl options={[
+                    { label: '🇮🇱 עברית', value: 'he' as const },
+                    { label: '🇺🇸 English', value: 'en' as const },
+                  ]} value={settings.language || 'he'} onChange={v => update({ language: v })} />
+                </div>
+              </div>
+
               {/* Access */}
               <div style={S.section}>
                 <p style={S.sectionTitle}>Access</p>
@@ -918,6 +1208,13 @@ export function PublishPanel({
               <div style={S.section}>
                 <p style={S.sectionTitle}>Gallery Layout</p>
                 <div style={S.row}>
+                  <div style={S.label}>Style</div>
+                  <SegmentedControl<'grid' | 'feed'> options={[
+                    { label: 'Grid', value: 'grid' }, { label: 'Feed', value: 'feed' },
+                  ]} value={(settings.feedLayout || 'grid') as 'grid' | 'feed'} onChange={v => update({ feedLayout: v })} />
+                </div>
+                {(settings.feedLayout || 'grid') !== 'feed' && (<>
+                <div style={S.row}>
                   <div style={S.label}>Columns</div>
                   <SegmentedControl options={[
                     { label: '1 Column', value: '1-col' as const }, { label: '2 Columns', value: '2-col' as const }, { label: '3 Columns', value: '3-col' as const },
@@ -935,6 +1232,12 @@ export function PublishPanel({
                     { label: 'Sharp', value: 'sharp' as const }, { label: 'Rounded', value: 'rounded' as const },
                   ]} value={settings.cornerStyle} onChange={v => update({ cornerStyle: v })} />
                 </div>
+                </>)}
+                {settings.feedLayout === 'feed' && (
+                  <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(99,102,241,.06)', border: '1px solid rgba(99,102,241,.12)', borderRadius: 6, fontSize: 10, color: 'rgba(255,255,255,.4)', lineHeight: 1.5 }}>
+                    Feed mode: full-width single column on mobile, optimized for scrolling.
+                  </div>
+                )}
               </div>
 
               {/* Welcome Screen Cover Image */}
@@ -943,6 +1246,57 @@ export function PublishPanel({
                 projectImages={projectImages}
                 onUpdate={update}
               />
+
+              {/* Welcome Screen Design */}
+              <div style={S.section}>
+                <p style={S.sectionTitle}>Welcome Screen Design</p>
+
+                {/* Welcome Message */}
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ ...S.label, marginBottom: 6 }}>Welcome message</div>
+                  <textarea
+                    value={settings.welcomeMessage || ''}
+                    onChange={e => update({ welcomeMessage: e.target.value })}
+                    placeholder="Hey! So glad you made it to..."
+                    rows={2}
+                    style={{
+                      ...S.input,
+                      width: '100%', resize: 'vertical',
+                      minHeight: 56, lineHeight: 1.5,
+                    }}
+                    onFocus={e => { e.currentTarget.style.borderColor = S.inputFocusColor }}
+                    onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.07)' }}
+                  />
+                  <div style={{ ...S.sublabel, marginTop: 4 }}>Shown with animation on the welcome screen</div>
+                </div>
+
+                {/* Text Animation Style */}
+                <div style={S.row}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={S.label}>Text animation</div>
+                    <div style={S.sublabel}>How the welcome message appears</div>
+                  </div>
+                  <SegmentedControl options={[
+                    { label: 'Blur', value: 'blur' as const },
+                    { label: 'Type', value: 'typewriter' as const },
+                    { label: 'Slide', value: 'slide' as const },
+                  ]} value={settings.welcomeTextAnimation || 'blur'} onChange={v => update({ welcomeTextAnimation: v })} />
+                </div>
+
+                {/* Animation Speed */}
+                <div style={{ ...S.row, marginBottom: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={S.label}>Animation speed</div>
+                    <div style={S.sublabel}>Title, message, and buttons</div>
+                  </div>
+                  <SegmentedControl options={[
+                    { label: 'Slow', value: 'slow' as const },
+                    { label: 'Normal', value: 'normal' as const },
+                    { label: 'Fast', value: 'fast' as const },
+                  ]} value={settings.welcomeAnimationSpeed || 'normal'} onChange={v => update({ welcomeAnimationSpeed: v })} />
+                </div>
+
+              </div>
 
               {/* Client Selection */}
               <div style={S.section}>
@@ -1028,6 +1382,55 @@ export function PublishPanel({
                     />
                   </div>
                 )}
+                {/* Section picker — choose which sections to index */}
+                {settings.faceIndexEnabled && availableSections && availableSections.length > 1 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ ...S.label, marginBottom: 6 }}>Index sections</div>
+                    <div style={{ ...S.sublabel, marginBottom: 8 }}>
+                      {!settings.faceIndexSections || settings.faceIndexSections.length === 0
+                        ? 'All sections will be indexed'
+                        : `${settings.faceIndexSections.length} of ${availableSections.length} sections selected`}
+                    </div>
+                    {availableSections.map(sec => {
+                      const allSelected = !settings.faceIndexSections || settings.faceIndexSections.length === 0
+                      const isSelected = allSelected || settings.faceIndexSections!.includes(sec.id)
+                      return (
+                        <button key={sec.id} onClick={() => {
+                          const current = settings.faceIndexSections || []
+                          if (current.length === 0) {
+                            update({ faceIndexSections: availableSections.filter(s => s.id !== sec.id).map(s => s.id) })
+                          } else if (isSelected) {
+                            const next = current.filter(id => id !== sec.id)
+                            update({ faceIndexSections: next.length === 0 ? undefined : next })
+                          } else {
+                            const next = [...current, sec.id]
+                            update({ faceIndexSections: next.length === availableSections.length ? undefined : next })
+                          }
+                        }} style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          width: '100%', padding: '8px 10px', marginBottom: 4,
+                          background: isSelected ? 'rgba(99,102,241,.08)' : 'rgba(255,255,255,.02)',
+                          border: `1px solid ${isSelected ? 'rgba(99,102,241,.2)' : 'rgba(255,255,255,.06)'}`,
+                          borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' as const,
+                        }}>
+                          <div style={{
+                            width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                            border: isSelected ? '2px solid #818cf8' : '2px solid rgba(255,255,255,.2)',
+                            background: isSelected ? '#6366f1' : 'transparent',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            {isSelected && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, color: isSelected ? '#fff' : 'rgba(255,255,255,.5)', fontWeight: 500 }}>{sec.name}</div>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,.25)' }}>{sec.imageCount} photos</div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
                 {/* Re-run / run-now button for already-live galleries. The
                     edge function is idempotent — already-indexed images are
                     skipped, so this is safe to call repeatedly. */}
@@ -1184,8 +1587,8 @@ export function PublishPanel({
                     ? 'Update Changes'
                     : 'Publish Gallery'}
               </button>
-            </>
-          )}
+            </div>{/* end left settings column */}
+          </>)}
 
           {/* ═══ Publishing phase (premium multi-step) ═══ */}
           {isPublishing && (

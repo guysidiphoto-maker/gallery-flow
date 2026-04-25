@@ -33,6 +33,8 @@ function Router() {
   // Client public page → Portfolio (auto-generated website)
   if (path.startsWith('/client/') || /^\/[^/]+\/client\//.test(path)) return <PortfolioPage />
   if (path.startsWith('/gallery') || /^\/[^/]+\/gallery\//.test(path)) return <App />
+  // Clean gallery URL: /{business-slug}/{gallery-slug}
+  if (/^\/[^/]+\/[^/]+\/?$/.test(path)) return <App />
 
   // Fallback: redirect to landing
   window.location.replace('/')

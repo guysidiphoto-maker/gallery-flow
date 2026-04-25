@@ -3,6 +3,55 @@ import { supabase } from '../supabase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+const faceTexts = {
+  en: {
+    findYourPhotos: 'Find Your Photos',
+    takeSelfie: 'Take a quick selfie and we\'ll find your photos',
+    findMyPhotos: 'Find my photos',
+    selfiePrivacy: '{ft.selfiePrivacy}',
+    cameraTip: 'Take a selfie to find your photos',
+    or: 'or',
+    uploadPhoto: 'Upload a photo',
+    photosFound: 'photos found',
+    viewYourPhotos: 'View your photos',
+    noMatch: 'No match found',
+    noMatchMsg: 'We couldn\'t find you. Try again with better lighting, or browse all photos.',
+    tipsTitle: '{ft.tipsTitle}',
+    tip1: 'Make sure your face is well-lit',
+    tip2: 'Remove sunglasses or hats',
+    tip3: 'Face the camera directly',
+    browseAll: 'Browse all photos',
+    tryAgain: 'Try again',
+    privateNoMatch: 'Could not identify you',
+    privateNoMatchMsg: 'Your photos may not be available in this gallery, or the selfie wasn\'t clear enough',
+    talkToPhotographer: 'If this seems wrong — talk to the photographer',
+    retake: 'Take photo again',
+  },
+  he: {
+    findYourPhotos: 'מצא את התמונות שלך',
+    takeSelfie: '{ft.takeSelfie}',
+    findMyPhotos: 'מצא את התמונות שלי',
+    selfiePrivacy: 'התמונות שלך מוגנות — סלפי לא נשמר',
+    cameraTip: '{ft.cameraTip}',
+    or: 'או',
+    uploadPhoto: 'העלה תמונה',
+    photosFound: 'תמונות נמצאו',
+    viewYourPhotos: '{ft.viewYourPhotos}',
+    noMatch: '{ft.noMatch}',
+    noMatchMsg: 'לא הצלחנו למצוא אותך לפי הסלפי. אפשר לנסות שוב עם תאורה טובה יותר, או לעבור על כל הגלריה.',
+    tipsTitle: 'טיפים לזיהוי טוב יותר:',
+    tip1: 'ודא שהפנים מוארות היטב',
+    tip2: 'הסר משקפי שמש או כובע',
+    tip3: 'הסתכל ישר למצלמה',
+    browseAll: '{ft.browseAll}',
+    tryAgain: '{ft.tryAgain}',
+    privateNoMatch: '{ft.privateNoMatch}',
+    privateNoMatchMsg: '{ft.privateNoMatchMsg}',
+    talkToPhotographer: '{ft.talkToPhotographer}',
+    retake: '{ft.retake}',
+  },
+}
+
 interface FaceSearchExperienceProps {
   galleryId: string
   /** Gallery images for blurred background */
@@ -11,6 +60,8 @@ interface FaceSearchExperienceProps {
   storageUrl: (path: string) => string
   /** Privacy mode determines not-found behavior */
   privacyMode: 'open' | 'private'
+  /** Gallery language */
+  lang?: 'en' | 'he'
   onMatches: (imageIds: string[]) => void
   onBrowseAll: () => void
   onClose: () => void
@@ -27,13 +78,21 @@ type Phase =
 
 const MAX_SELFIE_BYTES = 5 * 1024 * 1024
 
-// Thinking text lines — Hebrew, casual, human
-const THINKING_LINES = [
-  'רגע... מחפשים אותך',
-  'עוברים על התמונות',
-  'יש מצב שתפסנו אותך...',
-  'עוד שנייה ויש לנו את זה',
-]
+// Thinking text lines per language
+const THINKING_LINES_MAP = {
+  he: [
+    'רגע... מחפשים אותך',
+    'עוברים על התמונות',
+    'יש מצב שתפסנו אותך...',
+    'עוד שנייה ויש לנו את זה',
+  ],
+  en: [
+    'Hold on... searching for you',
+    'Scanning through the photos',
+    'We might have found you...',
+    'Almost there!',
+  ],
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -42,11 +101,13 @@ export function FaceSearchExperience({
   backgroundImages,
   storageUrl,
   privacyMode,
+  lang = 'he',
   onMatches,
   onBrowseAll,
   onClose,
   onSelfieCapture,
 }: FaceSearchExperienceProps) {
+  const ft = faceTexts[lang] || faceTexts.he
   const [phase, setPhase] = useState<Phase>('welcome')
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null)
   const [matchCount, setMatchCount] = useState(0)
@@ -99,7 +160,7 @@ export function FaceSearchExperience({
 
     // Animate thinking lines
     const lineTimers: ReturnType<typeof setTimeout>[] = []
-    THINKING_LINES.forEach((_, i) => {
+    THINKING_LINES_MAP[lang].forEach((_, i) => {
       lineTimers.push(setTimeout(() => setVisibleLines(i + 1), 500 + i * 600))
     })
 
@@ -445,10 +506,10 @@ export function FaceSearchExperience({
 
             <p style={{
               fontSize: 15, color: 'rgba(255,255,255,.4)',
-              margin: '0 0 32px', direction: 'rtl', lineHeight: 1.7,
+              margin: '0 0 32px', direction: lang === 'he' ? 'rtl' : 'ltr', lineHeight: 1.7,
               maxWidth: 280, marginInline: 'auto',
             }}>
-              צלם סלפי קטן ונמצא לך את התמונות שלך
+              {ft.takeSelfie}
             </p>
 
             <button
@@ -472,7 +533,7 @@ export function FaceSearchExperience({
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               </svg>
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,.4)', letterSpacing: '.02em' }}>
-                Your photos are protected — selfies are never stored
+                {ft.selfiePrivacy}
               </span>
             </div>
           </div>
@@ -485,10 +546,10 @@ export function FaceSearchExperience({
           <div style={{ animation: 'fse-fadeIn .5s cubic-bezier(.16,1,.3,1) both' }}>
             <p style={{
               fontSize: 14, color: 'rgba(255,255,255,.45)',
-              margin: '0 0 28px', direction: 'rtl', lineHeight: 1.7,
+              margin: '0 0 28px', direction: lang === 'he' ? 'rtl' : 'ltr', lineHeight: 1.7,
               letterSpacing: '.01em',
             }}>
-              צלם סלפי כדי למצוא את התמונות שלך
+              {ft.cameraTip}
             </p>
 
             {/* Camera viewfinder */}
@@ -587,7 +648,7 @@ export function FaceSearchExperience({
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             }}>
               <span style={{ width: 24, height: 1, background: 'rgba(255,255,255,.1)', display: 'inline-block' }} />
-              or
+              {ft.or}
               <span style={{ width: 24, height: 1, background: 'rgba(255,255,255,.1)', display: 'inline-block' }} />
             </p>
             <button
@@ -601,7 +662,7 @@ export function FaceSearchExperience({
               onMouseEnter={e => { e.currentTarget.style.color = 'rgba(99,102,241,.85)' }}
               onMouseLeave={e => { e.currentTarget.style.color = 'rgba(99,102,241,.55)' }}
             >
-              Upload a photo
+              {ft.uploadPhoto}
             </button>
           </div>
         )}
@@ -685,9 +746,9 @@ export function FaceSearchExperience({
             {/* Thinking text lines */}
             <div style={{
               minHeight: 110, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', gap: 10, direction: 'rtl',
+              alignItems: 'center', gap: 10, direction: lang === 'he' ? 'rtl' : 'ltr',
             }}>
-              {THINKING_LINES.map((line, i) => (
+              {THINKING_LINES_MAP[lang].map((line, i) => (
                 <p
                   key={i}
                   style={{
@@ -766,7 +827,7 @@ export function FaceSearchExperience({
 
             <h2 style={{
               fontSize: 30, fontWeight: 800, color: '#fff',
-              margin: '0 0 8px', direction: 'rtl',
+              margin: '0 0 8px', direction: lang === 'he' ? 'rtl' : 'ltr',
               animation: 'fse-fadeIn .5s cubic-bezier(.16,1,.3,1) .15s both',
               letterSpacing: '-0.03em',
             }}>
@@ -775,10 +836,10 @@ export function FaceSearchExperience({
 
             <p style={{
               fontSize: 15, color: 'rgba(255,255,255,.4)',
-              margin: '0 0 16px', direction: 'rtl', lineHeight: 1.7,
+              margin: '0 0 16px', direction: lang === 'he' ? 'rtl' : 'ltr', lineHeight: 1.7,
               animation: 'fse-fadeIn .5s ease .25s both',
             }}>
-              יש פה רגעים שלך — יאללה, תתחיל/י לעבור
+              {lang === 'he' ? 'יש פה רגעים שלך — יאללה, תתחיל/י לעבור' : 'Your moments are here — go ahead, start browsing!'}
             </p>
 
             {/* Photo count badge */}
@@ -800,7 +861,7 @@ export function FaceSearchExperience({
                 </svg>
               </div>
               <span style={{ fontSize: 15, color: 'rgba(34,197,94,.85)', fontWeight: 700, letterSpacing: '.01em' }}>
-                {matchCount} photos found
+                {matchCount} {ft.photosFound}
               </span>
             </div>
 
@@ -815,7 +876,7 @@ export function FaceSearchExperience({
                   <circle cx="8.5" cy="8.5" r="1.5" />
                   <polyline points="21 15 16 10 5 21" />
                 </svg>
-                צפה בתמונות שלך
+                {ft.viewYourPhotos}
               </button>
             </div>
           </div>
@@ -840,15 +901,15 @@ export function FaceSearchExperience({
 
             <h2 style={{
               fontSize: 24, fontWeight: 700, color: '#fff',
-              margin: '0 0 12px', direction: 'rtl',
+              margin: '0 0 12px', direction: lang === 'he' ? 'rtl' : 'ltr',
               letterSpacing: '-0.02em',
             }}>
-              לא מצאנו התאמה
+              {ft.noMatch}
             </h2>
 
             <p style={{
               fontSize: 14, color: 'rgba(255,255,255,.38)',
-              margin: '0 0 12px', direction: 'rtl', lineHeight: 1.7,
+              margin: '0 0 12px', direction: lang === 'he' ? 'rtl' : 'ltr', lineHeight: 1.7,
               maxWidth: 300, marginInline: 'auto',
             }}>
               לא הצלחנו למצוא אותך לפי הסלפי.
@@ -863,10 +924,10 @@ export function FaceSearchExperience({
               padding: '14px 18px', borderRadius: 14,
               background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.05)',
             }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.3)', marginBottom: 2, direction: 'rtl' }}>
-                Tips for a better match:
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.3)', marginBottom: 2, direction: lang === 'he' ? 'rtl' : 'ltr' }}>
+                {ft.tipsTitle}
               </div>
-              {['Make sure your face is well-lit', 'Remove sunglasses or hats', 'Face the camera directly'].map((tip, i) => (
+              {[ft.tip1, ft.tip2, ft.tip3].map((tip, i) => (
                 <div key={i} style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   fontSize: 12, color: 'rgba(255,255,255,.3)',
@@ -886,7 +947,7 @@ export function FaceSearchExperience({
                 onClick={onBrowseAll}
                 style={{ width: '100%', justifyContent: 'center', maxWidth: 320 }}
               >
-                צפה בכל התמונות
+                {ft.browseAll}
               </button>
               <button
                 className="fse-btn fse-btn--secondary"
@@ -896,7 +957,7 @@ export function FaceSearchExperience({
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M23 4v6h-6" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                 </svg>
-                נסה שוב
+                {ft.tryAgain}
               </button>
             </div>
           </div>
@@ -923,18 +984,18 @@ export function FaceSearchExperience({
 
             <h2 style={{
               fontSize: 22, fontWeight: 700, color: '#fff',
-              margin: '0 0 12px', direction: 'rtl',
+              margin: '0 0 12px', direction: lang === 'he' ? 'rtl' : 'ltr',
               letterSpacing: '-0.02em',
             }}>
-              לא הצלחנו לזהות אותך
+              {ft.privateNoMatch}
             </h2>
 
             <p style={{
               fontSize: 14, color: 'rgba(255,255,255,.32)',
-              margin: '0 0 32px', direction: 'rtl', lineHeight: 1.7,
+              margin: '0 0 32px', direction: lang === 'he' ? 'rtl' : 'ltr', lineHeight: 1.7,
               maxWidth: 280, marginInline: 'auto',
             }}>
-              יכול להיות שהתמונות שלך לא זמינות בגלריה הזו, או שהסלפי לא היה ברור מספיק
+              {ft.privateNoMatchMsg}
             </p>
 
             <button
@@ -945,15 +1006,15 @@ export function FaceSearchExperience({
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M23 4v6h-6" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
               </svg>
-              צלם שוב
+              {ft.retake}
             </button>
 
             <p style={{
               fontSize: 12, color: 'rgba(255,255,255,.2)',
-              margin: 0, direction: 'rtl',
+              margin: 0, direction: lang === 'he' ? 'rtl' : 'ltr',
               lineHeight: 1.6,
             }}>
-              אם נראה לך שיש טעות — דבר עם הצלם
+              {ft.talkToPhotographer}
             </p>
           </div>
         )}
