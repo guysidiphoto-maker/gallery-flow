@@ -49,6 +49,11 @@ const SEARCH_MAX_RESULTS = 100
 const INDEX_MAX_FACES_PER_IMAGE = 100
 /** Concurrent IndexFaces calls from a single edge-function invocation. */
 const INDEX_CONCURRENCY = 6
+/** Max times we'll retry indexing a single image before giving up. Transient
+ *  AWS throttles or storage hiccups deserve a retry; persistent failures
+ *  (corrupt file, missing storage object, unsupported format) shouldn't keep
+ *  the gallery in 'indexing' forever. */
+const MAX_INDEX_ATTEMPTS = 3
 /** Staleness threshold for the in-flight indexing lock, in seconds. If a
  *  worker crashed mid-run, a new claim after this window takes over. */
 const INDEXING_LOCK_STALENESS_SEC = 10 * 60
@@ -130,7 +135,7 @@ async function indexOneImage(
   sb: SupabaseClient,
   collectionId: string,
   galleryId: string,
-  image: { id: string; storage_path: string; face_indexed_at: string | null },
+  image: { id: string; storage_path: string; face_indexed_at: string | null; face_index_attempts?: number | null },
 ): Promise<{ indexed: boolean; faceCount: number; error?: string }> {
   if (image.face_indexed_at) return { indexed: false, faceCount: 0 }
 
@@ -173,6 +178,31 @@ async function indexOneImage(
     return { indexed: true, faceCount: records.length }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    // Bump the attempts counter so we can decide whether to give up. Up to
+    // MAX_INDEX_ATTEMPTS we leave face_indexed_at NULL so the next run will
+    // retry (transient AWS throttles, network blips, etc.). After that we
+    // stamp it processed with face_count = 0 so the gallery can finish; the
+    // photo will show face_index_error on its row for the photographer to
+    // diagnose. This stops 260/285-style stuck states without quietly
+    // hiding photos that legitimately should have been indexed.
+    try {
+      const nextAttempts = (image.face_index_attempts ?? 0) + 1
+      const giveUp = nextAttempts >= MAX_INDEX_ATTEMPTS
+      const update: Record<string, unknown> = {
+        face_index_attempts: nextAttempts,
+        face_index_error: msg.slice(0, 500),
+      }
+      if (giveUp) {
+        update.face_indexed_at = new Date().toISOString()
+        update.face_count = 0
+      }
+      await sb.from('images').update(update).eq('id', image.id)
+      if (giveUp) {
+        await sb.rpc('increment_face_indexed_count', { p_gallery_id: galleryId })
+      }
+    } catch {
+      /* swallow — the next pass will re-try if this DB write fails */
+    }
     return { indexed: false, faceCount: 0, error: msg }
   }
 }
@@ -186,7 +216,7 @@ async function processGallery(
 ): Promise<void> {
   const { data: imgs } = await sb
     .from('images')
-    .select('id, storage_path:web_preview_path, face_indexed_at')
+    .select('id, storage_path:web_preview_path, face_indexed_at, face_index_attempts')
     .eq('gallery_id', galleryId)
     .is('face_indexed_at', null)
     .order('sort_order', { ascending: true })

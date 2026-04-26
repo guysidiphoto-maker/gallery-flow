@@ -34,7 +34,7 @@ import { toLocalURL } from './utils/imageUtils'
 import { UploadFloater } from './components/UploadFloater'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { KeyboardShortcuts } from './components/KeyboardShortcuts'
-import { publishGallery, uploadStoryToCloud, markGalleryLive, updateGallerySettings, updateGalleryImages, updateGallerySectionsInCloud, cancelUpload, deleteGalleryFromCloud, deleteImageFromCloud } from './lib/cloudUpload'
+import { publishGallery, uploadStoryToCloud, markGalleryLive, updateGallerySettings, updateGalleryImages, updateGallerySectionsInCloud, cancelUpload, deleteGalleryFromCloud, deleteImageFromCloud, deleteStoriesForGallery } from './lib/cloudUpload'
 import { formatEta } from './lib/eta'
 import { supabase } from './lib/supabase'
 import { loadPersistedQueue, clearPersistedQueue } from './lib/uploadQueue'
@@ -642,6 +642,92 @@ function MainApp({ business }: { business: Business | null }) {
       setPubError(msg)
       setPublishPhase('error')
       useGallery.getState().addToast(`Update failed: ${msg}`, 'error')
+    } finally {
+      setIsCloudPublishing(false)
+      setUpdateProgress(null)
+    }
+  }
+
+  /**
+   * Regenerate stories for an already-live gallery using the CURRENT top picks
+   * (so picks added later via P / T are picked up). Wipes old stories first
+   * so we don't accumulate duplicates per style.
+   */
+  const handleRegenerateStories = async (projectId: string) => {
+    if (isCloudPublishing) return
+    const project = projects.find(p => p.id === projectId)
+    if (!project || !project.publishState?.galleryDbId) {
+      useGallery.getState().addToast('Gallery is not published — use Publish first', 'error')
+      return
+    }
+    const galleryId = project.publishState.galleryDbId
+    const imgs = resolveImages(project.imageIds, imageRegistry)
+    const topPickIdSet = useGallery.getState().topPickIds
+    const topPickPaths = imgs.filter(i => topPickIdSet.has(i.id)).map(i => i.path)
+
+    if (topPickPaths.length < 2) {
+      useGallery.getState().addToast('Need at least 2 top picks to generate stories', 'error')
+      return
+    }
+
+    setIsCloudPublishing(true)
+    setUpdateProgress(`Regenerating stories from ${topPickPaths.length} top picks…`)
+    setProjects(prev => prev.map(p => p.id === projectId
+      ? { ...p, publishState: { ...p.publishState!, storiesReady: false } } : p
+    ))
+
+    try {
+      // 1. Wipe old stories
+      const delResult = await deleteStoriesForGallery(galleryId)
+      if (delResult.error) {
+        console.warn('[regen-stories] delete failed:', delResult.error)
+        // continue anyway — upload uses upsert on storage
+      }
+
+      // 2. Build + render + upload each style — same flow as initial publish
+      const picks = topPickPaths.length > 25 ? topPickPaths.slice(0, 25) : topPickPaths
+      const duration = topPickPaths.length <= 25 ? 15 : 20
+      const tempDir = await window.api.getTempDir()
+      const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
+      const styles = [
+        { name: 'clean', motionMode: 'subtle' as const, transitionStyle: 'clean' as const, colorMatch: 'off' as const },
+        { name: 'fast-social', motionMode: 'dynamic' as const, transitionStyle: 'energetic' as const, colorMatch: 'off' as const },
+        { name: 'vintage', motionMode: 'subtle' as const, transitionStyle: 'soft-fade' as const, colorMatch: 'subtle' as const },
+      ]
+      let done = 0
+      for (const style of styles) {
+        try {
+          setUpdateProgress(`Rendering story (${done + 1}/${styles.length}): ${style.name}…`)
+          const buildResult = await window.api.buildStoryScenes(picks, duration, style.motionMode) as {
+            error?: string; scenes: Array<{ type: string; imagePaths: string[]; duration: number; motionType: string }>; totalDuration: number
+          }
+          if (buildResult.error) continue
+          const outputPath = `${tempDir}/story_${style.name}.mp4`
+          const renderResult = await window.api.renderStory(
+            buildResult.scenes.map(s => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })) as never,
+            { totalDuration: buildResult.totalDuration, resolution: '1080x1920', fps: 30, motionMode: style.motionMode, transitionStyle: style.transitionStyle, colorMatch: style.colorMatch === 'subtle', brandedOutro: !!settings.logoUrl, logoPath: settings.logoUrl || null } as never,
+            outputPath,
+          )
+          if (renderResult.success) {
+            setUpdateProgress(`Uploading story (${done + 1}/${styles.length}): ${style.name}…`)
+            await uploadStoryToCloud(galleryId, style.name, outputPath)
+            done++
+          }
+        } catch (err) {
+          console.warn(`[regen-stories] ${style.name} failed`, err)
+        }
+      }
+
+      setProjects(prev => prev.map(p => p.id === projectId
+        ? { ...p, publishState: { ...p.publishState!, storiesReady: true, lastSyncedAt: new Date().toISOString() } } : p
+      ))
+      useGallery.getState().addToast(
+        done > 0 ? `Regenerated ${done} stor${done === 1 ? 'y' : 'ies'}` : 'Stories regeneration finished with no successful renders',
+        done > 0 ? 'success' : 'error',
+      )
+    } catch (err) {
+      console.error('[regen-stories] failed', err)
+      useGallery.getState().addToast(`Stories regeneration failed: ${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
       setIsCloudPublishing(false)
       setUpdateProgress(null)
@@ -1842,6 +1928,8 @@ function MainApp({ business }: { business: Business | null }) {
               lastSyncedAt={currentProject?.publishState?.lastSyncedAt}
               isUpdating={isCloudPublishing && publishPhase === 'publishing' && !publishProjectId}
               onForceSync={() => currentProjectId && handleUpdateChanges(currentProjectId)}
+              onRegenerateStories={() => currentProjectId && handleRegenerateStories(currentProjectId)}
+              topPickCount={galleryTopPickIds.size}
               hasUnsavedChanges={
                 currentProject?.publishState?.status === 'live' && (
                   (!!currentProject?.publishState?.publishedImageIds &&

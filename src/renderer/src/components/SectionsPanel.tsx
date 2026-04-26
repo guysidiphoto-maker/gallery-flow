@@ -82,12 +82,15 @@ interface SectionsPanelProps {
    *  to recover from past silent upload failures where the cloud is short
    *  but the local app thinks it's already in sync. */
   onForceSync?: () => void
+  /** Wipe and rebuild the gallery's stories from the current top picks. */
+  onRegenerateStories?: () => void
+  topPickCount?: number
   hasUnsavedChanges?: boolean
   lastSyncedAt?: string
   isUpdating?: boolean
 }
 
-export function SectionsPanel({ publishStatus, publicUrl, onPublish, onForceSync, hasUnsavedChanges, lastSyncedAt, isUpdating }: SectionsPanelProps = {}) {
+export function SectionsPanel({ publishStatus, publicUrl, onPublish, onForceSync, onRegenerateStories, topPickCount = 0, hasUnsavedChanges, lastSyncedAt, isUpdating }: SectionsPanelProps = {}) {
   const [copied, setCopied] = useState(false)
 
   const handleCopyLink = useCallback(() => {
@@ -354,6 +357,26 @@ export function SectionsPanel({ publishStatus, publicUrl, onPublish, onForceSync
                         Re-sync to cloud
                       </>
                     )}
+                  </button>
+                )}
+                {onRegenerateStories && (
+                  <button
+                    className="btn btn--ghost"
+                    style={{
+                      fontSize: 11, padding: '4px 10px', width: '100%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                      color: isUpdating || topPickCount < 2 ? 'rgba(255,255,255,.35)' : '#10b981',
+                      cursor: isUpdating || topPickCount < 2 ? 'not-allowed' : 'pointer',
+                    }}
+                    onClick={onRegenerateStories}
+                    disabled={isUpdating || topPickCount < 2}
+                    title={topPickCount < 2 ? 'Need at least 2 top picks' : `Replace stories with new ones from ${topPickCount} top picks`}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polygon points="23 7 16 12 23 17 23 7" />
+                      <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                    </svg>
+                    Regenerate stories{topPickCount > 0 ? ` (${topPickCount})` : ''}
                   </button>
                 )}
                 <button

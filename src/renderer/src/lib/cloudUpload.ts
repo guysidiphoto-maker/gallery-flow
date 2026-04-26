@@ -652,6 +652,28 @@ export async function uploadStoryToCloud(
   return { skipped: false }
 }
 
+// ─── Delete existing stories for a gallery ─────────────────────────────────
+// Used before regenerating: clears the old story rows + their storage objects
+// so the next upload doesn't create duplicate rows alongside the old ones.
+export async function deleteStoriesForGallery(galleryDbId: string): Promise<{ error: string | null }> {
+  const { data: stories, error: selErr } = await supabase
+    .from('stories')
+    .select('id, storage_path')
+    .eq('gallery_id', galleryDbId)
+  if (selErr) return { error: selErr.message }
+
+  if (stories && stories.length > 0) {
+    const paths = stories.map(s => s.storage_path).filter(Boolean) as string[]
+    if (paths.length > 0) {
+      await supabase.storage.from(STORY_BUCKET).remove(paths)
+    }
+    const { error: delErr } = await supabase.from('stories').delete().eq('gallery_id', galleryDbId)
+    if (delErr) return { error: delErr.message }
+    log('delete-stories', `${stories.length} stories cleared`)
+  }
+  return { error: null }
+}
+
 // ─── Mark Gallery Live (called after stories complete) ──────────────────────
 
 export async function markGalleryLive(galleryId: string, publicUrl: string): Promise<void> {
