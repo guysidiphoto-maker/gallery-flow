@@ -573,11 +573,8 @@ ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
     const size = img.getSize()
     if (size.width === 0 || size.height === 0) return null
 
-    // Web version: max 1800px on longest side, JPEG quality 80.
-    // Bumped from 1600/q78 — the gallery viewer now renders one section
-    // at a time and progressively, so we can afford a sharper preview
-    // without blowing the per-page byte budget.
-    const maxWeb = 1800
+    // Web version: max 1600px on longest side, JPEG quality 78
+    const maxWeb = 1600
     let webImg = img
     if (size.width > maxWeb || size.height > maxWeb) {
       if (size.width >= size.height) {
@@ -586,7 +583,7 @@ ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
         webImg = img.resize({ height: maxWeb, quality: 'good' })
       }
     }
-    const webJpeg = webImg.toJPEG(80)
+    const webJpeg = webImg.toJPEG(78)
 
     // Thumbnail: max 800px wide, JPEG quality 78 — matches industry-standard
     // grid sizes (Pixieset / Pic-Time / SmugMug all sit in the 600–800
