@@ -1592,19 +1592,13 @@ export function App() {
           onJump={(id) => {
             const section = document.getElementById(id)
             if (!section) return
-            // Scroll to the FIRST PHOTO inside the section, not the heading,
-            // so the user lands on a thumbnail instead of an empty band of
-            // header text. Falls back to the section element if a grid
-            // selector isn't present.
-            const firstImage = section.querySelector('img, [data-image-id], .masonry-grid > *') as HTMLElement | null
-            const target = firstImage ?? section
-            // Compute the offset manually + use window.scrollTo so iOS Safari
-            // doesn't double-jump on URL hash changes (the previous code
-            // updated location.hash, which triggered Safari's own scroll
-            // restoration on top of our smooth scroll).
-            const stickyOffset = 72
-            const top = target.getBoundingClientRect().top + window.scrollY - stickyOffset
-            window.scrollTo({ top, behavior: 'smooth' })
+            // Use the natural scroll-margin-top set in CSS (.gallery-section)
+            // and a simple instant jump. Smooth scroll on mobile Safari can
+            // stutter when combined with sticky-nav reflows; an instant jump
+            // is more reliable and lands the user on the section heading
+            // followed immediately by the first row of photos.
+            const top = section.getBoundingClientRect().top + window.scrollY - 72
+            window.scrollTo({ top, behavior: 'auto' })
           }}
           centerToolbar={showStoriesSection ? (
             <button
