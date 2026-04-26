@@ -1627,15 +1627,17 @@ export function App() {
           onJump={(id) => {
             const section = document.getElementById(id)
             if (!section) return
-            // requestAnimationFrame: defer the scroll until after the click
-            // has finished propagating. Without it, mobile Safari sometimes
-            // collapses the click + scroll into the same gesture frame and
-            // ends up jumping to a stale position (or worse, treats it as
-            // a tap-to-top gesture). The browser's native scrollIntoView
-            // honours .gallery-section's scroll-margin-top so the sticky
-            // nav doesn't cover the section heading.
+            // Land on the FIRST IMAGE of the section, not the heading band —
+            // the heading is mostly empty space and clients reported feeling
+            // like the click "did nothing" when it scrolled to a header.
+            // Falls back to the section element if no <img> is found yet
+            // (e.g. before the masonry grid has mounted).
             requestAnimationFrame(() => {
-              section.scrollIntoView({ block: 'start', behavior: 'auto' })
+              const firstImg = section.querySelector('img') as HTMLElement | null
+              const target = firstImg ?? section
+              const stickyOffset = 80
+              const top = target.getBoundingClientRect().top + window.scrollY - stickyOffset
+              window.scrollTo({ top, behavior: 'auto' })
             })
           }}
           centerToolbar={showStoriesSection ? (
