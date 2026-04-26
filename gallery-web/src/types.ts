@@ -72,9 +72,6 @@ export interface Story {
   id: string
   style: string
   storage_path: string
-  /** When set, this story belongs to a specific gallery section. NULL means
-   *  it's a gallery-level story (legacy / no-section galleries). */
-  section_id?: string | null
 }
 
 export interface GallerySection {

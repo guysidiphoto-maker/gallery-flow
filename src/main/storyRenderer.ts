@@ -370,9 +370,9 @@ async function renderLandscape3Scene(
   const rowH = WORK_H / 3
   const motion = buildMotionFilter(motionType, d, motionMode, false)
   const filter = [
-    `[0:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}:(in_w-out_w)/2:(in_h-out_h)*0.2[a]`,
-    `[1:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}:(in_w-out_w)/2:(in_h-out_h)*0.2[b]`,
-    `[2:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}:(in_w-out_w)/2:(in_h-out_h)*0.2[c]`,
+    `[0:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[a]`,
+    `[1:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[b]`,
+    `[2:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[c]`,
     '[a][b]vstack=inputs=2[ab]',
     '[ab][c]vstack=inputs=2[stacked]',
     `[stacked]${motion}${sceneFilterTail(colorMatchFilter)}[out]`
@@ -402,8 +402,8 @@ async function renderLandscape2Scene(
   const rowH = WORK_H / 2
   const motion = buildMotionFilter(motionType, d, motionMode, false)
   const filter = [
-    `[0:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}:(in_w-out_w)/2:(in_h-out_h)*0.2[a]`,
-    `[1:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}:(in_w-out_w)/2:(in_h-out_h)*0.2[b]`,
+    `[0:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[a]`,
+    `[1:v]scale=${WORK_W}:${rowH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${rowH}[b]`,
     '[a][b]vstack=inputs=2[stacked]',
     `[stacked]${motion}${sceneFilterTail(colorMatchFilter)}[out]`
   ].join(';')
@@ -430,7 +430,7 @@ async function renderLandscape1Scene(
   const d = Math.round(duration * 30)
   const motion = buildMotionFilter(motionType, d, motionMode, false)
   const filter = [
-    `[0:v]scale=${WORK_W}:${WORK_H}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${WORK_H}:(in_w-out_w)/2:(in_h-out_h)*0.2,boxblur=luma_radius=44:luma_power=2,colorlevels=rimax=0.55:gimax=0.55:bimax=0.55[bg]`,
+    `[0:v]scale=${WORK_W}:${WORK_H}:force_original_aspect_ratio=increase:flags=lanczos,crop=${WORK_W}:${WORK_H},boxblur=luma_radius=44:luma_power=2,colorlevels=rimax=0.55:gimax=0.55:bimax=0.55[bg]`,
     `[0:v]scale=${WORK_W}:-2:flags=lanczos[fg]`,
     '[bg][fg]overlay=x=0:y=(H-h)/2[composed]',
     `[composed]${motion}${sceneFilterTail(colorMatchFilter)}[out]`
@@ -628,7 +628,7 @@ async function renderOutroScene(
 
   // ── Grid filter: cover each cell fully (zoom to fill, center crop) ──────────
   const cellFilters = cellPaths.map((_, i) =>
-    `[${i}:v]scale=${cellW}:${cellH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${cellW}:${cellH}:(in_w-out_w)/2:(in_h-out_h)*0.2[c${i}]`
+    `[${i}:v]scale=${cellW}:${cellH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${cellW}:${cellH}[c${i}]`
   )
 
   const rowFilters: string[] = []

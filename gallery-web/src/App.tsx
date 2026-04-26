@@ -1435,22 +1435,7 @@ export function App() {
   const footerText = studioName || txt.deliveredWith
 
   // ── Should we show stories? ────────────────────────────────────────────
-  // Filter stories by the active section: a story is visible when (a) it's
-  // scoped to the current section, or (b) it's a gallery-level story
-  // (section_id null) and there are no section-scoped stories — that keeps
-  // legacy galleries without per-section stories from going dark.
-  const visibleStories = useMemo(() => {
-    if (stories.length === 0) return []
-    if (activeSectionId) {
-      const sectioned = stories.filter(s => s.section_id === activeSectionId)
-      if (sectioned.length > 0) return sectioned
-      // Fallback for galleries that never got per-section stories generated
-      return stories.filter(s => !s.section_id)
-    }
-    return stories.filter(s => !s.section_id)
-  }, [stories, activeSectionId])
-
-  const showStoriesSection = showStories !== false && visibleStories.length > 0
+  const showStoriesSection = showStories !== false && stories.length > 0
 
   // ── Download label (smart: only say "Original" if originals are actually available) ──
   const someOriginalsReady = images.some(img => img.original_path)
@@ -1637,7 +1622,7 @@ export function App() {
                 <polygon points="5 3 19 12 5 21 5 3"/>
               </svg>
               Stories
-              <span className="gallery-toolbar__count">{visibleStories.length}</span>
+              <span className="gallery-toolbar__count">{stories.length}</span>
             </button>
           ) : null}
           toolbar={(faceSearchAvailable || downloadsEnabled) ? (
@@ -1701,7 +1686,7 @@ export function App() {
       {showStoriesSection && storiesOpen && (
         <section id="gallery-stories" className="stories">
           <div className="stories__row">
-            {visibleStories.map((st) => (
+            {stories.map((st) => (
               <div key={st.id} className="story-card">
                 <video
                   className="story-card__preview"
