@@ -618,7 +618,8 @@ function tusUpload(
 export async function uploadStoryToCloud(
   galleryId: string,
   style: string,
-  storyFilePath: string
+  storyFilePath: string,
+  sectionId: string | null = null,
 ): Promise<{ skipped: boolean; reason?: string }> {
   const fileSize = await window.api.getFileSize(storyFilePath)
   if (fileSize === null) return { skipped: true, reason: 'Could not read story file' }
@@ -629,7 +630,12 @@ export async function uploadStoryToCloud(
   if (!buffer) return { skipped: true, reason: 'Could not read story file' }
 
   const businessSlug = requireBusiness().slug
-  const storagePath = `${businessSlug}/${galleryId}/story_${style}.mp4`
+  // Section-scoped stories get a sub-path so two sections don't overwrite
+  // each other's video for the same style.
+  const fileTag = sectionId ? `sec_${sectionId.slice(0, 8)}_${style}` : `story_${style}`
+  const storagePath = sectionId
+    ? `${businessSlug}/${galleryId}/sections/${sectionId}/${fileTag}.mp4`
+    : `${businessSlug}/${galleryId}/${fileTag}.mp4`
 
   try {
     if (fileSize <= STANDARD_UPLOAD_LIMIT) {
@@ -647,8 +653,13 @@ export async function uploadStoryToCloud(
     return { skipped: true, reason: `Upload failed: ${err instanceof Error ? err.message : String(err)}` }
   }
 
-  await supabase.from('stories').insert({ gallery_id: galleryId, style, storage_path: storagePath })
-  log('story-done', style)
+  await supabase.from('stories').insert({
+    gallery_id: galleryId,
+    style,
+    storage_path: storagePath,
+    section_id: sectionId,
+  })
+  log('story-done', `${style}${sectionId ? ` [section ${sectionId.slice(0, 8)}]` : ''}`)
   return { skipped: false }
 }
 

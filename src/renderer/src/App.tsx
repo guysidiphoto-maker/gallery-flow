@@ -663,30 +663,70 @@ function MainApp({ business }: { business: Business | null }) {
     const galleryId = project.publishState.galleryDbId
     const imgs = resolveImages(project.imageIds, imageRegistry)
     const topPickIdSet = useGallery.getState().topPickIds
-    const topPickPaths = imgs.filter(i => topPickIdSet.has(i.id)).map(i => i.path)
+    const localSections = useSections.getState().sections
 
-    if (topPickPaths.length < 2) {
-      useGallery.getState().addToast('Need at least 2 top picks to generate stories', 'error')
+    // Resolve cloud section ids by name (the local UUIDs differ from the
+    // cloud row ids because updateGallerySectionsInCloud wipes + re-inserts).
+    const { data: cloudSections } = await supabase
+      .from('gallery_sections')
+      .select('id, name')
+      .eq('gallery_id', galleryId)
+    const cloudSectionByName = new Map<string, string>(
+      (cloudSections || []).map(r => [r.name as string, r.id as string]),
+    )
+
+    // Build the per-section picks list. Falls back to "first 25 photos in
+    // section" when there aren't enough top picks for that section, so a
+    // section without explicit picks still gets a story.
+    const sectionPlans: Array<{
+      cloudId: string | null
+      label: string
+      picks: string[]
+    }> = []
+    if (localSections.length > 0) {
+      for (const sec of localSections) {
+        const sectionImgs = imgs.filter(i => sec.imageIds.includes(i.id))
+        const picksInSection = sectionImgs.filter(i => topPickIdSet.has(i.id))
+        const pool = picksInSection.length >= 2 ? picksInSection : sectionImgs
+        if (pool.length < 2) continue
+        sectionPlans.push({
+          cloudId: cloudSectionByName.get(sec.name) ?? null,
+          label: sec.name,
+          picks: pool.slice(0, 25).map(i => i.path),
+        })
+      }
+    } else {
+      // Gallery has no sections — fall back to a single gallery-level story
+      // built from top picks (or first 25 photos).
+      const galleryPicks = imgs.filter(i => topPickIdSet.has(i.id))
+      const pool = galleryPicks.length >= 2 ? galleryPicks : imgs
+      if (pool.length >= 2) {
+        sectionPlans.push({
+          cloudId: null,
+          label: 'Gallery',
+          picks: pool.slice(0, 25).map(i => i.path),
+        })
+      }
+    }
+
+    if (sectionPlans.length === 0) {
+      useGallery.getState().addToast('Need at least 2 photos in a section to generate stories', 'error')
       return
     }
 
     setIsCloudPublishing(true)
-    setUpdateProgress(`Regenerating stories from ${topPickPaths.length} top picks…`)
+    setUpdateProgress(`Regenerating stories for ${sectionPlans.length} section${sectionPlans.length === 1 ? '' : 's'}…`)
     setProjects(prev => prev.map(p => p.id === projectId
       ? { ...p, publishState: { ...p.publishState!, storiesReady: false } } : p
     ))
 
     try {
-      // 1. Wipe old stories
+      // 1. Wipe old stories (gallery-wide; we're regenerating everything)
       const delResult = await deleteStoriesForGallery(galleryId)
       if (delResult.error) {
         console.warn('[regen-stories] delete failed:', delResult.error)
-        // continue anyway — upload uses upsert on storage
       }
 
-      // 2. Build + render + upload each style — same flow as initial publish
-      const picks = topPickPaths.length > 25 ? topPickPaths.slice(0, 25) : topPickPaths
-      const duration = topPickPaths.length <= 25 ? 15 : 20
       const tempDir = await window.api.getTempDir()
       const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
       const styles = [
@@ -694,27 +734,32 @@ function MainApp({ business }: { business: Business | null }) {
         { name: 'fast-social', motionMode: 'dynamic' as const, transitionStyle: 'energetic' as const, colorMatch: 'off' as const },
         { name: 'vintage', motionMode: 'subtle' as const, transitionStyle: 'soft-fade' as const, colorMatch: 'subtle' as const },
       ]
+      const totalSteps = sectionPlans.length * styles.length
       let done = 0
-      for (const style of styles) {
-        try {
-          setUpdateProgress(`Rendering story (${done + 1}/${styles.length}): ${style.name}…`)
-          const buildResult = await window.api.buildStoryScenes(picks, duration, style.motionMode) as {
-            error?: string; scenes: Array<{ type: string; imagePaths: string[]; duration: number; motionType: string }>; totalDuration: number
+
+      for (const plan of sectionPlans) {
+        const duration = plan.picks.length <= 25 ? 15 : 20
+        for (const style of styles) {
+          try {
+            setUpdateProgress(`Rendering ${plan.label} · ${style.name} (${done + 1}/${totalSteps})…`)
+            const buildResult = await window.api.buildStoryScenes(plan.picks, duration, style.motionMode) as {
+              error?: string; scenes: Array<{ type: string; imagePaths: string[]; duration: number; motionType: string }>; totalDuration: number
+            }
+            if (buildResult.error) continue
+            const outputPath = `${tempDir}/story_${plan.cloudId ?? 'gallery'}_${style.name}.mp4`
+            const renderResult = await window.api.renderStory(
+              buildResult.scenes.map(s => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })) as never,
+              { totalDuration: buildResult.totalDuration, resolution: '1080x1920', fps: 30, motionMode: style.motionMode, transitionStyle: style.transitionStyle, colorMatch: style.colorMatch === 'subtle', brandedOutro: !!settings.logoUrl, logoPath: settings.logoUrl || null } as never,
+              outputPath,
+            )
+            if (renderResult.success) {
+              setUpdateProgress(`Uploading ${plan.label} · ${style.name} (${done + 1}/${totalSteps})…`)
+              await uploadStoryToCloud(galleryId, style.name, outputPath, plan.cloudId)
+              done++
+            }
+          } catch (err) {
+            console.warn(`[regen-stories] ${plan.label} ${style.name} failed`, err)
           }
-          if (buildResult.error) continue
-          const outputPath = `${tempDir}/story_${style.name}.mp4`
-          const renderResult = await window.api.renderStory(
-            buildResult.scenes.map(s => ({ type: s.type, imagePaths: s.imagePaths, duration: s.duration, motionType: s.motionType })) as never,
-            { totalDuration: buildResult.totalDuration, resolution: '1080x1920', fps: 30, motionMode: style.motionMode, transitionStyle: style.transitionStyle, colorMatch: style.colorMatch === 'subtle', brandedOutro: !!settings.logoUrl, logoPath: settings.logoUrl || null } as never,
-            outputPath,
-          )
-          if (renderResult.success) {
-            setUpdateProgress(`Uploading story (${done + 1}/${styles.length}): ${style.name}…`)
-            await uploadStoryToCloud(galleryId, style.name, outputPath)
-            done++
-          }
-        } catch (err) {
-          console.warn(`[regen-stories] ${style.name} failed`, err)
         }
       }
 
@@ -722,7 +767,7 @@ function MainApp({ business }: { business: Business | null }) {
         ? { ...p, publishState: { ...p.publishState!, storiesReady: true, lastSyncedAt: new Date().toISOString() } } : p
       ))
       useGallery.getState().addToast(
-        done > 0 ? `Regenerated ${done} stor${done === 1 ? 'y' : 'ies'}` : 'Stories regeneration finished with no successful renders',
+        done > 0 ? `Regenerated ${done} stor${done === 1 ? 'y' : 'ies'} across ${sectionPlans.length} section${sectionPlans.length === 1 ? '' : 's'}` : 'Stories regeneration finished with no successful renders',
         done > 0 ? 'success' : 'error',
       )
     } catch (err) {
