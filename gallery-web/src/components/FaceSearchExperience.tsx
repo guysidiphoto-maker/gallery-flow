@@ -875,7 +875,7 @@ export function FaceSearchExperience({
               animation: 'fse-fadeIn .5s cubic-bezier(.16,1,.3,1) .15s both',
               letterSpacing: '-0.03em',
             }}>
-              !מצאנו אותך
+              {lang === 'he' ? '!מצאנו אותך' : 'We found you!'}
             </h2>
 
             <p style={{
@@ -1066,11 +1066,14 @@ export function FaceSearchExperience({
 
       {/* Hidden elements */}
       <canvas ref={canvasRef} style={{ display: 'none' }} />
+      {/* No `capture` attribute — that forced mobile browsers to open the
+          front camera, which made "Upload Photo" do another selfie instead
+          of opening the photo library. The dedicated camera flow uses
+          getUserMedia; this input is purely the upload-from-disk path. */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/jpeg,image/png"
-        capture="user"
         onChange={onFileChange}
         style={{ display: 'none' }}
       />
