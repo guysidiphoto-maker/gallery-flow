@@ -1590,10 +1590,21 @@ export function App() {
           totalCount={images.length}
           activeId={activeSectionAnchor}
           onJump={(id) => {
-            const el = document.getElementById(id)
-            if (!el) return
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-            history.replaceState(null, '', '#' + id)
+            const section = document.getElementById(id)
+            if (!section) return
+            // Scroll to the FIRST PHOTO inside the section, not the heading,
+            // so the user lands on a thumbnail instead of an empty band of
+            // header text. Falls back to the section element if a grid
+            // selector isn't present.
+            const firstImage = section.querySelector('img, [data-image-id], .masonry-grid > *') as HTMLElement | null
+            const target = firstImage ?? section
+            // Compute the offset manually + use window.scrollTo so iOS Safari
+            // doesn't double-jump on URL hash changes (the previous code
+            // updated location.hash, which triggered Safari's own scroll
+            // restoration on top of our smooth scroll).
+            const stickyOffset = 72
+            const top = target.getBoundingClientRect().top + window.scrollY - stickyOffset
+            window.scrollTo({ top, behavior: 'smooth' })
           }}
           centerToolbar={showStoriesSection ? (
             <button
