@@ -536,6 +536,14 @@ body {
 .grid-item {
   transition: transform .35s var(--ease-out-expo),
               box-shadow .35s ease;
+  /* Tell the browser it can skip rendering off-screen tiles. With 500+
+     photos in the DOM at once mobile Safari was running out of memory
+     and reloading the page mid-scroll. content-visibility: auto + a
+     contain-intrinsic-size hint keeps the DOM intact (so anchor jumps
+     and scroll height stay correct) without paying the paint/layout
+     cost for tiles the user can't see. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
 }
 
 .grid-item:hover {
