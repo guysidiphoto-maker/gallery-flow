@@ -75,6 +75,35 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
   const cols = useColumnCount(layoutMode)
   const imgRefs = useRef<Map<string, HTMLImageElement>>(new Map())
 
+  // Progressive render: keep at most this many photos in the DOM at once.
+  // Even with content-visibility, mobile Safari OOMs at ~500+ tiles when
+  // the user flings the scroll. Render the first batch, then reveal more
+  // as a sentinel near the bottom comes into view.
+  const BATCH_SIZE = 150
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  // When `images` shrinks (e.g. face-search filter applied), don't keep
+  // a stale large visibleCount — clamp it back to the new total.
+  useEffect(() => {
+    setVisibleCount(prev => Math.min(Math.max(BATCH_SIZE, prev), images.length))
+  }, [images.length])
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    if (visibleCount >= images.length) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some(e => e.isIntersecting)) {
+          setVisibleCount(c => Math.min(c + BATCH_SIZE, images.length))
+        }
+      },
+      { rootMargin: '600px 0px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [visibleCount, images.length])
+  const visibleImages = useMemo(() => images.slice(0, visibleCount), [images, visibleCount])
+
   // Round-robin column distribution: image 0 → col 0, image 1 → col 1, …
   //
   // The earlier shortest-column algorithm depended on each image's loaded
@@ -85,11 +114,11 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
   // a client opens a section.
   const columns = useMemo(() => {
     const result: Array<Array<{ img: GalleryImage; index: number }>> = Array.from({ length: cols }, () => [])
-    for (let i = 0; i < images.length; i++) {
-      result[i % cols].push({ img: images[i], index: i })
+    for (let i = 0; i < visibleImages.length; i++) {
+      result[i % cols].push({ img: visibleImages[i], index: i })
     }
     return result
-  }, [images, cols])
+  }, [visibleImages, cols])
 
   const handleLoad = useCallback((_index: number, _el: HTMLImageElement) => {
     // No-op: column placement is now position-based, so we no longer need
@@ -107,6 +136,7 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
       padding: gap > 0 ? `0 ${gap}px` : 0,
       maxWidth: layoutMode === '1-col' ? 900 : undefined,
       margin: layoutMode === '1-col' ? '0 auto' : undefined,
+      position: 'relative',
     }}>
       {columns.map((col, ci) => (
         <div key={ci} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap }}>
@@ -209,6 +239,15 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
           })}
         </div>
       ))}
+      {/* Progressive-render sentinel: when this scrolls into view we reveal
+          the next BATCH_SIZE photos. Sized so it never affects layout. */}
+      {visibleCount < images.length && (
+        <div
+          ref={sentinelRef}
+          aria-hidden
+          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, pointerEvents: 'none' }}
+        />
+      )}
     </div>
   )
 }
