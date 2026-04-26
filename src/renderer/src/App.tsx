@@ -1841,6 +1841,7 @@ function MainApp({ business }: { business: Business | null }) {
               publicUrl={currentProject?.publishState?.publicUrl}
               lastSyncedAt={currentProject?.publishState?.lastSyncedAt}
               isUpdating={isCloudPublishing && publishPhase === 'publishing' && !publishProjectId}
+              onForceSync={() => currentProjectId && handleUpdateChanges(currentProjectId)}
               hasUnsavedChanges={
                 currentProject?.publishState?.status === 'live' && (
                   (!!currentProject?.publishState?.publishedImageIds &&

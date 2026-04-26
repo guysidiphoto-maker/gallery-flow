@@ -78,12 +78,16 @@ interface SectionsPanelProps {
   publishStatus?: 'draft' | 'publishing' | 'live'
   publicUrl?: string
   onPublish?: () => void
+  /** Force an Update Changes sync even when no local diff is detected. Used
+   *  to recover from past silent upload failures where the cloud is short
+   *  but the local app thinks it's already in sync. */
+  onForceSync?: () => void
   hasUnsavedChanges?: boolean
   lastSyncedAt?: string
   isUpdating?: boolean
 }
 
-export function SectionsPanel({ publishStatus, publicUrl, onPublish, hasUnsavedChanges, lastSyncedAt, isUpdating }: SectionsPanelProps = {}) {
+export function SectionsPanel({ publishStatus, publicUrl, onPublish, onForceSync, hasUnsavedChanges, lastSyncedAt, isUpdating }: SectionsPanelProps = {}) {
   const [copied, setCopied] = useState(false)
 
   const handleCopyLink = useCallback(() => {
@@ -323,6 +327,31 @@ export function SectionsPanel({ publishStatus, publicUrl, onPublish, hasUnsavedC
                           <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                         </svg>
                         Copy Link
+                      </>
+                    )}
+                  </button>
+                )}
+                {onForceSync && (
+                  <button
+                    className="btn btn--ghost"
+                    style={{ fontSize: 11, padding: '4px 10px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, color: isUpdating ? 'rgba(255,255,255,.35)' : '#6366f1' }}
+                    onClick={onForceSync}
+                    disabled={isUpdating}
+                    title="Re-upload any photos missing from the cloud"
+                  >
+                    {isUpdating ? (
+                      <>
+                        <span className="cg__story-spinner" style={{ width: 10, height: 10, borderWidth: 2 }} />
+                        Syncing…
+                      </>
+                    ) : (
+                      <>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="23 4 23 10 17 10" />
+                          <polyline points="1 20 1 14 7 14" />
+                          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                        Re-sync to cloud
                       </>
                     )}
                   </button>
