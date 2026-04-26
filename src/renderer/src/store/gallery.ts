@@ -147,6 +147,11 @@ export interface GalleryState {
    *  moving anything in the gallery and without touching sections. */
   toggleTopPickQuiet: () => void
 
+  /** Remove every image that is not assigned to any section. Useful for
+   *  cleaning up after a section is deleted: matches the "delete the
+   *  section, drop its photos from the gallery too" workflow. */
+  removeUnassignedImages: () => Promise<number>
+
   // Virtual rename — section-scoped rename that lives only inside the app.
   // The disk filenames stay untouched until the user explicitly commits.
   applyVirtualNamesToSection: (sectionId: string, opts?: { prefix?: string; shuffle?: boolean }) => void
@@ -786,6 +791,30 @@ export const useGallery = create<GalleryState>((set, get) => ({
         inSection.has(img.id) && img.displayName ? { ...img, displayName: undefined } : img,
       ),
     })
+  },
+
+  removeUnassignedImages: async () => {
+    const sections = useSections.getState().sections
+    const inAnySection = new Set<string>()
+    for (const sec of sections) for (const id of sec.imageIds) inAnySection.add(id)
+    const { images, topPickIds } = get()
+    const toRemove = images.filter((img) => !inAnySection.has(img.id))
+    if (toRemove.length === 0) return 0
+
+    get().pushUndoSnapshot(`Remove unassigned (${toRemove.length})`)
+    const removeIds = new Set(toRemove.map((img) => img.id))
+    const nextTopPicks = new Set(topPickIds)
+    for (const id of removeIds) nextTopPicks.delete(id)
+    set({
+      images: images.filter((img) => !removeIds.has(img.id)),
+      topPickIds: nextTopPicks,
+      selectedIds: new Set(),
+    })
+    get().addToast(
+      `Removed ${toRemove.length} unassigned photo${toRemove.length === 1 ? '' : 's'} from gallery`,
+      'info',
+    )
+    return toRemove.length
   },
 
   toggleTopPickQuiet: () => {

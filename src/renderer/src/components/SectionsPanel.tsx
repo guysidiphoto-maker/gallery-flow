@@ -103,7 +103,7 @@ export function SectionsPanel({ publishStatus, publicUrl, onPublish, hasUnsavedC
     togglePanel,
     openPublishModal,
   } = useSections()
-  const { images, folderPath } = useGallery()
+  const { images, folderPath, removeUnassignedImages } = useGallery()
 
   const [newName, setNewName] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -147,6 +147,25 @@ export function SectionsPanel({ publishStatus, publicUrl, onPublish, hasUnsavedC
     id: sec.id,
     count: sec.imageIds.filter(id => galleryIds.has(id)).length
   }))
+
+  // Photos in the gallery but not in any section — usually leftover when a
+  // section was deleted and the user wants those photos to leave the gallery.
+  const unassignedCount = sections.length > 0
+    ? (() => {
+        const inAnySection = new Set<string>()
+        for (const sec of sections) for (const id of sec.imageIds) inAnySection.add(id)
+        return images.filter(img => !inAnySection.has(img.id)).length
+      })()
+    : 0
+
+  const handleRemoveUnassigned = useCallback(async () => {
+    if (unassignedCount === 0) return
+    const ok = window.confirm(
+      `Remove ${unassignedCount} photo${unassignedCount === 1 ? '' : 's'} that ${unassignedCount === 1 ? 'is' : 'are'} not in any section?\n\nThe source files on disk are not touched.`,
+    )
+    if (!ok) return
+    await removeUnassignedImages()
+  }, [unassignedCount, removeUnassignedImages])
 
   return (
     <div className="sections-panel">
@@ -206,6 +225,36 @@ export function SectionsPanel({ publishStatus, publicUrl, onPublish, hasUnsavedC
           title="Add section"
         >+</button>
       </div>
+
+      {/* Cleanup unassigned photos — visible only when sections exist and there
+          are leftover photos not in any section */}
+      {unassignedCount > 0 && (
+        <button
+          onClick={handleRemoveUnassigned}
+          style={{
+            margin: '4px 8px 8px',
+            padding: '8px 10px',
+            background: 'rgba(245, 158, 11, 0.08)',
+            border: '1px solid rgba(245, 158, 11, 0.25)',
+            borderRadius: 6,
+            color: '#f59e0b',
+            fontSize: 11,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            textAlign: 'left',
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-2 14H7L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2" />
+          </svg>
+          <span style={{ flex: 1 }}>
+            Remove {unassignedCount} unassigned photo{unassignedCount === 1 ? '' : 's'}
+          </span>
+        </button>
+      )}
 
       {/* Publish */}
       <div className="sections-panel__footer">
