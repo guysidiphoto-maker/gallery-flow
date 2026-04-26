@@ -142,6 +142,9 @@ export interface GalleryState {
   // Top Picks
   toggleTopPick: (id: string) => void
   toggleTopPickSelected: () => void
+  /** Toggle the top-pick flag on the currently selected image(s) without
+   *  moving anything in the gallery and without touching sections. */
+  toggleTopPickQuiet: () => void
   removeTopPickSelected: () => void
   clearTopPicks: () => void
 
@@ -628,6 +631,20 @@ export const useGallery = create<GalleryState>((set, get) => ({
     if (isNewPick) {
       get().moveToTop(id)
     }
+  },
+
+  toggleTopPickQuiet: () => {
+    const { selectedIds, topPickIds } = get()
+    if (selectedIds.size === 0) return
+    const willAdd = [...selectedIds].some(id => !topPickIds.has(id))
+    get().pushUndoSnapshot(willAdd ? 'Mark top picks (quiet)' : 'Unmark top picks (quiet)')
+    const next = new Set(topPickIds)
+    if (willAdd) {
+      for (const id of selectedIds) next.add(id)
+    } else {
+      for (const id of selectedIds) next.delete(id)
+    }
+    set({ topPickIds: next })
   },
 
   toggleTopPickSelected: () => {

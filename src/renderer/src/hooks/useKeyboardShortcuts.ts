@@ -19,6 +19,7 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
     togglePreviewMode,
     prepareApplyOrder,
     toggleTopPickSelected,
+    toggleTopPickQuiet,
     removeTopPickSelected,
     openStoryModal,
     topPickIds,
@@ -85,6 +86,15 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
       if (meta && e.code === 'KeyP') {
         e.preventDefault()
         togglePreviewMode()
+        return
+      }
+
+      // P (no modifier): Quiet top-pick toggle — flag/unflag selected image(s)
+      // without moving them, without opening the sections panel, without
+      // auto-advancing selection. Sister to T which does the "loud" version.
+      if (e.code === 'KeyP' && !meta && !e.shiftKey && selectedIds.size > 0) {
+        e.preventDefault()
+        toggleTopPickQuiet()
         return
       }
 
@@ -298,7 +308,7 @@ export function useKeyboardShortcuts(options?: { onShowShortcuts?: () => void })
     openFolder, moveToTop, moveToBottom,
     deleteSelected, undoLastRename, undo, selectAll, deselectAll, selectImage, selectRange,
     togglePreviewMode, prepareApplyOrder,
-    toggleTopPickSelected, removeTopPickSelected, openStoryModal, toggleTopPicksTray,
+    toggleTopPickSelected, toggleTopPickQuiet, removeTopPickSelected, openStoryModal, toggleTopPicksTray,
     addSection, assignImagesToSection, isPanelOpen, togglePanel,
     renameImage,
     options?.onShowShortcuts
