@@ -794,6 +794,44 @@ export function App() {
   // Default anchor: real all-images section if no sections, else the first
   // section. Initialized in an effect once gallery data is loaded.
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<string>('all-images')
+
+  // Active section view: when set, the page renders ONLY this section's grid
+  // (replaces the stacked-sections layout). Tapping a pill swaps content,
+  // tapping the gallery title returns to the all-sections view.
+  // null = default stacked-sections layout (safe; this is the historic
+  // behavior, no risk of regressing the live gallery).
+  const [activeSectionView, setActiveSectionView] = useState<string | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('section')
+    } catch {
+      return null
+    }
+  })
+
+  // Mirror activeSectionView onto ?section=<id> so refreshes / shares stay
+  // on the same section. Wrapped in try/catch so a malformed URL never
+  // takes the page down.
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href)
+      if (activeSectionView) url.searchParams.set('section', activeSectionView)
+      else url.searchParams.delete('section')
+      window.history.replaceState(null, '', url.toString())
+    } catch { /* ignore — url sync is a UX nicety, never load-bearing */ }
+  }, [activeSectionView])
+
+  // Auto-select the first section once gallery data is loaded, IF and only
+  // if (a) the gallery actually has sections, (b) we don't already have a
+  // valid active view from the URL. Galleries without sections keep
+  // activeSectionView = null and render the all-photos layout.
+  useEffect(() => {
+    if (sections.length === 0) return
+    setActiveSectionView(prev => {
+      if (prev && sections.some(s => s.id === prev)) return prev
+      return sections[0].id
+    })
+  }, [sections])
   const [viewerRole, setViewerRole] = useState<'none' | 'client' | 'guest'>('none')
   const [clientCodeInput, setClientCodeInput] = useState('')
   const [clientCodeError, setClientCodeError] = useState(false)
@@ -1623,22 +1661,16 @@ export function App() {
           }, {})}
           showAllPill={false}
           totalCount={images.length}
-          activeId={activeSectionAnchor}
+          activeId={activeSectionView ? `section-${activeSectionView}` : 'all-images'}
           onJump={(id) => {
-            const section = document.getElementById(id)
-            if (!section) return
-            // Land on the FIRST IMAGE of the section, not the heading band —
-            // the heading is mostly empty space and clients reported feeling
-            // like the click "did nothing" when it scrolled to a header.
-            // Falls back to the section element if no <img> is found yet
-            // (e.g. before the masonry grid has mounted).
-            requestAnimationFrame(() => {
-              const firstImg = section.querySelector('img') as HTMLElement | null
-              const target = firstImg ?? section
-              const stickyOffset = 80
-              const top = target.getBoundingClientRect().top + window.scrollY - stickyOffset
-              window.scrollTo({ top, behavior: 'auto' })
-            })
+            // Tapping a section pill SWAPS the visible grid to just that
+            // section's photos and resets scroll to the top. Tapping the
+            // "All Photos" pill (id === 'all-images') goes back to the
+            // stacked-sections layout. Defensive: any unexpected id (e.g.
+            // a stale section_id) leaves the rendering untouched.
+            const sectionId = id === 'all-images' ? null : id.replace(/^section-/, '')
+            setActiveSectionView(sectionId)
+            window.scrollTo({ top: 0, behavior: 'auto' })
           }}
           centerToolbar={showStoriesSection ? (
             <button
@@ -1736,7 +1768,14 @@ export function App() {
         </section>
       )}
 
-      {sections.length > 0 && sections.map(sec => {
+      {sections.length > 0 && !(faceMatchIds && faceFilterActive) && sections.map(sec => {
+        // Single-section view: only render the active section's grid.
+        // Switching pills swaps the visible grid by re-running this filter.
+        // A section with zero matching images renders null; the all-photos
+        // safety-net block below kicks in if every section ends up empty.
+        // Face search bypasses sections entirely (handled by the condition
+        // above) so matched photos across every section show together.
+        if (activeSectionView && sec.id !== activeSectionView) return null
         const sectionImages = visibleImages.filter(img => img.section_id === sec.id)
         if (sectionImages.length === 0) return null
         return (
