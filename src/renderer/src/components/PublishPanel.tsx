@@ -1347,7 +1347,6 @@ export function PublishPanel({
                   <Toggle
                     value={settings.faceIndexEnabled}
                     onChange={v => update({ faceIndexEnabled: v })}
-                    disabled={isAlreadyLive}
                   />
                 </div>
                 {settings.faceIndexEnabled && !isAlreadyLive && (

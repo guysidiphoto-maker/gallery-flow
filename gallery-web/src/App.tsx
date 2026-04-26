@@ -1728,10 +1728,11 @@ export function App() {
         )
       })}
 
-      {/* All Images section — only when there are no sections. When sections
-          cover the gallery, every photo already shows up in its section grid,
-          so an extra "All Photos" view would duplicate everything. */}
-      {sections.length === 0 && (
+      {/* All Images section — render when there are no sections, or as a
+          safety net when sections exist but none of them actually contain
+          visible images (e.g. a sync race where section_id is briefly null).
+          Without this fallback the page renders empty. */}
+      {(sections.length === 0 || !sections.some(sec => visibleImages.some(img => img.section_id === sec.id))) && (
       <section id="all-images" className="gallery-section gallery-section--all">
         {(() => {
           const mainGridImages = viewerRole === 'client' ? images : visibleImages

@@ -1095,9 +1095,19 @@ export async function updateGallerySettings(
   const row = Array.isArray(existing) ? existing[0] : existing
   const galleryId = (row as { id?: string } | null)?.id
 
+  // Mirror face_index_enabled onto the dedicated column so the rekognition
+  // edge function (which only checks the column, not delivery_settings) sees
+  // the new state. Toggling off for a live gallery just flips the flag; the
+  // collection is kept so re-enabling later doesn't have to re-process every
+  // photo. Toggling on kicks off resumeFaceIndexingIfEnabled below.
+  const desiredFaceEnabled = !!sanitizedSettings.faceIndexEnabled
+
   const { error: updateError } = await supabase
     .from('galleries')
-    .update({ delivery_settings: sanitizedSettings })
+    .update({
+      delivery_settings: sanitizedSettings,
+      face_index_enabled: desiredFaceEnabled,
+    })
     .eq('local_id', localGalleryId)
     .eq('status', 'live')
     .select('id')
@@ -1115,6 +1125,17 @@ export async function updateGallerySettings(
       p_password: plaintextPassword,
     })
     if (pwErr) return { error: `password update failed: ${pwErr.message}` }
+
+    // If face search just got turned on, start indexing now so the user
+    // doesn't have to wait for a full publish cycle. Safe to call when
+    // already running (the edge function rejects concurrent claims).
+    if (desiredFaceEnabled) {
+      try {
+        await startFaceIndexingInBackground(galleryId)
+      } catch (err) {
+        log('update-settings:face-start-error', err instanceof Error ? err.message : String(err))
+      }
+    }
   }
 
   return { error: null }
