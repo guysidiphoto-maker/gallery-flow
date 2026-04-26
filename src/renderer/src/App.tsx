@@ -530,6 +530,7 @@ function MainApp({ business }: { business: Business | null }) {
 
     setPublishPhase('publishing')
     setPubError('')
+    useGallery.getState().addToast('Syncing changes to cloud…', 'info')
 
     try {
       const imgs = resolveImages(project.imageIds, imageRegistry)
@@ -597,8 +598,10 @@ function MainApp({ business }: { business: Business | null }) {
       useGallery.getState().addToast(`Changes synced to cloud · ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`, 'success')
     } catch (err) {
       console.error('[handleUpdateChanges] failed', err)
-      setPubError(err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      setPubError(msg)
       setPublishPhase('error')
+      useGallery.getState().addToast(`Update failed: ${msg}`, 'error')
     } finally {
       setIsCloudPublishing(false)
     }
@@ -1796,6 +1799,7 @@ function MainApp({ business }: { business: Business | null }) {
               publishStatus={currentProject?.publishState?.status || 'draft'}
               publicUrl={currentProject?.publishState?.publicUrl}
               lastSyncedAt={currentProject?.publishState?.lastSyncedAt}
+              isUpdating={isCloudPublishing && publishPhase === 'publishing' && !publishProjectId}
               hasUnsavedChanges={
                 currentProject?.publishState?.status === 'live' && (
                   (!!currentProject?.publishState?.publishedImageIds &&

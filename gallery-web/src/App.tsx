@@ -349,7 +349,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
         return (<>
           <style>{animKeyframes[textAnimation]}</style>
           <div style={{
-            marginTop: 24, maxWidth: 520, padding: '0 20px',
+            margin: '24px auto 0', maxWidth: 520, padding: '0 20px',
             direction: msgRTL ? 'rtl' : 'ltr',
             textAlign: 'center',
           }}>
