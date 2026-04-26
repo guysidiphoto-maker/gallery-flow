@@ -588,12 +588,15 @@ ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
     }
     const webJpeg = webImg.toJPEG(80)
 
-    // Thumbnail: max 600px wide, JPEG quality 70 — small and fast
+    // Thumbnail: max 800px wide, JPEG quality 78 — matches industry-standard
+    // grid sizes (Pixieset / Pic-Time / SmugMug all sit in the 600–800
+    // range at q75-80). 800/q78 keeps Retina-class grid tiles sharp without
+    // ballooning per-page weight.
     let thumbImg = img
-    if (size.width > 600) {
-      thumbImg = img.resize({ width: 600, quality: 'good' })
+    if (size.width > 800) {
+      thumbImg = img.resize({ width: 800, quality: 'good' })
     }
-    const thumbJpeg = thumbImg.toJPEG(70)
+    const thumbJpeg = thumbImg.toJPEG(78)
 
     return {
       web: webJpeg.buffer.slice(webJpeg.byteOffset, webJpeg.byteOffset + webJpeg.byteLength),
