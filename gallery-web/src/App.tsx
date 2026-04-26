@@ -73,37 +73,28 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
   onToggleHide?: (id: string) => void
 }) {
   const cols = useColumnCount(layoutMode)
-  const [heights, setHeights] = useState<number[]>([])
   const imgRefs = useRef<Map<string, HTMLImageElement>>(new Map())
 
-  // Distribute images into columns using shortest-column algorithm (preserves visual reading order)
+  // Round-robin column distribution: image 0 → col 0, image 1 → col 1, …
+  //
+  // The earlier shortest-column algorithm depended on each image's loaded
+  // aspect ratio, so as lazy-loaded images came in the layout reshuffled
+  // mid-scroll — photos visibly jumped between columns. Round-robin places
+  // every image once on first render and never moves it. Columns may end
+  // up slightly uneven in height, but the gallery stops "dancing" when
+  // a client opens a section.
   const columns = useMemo(() => {
     const result: Array<Array<{ img: GalleryImage; index: number }>> = Array.from({ length: cols }, () => [])
-    const colHeights = new Array(cols).fill(0)
-
     for (let i = 0; i < images.length; i++) {
-      // Find shortest column
-      let shortest = 0
-      for (let c = 1; c < cols; c++) {
-        if (colHeights[c] < colHeights[shortest]) shortest = c
-      }
-      result[shortest].push({ img: images[i], index: i })
-      // Estimate height — use tracked height or assume 1:1
-      const h = heights[i] || 1
-      colHeights[shortest] += h
+      result[i % cols].push({ img: images[i], index: i })
     }
     return result
-  }, [images, cols, heights])
+  }, [images, cols])
 
-  const handleLoad = useCallback((index: number, el: HTMLImageElement) => {
-    if (!el) return
-    const ratio = el.naturalHeight / el.naturalWidth
-    setHeights(prev => {
-      if (prev[index] === ratio) return prev
-      const next = [...prev]
-      next[index] = ratio
-      return next
-    })
+  const handleLoad = useCallback((_index: number, _el: HTMLImageElement) => {
+    // No-op: column placement is now position-based, so we no longer need
+    // to track per-image natural ratios. Each <img height="auto"> still
+    // stretches to its natural ratio inside its slot.
   }, [])
 
   const gap = imageSpacing === 'none' ? 0 : imageSpacing === 'medium' ? 10 : 4
@@ -1592,13 +1583,16 @@ export function App() {
           onJump={(id) => {
             const section = document.getElementById(id)
             if (!section) return
-            // Use the natural scroll-margin-top set in CSS (.gallery-section)
-            // and a simple instant jump. Smooth scroll on mobile Safari can
-            // stutter when combined with sticky-nav reflows; an instant jump
-            // is more reliable and lands the user on the section heading
-            // followed immediately by the first row of photos.
-            const top = section.getBoundingClientRect().top + window.scrollY - 72
-            window.scrollTo({ top, behavior: 'auto' })
+            // requestAnimationFrame: defer the scroll until after the click
+            // has finished propagating. Without it, mobile Safari sometimes
+            // collapses the click + scroll into the same gesture frame and
+            // ends up jumping to a stale position (or worse, treats it as
+            // a tap-to-top gesture). The browser's native scrollIntoView
+            // honours .gallery-section's scroll-margin-top so the sticky
+            // nav doesn't cover the section heading.
+            requestAnimationFrame(() => {
+              section.scrollIntoView({ block: 'start', behavior: 'auto' })
+            })
           }}
           centerToolbar={showStoriesSection ? (
             <button

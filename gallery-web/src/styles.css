@@ -1025,11 +1025,13 @@ body {
   }
 }
 
-/* Anchor jumps must land BELOW the sticky nav. */
-.gallery-section { scroll-margin-top: 64px; }
+/* Anchor jumps must land BELOW the sticky nav. The 80px buffer covers the
+   nav height plus a little breathing room so the section heading isn't
+   flush against the bottom edge of the sticky bar. */
+.gallery-section { scroll-margin-top: 80px; }
 .gallery-section--all {
   margin-top: clamp(4px, 0.6vw, 8px);
-  scroll-margin-top: 64px;
+  scroll-margin-top: 80px;
 }
 
 /* ── Mobile floating download bar spacing ────────────────────────────────── */
