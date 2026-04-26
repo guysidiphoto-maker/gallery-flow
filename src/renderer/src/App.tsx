@@ -565,6 +565,23 @@ function MainApp({ business }: { business: Business | null }) {
         },
       )
       if (imgResult.error) throw new Error(imgResult.error)
+      // Surface upload failures so a short gallery isn't shipped silently.
+      if (imgResult.failures && imgResult.failures.length > 0) {
+        const sample = imgResult.failures.slice(0, 3).map(f => f.filename).join(', ')
+        const more = imgResult.failures.length > 3 ? ` (+${imgResult.failures.length - 3} more)` : ''
+        useGallery.getState().addToast(
+          `${imgResult.failures.length} photo${imgResult.failures.length === 1 ? '' : 's'} failed to upload: ${sample}${more}`,
+          'error',
+        )
+        console.warn('[update] upload failures', imgResult.failures)
+      } else if (imgResult.expected !== undefined && imgResult.uploaded !== undefined && imgResult.uploaded < imgResult.expected) {
+        // No reported failures but cloud count is short — likely missing source files.
+        const gap = imgResult.expected - imgResult.uploaded
+        useGallery.getState().addToast(
+          `Cloud has ${imgResult.uploaded} of ${imgResult.expected} photos — ${gap} missing. Check the Locate folder banner.`,
+          'error',
+        )
+      }
       setUpdateProgress('Updating sections…')
 
       // 2) Sync sections — wipes and recreates gallery_sections + reassigns

@@ -763,14 +763,20 @@ export interface UpdateProgress {
   filename?: string
 }
 
+export interface UpdateFailure {
+  filename: string
+  reason: string
+}
+
 export async function updateGalleryImages(
   galleryDbIdOrLocalId: string,
   currentImagePaths: string[],
   publishedImageIds: string[],
   imageRegistry: Record<string, { filename: string; path: string }>,
   onProgress?: (p: UpdateProgress) => void,
-): Promise<{ error: string | null }> {
+): Promise<{ error: string | null; failures?: UpdateFailure[]; uploaded?: number; expected?: number }> {
   onProgress?.({ phase: 'starting', current: 0, total: 0 })
+  const failures: UpdateFailure[] = []
   log('update-images:start', `gallery=${galleryDbIdOrLocalId} current=${currentImagePaths.length} published=${publishedImageIds.length}`)
 
   // Resolve gallery DB id — could be UUID or local_id
@@ -843,7 +849,11 @@ export async function updateGalleryImages(
           thumbSize: number; webSize: number; originalSize: number
           width: number; height: number
         } | null
-        if (!cr) { log('update-images:compress-failed', filename); continue }
+        if (!cr) {
+          log('update-images:compress-failed', filename)
+          failures.push({ filename, reason: 'compression failed (file may be missing or unreadable)' })
+          continue
+        }
 
         // Upload thumb, web preview, original
         const thumbPath = `${slug}/${galleryDbId}/thumbs/${filename}`
@@ -877,7 +887,9 @@ export async function updateGalleryImages(
         log('update-images:added', filename)
         onProgress?.({ phase: 'uploading', current: i + 1, total: addedPaths.length, filename })
       } catch (err) {
-        log('update-images:add-error', `${filename}: ${err instanceof Error ? err.message : String(err)}`)
+        const reason = err instanceof Error ? err.message : String(err)
+        log('update-images:add-error', `${filename}: ${reason}`)
+        failures.push({ filename, reason })
       }
     }
   }
@@ -908,8 +920,18 @@ export async function updateGalleryImages(
     log('update-images:face-resume-error', err instanceof Error ? err.message : String(err))
   })
 
-  log('update-images:done', `${currentFilenames.length} images, ${removed.length} removed`)
-  return { error: null }
+  // Verify cloud actually has every expected image. Discrepancies happen when
+  // an upload fails mid-flight; the user should see a clear count instead of
+  // silently shipping a short gallery.
+  const { count: cloudCount } = await supabase
+    .from('images')
+    .select('id', { count: 'exact', head: true })
+    .eq('gallery_id', galleryDbId)
+  const expected = currentFilenames.length
+  const uploaded = cloudCount ?? 0
+
+  log('update-images:done', `${expected} expected, ${uploaded} in cloud, ${removed.length} removed, ${failures.length} failures`)
+  return { error: null, failures, uploaded, expected }
 }
 
 // ─── Update Gallery Sections in Cloud ───────────────────────────────────────
