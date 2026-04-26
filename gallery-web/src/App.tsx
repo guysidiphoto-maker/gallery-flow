@@ -791,9 +791,16 @@ export function App() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
   const [dlProgress, setDlProgress] = useState<string | null>(null)
-  // Default anchor: real all-images section if no sections, else the first
-  // section. Initialized in an effect once gallery data is loaded.
-  const [activeSectionAnchor, setActiveSectionAnchor] = useState<string>('all-images')
+  // Active section: which section the user is currently viewing. null means
+  // "All Photos" (only used when the gallery has no sections at all). The
+  // gallery viewer renders just this section's photos at a time — switching
+  // sections REPLACES the visible grid instead of scrolling between
+  // stacked sections.
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(() => {
+    // Read ?section=<id> from the URL so deep links land on the right section.
+    const params = new URLSearchParams(window.location.search)
+    return params.get('section')
+  })
   const [viewerRole, setViewerRole] = useState<'none' | 'client' | 'guest'>('none')
   const [clientCodeInput, setClientCodeInput] = useState('')
   const [clientCodeError, setClientCodeError] = useState(false)
@@ -858,44 +865,24 @@ export function App() {
     }
   }, [galleryRef])
 
-  // Scroll-spy: track which section is in view and update activeSectionAnchor.
-  // We watch the All Images section + every section block. The first one
-  // intersecting wins.
+  // Default the active section to the first one once the gallery loads.
+  // Skipped if a ?section=<id> URL param already pinned a specific section.
   useEffect(() => {
-    if (sections.length === 0 || showWelcome) return
-    // When sections cover the gallery we no longer render an "all-images"
-    // section; only watch per-section anchors.
-    const ids = sections.length > 0
-      ? sections.map(sec => `section-${sec.id}`)
-      : ['all-images']
-    const elements = ids
-      .map(id => document.getElementById(id))
-      .filter((e): e is HTMLElement => !!e)
-    if (elements.length === 0) return
+    if (sections.length === 0) return
+    setActiveSectionId(prev => {
+      if (prev && sections.some(s => s.id === prev)) return prev
+      return sections[0].id
+    })
+  }, [sections])
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Pick the entry closest to the top of the viewport that's currently
-        // intersecting. Sort by boundingClientRect.top so a section that's
-        // crossing the nav line is preferred over one already deep in view.
-        const visible = entries
-          .filter(e => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        if (visible[0]) {
-          setActiveSectionAnchor(visible[0].target.id)
-        }
-      },
-      {
-        // The observer fires when a section's top is between 70px from the
-        // top of the viewport and 60% of the viewport height.
-        rootMargin: '-70px 0px -40% 0px',
-        threshold: 0,
-      }
-    )
-
-    elements.forEach(el => observer.observe(el))
-    return () => observer.disconnect()
-  }, [sections, showWelcome, images])
+  // Sync the active section into the URL so refreshes / shares stay on the
+  // same section. history.replaceState avoids polluting back/forward history.
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (activeSectionId) url.searchParams.set('section', activeSectionId)
+    else url.searchParams.delete('section')
+    window.history.replaceState(null, '', url.toString())
+  }, [activeSectionId])
 
   // Load hidden images for this gallery
   useEffect(() => {
@@ -1623,20 +1610,15 @@ export function App() {
           }, {})}
           showAllPill={false}
           totalCount={images.length}
-          activeId={activeSectionAnchor}
+          activeId={activeSectionId ? `section-${activeSectionId}` : 'all-images'}
           onJump={(id) => {
-            const section = document.getElementById(id)
-            if (!section) return
-            // requestAnimationFrame: defer the scroll until after the click
-            // has finished propagating. Without it, mobile Safari sometimes
-            // collapses the click + scroll into the same gesture frame and
-            // ends up jumping to a stale position (or worse, treats it as
-            // a tap-to-top gesture). The browser's native scrollIntoView
-            // honours .gallery-section's scroll-margin-top so the sticky
-            // nav doesn't cover the section heading.
-            requestAnimationFrame(() => {
-              section.scrollIntoView({ block: 'start', behavior: 'auto' })
-            })
+            // Section pills now SWAP the visible grid instead of scrolling.
+            // The id arrives as "section-<uuid>"; strip the prefix to get
+            // the raw section id used by activeSectionId.
+            const sectionId = id === 'all-images' ? null : id.replace(/^section-/, '')
+            setActiveSectionId(sectionId)
+            // Reset the page scroll so the new section starts at the top.
+            window.scrollTo({ top: 0, behavior: 'auto' })
           }}
           centerToolbar={showStoriesSection ? (
             <button
@@ -1734,25 +1716,52 @@ export function App() {
         </section>
       )}
 
-      {sections.length > 0 && sections.map(sec => {
-        const sectionImages = visibleImages.filter(img => img.section_id === sec.id)
-        if (sectionImages.length === 0) return null
+      {/* Single-section view: render only the active section's photos.
+          Switching sections via the nav pills replaces the visible grid.
+          Face search is the one exception — when a face filter is active,
+          show the matched images across ALL sections so the user actually
+          sees themselves regardless of where their photos live. */}
+      {(() => {
+        const facePinned = !!faceMatchIds && faceFilterActive
+        const baseList = viewerRole === 'client' ? images : visibleImages
+        let displayed: GalleryImage[]
+        let sectionLabel: string | null
+        let sectionCount: number
+        if (facePinned) {
+          displayed = baseList
+          sectionLabel = null
+          sectionCount = baseList.length
+        } else if (activeSectionId && sections.length > 0) {
+          displayed = baseList.filter(img => img.section_id === activeSectionId)
+          const activeSection = sections.find(s => s.id === activeSectionId)
+          sectionLabel = activeSection?.name ?? null
+          sectionCount = displayed.length
+        } else {
+          displayed = baseList
+          sectionLabel = null
+          sectionCount = baseList.length
+        }
         return (
-          <section key={sec.id} id={`section-${sec.id}`} className="gallery-section">
-            <h2 className="gallery-section__heading">
-              <span className="gallery-section__name">{sec.name}</span>
-              <span className="gallery-section__count">{sectionImages.length} {sectionImages.length === 1 ? 'photo' : 'photos'}</span>
-            </h2>
+          <section
+            id={activeSectionId ? `section-${activeSectionId}` : 'all-images'}
+            className={`gallery-section ${activeSectionId ? '' : 'gallery-section--all'}`}
+          >
+            {sectionLabel && (
+              <h2 className="gallery-section__heading">
+                <span className="gallery-section__name">{sectionLabel}</span>
+                <span className="gallery-section__count">
+                  {sectionCount} {sectionCount === 1 ? 'photo' : 'photos'}
+                </span>
+              </h2>
+            )}
             <MasonryGrid
-              images={sectionImages}
+              images={displayed}
               thumbUrl={thumbUrl}
               layoutMode={layoutMode}
               imageSpacing={imageSpacing}
               cornerStyle={cornerStyle}
               onImageClick={(idx) => {
-                // Scope the fullscreen viewer to this section — next/prev
-                // stays within the section the user clicked into.
-                setViewerList(sectionImages)
+                setViewerList(displayed)
                 setViewerIndex(idx)
               }}
               onDownload={downloadsEnabled ? (img) => handleDownload(downloadUrl(img), img.filename) : undefined}
@@ -1769,43 +1778,7 @@ export function App() {
             />
           </section>
         )
-      })}
-
-      {/* All Images section — render when there are no sections, or as a
-          safety net when sections exist but none of them actually contain
-          visible images (e.g. a sync race where section_id is briefly null).
-          Without this fallback the page renders empty. */}
-      {(sections.length === 0 || !sections.some(sec => visibleImages.some(img => img.section_id === sec.id))) && (
-      <section id="all-images" className="gallery-section gallery-section--all">
-        {(() => {
-          const mainGridImages = viewerRole === 'client' ? images : visibleImages
-          return (
-        <MasonryGrid
-          images={mainGridImages}
-          thumbUrl={thumbUrl}
-          layoutMode={layoutMode}
-          imageSpacing={imageSpacing}
-          cornerStyle={cornerStyle}
-          onImageClick={(idx) => {
-            setViewerList(mainGridImages)
-            setViewerIndex(idx)
-          }}
-          onDownload={downloadsEnabled ? (img) => handleDownload(downloadUrl(img), img.filename) : undefined}
-          selectMode={selectMode}
-          selectedIds={selectedIds}
-          onToggleSelect={(id) => setSelectedIds(prev => {
-            const next = new Set(prev)
-            if (next.has(id)) next.delete(id); else next.add(id)
-            return next
-          })}
-          clientMode={viewerRole === 'client'}
-          hiddenIds={hiddenImageIds}
-          onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
-        />
-          )
-        })()}
-      </section>
-      )}
+      })()}
 
       {/* Footer */}
       {showFooter && (

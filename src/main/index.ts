@@ -573,8 +573,11 @@ ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
     const size = img.getSize()
     if (size.width === 0 || size.height === 0) return null
 
-    // Web version: max 1600px on longest side, JPEG quality 78
-    const maxWeb = 1600
+    // Web version: max 1800px on longest side, JPEG quality 80.
+    // Bumped from 1600/q78 — the gallery viewer now renders one section
+    // at a time and progressively, so we can afford a sharper preview
+    // without blowing the per-page byte budget.
+    const maxWeb = 1800
     let webImg = img
     if (size.width > maxWeb || size.height > maxWeb) {
       if (size.width >= size.height) {
@@ -583,7 +586,7 @@ ipcMain.handle('compress-image-for-upload', async (_e, filePath: string) => {
         webImg = img.resize({ height: maxWeb, quality: 'good' })
       }
     }
-    const webJpeg = webImg.toJPEG(78)
+    const webJpeg = webImg.toJPEG(80)
 
     // Thumbnail: max 600px wide, JPEG quality 70 — small and fast
     let thumbImg = img
