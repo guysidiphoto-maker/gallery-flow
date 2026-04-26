@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { arrayMove } from '@dnd-kit/sortable'
 import { nanoid } from '../utils/nanoid'
+import { useSections } from './sections'
 import type { ImageFile, RenameHistoryEntry, DuplicateGroup, SortMode, StorySceneDef, StoryOptions, StoryBuildResult } from '../types'
 import { generateInsertAfterName, generateSequentialNames, validateRename } from '../utils/naming'
 import { loadExifTime, loadExifCamera } from '../utils/imageUtils'
@@ -145,6 +146,13 @@ export interface GalleryState {
   /** Toggle the top-pick flag on the currently selected image(s) without
    *  moving anything in the gallery and without touching sections. */
   toggleTopPickQuiet: () => void
+
+  // Virtual rename — section-scoped rename that lives only inside the app.
+  // The disk filenames stay untouched until the user explicitly commits.
+  applyVirtualNamesToSection: (sectionId: string, opts?: { prefix?: string; shuffle?: boolean }) => void
+  commitVirtualNamesToDisk: () => Promise<{ success: boolean; renamed: number; error?: string }>
+  hasPendingVirtualNames: () => boolean
+  clearVirtualNames: (sectionId?: string) => void
   removeTopPickSelected: () => void
   clearTopPicks: () => void
 
@@ -631,6 +639,153 @@ export const useGallery = create<GalleryState>((set, get) => ({
     if (isNewPick) {
       get().moveToTop(id)
     }
+  },
+
+  // ── Virtual rename (section-scoped, in-app only) ───────────────────────────
+  applyVirtualNamesToSection: (sectionId, opts) => {
+    const sections = useSections.getState().sections
+    const sec = sections.find((s) => s.id === sectionId)
+    if (!sec) return
+
+    const { images } = get()
+    const sectionImageIds = sec.imageIds.filter((id) => images.some((i) => i.id === id))
+    if (sectionImageIds.length === 0) return
+
+    // Order the section's images by their current gallery order so virtual
+    // names match the visual sequence. If shuffle is on, randomize first.
+    const orderById = new Map(images.map((img, idx) => [img.id, idx]))
+    const ordered = [...sectionImageIds].sort((a, b) => (orderById.get(a) ?? 0) - (orderById.get(b) ?? 0))
+    if (opts?.shuffle) {
+      for (let i = ordered.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[ordered[i], ordered[j]] = [ordered[j], ordered[i]]
+      }
+    }
+
+    const prefix = opts?.prefix ?? ''
+    const digits = Math.max(4, String(ordered.length).length)
+    const seqByImageId = new Map<string, string>()
+    ordered.forEach((id, i) => {
+      const num = String(i + 1).padStart(digits, '0')
+      const img = images.find((im) => im.id === id)!
+      seqByImageId.set(id, `${prefix}${num}${img.ext.toLowerCase()}`)
+    })
+
+    get().pushUndoSnapshot(opts?.shuffle ? `Shuffle names: ${sectionId}` : `Apply names: ${sectionId}`)
+    set({
+      images: images.map((img) => {
+        const newName = seqByImageId.get(img.id)
+        return newName ? { ...img, displayName: newName } : img
+      }),
+    })
+    get().addToast(
+      `Applied virtual names to ${ordered.length} photo${ordered.length === 1 ? '' : 's'}${opts?.shuffle ? ' (shuffled)' : ''}`,
+      'success',
+    )
+  },
+
+  commitVirtualNamesToDisk: async () => {
+    const { images } = get()
+    // Collisions: when committing, a target name may collide with another
+    // image's current filename. Resolve by renaming through a temp suffix
+    // first if needed — but for the common case (sequential names that don't
+    // overlap with existing names) batchRename handles it directly.
+    const ops = images
+      .filter((i) => i.displayName && i.displayName !== i.filename)
+      .map((i) => ({
+        oldPath: i.path,
+        newPath: join(i.folderPath, i.displayName!),
+        imageId: i.id,
+        newFilename: i.displayName!,
+      }))
+    if (ops.length === 0) return { success: true, renamed: 0 }
+
+    // If a target name collides with another image's current name, we'd
+    // overwrite — protect by renaming everyone to a temp name first, then
+    // to the final name. Two-phase commit.
+    const finalSet = new Set(ops.map((o) => o.newFilename.toLowerCase()))
+    const currentNames = new Set(
+      images.map((i) => i.filename.toLowerCase()).filter((n) => !ops.some((o) => o.oldPath.split('/').pop()?.toLowerCase() === n)),
+    )
+    const wouldCollide = ops.some((o) => currentNames.has(o.newFilename.toLowerCase()))
+
+    if (wouldCollide) {
+      get().addToast(
+        'Cannot commit: target names collide with existing files outside this set',
+        'error',
+      )
+      return { success: false, renamed: 0, error: 'collision' }
+    }
+
+    // Phase 1: rename to temps
+    const stamp = Date.now()
+    const tempOps = ops.map((o, idx) => ({
+      oldPath: o.oldPath,
+      newPath: join(o.oldPath.split('/').slice(0, -1).join('/'), `__pix_tmp_${stamp}_${idx}__`),
+    }))
+    const phase1 = await window.api.batchRename(tempOps)
+    if (!phase1.success) {
+      get().addToast(`Commit failed: ${phase1.error ?? 'unknown'}`, 'error')
+      return { success: false, renamed: 0, error: phase1.error }
+    }
+
+    // Phase 2: rename temps to final names
+    const phase2Ops = tempOps.map((t, idx) => ({ oldPath: t.newPath, newPath: ops[idx].newPath }))
+    const phase2 = await window.api.batchRename(phase2Ops)
+    if (!phase2.success) {
+      get().addToast(`Commit failed mid-way: ${phase2.error ?? 'unknown'}`, 'error')
+      return { success: false, renamed: 0, error: phase2.error }
+    }
+
+    // Update store: filename = displayName, clear displayName
+    const opMap = new Map(ops.map((o) => [o.imageId, o]))
+    set((state) => ({
+      images: state.images.map((img) => {
+        const op = opMap.get(img.id)
+        if (!op) return img
+        return { ...img, filename: op.newFilename, path: op.newPath, displayName: undefined }
+      }),
+    }))
+
+    // Record in rename history so Cmd+Z can undo
+    const historyEntry: RenameHistoryEntry = {
+      id: nanoid(),
+      timestamp: Date.now(),
+      description: `Committed virtual names (${ops.length} files)`,
+      operations: ops.map((o) => {
+        const img = images.find((i) => i.id === o.imageId)!
+        return {
+          imageId: o.imageId,
+          oldPath: o.oldPath,
+          oldFilename: img.filename,
+          newPath: o.newPath,
+          newFilename: o.newFilename,
+        }
+      }),
+    }
+    set((state) => ({ renameHistory: [historyEntry, ...state.renameHistory].slice(0, 50) }))
+
+    get().addToast(`Committed ${ops.length} name${ops.length === 1 ? '' : 's'} to disk`, 'success', historyEntry.id)
+    return { success: true, renamed: ops.length }
+  },
+
+  hasPendingVirtualNames: () => get().images.some((i) => !!i.displayName && i.displayName !== i.filename),
+
+  clearVirtualNames: (sectionId) => {
+    const { images } = get()
+    if (!sectionId) {
+      set({ images: images.map((img) => (img.displayName ? { ...img, displayName: undefined } : img)) })
+      return
+    }
+    const sections = useSections.getState().sections
+    const sec = sections.find((s) => s.id === sectionId)
+    if (!sec) return
+    const inSection = new Set(sec.imageIds)
+    set({
+      images: images.map((img) =>
+        inSection.has(img.id) && img.displayName ? { ...img, displayName: undefined } : img,
+      ),
+    })
   },
 
   toggleTopPickQuiet: () => {

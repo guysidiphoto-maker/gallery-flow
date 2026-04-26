@@ -756,6 +756,8 @@ export function App() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
   const [dlProgress, setDlProgress] = useState<string | null>(null)
+  // Default anchor: real all-images section if no sections, else the first
+  // section. Initialized in an effect once gallery data is loaded.
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<string>('all-images')
   const [viewerRole, setViewerRole] = useState<'none' | 'client' | 'guest'>('none')
   const [clientCodeInput, setClientCodeInput] = useState('')
@@ -826,8 +828,10 @@ export function App() {
   // intersecting wins.
   useEffect(() => {
     if (sections.length === 0 || showWelcome) return
+    // When sections cover the gallery we no longer render an "all-images"
+    // section; only watch per-section anchors.
     const ids = sections.length > 0
-      ? ['all-images', ...sections.map(sec => `section-${sec.id}`)]
+      ? sections.map(sec => `section-${sec.id}`)
       : ['all-images']
     const elements = ids
       .map(id => document.getElementById(id))
@@ -1582,7 +1586,7 @@ export function App() {
             acc[sec.id] = images.filter(im => im.section_id === sec.id).length
             return acc
           }, {})}
-          showAllPill={sections.length > 0}
+          showAllPill={false}
           totalCount={images.length}
           activeId={activeSectionAnchor}
           onJump={(id) => {
@@ -1724,15 +1728,11 @@ export function App() {
         )
       })}
 
-      {/* All Images section — always rendered. When sections exist it acts as
-          the "All Photos" view rendered after the per-section grids. */}
+      {/* All Images section — only when there are no sections. When sections
+          cover the gallery, every photo already shows up in its section grid,
+          so an extra "All Photos" view would duplicate everything. */}
+      {sections.length === 0 && (
       <section id="all-images" className="gallery-section gallery-section--all">
-        {sections.length > 0 && (
-          <h2 className="gallery-section__heading">
-            <span className="gallery-section__name">All Photos</span>
-            <span className="gallery-section__count">{images.length} {images.length === 1 ? 'photo' : 'photos'}</span>
-          </h2>
-        )}
         {(() => {
           const mainGridImages = viewerRole === 'client' ? images : visibleImages
           return (
@@ -1761,6 +1761,7 @@ export function App() {
           )
         })()}
       </section>
+      )}
 
       {/* Footer */}
       {showFooter && (

@@ -19,6 +19,11 @@ export interface ImageFile {
   captureTime?: number | null
   /** Camera model (loaded lazily) */
   cameraModel?: string | null
+  /** In-app virtual rename. When set, the gallery shows this name and uses
+   *  it for sort/filter, but the actual file on disk still has `filename`.
+   *  Cleared either by commitVirtualNamesToDisk (which renames on disk) or
+   *  by clearVirtualNames. */
+  displayName?: string
 }
 
 export interface RenameOperation {

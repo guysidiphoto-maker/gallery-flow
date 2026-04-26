@@ -756,12 +756,21 @@ export async function deleteImageFromCloud(
 
 // ─── Update Gallery Images (order + removals, no re-upload) ─────────────────
 
+export interface UpdateProgress {
+  phase: 'starting' | 'removing' | 'uploading' | 'finalizing'
+  current: number
+  total: number
+  filename?: string
+}
+
 export async function updateGalleryImages(
   galleryDbIdOrLocalId: string,
   currentImagePaths: string[],
   publishedImageIds: string[],
-  imageRegistry: Record<string, { filename: string; path: string }>
+  imageRegistry: Record<string, { filename: string; path: string }>,
+  onProgress?: (p: UpdateProgress) => void,
 ): Promise<{ error: string | null }> {
+  onProgress?.({ phase: 'starting', current: 0, total: 0 })
   log('update-images:start', `gallery=${galleryDbIdOrLocalId} current=${currentImagePaths.length} published=${publishedImageIds.length}`)
 
   // Resolve gallery DB id — could be UUID or local_id
@@ -788,6 +797,7 @@ export async function updateGalleryImages(
 
   if (removed.length > 0) {
     log('update-images:removing', `${removed.length} images`)
+    onProgress?.({ phase: 'removing', current: 0, total: removed.length })
     // Fetch DB-stored paths for removed images, then delete from storage + DB
     await Promise.all(removed.map(async (filename) => {
       const { data: imgRow } = await supabase.from('images')
@@ -818,10 +828,13 @@ export async function updateGalleryImages(
     log('update-images:uploading', `${addedPaths.length} new images`)
     const slug = requireBusiness().slug
 
+    onProgress?.({ phase: 'uploading', current: 0, total: addedPaths.length })
+
     // Compress, upload, and insert DB records for each new image
     for (let i = 0; i < addedPaths.length; i++) {
       const localPath = addedPaths[i]
       const filename = sanitizeFilename(localPath.split('/').pop() || `img_${i}`)
+      onProgress?.({ phase: 'uploading', current: i, total: addedPaths.length, filename })
 
       try {
         // Compress
@@ -862,6 +875,7 @@ export async function updateGalleryImages(
         })
 
         log('update-images:added', filename)
+        onProgress?.({ phase: 'uploading', current: i + 1, total: addedPaths.length, filename })
       } catch (err) {
         log('update-images:add-error', `${filename}: ${err instanceof Error ? err.message : String(err)}`)
       }
@@ -870,6 +884,7 @@ export async function updateGalleryImages(
 
   // 3. Update sort_order for all images
   log('update-images:reorder', `${currentFilenames.length} images`)
+  onProgress?.({ phase: 'finalizing', current: 0, total: 0 })
   const sanitizedCurrentFilenames = currentImagePaths.map(p => sanitizeFilename(p.split('/').pop() || ''))
   await Promise.all(sanitizedCurrentFilenames.map((filename, i) =>
     supabase
@@ -952,10 +967,13 @@ export async function updateGallerySectionsInCloud(
 
   // 3. Reassign section_id on each image by filename. Filename is unique
   //    within a gallery (enforced by the upload pipeline using basename).
+  //    CRITICAL: cloud stores sanitized filenames (Hebrew/spaces/specials are
+  //    stripped on upload), so we must sanitize here too — otherwise files
+  //    with non-ASCII names silently lose their section_id.
   const filenameToSection = new Map<string, string | null>()
   for (const [path, sectionId] of sectionPathToDbId) {
-    const filename = path.split('/').pop() || path
-    filenameToSection.set(filename, sectionId)
+    const rawFilename = path.split('/').pop() || path
+    filenameToSection.set(sanitizeFilename(rawFilename), sectionId)
   }
 
   // Pull all current images for the gallery so we can clear stragglers too.

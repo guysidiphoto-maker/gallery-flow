@@ -35,6 +35,7 @@ import { UploadFloater } from './components/UploadFloater'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { KeyboardShortcuts } from './components/KeyboardShortcuts'
 import { publishGallery, uploadStoryToCloud, markGalleryLive, updateGallerySettings, updateGalleryImages, updateGallerySectionsInCloud, cancelUpload, deleteGalleryFromCloud, deleteImageFromCloud } from './lib/cloudUpload'
+import { formatEta } from './lib/eta'
 import { supabase } from './lib/supabase'
 import { loadPersistedQueue, clearPersistedQueue } from './lib/uploadQueue'
 import { usePublish } from './store/publish'
@@ -422,6 +423,7 @@ function MainApp({ business }: { business: Business | null }) {
   const imageRegistryRef = useRef(imageRegistry)
   imageRegistryRef.current = imageRegistry
   const [exportProgress, setExportProgress] = useState<string | null>(null)
+  const [updateProgress, setUpdateProgress] = useState<string | null>(null)
   // Review mode: sequential gallery review (pick tops → next → pick tops → next)
   const [reviewQueue, setReviewQueue] = useState<string[]>([])
   const [reviewIndex, setReviewIndex] = useState(0)
@@ -530,19 +532,40 @@ function MainApp({ business }: { business: Business | null }) {
 
     setPublishPhase('publishing')
     setPubError('')
+    setUpdateProgress('Syncing changes…')
     useGallery.getState().addToast('Syncing changes to cloud…', 'info')
 
     try {
       const imgs = resolveImages(project.imageIds, imageRegistry)
 
       // 1) Sync image set + sort order with the cloud
+      const startedAt = Date.now()
       const imgResult = await updateGalleryImages(
         project.publishState.galleryDbId,
         imgs.map(i => i.path),
         project.publishState.publishedImageIds || imgs.map(i => i.id),
         imageRegistry as Record<string, { filename: string; path: string }>,
+        (p) => {
+          if (p.phase === 'starting') {
+            setUpdateProgress('Checking changes…')
+          } else if (p.phase === 'removing') {
+            setUpdateProgress(p.total > 0 ? `Removing ${p.total} photo${p.total === 1 ? '' : 's'}…` : 'Syncing changes…')
+          } else if (p.phase === 'uploading') {
+            const pct = p.total > 0 ? Math.round((p.current / p.total) * 100) : 0
+            const elapsedSec = (Date.now() - startedAt) / 1000
+            const ratio = p.current / p.total
+            const eta = (ratio > 0.05 && elapsedSec > 3)
+              ? formatEta(elapsedSec / ratio - elapsedSec)
+              : null
+            const tail = eta ? ` · ${eta} left` : ''
+            setUpdateProgress(`Uploading ${p.current} / ${p.total} (${pct}%)${tail}`)
+          } else if (p.phase === 'finalizing') {
+            setUpdateProgress('Finalizing…')
+          }
+        },
       )
       if (imgResult.error) throw new Error(imgResult.error)
+      setUpdateProgress('Updating sections…')
 
       // 2) Sync sections — wipes and recreates gallery_sections + reassigns
       //    section_id on each image by filename.
@@ -604,6 +627,7 @@ function MainApp({ business }: { business: Business | null }) {
       useGallery.getState().addToast(`Update failed: ${msg}`, 'error')
     } finally {
       setIsCloudPublishing(false)
+      setUpdateProgress(null)
     }
   }
 
@@ -1834,7 +1858,22 @@ function MainApp({ business }: { business: Business | null }) {
 
           {/* Main gallery or empty state */}
           <div className={`app__main ${isSectionsPanelOpen ? 'app__main--sections-open' : ''} ${showDuplicatesPanel ? 'app__main--sidebar-open' : ''}`}>
-            {!isLoading && <FilterBar />}
+            {!isLoading && (() => {
+              const proj = currentProject
+              const ps = proj?.publishState
+              const imagesChanged = ps?.status === 'live' &&
+                !!ps.publishedImageIds &&
+                JSON.stringify(proj!.imageIds) !== JSON.stringify(ps.publishedImageIds)
+              const sectionsChanged = ps?.status === 'live' && sectionsDirtyAt > 0
+              const showUpdate = !!(imagesChanged || sectionsChanged)
+              return (
+                <FilterBar
+                  showUpdateButton={showUpdate}
+                  isUpdating={isCloudPublishing && publishPhase === 'publishing' && !publishProjectId}
+                  onUpdate={() => currentProjectId && handleUpdateChanges(currentProjectId)}
+                />
+              )
+            })()}
             <div className="gallery-scroll">
               {isLoading ? <GallerySkeleton thumbnailSize={thumbnailSize} /> : <GalleryGrid />}
             </div>
@@ -1979,6 +2018,16 @@ function MainApp({ business }: { business: Business | null }) {
           <div className="export-float__content">
             <div className="cg__story-spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
             <span className="export-float__text">{exportProgress}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Update Changes progress indicator */}
+      {updateProgress && (
+        <div className="export-float">
+          <div className="export-float__content">
+            <div className="cg__story-spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+            <span className="export-float__text">{updateProgress}</span>
           </div>
         </div>
       )}

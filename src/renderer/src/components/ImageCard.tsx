@@ -205,8 +205,9 @@ export const ImageCard = memo(function ImageCard({
       </div>
 
       <div className="image-card__info">
-        <span className="image-card__filename" title={image.filename}>
-          {image.filename}
+        <span className="image-card__filename" title={image.displayName ? `${image.displayName} (on disk: ${image.filename})` : image.filename}>
+          {image.displayName ?? image.filename}
+          {image.displayName && <span className="image-card__virtual-tag" title="Not yet committed to disk">·</span>}
         </span>
       </div>
 
