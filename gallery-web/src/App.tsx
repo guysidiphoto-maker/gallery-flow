@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, Fragment } from 'react'
 import JSZip from 'jszip'
 import { supabase, storageUrl } from './supabase'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
@@ -235,7 +235,12 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                 )}
               </div>
             )
-            return <ScrollReveal key={img.id}>{gridItem}</ScrollReveal>
+            // ScrollReveal previously wrapped every tile with a 21-threshold
+            // IntersectionObserver + a 3D-perspective transform on a GPU
+            // layer. With 150+ tiles that meant thousands of layout/paint
+            // operations per scroll frame on mobile Safari and the tab
+            // crashed on fast scroll. Render the bare grid item instead.
+            return <Fragment key={img.id}>{gridItem}</Fragment>
           })}
         </div>
       ))}
