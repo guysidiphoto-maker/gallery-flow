@@ -260,6 +260,12 @@ ipcMain.handle('scan-folder', async (_e, folderPath: string) => {
     } catch { /* skip unreadable files */ }
   }
 
+  // Natural sort like macOS Finder: "img2.jpg" before "img10.jpg".
+  // Applied here so every import path (drag-drop, project create, "import
+  // into current") gets the same Finder-matching order without each call
+  // site having to remember to sort.
+  images.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }))
+
   return images
 })
 
