@@ -796,7 +796,11 @@ export function App() {
   // gallery viewer renders just this section's photos at a time — switching
   // sections REPLACES the visible grid instead of scrolling between
   // stacked sections.
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(() => {
+    // Read ?section=<id> from the URL so deep links land on the right section.
+    const params = new URLSearchParams(window.location.search)
+    return params.get('section')
+  })
   const [viewerRole, setViewerRole] = useState<'none' | 'client' | 'guest'>('none')
   const [clientCodeInput, setClientCodeInput] = useState('')
   const [clientCodeError, setClientCodeError] = useState(false)
@@ -861,19 +865,24 @@ export function App() {
     }
   }, [galleryRef])
 
-  // Default the active section to the first one (with images) once the
-  // gallery + image lists are both loaded. Defensive about both being
-  // populated — picking sections[0].id before images is loaded would
-  // briefly point at a section whose photos haven't arrived yet, yielding
-  // an empty grid mid-render.
+  // Default the active section to the first one once the gallery loads.
+  // Skipped if a ?section=<id> URL param already pinned a specific section.
   useEffect(() => {
-    if (sections.length === 0 || images.length === 0) return
+    if (sections.length === 0) return
     setActiveSectionId(prev => {
       if (prev && sections.some(s => s.id === prev)) return prev
-      const sectionWithImages = sections.find(s => images.some(im => im.section_id === s.id))
-      return sectionWithImages?.id ?? null
+      return sections[0].id
     })
-  }, [sections, images])
+  }, [sections])
+
+  // Sync the active section into the URL so refreshes / shares stay on the
+  // same section. history.replaceState avoids polluting back/forward history.
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (activeSectionId) url.searchParams.set('section', activeSectionId)
+    else url.searchParams.delete('section')
+    window.history.replaceState(null, '', url.toString())
+  }, [activeSectionId])
 
   // Load hidden images for this gallery
   useEffect(() => {
@@ -1711,10 +1720,7 @@ export function App() {
           Switching sections via the nav pills replaces the visible grid.
           Face search is the one exception — when a face filter is active,
           show the matched images across ALL sections so the user actually
-          sees themselves regardless of where their photos live. Safety:
-          if the active section ends up with zero matching images (a stale
-          section_id, a sync race, etc.), fall back to showing every photo
-          so the gallery never goes blank. */}
+          sees themselves regardless of where their photos live. */}
       {(() => {
         const facePinned = !!faceMatchIds && faceFilterActive
         const baseList = viewerRole === 'client' ? images : visibleImages
@@ -1726,18 +1732,10 @@ export function App() {
           sectionLabel = null
           sectionCount = baseList.length
         } else if (activeSectionId && sections.length > 0) {
-          const filtered = baseList.filter(img => img.section_id === activeSectionId)
-          if (filtered.length > 0) {
-            displayed = filtered
-            const activeSection = sections.find(s => s.id === activeSectionId)
-            sectionLabel = activeSection?.name ?? null
-            sectionCount = displayed.length
-          } else {
-            // Section has no images yet — show everything so the page stays alive.
-            displayed = baseList
-            sectionLabel = null
-            sectionCount = baseList.length
-          }
+          displayed = baseList.filter(img => img.section_id === activeSectionId)
+          const activeSection = sections.find(s => s.id === activeSectionId)
+          sectionLabel = activeSection?.name ?? null
+          sectionCount = displayed.length
         } else {
           displayed = baseList
           sectionLabel = null
