@@ -1083,7 +1083,17 @@ export function App() {
     return base.filter(img => faceMatchIds.has(img.id))
   }, [images, hiddenImageIds, viewerRole, faceMatchIds, faceFilterActive])
 
-  const faceSearchAvailable = gallery?.face_index_status === 'done'
+  // Surface face search whenever there's a usable index — that's any
+  // gallery in 'done', AND any gallery still 'indexing' once at least one
+  // face has been registered. Without this second clause the button stays
+  // hidden whenever the worker hasn't finished (or got stuck mid-batch),
+  // which is exactly when a guest most needs to find their photos: the
+  // photographer just uploaded and indexing is catching up. A partial
+  // index is still useful — Rekognition just searches against whatever
+  // vectors exist, and the worker keeps adding more in the background.
+  const faceSearchAvailable =
+    gallery?.face_index_status === 'done' ||
+    (gallery?.face_index_status === 'indexing' && (gallery?.face_indexed_count ?? 0) > 0)
 
   const lang = (((gallery?.delivery_settings || {}) as Record<string, unknown>).language as Lang) || 'he'
   const txt = t(lang)
