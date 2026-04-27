@@ -1768,14 +1768,20 @@ export function App() {
         </section>
       )}
 
-      {sections.length > 0 && !(faceMatchIds && faceFilterActive) && sections.map(sec => {
+      {sections.length > 0 && sections.map(sec => {
         // Single-section view: only render the active section's grid.
         // Switching pills swaps the visible grid by re-running this filter.
         // A section with zero matching images renders null; the all-photos
         // safety-net block below kicks in if every section ends up empty.
-        // Face search bypasses sections entirely (handled by the condition
-        // above) so matched photos across every section show together.
-        if (activeSectionView && sec.id !== activeSectionView) return null
+        // Face filter applies inside each section: visibleImages is already
+        // filtered by faceMatchIds when the filter is on, so each section
+        // shows only the matched photos that belong to it. Sections with no
+        // matches render null and disappear from the layout. While face
+        // filter is on we ignore activeSectionView so matches show across
+        // all sections — otherwise a guest who searched their face would
+        // only ever see matches inside the currently-pinned section.
+        const faceFilterOn = !!(faceMatchIds && faceFilterActive)
+        if (activeSectionView && sec.id !== activeSectionView && !faceFilterOn) return null
         const sectionImages = visibleImages.filter(img => img.section_id === sec.id)
         if (sectionImages.length === 0) return null
         return (
