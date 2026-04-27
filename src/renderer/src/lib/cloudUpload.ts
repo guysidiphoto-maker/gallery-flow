@@ -43,7 +43,7 @@ export function getActiveRunner(): UploadQueueRunner | null {
 
 // ─── Filename helpers ──────────────────────────────────────────────────────
 
-function sanitizeFilename(name: string): string {
+export function sanitizeFilename(name: string): string {
   return name
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip diacritics
     .replace(/[^\x20-\x7E]/g, '')                     // remove non-ASCII (Hebrew etc.)
@@ -779,7 +779,8 @@ export async function deleteGalleryFromCloud(
 
 export async function deleteImageFromCloud(
   galleryDbIdOrLocalId: string,
-  filename: string
+  filename: string,
+  localPath?: string,
 ): Promise<{ error: string | null }> {
   log('delete-image:start', `${galleryDbIdOrLocalId} / ${filename}`)
 
@@ -791,19 +792,54 @@ export async function deleteImageFromCloud(
     galleryDbId = data.id
   }
 
-  // Delete from storage using DB-stored paths; also clean up face records
-  // in Rekognition (best-effort) before the image row goes away.
-  const { data: imgRow } = await supabase.from('images')
-    .select('id, storage_path:web_preview_path, original_path, thumbnail_path')
-    .eq('gallery_id', galleryDbId).eq('filename', filename).maybeSingle()
-  if (imgRow) {
-    await deleteImageFaces(galleryDbId, imgRow.id)
-    const paths = [imgRow.thumbnail_path, imgRow.storage_path, imgRow.original_path].filter(Boolean)
+  // Identify the exact cloud row to delete. Sections are isolated, so two
+  // rows can legitimately share a filename — we must never delete by
+  // filename alone or one section's removal would wipe the other section's
+  // photo too.
+  type ImgRow = {
+    id: string
+    storage_path: string | null
+    original_path: string | null
+    thumbnail_path: string | null
+  }
+  let imgRow: ImgRow | null = null
+
+  // Preferred path: caller supplied the local path, so we can compute the
+  // exact hashed stem the upload used and match the one cloud row.
+  if (localPath) {
+    const stemSuffix = `${pathHash(localPath)}_${sanitizeFilename(filename)}`
+    const { data } = await supabase.from('images')
+      .select('id, storage_path:web_preview_path, original_path, thumbnail_path')
+      .eq('gallery_id', galleryDbId)
+      .like('web_preview_path', `%/${stemSuffix}`)
+      .maybeSingle()
+    if (data) imgRow = data as ImgRow
+  }
+
+  // Fallback: filename-only match for legacy galleries (pre-hash-prefix
+  // uploads) or callers that don't have the path. Refuse when the filename
+  // is ambiguous in cloud — better to leave the row in place than silently
+  // delete the wrong section's photo.
+  if (!imgRow) {
+    const { data: matches } = await supabase.from('images')
+      .select('id, storage_path:web_preview_path, original_path, thumbnail_path')
+      .eq('gallery_id', galleryDbId).eq('filename', filename)
+    if (!matches || matches.length === 0) return { error: null }
+    if (matches.length > 1) {
+      log('delete-image:ambiguous', `${filename} matches ${matches.length} rows; refusing to delete (caller must pass localPath)`)
+      return { error: 'ambiguous filename across sections; localPath required' }
+    }
+    imgRow = matches[0] as ImgRow
+  }
+
+  await deleteImageFaces(galleryDbId, imgRow.id)
+  const paths = [imgRow.thumbnail_path, imgRow.storage_path, imgRow.original_path].filter(Boolean) as string[]
+  if (paths.length > 0) {
     await supabase.storage.from(BUCKET).remove(paths)
   }
 
-  // Delete from DB
-  await supabase.from('images').delete().eq('gallery_id', galleryDbId).eq('filename', filename)
+  // Delete by id, not filename — same isolation reason as above.
+  await supabase.from('images').delete().eq('id', imgRow.id)
 
   // Update count
   const { count } = await supabase.from('images').select('id', { count: 'exact', head: true }).eq('gallery_id', galleryDbId)
@@ -833,7 +869,16 @@ export async function updateGalleryImages(
   publishedImageIds: string[],
   imageRegistry: Record<string, { filename: string; path: string }>,
   onProgress?: (p: UpdateProgress) => void,
-): Promise<{ error: string | null; failures?: UpdateFailure[]; uploaded?: number; expected?: number }> {
+): Promise<{
+  error: string | null
+  failures?: UpdateFailure[]
+  uploaded?: number
+  expected?: number
+  /** Maps each local file path to the cloud row id that holds it. Callers
+   *  use this to update per-image fields (top picks, section_id, etc.) by
+   *  cloud id — matching by filename is unsafe when sections share names. */
+  cloudIdForPath?: Map<string, string>
+}> {
   onProgress?.({ phase: 'starting', current: 0, total: 0 })
   const failures: UpdateFailure[] = []
   log('update-images:start', `gallery=${galleryDbIdOrLocalId} current=${currentImagePaths.length} published=${publishedImageIds.length}`)
@@ -870,46 +915,66 @@ export async function updateGalleryImages(
   // equals filename) by their filename, in path-array order so we can
   // claim them one-by-one when local files share a filename.
   const legacyByFilename = new Map<string, Array<typeof cloudImages[number]>>()
+
+  // A filename is "ambiguous" if either:
+  //   • the same filename appears on multiple local paths (e.g. 0001.jpg in
+  //     both /Gala/ and /Day 2/), or
+  //   • there's already a hashed cloud row for that filename (so a previous
+  //     run created the hashed version of one local file).
+  // Legacy claim is unsafe for ambiguous filenames: the alphabetically-first
+  // local path would steal a legacy row that actually belongs to a different
+  // section's photo, leaving Gala's image visible under Day 2. For these
+  // filenames we DROP the legacy entries — the legacy rows then fall into
+  // removedRows and the local files re-upload with their own hash prefix.
+  const localFnCounts = new Map<string, number>()
+  for (const p of currentImagePaths) {
+    const fn = sanitizeFilename(p.split('/').pop() || '')
+    localFnCounts.set(fn, (localFnCounts.get(fn) ?? 0) + 1)
+  }
+  const hashedFilenames = new Set<string>()
+  for (const row of cloudImages) {
+    const stem = stemFromCloudPath(row.web_preview_path as string | null)
+    if (stem && stem !== (row.filename as string)) {
+      hashedFilenames.add(row.filename as string)
+    }
+  }
+  const isAmbiguous = (fn: string): boolean =>
+    (localFnCounts.get(fn) ?? 0) > 1 || hashedFilenames.has(fn)
+
   for (const row of cloudImages) {
     const stem = stemFromCloudPath(row.web_preview_path as string | null)
     if (stem) cloudByStem.set(stem, row)
     if (!stem || stem === row.filename) {
-      const list = legacyByFilename.get(row.filename as string) ?? []
+      const fn = row.filename as string
+      if (isAmbiguous(fn)) continue
+      const list = legacyByFilename.get(fn) ?? []
       list.push(row)
-      legacyByFilename.set(row.filename as string, list)
+      legacyByFilename.set(fn, list)
     }
   }
 
   // Walk local files: for each, find the cloud row that owns it (hashed
-  // stem first, then a one-time legacy claim) and remember the matched
-  // row's id. The remaining cloud rows are "removed".
-  //
-  // We sort by path string so the legacy-claim order is deterministic and
-  // matches the order used in updateGallerySectionsInCloud — that way the
-  // same local file claims the same legacy cloud row in both functions
-  // and the eventual section_id assignment lines up.
+  // stem first, then a legacy claim only when the filename is unambiguous)
+  // and remember the matched row's id. The remaining cloud rows are
+  // "removed" — including any ambiguous legacy rows skipped above.
   const claimedCloudIds = new Set<string>()
-  const localStemForPath = new Map<string, string>()
+  const cloudIdForPath = new Map<string, string>()
   const addedPaths: string[] = []
   const sortedLocalPaths = [...currentImagePaths].sort()
   for (const p of sortedLocalPaths) {
     const fn = sanitizeFilename(p.split('/').pop() || '')
     const stem = `${pathHash(p)}_${fn}`
-    localStemForPath.set(p, stem)
     const stemMatch = cloudByStem.get(stem)
     if (stemMatch && !claimedCloudIds.has(stemMatch.id as string)) {
       claimedCloudIds.add(stemMatch.id as string)
+      cloudIdForPath.set(p, stemMatch.id as string)
       continue
     }
-    // Legacy claim: take the first unclaimed legacy row with this filename
-    // so the photo isn't re-uploaded. Subsequent local files with the
-    // same filename fall through and get uploaded as new (with their own
-    // hash prefix), so colliding filenames across sections coexist
-    // correctly going forward.
     const legacyList = legacyByFilename.get(fn) ?? []
     const claim = legacyList.find(r => !claimedCloudIds.has(r.id as string))
     if (claim) {
       claimedCloudIds.add(claim.id as string)
+      cloudIdForPath.set(p, claim.id as string)
       continue
     }
     addedPaths.push(p)
@@ -977,7 +1042,7 @@ export async function updateGalleryImages(
 
         // Insert DB record
         const sortOrder = currentImagePaths.indexOf(localPath)
-        await supabase.from('images').insert({
+        const { data: inserted } = await supabase.from('images').insert({
           gallery_id: galleryDbId,
           filename,
           web_preview_path: webPath,
@@ -985,7 +1050,10 @@ export async function updateGalleryImages(
           thumbnail_path: thumbPath,
           is_top_pick: false,
           sort_order: sortOrder,
-        })
+        }).select('id').single()
+        if (inserted?.id) {
+          cloudIdForPath.set(localPath, inserted.id as string)
+        }
 
         log('update-images:added', filename)
         onProgress?.({ phase: 'uploading', current: i + 1, total: addedPaths.length, filename })
@@ -997,17 +1065,21 @@ export async function updateGalleryImages(
     }
   }
 
-  // 3. Update sort_order for all images
-  log('update-images:reorder', `${currentFilenames.length} images`)
+  // 3. Update sort_order for all images. Match by cloud row id (not by
+  //    filename) so two rows that legitimately share a filename across
+  //    sections each get their own order — matching by filename clobbers
+  //    them to a single value and the gallery viewer renders them in
+  //    arbitrary order.
+  log('update-images:reorder', `${currentImagePaths.length} images`)
   onProgress?.({ phase: 'finalizing', current: 0, total: 0 })
-  const sanitizedCurrentFilenames = currentImagePaths.map(p => sanitizeFilename(p.split('/').pop() || ''))
-  await Promise.all(sanitizedCurrentFilenames.map((filename, i) =>
-    supabase
+  await Promise.all(currentImagePaths.map((path, i) => {
+    const id = cloudIdForPath.get(path)
+    if (!id) return Promise.resolve(null)
+    return supabase
       .from('images')
       .update({ sort_order: i })
-      .eq('gallery_id', galleryDbId)
-      .eq('filename', filename)
-  ))
+      .eq('id', id)
+  }))
 
   // 4. Update gallery image_count
   const { count } = await supabase.from('images').select('id', { count: 'exact', head: true }).eq('gallery_id', galleryDbId)
@@ -1034,7 +1106,7 @@ export async function updateGalleryImages(
   const uploaded = cloudCount ?? 0
 
   log('update-images:done', `${expected} expected, ${uploaded} in cloud, ${removedRows.length} removed, ${failures.length} failures`)
-  return { error: null, failures, uploaded, expected }
+  return { error: null, failures, uploaded, expected, cloudIdForPath }
 }
 
 // ─── Update Gallery Sections in Cloud ───────────────────────────────────────

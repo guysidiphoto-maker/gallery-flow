@@ -34,7 +34,7 @@ import { toLocalURL } from './utils/imageUtils'
 import { UploadFloater } from './components/UploadFloater'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { KeyboardShortcuts } from './components/KeyboardShortcuts'
-import { publishGallery, uploadStoryToCloud, markGalleryLive, updateGallerySettings, updateGalleryImages, updateGallerySectionsInCloud, cancelUpload, deleteGalleryFromCloud, deleteImageFromCloud, deleteStoriesForGallery } from './lib/cloudUpload'
+import { publishGallery, uploadStoryToCloud, markGalleryLive, updateGallerySettings, updateGalleryImages, updateGallerySectionsInCloud, cancelUpload, deleteGalleryFromCloud, deleteImageFromCloud, deleteStoriesForGallery, pathHash, sanitizeFilename } from './lib/cloudUpload'
 import { formatEta } from './lib/eta'
 import { supabase } from './lib/supabase'
 import { loadPersistedQueue, clearPersistedQueue } from './lib/uploadQueue'
@@ -602,9 +602,16 @@ function MainApp({ business }: { business: Business | null }) {
 
       // 3+4) Sync top picks + delivery settings in parallel (both independent)
       const topPickIdSet = useGallery.getState().topPickIds
-      const topPickFilenames = new Set(
-        imgs.filter(i => topPickIdSet.has(i.id)).map(i => i.filename)
-      )
+      // Resolve top picks to cloud row ids via the path map returned by
+      // updateGalleryImages. Matching by filename would mark every cloud row
+      // sharing that filename — including same-named photos in a different
+      // section — as a top pick, which violates section isolation.
+      const topPickCloudIds = new Set<string>()
+      for (const img of imgs) {
+        if (!topPickIdSet.has(img.id)) continue
+        const cloudId = imgResult.cloudIdForPath?.get(img.path)
+        if (cloudId) topPickCloudIds.add(cloudId)
+      }
       const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
       if (project.eventType) {
         (settings as Record<string, unknown>).eventType = project.eventType
@@ -613,13 +620,13 @@ function MainApp({ business }: { business: Business | null }) {
       await Promise.all([
         // Top picks
         supabase.from('images')
-          .select('id, filename')
+          .select('id')
           .eq('gallery_id', project.publishState.galleryDbId)
           .then(({ data: cloudImages }) => {
             if (!cloudImages) return
             return Promise.all(cloudImages.map(img =>
               supabase.from('images')
-                .update({ is_top_pick: topPickFilenames.has(img.filename) })
+                .update({ is_top_pick: topPickCloudIds.has(img.id as string) })
                 .eq('id', img.id)
             ))
           }),
@@ -1000,18 +1007,21 @@ function MainApp({ business }: { business: Business | null }) {
 
     const galleryDbId = ps.galleryDbId
     ;(async () => {
-      const filenames: string[] = []
+      const items: Array<{ filename: string; path: string }> = []
       for (const id of toDelete) {
         const reg = imageRegistry[id]
-        if (reg?.filename) filenames.push(reg.filename)
+        if (reg?.filename && reg?.path) items.push({ filename: reg.filename, path: reg.path })
       }
-      if (filenames.length === 0) return
+      if (items.length === 0) return
 
+      // Pass localPath so deleteImageFromCloud matches the exact cloud row
+      // by hashed stem — never by filename alone, which would also wipe
+      // same-named photos from other sections.
       const results = await Promise.all(
-        filenames.map(fn => deleteImageFromCloud(galleryDbId, fn))
+        items.map(it => deleteImageFromCloud(galleryDbId, it.filename, it.path))
       )
       const failed = results.filter(r => r.error).length
-      const succeeded = filenames.length - failed
+      const succeeded = items.length - failed
 
       if (succeeded > 0) {
         // Update the published snapshot so a later "Update Changes" doesn't
@@ -1864,19 +1874,32 @@ function MainApp({ business }: { business: Business | null }) {
                   if (!proj?.publishState?.galleryDbId) continue
                   const galleryDbId = proj.publishState.galleryDbId
                   try {
-                    // 1) Update is_top_pick by matching filenames
+                    // 1) Update is_top_pick by matching the hashed stem of
+                    //    each cloud row's storage path. Filename-only matching
+                    //    would mark same-named photos in other sections as
+                    //    top picks too — sections must stay isolated.
                     const topPickIds = new Set(proj.topPickIds || [])
-                    const topPickFilenames = new Set<string>()
+                    const topPickStems = new Set<string>()
+                    const topPickFilenamesLegacy = new Set<string>()
                     for (const imgId of topPickIds) {
                       const img = imageRegistryRef.current[imgId]
-                      if (img) topPickFilenames.add(img.filename)
+                      if (!img) continue
+                      topPickStems.add(`${pathHash(img.path)}_${sanitizeFilename(img.filename)}`)
+                      topPickFilenamesLegacy.add(img.filename)
                     }
                     const { data: cloudImgs } = await supabase.from('images')
-                      .select('id, filename').eq('gallery_id', galleryDbId)
+                      .select('id, filename, web_preview_path').eq('gallery_id', galleryDbId)
                     if (cloudImgs) {
                       for (const ci of cloudImgs) {
+                        const stem = (ci.web_preview_path as string | null)?.split('/').pop() || ''
+                        // Hashed row → match by stem. Legacy row (no hash
+                        // prefix) → fall back to filename; the next image
+                        // sync will replace these with hashed versions.
+                        const isTopPick = stem && stem !== ci.filename
+                          ? topPickStems.has(stem)
+                          : topPickFilenamesLegacy.has(ci.filename)
                         await supabase.from('images')
-                          .update({ is_top_pick: topPickFilenames.has(ci.filename) })
+                          .update({ is_top_pick: isTopPick })
                           .eq('id', ci.id)
                       }
                     }
