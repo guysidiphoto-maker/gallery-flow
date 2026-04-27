@@ -1818,41 +1818,61 @@ export function App() {
         )
       })}
 
-      {/* All Images section — render when there are no sections, or as a
-          safety net when sections exist but none of them actually contain
-          visible images (e.g. a sync race where section_id is briefly null).
-          Without this fallback the page renders empty. */}
-      {(sections.length === 0 || !sections.some(sec => visibleImages.some(img => img.section_id === sec.id))) && (
-      <section id="all-images" className="gallery-section gallery-section--all">
-        {(() => {
-          const mainGridImages = viewerRole === 'client' ? images : visibleImages
-          return (
-        <MasonryGrid
-          images={mainGridImages}
-          thumbUrl={thumbUrl}
-          layoutMode={layoutMode}
-          imageSpacing={imageSpacing}
-          cornerStyle={cornerStyle}
-          onImageClick={(idx) => {
-            setViewerList(mainGridImages)
-            setViewerIndex(idx)
-          }}
-          onDownload={downloadsEnabled ? (img) => handleDownload(downloadUrl(img), img.filename) : undefined}
-          selectMode={selectMode}
-          selectedIds={selectedIds}
-          onToggleSelect={(id) => setSelectedIds(prev => {
-            const next = new Set(prev)
-            if (next.has(id)) next.delete(id); else next.add(id)
-            return next
-          })}
-          clientMode={viewerRole === 'client'}
-          hiddenIds={hiddenImageIds}
-          onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
-        />
-          )
-        })()}
-      </section>
-      )}
+      {/* All Images section — covers three cases:
+          1. The gallery has no sections at all → show every image here.
+          2. Sections exist but none contain visible images (sync race or
+             post-upload state where section_id is briefly null on every
+             row) → show every image here as a safety net.
+          3. Sections exist and some images are sectioned but others are
+             not → show the unsectioned ones here so they aren't stranded
+             off-screen alongside a partially-populated section view.
+          Without this the page renders empty whenever any image lacks a
+          valid section_id. */}
+      {(() => {
+        const sectionIdSet = new Set(sections.map(s => s.id))
+        const unsectionedImages = visibleImages.filter(img =>
+          !img.section_id || !sectionIdSet.has(img.section_id)
+        )
+        const anySectionHasContent = sections.some(sec =>
+          visibleImages.some(img => img.section_id === sec.id)
+        )
+        const shouldRender =
+          sections.length === 0 ||
+          !anySectionHasContent ||
+          unsectionedImages.length > 0
+        if (!shouldRender) return null
+        const mainGridImages =
+          viewerRole === 'client' ? images :
+          sections.length === 0 ? visibleImages :
+          unsectionedImages.length > 0 ? unsectionedImages :
+          visibleImages
+        return (
+          <section id="all-images" className="gallery-section gallery-section--all">
+            <MasonryGrid
+              images={mainGridImages}
+              thumbUrl={thumbUrl}
+              layoutMode={layoutMode}
+              imageSpacing={imageSpacing}
+              cornerStyle={cornerStyle}
+              onImageClick={(idx) => {
+                setViewerList(mainGridImages)
+                setViewerIndex(idx)
+              }}
+              onDownload={downloadsEnabled ? (img) => handleDownload(downloadUrl(img), img.filename) : undefined}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={(id) => setSelectedIds(prev => {
+                const next = new Set(prev)
+                if (next.has(id)) next.delete(id); else next.add(id)
+                return next
+              })}
+              clientMode={viewerRole === 'client'}
+              hiddenIds={hiddenImageIds}
+              onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
+            />
+          </section>
+        )
+      })()}
 
       {/* Footer */}
       {showFooter && (
