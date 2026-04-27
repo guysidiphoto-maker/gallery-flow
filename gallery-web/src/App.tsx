@@ -987,21 +987,36 @@ export function App() {
     // Fetch images + sections in parallel. We commit them together with the
     // gallery in a single setState burst so the first render after the loader
     // already has the data the welcome screen needs — no empty-grid flash.
-    const [imgsRes, secsRes] = await Promise.all([
-      isPrivateFaceMode
-        ? Promise.resolve({ data: [] as GalleryImage[] })
-        : supabase
-            .from('images')
-            .select('id, filename, storage_path:web_preview_path, original_path, thumbnail_path, is_top_pick, sort_order, section_id')
-            .eq('gallery_id', id)
-            .order('sort_order', { ascending: true }),
+    //
+    // PostgREST caps a single query at 1000 rows; large galleries (Alma
+    // Lisbon ships >1100) need pagination or the tail rows silently drop —
+    // a pill says "Day 2 · 200" but only 88 actually render. We page in
+    // chunks of 1000 until a partial page comes back.
+    const fetchAllImages = async (): Promise<GalleryImage[]> => {
+      const PAGE = 1000
+      const out: GalleryImage[] = []
+      for (let offset = 0; ; offset += PAGE) {
+        const { data, error } = await supabase
+          .from('images')
+          .select('id, filename, storage_path:web_preview_path, original_path, thumbnail_path, is_top_pick, sort_order, section_id')
+          .eq('gallery_id', id)
+          .order('sort_order', { ascending: true })
+          .range(offset, offset + PAGE - 1)
+        if (error || !data) break
+        out.push(...(data as GalleryImage[]))
+        if (data.length < PAGE) break
+      }
+      return out
+    }
+    const [imgs, secsRes] = await Promise.all([
+      isPrivateFaceMode ? Promise.resolve([] as GalleryImage[]) : fetchAllImages(),
       supabase
         .from('gallery_sections')
         .select('id, name, sort_order')
         .eq('gallery_id', id)
         .order('sort_order', { ascending: true }),
     ])
-    setImages((imgsRes.data as GalleryImage[]) || [])
+    setImages(imgs)
     setSections(secsRes.data || [])
     setGallery(g)
 
