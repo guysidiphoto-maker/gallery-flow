@@ -1069,17 +1069,33 @@ export async function updateGalleryImages(
   //    filename) so two rows that legitimately share a filename across
   //    sections each get their own order — matching by filename clobbers
   //    them to a single value and the gallery viewer renders them in
-  //    arbitrary order.
+  //    arbitrary order. Bounded concurrency for the same reason as in
+  //    updateGallerySectionsInCloud — Promise.all over 1000+ updates
+  //    overruns Supabase's connection pool and many silently fail.
   log('update-images:reorder', `${currentImagePaths.length} images`)
   onProgress?.({ phase: 'finalizing', current: 0, total: 0 })
-  await Promise.all(currentImagePaths.map((path, i) => {
-    const id = cloudIdForPath.get(path)
-    if (!id) return Promise.resolve(null)
-    return supabase
-      .from('images')
-      .update({ sort_order: i })
-      .eq('id', id)
-  }))
+  {
+    const reorders: Array<{ id: string; sortOrder: number }> = []
+    currentImagePaths.forEach((path, i) => {
+      const id = cloudIdForPath.get(path)
+      if (id) reorders.push({ id, sortOrder: i })
+    })
+    let cursor = 0
+    async function worker() {
+      while (cursor < reorders.length) {
+        const r = reorders[cursor++]
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { error } = await supabase
+            .from('images')
+            .update({ sort_order: r.sortOrder })
+            .eq('id', r.id)
+          if (!error) break
+          await new Promise(rr => setTimeout(rr, 200 * (attempt + 1)))
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: 6 }, worker))
+  }
 
   // 4. Update gallery image_count
   const { count } = await supabase.from('images').select('id', { count: 'exact', head: true }).eq('gallery_id', galleryDbId)
@@ -1202,11 +1218,20 @@ export async function updateGallerySectionsInCloud(
     .eq('gallery_id', galleryDbId)
 
   if (galleryImages) {
-    await Promise.all(galleryImages.map(async (img) => {
+    // Plan every update synchronously first so the legacy-claim queue
+    // pops in deterministic order (.shift() must run before any awaits),
+    // then send the PATCHes with bounded concurrency + retries. The old
+    // Promise.all-of-1000-PATCHes pattern overran Supabase's connection
+    // pool, hundreds of requests failed with transient errors, and the
+    // catch just logged them — the function returned success while half
+    // the gallery's rows were left with section_id NULL.
+    type Update = { id: string; filename: string; newSection: string | null }
+    const updates: Update[] = []
+    for (const img of galleryImages) {
       const stem = (img.web_preview_path as string | null)?.split('/').pop() || null
-      let newSection: string | null | undefined
+      let newSection: string | null = null
       if (stem && stemToSection.has(stem)) {
-        newSection = stemToSection.get(stem)
+        newSection = stemToSection.get(stem) ?? null
       } else {
         // Legacy claim: the cloud row was uploaded under the bare filename.
         // Pop the first unclaimed local file with that filename so two
@@ -1217,18 +1242,47 @@ export async function updateGallerySectionsInCloud(
         if (queue && queue.length > 0) {
           const claim = queue.shift()!
           newSection = claim.sectionId
-        } else {
-          newSection = null
         }
       }
-      const { error: upErr } = await supabase
-        .from('images')
-        .update({ section_id: newSection ?? null })
-        .eq('id', img.id)
-      if (upErr) {
-        log('update-sections:image-error', `${img.filename}: ${upErr.message}`)
+      updates.push({ id: img.id as string, filename: img.filename as string, newSection })
+    }
+
+    const CONCURRENCY = 6
+    const MAX_ATTEMPTS = 3
+    let cursor = 0
+    let failures = 0
+    const failedFilenames: string[] = []
+
+    async function patchOne(u: Update): Promise<boolean> {
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const { error: upErr } = await supabase
+          .from('images')
+          .update({ section_id: u.newSection })
+          .eq('id', u.id)
+        if (!upErr) return true
+        await new Promise(r => setTimeout(r, 200 * (attempt + 1)))
       }
-    }))
+      return false
+    }
+
+    async function worker() {
+      while (cursor < updates.length) {
+        const u = updates[cursor++]
+        const ok = await patchOne(u)
+        if (!ok) {
+          failures++
+          if (failedFilenames.length < 5) failedFilenames.push(u.filename)
+          log('update-sections:image-error', u.filename)
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker))
+
+    if (failures > 0) {
+      return {
+        error: `${failures} of ${updates.length} section_id updates failed (e.g. ${failedFilenames.join(', ')}). Click "Re-sync to cloud" to retry.`,
+      }
+    }
   }
 
   log('update-sections:done', `${sections.length} sections`)

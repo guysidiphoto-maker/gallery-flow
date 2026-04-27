@@ -618,17 +618,29 @@ function MainApp({ business }: { business: Business | null }) {
       }
 
       await Promise.all([
-        // Top picks
+        // Top picks. Bounded concurrency — 1000+ parallel PATCHes overrun
+        // Supabase's connection pool and updates silently fail, leaving
+        // is_top_pick out of sync with the local selection.
         supabase.from('images')
           .select('id')
           .eq('gallery_id', project.publishState.galleryDbId)
-          .then(({ data: cloudImages }) => {
-            if (!cloudImages) return
-            return Promise.all(cloudImages.map(img =>
-              supabase.from('images')
-                .update({ is_top_pick: topPickCloudIds.has(img.id as string) })
-                .eq('id', img.id)
-            ))
+          .then(async ({ data }) => {
+            if (!data) return
+            const rows = data
+            let cursor = 0
+            async function worker() {
+              while (cursor < rows.length) {
+                const img = rows[cursor++]
+                for (let attempt = 0; attempt < 3; attempt++) {
+                  const { error } = await supabase.from('images')
+                    .update({ is_top_pick: topPickCloudIds.has(img.id as string) })
+                    .eq('id', img.id)
+                  if (!error) break
+                  await new Promise(rr => setTimeout(rr, 200 * (attempt + 1)))
+                }
+              }
+            }
+            await Promise.all(Array.from({ length: 6 }, worker))
           }),
         // Delivery settings
         updateGallerySettings(project.id, settings as Record<string, unknown>),
