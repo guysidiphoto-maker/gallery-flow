@@ -60,6 +60,39 @@ function mimeFromFilename(filename: string): string {
   return 'image/jpeg'
 }
 
+/**
+ * Short, deterministic, synchronous hash of a string. Used to namespace
+ * cloud storage objects by their local file path so two local files with
+ * the same filename (e.g. "0001.jpg" in /Gala/ and in /Day2/) don't fight
+ * for the same cloud key. FNV-1a 32-bit → 8 hex chars; collisions within
+ * a single gallery are vanishingly rare and a collision can only ever swap
+ * two photos that already share an exact filename, never silently delete
+ * either one.
+ */
+export function pathHash(localPath: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < localPath.length; i++) {
+    h ^= localPath.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+/** Compose a unique storage path for an image asset. The local-path hash
+ *  prefix guarantees that two local files with the same filename get
+ *  different cloud keys. Older galleries uploaded before this change use
+ *  paths without the prefix; we still look those up by filename for
+ *  backward compatibility. */
+function buildAssetPath(
+  slug: string,
+  galleryId: string,
+  kind: 'thumbs' | 'web' | 'originals',
+  hashPrefix: string,
+  filename: string,
+): string {
+  return `${slug}/${galleryId}/${kind}/${hashPrefix}_${filename}`
+}
+
 // ─── Main Publish Orchestrator ──────────────────────────────────────────────
 
 export interface PublishSectionInput {
@@ -319,6 +352,9 @@ export async function publishGallery(
     filename: img.filename,
     localPath: img.localPath,
     originalSizeBytes: compressedMap.get(img.filename)!.originalSize,
+    // Path-hash prefix makes the cloud key unique even when two local files
+    // share a filename across sections (e.g. 0001.jpg in /Gala/ and /Day2/).
+    pathHashPrefix: pathHash(img.localPath),
   }))
 
   const queueItems = buildQueueItems(galleryId, queueInputs, slug)
@@ -459,13 +495,14 @@ export async function publishGallery(
     const cr = compressedMap.get(filename)
     if (!cr) continue
     const isTopPick = topPickIds.has(imagePaths[i])
+    const hashPrefix = pathHash(imageRecords[i].localPath)
 
     const payload = {
       gallery_id: galleryId,
       filename,
-      web_preview_path: `${slug}/${galleryId}/web/${filename}`,
-      original_path: `${slug}/${galleryId}/originals/${filename}`,
-      thumbnail_path: `${slug}/${galleryId}/thumbs/${filename}`,
+      web_preview_path: buildAssetPath(slug, galleryId, 'web', hashPrefix, filename),
+      original_path: buildAssetPath(slug, galleryId, 'originals', hashPrefix, filename),
+      thumbnail_path: buildAssetPath(slug, galleryId, 'thumbs', hashPrefix, filename),
       is_top_pick: isTopPick,
       sort_order: i,
       section_id: sectionPathToDbId.get(imagePaths[i]) ?? null,
@@ -813,44 +850,86 @@ export async function updateGalleryImages(
   // Build current filename list from paths (sanitized for consistent matching)
   const currentFilenames = currentImagePaths.map(p => sanitizeFilename(p.split('/').pop() || ''))
 
-  // Query cloud for actually-published filenames (single source of truth)
-  const { data: cloudImages } = await supabase.from('images')
-    .select('filename')
+  // Query cloud for full image rows so we can match each row to a local
+  // file by storage-path stem (unique) and fall back to filename for
+  // legacy galleries that pre-date the path-hash prefix.
+  const { data: cloudRows } = await supabase.from('images')
+    .select('id, filename, web_preview_path, original_path, thumbnail_path')
     .eq('gallery_id', galleryDbId)
-  const publishedFilenames = (cloudImages || []).map(img => img.filename)
+  const cloudImages = cloudRows || []
 
-  // 1. Find removed images (in published but not in current)
-  const currentSet = new Set(currentFilenames)
-  const removed = publishedFilenames.filter(f => !currentSet.has(f))
-
-  if (removed.length > 0) {
-    log('update-images:removing', `${removed.length} images`)
-    onProgress?.({ phase: 'removing', current: 0, total: removed.length })
-    // Fetch DB-stored paths for removed images, then delete from storage + DB
-    await Promise.all(removed.map(async (filename) => {
-      const { data: imgRow } = await supabase.from('images')
-        .select('id, storage_path:web_preview_path, original_path, thumbnail_path')
-        .eq('gallery_id', galleryDbId).eq('filename', filename).maybeSingle()
-      if (imgRow) {
-        await deleteImageFaces(galleryDbId, imgRow.id)
-        const paths = [imgRow.thumbnail_path, imgRow.storage_path, imgRow.original_path].filter(Boolean)
-        await supabase.storage.from(BUCKET).remove(paths)
-      }
-      const { error } = await supabase
-        .from('images')
-        .delete()
-        .eq('gallery_id', galleryDbId)
-        .eq('filename', filename)
-      if (error) log('update-images:remove-error', `${filename}: ${error.message}`)
-    }))
+  /** Extract the stem (last path segment) from a cloud storage path. */
+  const stemFromCloudPath = (storagePath: string | null | undefined): string | null => {
+    if (!storagePath) return null
+    return storagePath.split('/').pop() || null
   }
 
-  // 2. Find added images (in current but not in published)
-  const publishedSet = new Set(publishedFilenames)
-  const addedPaths = currentImagePaths.filter(p => {
+  // Index cloud rows by their hashed stem (preferred, unique per file).
+  const cloudByStem = new Map<string, typeof cloudImages[number]>()
+  // Index *legacy* cloud rows (storage path with no hash prefix → stem
+  // equals filename) by their filename, in path-array order so we can
+  // claim them one-by-one when local files share a filename.
+  const legacyByFilename = new Map<string, Array<typeof cloudImages[number]>>()
+  for (const row of cloudImages) {
+    const stem = stemFromCloudPath(row.web_preview_path as string | null)
+    if (stem) cloudByStem.set(stem, row)
+    if (!stem || stem === row.filename) {
+      const list = legacyByFilename.get(row.filename as string) ?? []
+      list.push(row)
+      legacyByFilename.set(row.filename as string, list)
+    }
+  }
+
+  // Walk local files: for each, find the cloud row that owns it (hashed
+  // stem first, then a one-time legacy claim) and remember the matched
+  // row's id. The remaining cloud rows are "removed".
+  //
+  // We sort by path string so the legacy-claim order is deterministic and
+  // matches the order used in updateGallerySectionsInCloud — that way the
+  // same local file claims the same legacy cloud row in both functions
+  // and the eventual section_id assignment lines up.
+  const claimedCloudIds = new Set<string>()
+  const localStemForPath = new Map<string, string>()
+  const addedPaths: string[] = []
+  const sortedLocalPaths = [...currentImagePaths].sort()
+  for (const p of sortedLocalPaths) {
     const fn = sanitizeFilename(p.split('/').pop() || '')
-    return !publishedSet.has(fn)
-  })
+    const stem = `${pathHash(p)}_${fn}`
+    localStemForPath.set(p, stem)
+    const stemMatch = cloudByStem.get(stem)
+    if (stemMatch && !claimedCloudIds.has(stemMatch.id as string)) {
+      claimedCloudIds.add(stemMatch.id as string)
+      continue
+    }
+    // Legacy claim: take the first unclaimed legacy row with this filename
+    // so the photo isn't re-uploaded. Subsequent local files with the
+    // same filename fall through and get uploaded as new (with their own
+    // hash prefix), so colliding filenames across sections coexist
+    // correctly going forward.
+    const legacyList = legacyByFilename.get(fn) ?? []
+    const claim = legacyList.find(r => !claimedCloudIds.has(r.id as string))
+    if (claim) {
+      claimedCloudIds.add(claim.id as string)
+      continue
+    }
+    addedPaths.push(p)
+  }
+
+  const removedRows = cloudImages.filter(r => !claimedCloudIds.has(r.id as string))
+
+  if (removedRows.length > 0) {
+    log('update-images:removing', `${removedRows.length} images`)
+    onProgress?.({ phase: 'removing', current: 0, total: removedRows.length })
+    await Promise.all(removedRows.map(async (row) => {
+      await deleteImageFaces(galleryDbId, row.id as string)
+      const paths = [row.thumbnail_path, row.web_preview_path, row.original_path].filter(Boolean) as string[]
+      if (paths.length > 0) {
+        await supabase.storage.from(BUCKET).remove(paths)
+      }
+      const { error } = await supabase.from('images').delete().eq('id', row.id as string)
+      if (error) log('update-images:remove-error', `${row.filename}: ${error.message}`)
+    }))
+  }
 
   if (addedPaths.length > 0) {
     log('update-images:uploading', `${addedPaths.length} new images`)
@@ -862,6 +941,7 @@ export async function updateGalleryImages(
     for (let i = 0; i < addedPaths.length; i++) {
       const localPath = addedPaths[i]
       const filename = sanitizeFilename(localPath.split('/').pop() || `img_${i}`)
+      const hashPrefix = pathHash(localPath)
       onProgress?.({ phase: 'uploading', current: i, total: addedPaths.length, filename })
 
       try {
@@ -877,10 +957,11 @@ export async function updateGalleryImages(
           continue
         }
 
-        // Upload thumb, web preview, original
-        const thumbPath = `${slug}/${galleryDbId}/thumbs/${filename}`
-        const webPath = `${slug}/${galleryDbId}/web/${filename}`
-        const origPath = `${slug}/${galleryDbId}/originals/${filename}`
+        // Upload thumb, web preview, original — paths include the local
+        // path's hash prefix so two same-named local files don't collide.
+        const thumbPath = buildAssetPath(slug, galleryDbId, 'thumbs', hashPrefix, filename)
+        const webPath = buildAssetPath(slug, galleryDbId, 'web', hashPrefix, filename)
+        const origPath = buildAssetPath(slug, galleryDbId, 'originals', hashPrefix, filename)
 
         await Promise.all([
           supabase.storage.from(BUCKET).upload(thumbPath, new Blob([cr.thumb], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true }),
@@ -952,7 +1033,7 @@ export async function updateGalleryImages(
   const expected = currentFilenames.length
   const uploaded = cloudCount ?? 0
 
-  log('update-images:done', `${expected} expected, ${uploaded} in cloud, ${removed.length} removed, ${failures.length} failures`)
+  log('update-images:done', `${expected} expected, ${uploaded} in cloud, ${removedRows.length} removed, ${failures.length} failures`)
   return { error: null, failures, uploaded, expected }
 }
 
@@ -1009,29 +1090,68 @@ export async function updateGallerySectionsInCloud(
     }
   }
 
-  // 3. Reassign section_id on each image by filename. Filename is unique
-  //    within a gallery (enforced by the upload pipeline using basename).
-  //    CRITICAL: cloud stores sanitized filenames (Hebrew/spaces/specials are
-  //    stripped on upload), so we must sanitize here too — otherwise files
-  //    with non-ASCII names silently lose their section_id.
-  const filenameToSection = new Map<string, string | null>()
+  // 3. Reassign section_id on each image.
+  //
+  // Matching is two-tiered to handle the transition from legacy unprefixed
+  // storage paths to the new path-hash-prefixed ones:
+  //   1. Hashed stem match — preferred. The stem (last segment of the
+  //      storage path) includes a per-file hash, so two local files with
+  //      the same filename in different sections each get their own row.
+  //   2. Legacy filename claim — for cloud rows uploaded before the hash
+  //      prefix existed, walk the local files with that filename and
+  //      claim the first one that hasn't been claimed yet. This means
+  //      Gala's "0001.jpg" claims the legacy cloud row, and Day 2's
+  //      "0001.jpg" falls through (it'll be uploaded as a new row by
+  //      updateGalleryImages with its own hash prefix and section_id).
+  const stemToSection = new Map<string, string | null>()
+  const localBySection: Array<{ path: string; sectionId: string | null }> = []
   for (const [path, sectionId] of sectionPathToDbId) {
     const rawFilename = path.split('/').pop() || path
-    filenameToSection.set(sanitizeFilename(rawFilename), sectionId)
+    const fn = sanitizeFilename(rawFilename)
+    stemToSection.set(`${pathHash(path)}_${fn}`, sectionId)
+    localBySection.push({ path, sectionId })
+  }
+  // Build a per-filename queue of unclaimed local files for legacy fallback.
+  // Sort by path so the claim order matches updateGalleryImages exactly —
+  // both functions need to agree on which local file owns each legacy row.
+  localBySection.sort((a, b) => a.path.localeCompare(b.path))
+  const legacyQueue = new Map<string, Array<{ path: string; sectionId: string | null }>>()
+  for (const entry of localBySection) {
+    const fn = sanitizeFilename(entry.path.split('/').pop() || entry.path)
+    const list = legacyQueue.get(fn) ?? []
+    list.push(entry)
+    legacyQueue.set(fn, list)
   }
 
   // Pull all current images for the gallery so we can clear stragglers too.
   const { data: galleryImages } = await supabase
     .from('images')
-    .select('id, filename')
+    .select('id, filename, web_preview_path')
     .eq('gallery_id', galleryDbId)
 
   if (galleryImages) {
     await Promise.all(galleryImages.map(async (img) => {
-      const newSection = filenameToSection.get(img.filename) ?? null
+      const stem = (img.web_preview_path as string | null)?.split('/').pop() || null
+      let newSection: string | null | undefined
+      if (stem && stemToSection.has(stem)) {
+        newSection = stemToSection.get(stem)
+      } else {
+        // Legacy claim: the cloud row was uploaded under the bare filename.
+        // Pop the first unclaimed local file with that filename so two
+        // legacy rows that happen to share a filename don't both get
+        // pushed into the same section.
+        const fn = img.filename as string
+        const queue = legacyQueue.get(fn)
+        if (queue && queue.length > 0) {
+          const claim = queue.shift()!
+          newSection = claim.sectionId
+        } else {
+          newSection = null
+        }
+      }
       const { error: upErr } = await supabase
         .from('images')
-        .update({ section_id: newSection })
+        .update({ section_id: newSection ?? null })
         .eq('id', img.id)
       if (upErr) {
         log('update-sections:image-error', `${img.filename}: ${upErr.message}`)

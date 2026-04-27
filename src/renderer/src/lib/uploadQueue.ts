@@ -343,6 +343,10 @@ export function buildQueueItems(
     filename: string
     localPath: string
     originalSizeBytes: number
+    /** Optional path-hash prefix for uniqueness across same-named files in
+     *  different sections. When omitted, falls back to legacy unprefixed
+     *  paths so older callers keep working. */
+    pathHashPrefix?: string
     thumbBlob?: Blob
     webBlob?: Blob
   }>,
@@ -352,13 +356,14 @@ export function buildQueueItems(
 
   for (const img of images) {
     const base = slug ? `${slug}/${galleryId}` : `${galleryId}`
+    const stem = img.pathHashPrefix ? `${img.pathHashPrefix}_${img.filename}` : img.filename
 
     items.push({
-      id: `q_${++queueIdCounter}_thumb_${img.filename}`,
+      id: `q_${++queueIdCounter}_thumb_${stem}`,
       galleryId,
       filename: img.filename,
       localPath: img.localPath,
-      storagePath: `${base}/thumbs/${img.filename}`,
+      storagePath: `${base}/thumbs/${stem}`,
       type: 'thumbnail',
       priority: 'high',
       status: 'pending',
@@ -366,11 +371,11 @@ export function buildQueueItems(
     })
 
     items.push({
-      id: `q_${++queueIdCounter}_preview_${img.filename}`,
+      id: `q_${++queueIdCounter}_preview_${stem}`,
       galleryId,
       filename: img.filename,
       localPath: img.localPath,
-      storagePath: `${base}/web/${img.filename}`,
+      storagePath: `${base}/web/${stem}`,
       type: 'web_preview',
       priority: 'high',
       status: 'pending',
@@ -378,11 +383,11 @@ export function buildQueueItems(
     })
 
     items.push({
-      id: `q_${++queueIdCounter}_orig_${img.filename}`,
+      id: `q_${++queueIdCounter}_orig_${stem}`,
       galleryId,
       filename: img.filename,
       localPath: img.localPath,
-      storagePath: `${base}/originals/${img.filename}`,
+      storagePath: `${base}/originals/${stem}`,
       type: 'original',
       priority: 'low',
       status: 'pending',
