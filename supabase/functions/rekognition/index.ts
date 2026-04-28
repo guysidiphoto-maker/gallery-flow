@@ -32,9 +32,16 @@ const corsHeaders = {
 
 // ─── Tuning ─────────────────────────────────────────────────────────────────
 
-const SEARCH_RATE_LIMIT_PER_HOUR = 10
+// Rate limit is scoped per (gallery, ip): one IP-share-on-event-WiFi can
+// search at full quota in each gallery they visit, instead of having a
+// global 10/hour budget split across the whole product.
+const SEARCH_RATE_LIMIT_PER_HOUR = 500
 const SEARCH_RATE_WINDOW_MS = 60 * 60 * 1000
 const SEARCH_MAX_SELFIE_BYTES = 5 * 1024 * 1024
+// How long a cached selfie→matches result is reusable. Long enough to
+// cover a guest reloading and re-searching during the event, short enough
+// that newly-indexed photos surface within the hour.
+const SEARCH_CACHE_TTL_MS = 60 * 60 * 1000
 /** Minimum similarity % to count as a match. AWS recommends 80 for general
  *  use; lower = more matches + more false positives. Event galleries skew
  *  toward recall (better to over-include than miss someone), so we run a bit
@@ -85,6 +92,11 @@ function getClientIp(req: Request): string {
     req.headers.get('x-real-ip') ??
     '0.0.0.0'
   )
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 async function fetchImageBytes(url: string): Promise<Uint8Array> {
@@ -471,55 +483,92 @@ async function actionSearch(req: Request): Promise<Response> {
     return json({ error: 'Face search not available for this gallery' }, 404)
   }
 
-  const ipHash = await hashIp(getClientIp(req))
-  const since = new Date(Date.now() - SEARCH_RATE_WINDOW_MS).toISOString()
-  const { count: recent } = await sb
-    .from('rekognition_search_log')
-    .select('id', { count: 'exact', head: true })
-    .eq('ip_hash', ipHash)
-    .gte('created_at', since)
-  if ((recent ?? 0) >= SEARCH_RATE_LIMIT_PER_HOUR) {
-    return json({ error: 'Too many searches. Try again later.' }, 429)
-  }
-
   const bytes = new Uint8Array(await selfie.arrayBuffer())
-  let matches: Array<{ imageId: string; similarity: number }> = []
-  try {
-    const result = await rekognition.send(new SearchFacesByImageCommand({
-      CollectionId: gallery.rekognition_collection_id,
-      Image: { Bytes: bytes },
-      FaceMatchThreshold: SEARCH_FACE_MATCH_THRESHOLD,
-      MaxFaces: SEARCH_MAX_RESULTS,
-    }))
-    const seen = new Set<string>()
-    for (const m of result.FaceMatches ?? []) {
-      const id = m.Face?.ExternalImageId
-      if (!id || seen.has(id)) continue
-      seen.add(id)
-      matches.push({ imageId: id, similarity: m.Similarity ?? 0 })
-      if (matches.length >= SEARCH_MAX_RESULTS) break
-    }
-  } catch (err) {
-    const code = (err as { name?: string })?.name
-    if (code === 'InvalidParameterException') {
-      matches = []
-    } else {
-      throw err
-    }
-  }
+  const selfieHash = await sha256Hex(bytes)
+  const ipHash = await hashIp(getClientIp(req))
 
-  await sb.from('rekognition_search_log').insert({ gallery_id: gallery.id, ip_hash: ipHash })
+  // Cache lookup BEFORE rate limit. A guest reloading or re-pressing the
+  // search button with the same selfie should not burn through their quota,
+  // and we don't want to bill AWS twice for the same input either.
+  const cacheCutoff = new Date(Date.now() - SEARCH_CACHE_TTL_MS).toISOString()
+  const { data: cached } = await sb
+    .from('face_search_cache')
+    .select('matches, image_ids')
+    .eq('gallery_id', gallery.id)
+    .eq('selfie_hash', selfieHash)
+    .gte('created_at', cacheCutoff)
+    .maybeSingle()
+
+  let matches: Array<{ imageId: string; similarity: number }> = []
+  let imageIds: string[] = []
+
+  if (cached) {
+    matches = (cached.matches as Array<{ imageId: string; similarity: number }>) ?? []
+    imageIds = (cached.image_ids as string[]) ?? matches.map(m => m.imageId)
+  } else {
+    // Cache miss → enforce rate limit (per gallery + per IP), then call AWS.
+    const since = new Date(Date.now() - SEARCH_RATE_WINDOW_MS).toISOString()
+    const { count: recent } = await sb
+      .from('rekognition_search_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('gallery_id', gallery.id)
+      .eq('ip_hash', ipHash)
+      .gte('created_at', since)
+    if ((recent ?? 0) >= SEARCH_RATE_LIMIT_PER_HOUR) {
+      return json({ error: 'Too many searches. Try again later.' }, 429)
+    }
+
+    try {
+      const result = await rekognition.send(new SearchFacesByImageCommand({
+        CollectionId: gallery.rekognition_collection_id,
+        Image: { Bytes: bytes },
+        FaceMatchThreshold: SEARCH_FACE_MATCH_THRESHOLD,
+        MaxFaces: SEARCH_MAX_RESULTS,
+      }))
+      const seen = new Set<string>()
+      for (const m of result.FaceMatches ?? []) {
+        const id = m.Face?.ExternalImageId
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        matches.push({ imageId: id, similarity: m.Similarity ?? 0 })
+        if (matches.length >= SEARCH_MAX_RESULTS) break
+      }
+    } catch (err) {
+      const code = (err as { name?: string })?.name
+      if (code === 'InvalidParameterException') {
+        matches = []
+      } else {
+        throw err
+      }
+    }
+    imageIds = matches.map(m => m.imageId)
+
+    // Persist to cache. Upsert covers the race where two concurrent requests
+    // for the same (gallery, selfie) both miss and both call AWS.
+    await sb.from('face_search_cache').upsert(
+      {
+        gallery_id: gallery.id,
+        selfie_hash: selfieHash,
+        matches: matches,
+        image_ids: imageIds,
+      },
+      { onConflict: 'gallery_id,selfie_hash' },
+    )
+
+    // Rate-limit ledger only on real AWS calls. Cache hits cost us nothing
+    // and shouldn't count.
+    await sb.from('rekognition_search_log').insert({ gallery_id: gallery.id, ip_hash: ipHash })
+  }
 
   // Hydrate matched image rows server-side. In private galleries, anon RLS
   // blocks the public images SELECT, so the client cannot fetch these on its
   // own — we have to return them here. Service-role bypasses RLS.
   let images: Array<Record<string, unknown>> = []
-  if (matches.length > 0) {
-    const ids = matches.map(m => m.imageId)
+  if (imageIds.length > 0) {
     const { data: rows } = await sb
       .from('images')
       .select('id, filename, storage_path:web_preview_path, original_path, thumbnail_path, is_top_pick, sort_order, section_id')
-      .in('id', ids)
+      .in('id', imageIds)
     images = rows ?? []
   }
 
