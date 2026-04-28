@@ -131,13 +131,48 @@ async function loadOwnedGallery(
 
 // ─── Per-image indexing (internal — not exposed as an action anymore) ───────
 
+/** Atomically stamp face_indexed_at on an image only if it's still null,
+ *  and increment the gallery counter exactly when that transition happens.
+ *  Returns true if THIS call did the transition (i.e., we should count it).
+ *  Eliminates the double-count race where two concurrent workers each
+ *  finished indexing the same image. */
+async function stampImageIndexed(
+  sb: SupabaseClient,
+  galleryId: string,
+  imageId: string,
+  faceCount: number,
+  errorMsg?: string,
+): Promise<boolean> {
+  const update: Record<string, unknown> = {
+    face_indexed_at: new Date().toISOString(),
+    face_count: faceCount,
+  }
+  if (errorMsg) update.face_index_error = errorMsg.slice(0, 500)
+  const { data: rows } = await sb
+    .from('images')
+    .update(update)
+    .eq('id', imageId)
+    .is('face_indexed_at', null)
+    .select('id')
+  if (!rows || rows.length === 0) return false
+  await sb.rpc('increment_face_indexed_count', { p_gallery_id: galleryId })
+  return true
+}
+
 async function indexOneImage(
   sb: SupabaseClient,
   collectionId: string,
   galleryId: string,
-  image: { id: string; storage_path: string; face_indexed_at: string | null; face_index_attempts?: number | null },
+  image: { id: string; storage_path: string | null; face_indexed_at: string | null; face_index_attempts?: number | null },
 ): Promise<{ indexed: boolean; faceCount: number; error?: string }> {
   if (image.face_indexed_at) return { indexed: false, faceCount: 0 }
+
+  // Defensive: a missing storage path means the web preview was never wired
+  // up. Treat as a permanent skip rather than burning retries on a 400.
+  if (!image.storage_path) {
+    await stampImageIndexed(sb, galleryId, image.id, 0, 'Web preview not available')
+    return { indexed: false, faceCount: 0 }
+  }
 
   try {
     const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${image.storage_path}`
@@ -167,38 +202,27 @@ async function indexOneImage(
     }
 
     // Stamping face_indexed_at fires the trigger that auto-flips the gallery
-    // to 'done' once the last image is in.
-    await sb
-      .from('images')
-      .update({ face_indexed_at: new Date().toISOString(), face_count: records.length })
-      .eq('id', image.id)
-
-    await sb.rpc('increment_face_indexed_count', { p_gallery_id: galleryId })
+    // to 'done' once the last image is in. The conditional update inside
+    // stampImageIndexed makes this race-safe across concurrent workers.
+    await stampImageIndexed(sb, galleryId, image.id, records.length)
 
     return { indexed: true, faceCount: records.length }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    // Bump the attempts counter so we can decide whether to give up. Up to
-    // MAX_INDEX_ATTEMPTS we leave face_indexed_at NULL so the next run will
-    // retry (transient AWS throttles, network blips, etc.). After that we
+    // Up to MAX_INDEX_ATTEMPTS we leave face_indexed_at NULL so the next run
+    // can retry (transient AWS throttles, network blips). After that we
     // stamp it processed with face_count = 0 so the gallery can finish; the
-    // photo will show face_index_error on its row for the photographer to
-    // diagnose. This stops 260/285-style stuck states without quietly
-    // hiding photos that legitimately should have been indexed.
+    // photo carries face_index_error for the photographer to diagnose.
     try {
       const nextAttempts = (image.face_index_attempts ?? 0) + 1
       const giveUp = nextAttempts >= MAX_INDEX_ATTEMPTS
-      const update: Record<string, unknown> = {
-        face_index_attempts: nextAttempts,
-        face_index_error: msg.slice(0, 500),
-      }
       if (giveUp) {
-        update.face_indexed_at = new Date().toISOString()
-        update.face_count = 0
-      }
-      await sb.from('images').update(update).eq('id', image.id)
-      if (giveUp) {
-        await sb.rpc('increment_face_indexed_count', { p_gallery_id: galleryId })
+        await stampImageIndexed(sb, galleryId, image.id, 0, msg)
+      } else {
+        await sb.from('images').update({
+          face_index_attempts: nextAttempts,
+          face_index_error: msg.slice(0, 500),
+        }).eq('id', image.id)
       }
     } catch {
       /* swallow — the next pass will re-try if this DB write fails */
@@ -216,14 +240,25 @@ async function processGallery(
 ): Promise<void> {
   const { data: imgs } = await sb
     .from('images')
-    .select('id, storage_path:web_preview_path, face_indexed_at, face_index_attempts')
+    .select('id, storage_path:web_preview_path, web_preview_uploaded, face_indexed_at, face_index_attempts')
     .eq('gallery_id', galleryId)
     .is('face_indexed_at', null)
     .order('sort_order', { ascending: true })
 
-  const pending = imgs ?? []
+  const all = imgs ?? []
+
+  // An image whose web preview hasn't actually landed in storage will
+  // 400 forever on fetch. Stamp those as processed-with-error so they don't
+  // block the gallery from reaching 'done', and don't burn retries on them.
+  const unfetchable = all.filter(i => !i.storage_path || !i.web_preview_uploaded)
+  for (const img of unfetchable) {
+    await stampImageIndexed(sb, galleryId, img.id, 0, 'Web preview not uploaded')
+  }
+
+  const pending = all.filter(i => i.storage_path && i.web_preview_uploaded)
   if (pending.length === 0) {
-    // Nothing to do; just in case the trigger hasn't fired, flip the gallery.
+    // Nothing more to fetch. The trigger fires on the last face_indexed_at
+    // stamp; this is just a belt-and-braces flip in case it didn't.
     await sb.from('galleries')
       .update({ face_index_status: 'done', face_indexed_at: new Date().toISOString() })
       .eq('id', galleryId)
@@ -237,13 +272,10 @@ async function processGallery(
 
   const processOne = async (image: typeof pending[number]) => {
     const result = await indexOneImage(sb, collectionId, galleryId, image)
-    if (!result.indexed && result.error) {
-      failureCount += 1
-      // Keep a note of the last failure on the gallery — mostly for debugging.
-      await sb.from('galleries')
-        .update({ face_index_error: `Image ${image.id}: ${result.error}` })
-        .eq('id', galleryId)
-    }
+    if (!result.indexed && result.error) failureCount += 1
+    // Per-image errors live on the image row (face_index_error). We
+    // intentionally don't mirror them onto the gallery — the gallery banner
+    // should reflect overall health, not the last per-image hiccup.
   }
 
   while (cursor < pending.length || running.size > 0) {
@@ -254,13 +286,22 @@ async function processGallery(
     if (running.size > 0) await Promise.race(running)
   }
 
-  // Final safety net: if every image failed, mark the gallery failed. The
-  // happy-path flip to 'done' is handled by the DB trigger.
+  // Only mark the gallery 'failed' if NO image in the gallery was ever
+  // successfully indexed — i.e., a real catastrophic failure, not a few bad
+  // photos at the tail of an otherwise healthy run. The happy-path flip to
+  // 'done' is handled by the DB trigger.
   if (failureCount === pending.length && pending.length > 0) {
-    await sb.from('galleries')
-      .update({ face_index_status: 'failed' })
-      .eq('id', galleryId)
-      .eq('face_index_status', 'indexing')
+    const { count: indexedTotal } = await sb
+      .from('images')
+      .select('id', { count: 'exact', head: true })
+      .eq('gallery_id', galleryId)
+      .not('face_indexed_at', 'is', null)
+    if ((indexedTotal ?? 0) === 0) {
+      await sb.from('galleries')
+        .update({ face_index_status: 'failed' })
+        .eq('id', galleryId)
+        .eq('face_index_status', 'indexing')
+    }
   }
 }
 
@@ -277,6 +318,13 @@ async function actionIndexGallery(req: Request, body: { galleryId?: string }): P
   const sb = serviceClient()
   const gallery = await loadOwnedGallery(sb, user.id, body.galleryId)
 
+  // Self-heal the per-gallery counter from the source of truth before we do
+  // anything else. Historical rows can show face_indexed_count > image_count
+  // when a previous run double-counted (concurrent claims under lock
+  // staleness), and the UI surfaces that as a confusing 1991/1198-style
+  // overflow.
+  await sb.rpc('recompute_face_indexed_count', { p_gallery_id: gallery.id })
+
   // Count unindexed images before anything else. If there's nothing to do,
   // short-circuit — avoids a briefly-flickering 'indexing' status and skips
   // an unnecessary Rekognition CreateCollection + background worker.
@@ -289,7 +337,11 @@ async function actionIndexGallery(req: Request, body: { galleryId?: string }): P
   if ((unindexedCount ?? 0) === 0) {
     // Make sure status reflects reality (in case we're fixing a stuck row).
     await sb.from('galleries')
-      .update({ face_index_status: 'done', face_indexed_at: new Date().toISOString() })
+      .update({
+        face_index_status: 'done',
+        face_indexed_at: new Date().toISOString(),
+        face_index_error: null,
+      })
       .eq('id', gallery.id)
       .neq('face_index_status', 'done')
     return json({ started: false, alreadyDone: true, pending: 0 })
@@ -403,12 +455,19 @@ async function actionSearch(req: Request): Promise<Response> {
 
   const { data: gallery } = await sb
     .from('galleries')
-    .select('id, status, face_index_status, rekognition_collection_id')
+    .select('id, status, face_index_status, face_indexed_count, rekognition_collection_id')
     .eq('id', galleryId)
     .maybeSingle()
   if (!gallery) return json({ error: 'Gallery not found' }, 404)
   if (gallery.status !== 'live') return json({ error: 'Gallery not live' }, 404)
-  if (gallery.face_index_status !== 'done' || !gallery.rekognition_collection_id) {
+  // Allow partial-search while indexing is still running — as long as at
+  // least one image has been indexed, searching against the collection is
+  // meaningful and matches what the gallery viewer advertises. Without this
+  // the viewer's "selfie search" button shows up but every search 404s.
+  const isReady =
+    gallery.face_index_status === 'done' ||
+    (gallery.face_index_status === 'indexing' && (gallery.face_indexed_count ?? 0) > 0)
+  if (!isReady || !gallery.rekognition_collection_id) {
     return json({ error: 'Face search not available for this gallery' }, 404)
   }
 
