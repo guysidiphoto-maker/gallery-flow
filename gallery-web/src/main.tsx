@@ -13,6 +13,9 @@ import { VendorPortal } from './pages/VendorPortal'
 import { EventCapturePage } from './pages/EventCapturePage'
 import { QuestionnairePage } from './pages/QuestionnairePage'
 import './styles.css'
+import { initSentry } from './sentry'
+
+initSentry()
 
 function Router() {
   const path = window.location.pathname
