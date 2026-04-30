@@ -72,13 +72,31 @@ export async function fetchFaceIndexSnapshot(galleryId: string): Promise<FaceInd
   }
 }
 
-/** Returns a stop function. Polls until status is terminal or stopped. */
+// If `face_indexed_count` hasn't moved for this long while status is still
+// 'indexing', we treat the worker as stalled and kick the edge function
+// again to re-claim. The server-side lock staleness is 10 minutes, so we
+// wait a bit longer than that to give the live worker every chance to
+// resume on its own before piling on a duplicate claim.
+const STALL_THRESHOLD_MS = 12 * 60 * 1000
+// Don't auto-resume more than once per minute even if we're still seeing
+// no progress — gives the new claim time to actually start before we'd
+// flag it as stalled again.
+const AUTO_RESUME_COOLDOWN_MS = 60 * 1000
+
+/** Returns a stop function. Polls until status is terminal or stopped.
+ *  Auto-resumes a stalled `indexing` gallery by re-invoking index_gallery
+ *  on the edge function — the new claim succeeds because the server-side
+ *  lock has staled (10 min) by the time our threshold fires (12 min). */
 export function pollFaceIndexProgress(
   galleryId: string,
   onSnapshot: (snap: FaceIndexSnapshot) => void,
 ): () => void {
   let stopped = false
   let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+  let lastIndexed = -1
+  let lastProgressAt = Date.now()
+  let lastAutoResumeAt = 0
 
   const tick = async () => {
     if (stopped) return
@@ -89,6 +107,23 @@ export function pollFaceIndexProgress(
         if (snap.status === 'done' || snap.status === 'failed') {
           stopped = true
           return
+        }
+        if (snap.indexed !== lastIndexed) {
+          lastIndexed = snap.indexed
+          lastProgressAt = Date.now()
+        }
+        const now = Date.now()
+        const stalled =
+          snap.status === 'indexing' &&
+          now - lastProgressAt > STALL_THRESHOLD_MS &&
+          now - lastAutoResumeAt > AUTO_RESUME_COOLDOWN_MS
+        if (stalled) {
+          lastAutoResumeAt = now
+          log('auto-resume', `no progress for ${Math.round((now - lastProgressAt) / 1000)}s — re-invoking index_gallery`)
+          // Fire-and-forget: the existing poll loop will see new progress.
+          indexGallery(galleryId).catch(err => {
+            log('auto-resume:failed', err instanceof Error ? err.message : String(err))
+          })
         }
       }
     } catch {
