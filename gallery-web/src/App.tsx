@@ -1201,11 +1201,20 @@ export function App() {
     return null
   })()
 
-  if (showWelcome && images.length > 0) {
+  // Private face-mode: anon users can't fetch the bulk image list (RLS), so
+  // `images` is intentionally empty until the selfie unlocks matches. The
+  // welcome screen still needs to show — just without the mosaic. We force
+  // 'cinematic' (which renders the cover image alone) when there's nothing
+  // to mosaic with.
+  const isPrivateFaceMode = faceSearchAvailable && facePrivacyMode === 'private'
+  const welcomeStyleResolved: 'mosaic' | 'cinematic' | 'minimal' =
+    images.length === 0 ? 'cinematic' : (rawSettings.welcomeStyle || 'mosaic')
+
+  if (showWelcome && (images.length > 0 || isPrivateFaceMode)) {
     return (
       <>
         <WelcomeScreen
-          style={rawSettings.welcomeStyle || 'mosaic'}
+          style={welcomeStyleResolved}
           galleryTitle={galleryTitle}
           galleryDescription={rawSettings.galleryDescription || ''}
           welcomeMessage={(rawSettings as Record<string, unknown>).welcomeMessage as string || ''}
