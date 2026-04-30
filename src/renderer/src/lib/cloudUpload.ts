@@ -529,11 +529,7 @@ export async function publishGallery(
   // ── Step 8: Mark preview_live ─────────────────────────────────────────
 
   store.setPublishStatus('preview_live')
-  await supabase.from('galleries').update({
-    status: 'live',
-    public_url: publicUrl,
-    published_at: new Date().toISOString(),
-  }).eq('id', galleryId)
+  await flipGalleryLive(galleryId, publicUrl)
 
   log('preview-live', publicUrl)
 
@@ -711,20 +707,49 @@ export async function deleteStoriesForGallery(galleryDbId: string): Promise<{ er
   return { error: null }
 }
 
-// ─── Mark Gallery Live (called after stories complete) ──────────────────────
+// ─── Mark Gallery Live (with retry) ─────────────────────────────────────────
+// The previous implementation issued a single UPDATE and let it throw. A
+// network blip during this exact moment was enough to leave the gallery
+// permanently stuck in 'publishing' (we saw this happen twice with Alma).
+// Now we retry up to 3 times with exponential backoff. Idempotent: the
+// .select('id') roundtrip confirms the row reached 'live'; if a previous
+// attempt actually committed but the response was lost, the next attempt
+// just re-applies the same values and returns success.
+
+const LIVE_FLIP_ATTEMPTS = 3
+const LIVE_FLIP_BACKOFF_MS = [0, 1_000, 3_000]
+
+async function flipGalleryLive(galleryId: string, publicUrl: string): Promise<void> {
+  let lastError: string | null = null
+  for (let i = 0; i < LIVE_FLIP_ATTEMPTS; i++) {
+    if (LIVE_FLIP_BACKOFF_MS[i] > 0) {
+      await new Promise(r => setTimeout(r, LIVE_FLIP_BACKOFF_MS[i]))
+    }
+    const { data, error } = await supabase
+      .from('galleries')
+      .update({ status: 'live', public_url: publicUrl, published_at: new Date().toISOString() })
+      .eq('id', galleryId)
+      .select('id')
+      .maybeSingle()
+
+    if (!error && data) {
+      if (i > 0) log('live-flip:recovered', `succeeded on attempt ${i + 1}`)
+      return
+    }
+    lastError = error?.message ?? 'no row returned'
+    log('live-flip:retry', `attempt ${i + 1}/${LIVE_FLIP_ATTEMPTS} failed — ${lastError}`)
+  }
+  throw new Error(
+    `Failed to mark gallery live after ${LIVE_FLIP_ATTEMPTS} attempts. ` +
+    `Last error: ${lastError}. The gallery row is still in 'publishing' — ` +
+    `you can retry the publish flow safely; already-uploaded files will be reused.`
+  )
+}
 
 export async function markGalleryLive(galleryId: string, publicUrl: string): Promise<void> {
   // Gallery is already marked live during preview_live phase.
-  // This is kept for backward compat with story flow.
-  const { error } = await supabase
-    .from('galleries')
-    .update({ status: 'live', public_url: publicUrl, published_at: new Date().toISOString() })
-    .eq('id', galleryId)
-    .select('id')
-
-  if (error) {
-    throw new Error(`markGalleryLive failed: ${error.message}`)
-  }
+  // This is kept for backward compat with story flow — same retry semantics.
+  await flipGalleryLive(galleryId, publicUrl)
 }
 
 // ─── Delete Gallery from Cloud ──────────────────────────────────────────────
