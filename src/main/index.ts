@@ -7,6 +7,10 @@ import { buildStoryScenes, renderStory } from './storyRenderer'
 import { exportSocialPackage, type SocialExportScene } from './socialExporter'
 import { exportGallery } from './exportGallery'
 import { initAutoUpdater } from './updater'
+import { initSentryMain } from './sentry'
+
+// Init Sentry before anything else so we capture early crashes.
+initSentryMain()
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
