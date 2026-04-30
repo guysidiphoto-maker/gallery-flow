@@ -847,6 +847,10 @@ export function App() {
   const [showFaceSearch, setShowFaceSearch] = useState(false)
   const [faceSelfieUrl, setFaceSelfieUrl] = useState<string | null>(null)
   const [savingPhoto, setSavingPhoto] = useState(false)
+  // Brief auto-dismissing toast for the "HD original still uploading,
+  // saved web copy instead" path. Distinct from dlProgress because that
+  // overlay is for in-flight batch downloads with a progress bar.
+  const [hdNotice, setHdNotice] = useState<string | null>(null)
   // When the fullscreen viewer opens, it navigates through whichever list
   // the clicked tile belonged to (full gallery / face-match filter / section).
   // Snapshotting at click time means next/prev stays inside that subset and
@@ -998,7 +1002,7 @@ export function App() {
       for (let offset = 0; ; offset += PAGE) {
         const { data, error } = await supabase
           .from('images')
-          .select('id, filename, storage_path:web_preview_path, original_path, thumbnail_path, is_top_pick, sort_order, section_id')
+          .select('id, filename, storage_path:web_preview_path, original_path, original_uploaded, thumbnail_path, is_top_pick, sort_order, section_id')
           .eq('gallery_id', id)
           .order('sort_order', { ascending: true })
           .range(offset, offset + PAGE - 1)
@@ -1364,10 +1368,22 @@ export function App() {
   }
 
   function originalUrl(img: GalleryImage) {
-    if (img.original_path) {
+    // The original_path column is set at row-creation time, but the actual
+    // file only lands in storage when original_uploaded flips to true.
+    // Until then, hitting the original URL returns 404 — fall back to the
+    // already-uploaded web preview so the guest gets *something* instead of
+    // a broken download.
+    if (img.original_path && img.original_uploaded) {
       return storageUrl(imgBucket, img.original_path)
     }
     return storageUrl(imgBucket, img.storage_path)
+  }
+
+  /** True if the guest is requesting an HD download but the original
+   * isn't actually in storage yet — used to surface a friendly notice
+   * instead of a silent fallback. */
+  function isOriginalPending(img: GalleryImage): boolean {
+    return Boolean(img.original_path) && img.original_uploaded !== true
   }
 
   function downloadUrl(img: GalleryImage) {
@@ -1379,6 +1395,25 @@ export function App() {
 
   function storyUrl(st: Story) {
     return storageUrl('gallery-stories', st.storage_path)
+  }
+
+  /** Show a 4-second auto-dismissing notice. Used to tell the guest we
+   * served the web copy because the HD original isn't in storage yet. */
+  function showHdNotice(msg: string) {
+    setHdNotice(msg)
+    setTimeout(() => setHdNotice(prev => prev === msg ? null : prev), 4000)
+  }
+
+  /** Wrapper around handleDownload that surfaces a friendly notice when
+   * the guest asked for HD but only the web preview is currently in
+   * storage. The URL fallback is already handled by originalUrl(); this
+   * just prevents the silent downgrade from feeling broken. */
+  function handleImageDownload(img: GalleryImage) {
+    const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+    if (wantsHd && isOriginalPending(img)) {
+      showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+    }
+    handleDownload(downloadUrl(img), img.filename)
   }
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
@@ -1423,6 +1458,12 @@ export function App() {
   }
 
   async function handleBatchDownload(imgs: GalleryImage[]) {
+    // If any of the selected images would silently fall back from HD to web,
+    // tell the guest up front. Single notice covers the whole batch.
+    const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+    if (wantsHd && imgs.some(isOriginalPending)) {
+      showHdNotice(txt.someOriginalsStillUploading ?? 'Some HD originals are still uploading — those photos saved as web-quality. Try the batch again in a few minutes for full HD.')
+    }
     // On mobile with Web Share API: fetch all files and share in ONE share sheet.
     // The user picks "Save X Images" and all photos go to the camera roll together.
     if (isMobile && navigator.share) {
@@ -1827,7 +1868,7 @@ export function App() {
                 setViewerList(sectionImages)
                 setViewerIndex(idx)
               }}
-              onDownload={downloadsEnabled ? (img) => handleDownload(downloadUrl(img), img.filename) : undefined}
+              onDownload={downloadsEnabled ? handleImageDownload : undefined}
               selectMode={selectMode}
               selectedIds={selectedIds}
               onToggleSelect={(id) => setSelectedIds(prev => {
@@ -1883,7 +1924,7 @@ export function App() {
                 setViewerList(mainGridImages)
                 setViewerIndex(idx)
               }}
-              onDownload={downloadsEnabled ? (img) => handleDownload(downloadUrl(img), img.filename) : undefined}
+              onDownload={downloadsEnabled ? handleImageDownload : undefined}
               selectMode={selectMode}
               selectedIds={selectedIds}
               onToggleSelect={(id) => setSelectedIds(prev => {
@@ -1951,6 +1992,32 @@ export function App() {
             if (showWelcome) setShowWelcome(false)
           }}
         />
+      )}
+
+      {/* ── HD-still-uploading toast ── */}
+      {hdNotice && (
+        <div style={{
+          position: 'fixed', bottom: isMobile ? 100 : 80, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 950, padding: '12px 18px', borderRadius: 12,
+          background: 'rgba(28,18,4,.95)', border: '1px solid rgba(245,158,11,.35)',
+          backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+          maxWidth: 360, boxShadow: '0 8px 32px rgba(0,0,0,.4)',
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+          animation: 'fadeIn .25s ease',
+        }}>
+          <span style={{ fontSize: 16, lineHeight: 1, color: '#f59e0b' }}>⏳</span>
+          <span style={{ fontSize: 12, color: 'rgba(255,255,255,.85)', lineHeight: 1.5, flex: 1 }}>
+            {hdNotice}
+          </span>
+          <button
+            onClick={() => setHdNotice(null)}
+            aria-label="Dismiss"
+            style={{
+              background: 'transparent', border: 'none', color: 'rgba(255,255,255,.45)',
+              fontSize: 16, lineHeight: 1, cursor: 'pointer', padding: 0,
+            }}
+          >×</button>
+        </div>
       )}
 
       {/* ── Saving photo indicator (mobile) ── */}

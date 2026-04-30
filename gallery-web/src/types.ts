@@ -62,6 +62,10 @@ export interface GalleryImage {
   filename: string
   storage_path: string
   original_path?: string | null
+  /** original_path is set at row creation, but the file only lands in
+   * storage when this flag flips to true. Until then, downloading the
+   * "original" URL returns 404 — fall back to the web preview. */
+  original_uploaded?: boolean
   thumbnail_path: string | null
   is_top_pick: boolean
   sort_order: number
