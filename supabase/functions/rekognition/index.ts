@@ -252,22 +252,28 @@ async function processGallery(
 ): Promise<void> {
   const { data: imgs } = await sb
     .from('images')
-    .select('id, storage_path:web_preview_path, web_preview_uploaded, face_indexed_at, face_index_attempts')
+    .select('id, storage_path:web_preview_path, face_indexed_at, face_index_attempts')
     .eq('gallery_id', galleryId)
     .is('face_indexed_at', null)
     .order('sort_order', { ascending: true })
 
   const all = imgs ?? []
 
-  // An image whose web preview hasn't actually landed in storage will
-  // 400 forever on fetch. Stamp those as processed-with-error so they don't
-  // block the gallery from reaching 'done', and don't burn retries on them.
-  const unfetchable = all.filter(i => !i.storage_path || !i.web_preview_uploaded)
-  for (const img of unfetchable) {
-    await stampImageIndexed(sb, galleryId, img.id, 0, 'Web preview not uploaded')
+  // Only pre-skip when there's literally no path on the row. We deliberately
+  // do NOT trust `web_preview_uploaded` as a proxy for "is this fetchable" —
+  // we observed in production that the photographer's upload pipeline can
+  // succeed in landing the file in storage but fail to flip the boolean,
+  // which previously caused us to mark every photo as face_count=0 even
+  // when the file was sitting right there. The actual fetch in indexOneImage
+  // is the source of truth: if it returns 400/404, the existing 3-attempt
+  // retry loop catches that and stamps the row with face_count=0. If it
+  // returns 200, we index normally.
+  const noPath = all.filter(i => !i.storage_path)
+  for (const img of noPath) {
+    await stampImageIndexed(sb, galleryId, img.id, 0, 'Web preview path missing')
   }
 
-  const pending = all.filter(i => i.storage_path && i.web_preview_uploaded)
+  const pending = all.filter(i => i.storage_path)
   if (pending.length === 0) {
     // Nothing more to fetch. The trigger fires on the last face_indexed_at
     // stamp; this is just a belt-and-braces flip in case it didn't.
