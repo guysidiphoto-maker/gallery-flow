@@ -413,7 +413,16 @@ export async function publishGallery(
           originalUploadMethod: item.uploadMethod,
           status: 'original_ready',
         })
-        // Original upload tracked in local store
+        // Persist to DB. Without this, `original_uploaded` stays false on the
+        // row even though the file is in storage, and the gallery viewer shows
+        // "HD still uploading" forever for the download.
+        supabase.from('images')
+          .update({ original_uploaded: true })
+          .eq('gallery_id', galleryId)
+          .eq('filename', item.filename)
+          .then(({ error }) => {
+            if (error) log('original-flag-update-failed', `${item.filename}: ${error.message}`)
+          })
       }
       store.setQueueItems(runner.getItems())
     },
