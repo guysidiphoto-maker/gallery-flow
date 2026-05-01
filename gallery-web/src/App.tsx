@@ -259,7 +259,7 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
 
 // ─── Welcome Screen ─────────────────────────────────────────────────────────
 
-function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, welcomeMessage, textAnimation = 'blur', animationSpeed = 'normal', eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos }: {
+function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, welcomeMessage, textAnimation = 'blur', animationSpeed = 'normal', eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos, lang = 'he' }: {
   style?: 'mosaic' | 'cinematic' | 'minimal'
   galleryTitle: string
   galleryDescription?: string
@@ -279,7 +279,9 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
   faceSearchAvailable: boolean
   facePrivacyMode: 'open' | 'private' | null
   onFindMyPhotos: () => void
+  lang?: Lang
 }) {
+  const wsTxt = t(lang)
   // Initial render must already have animations applied. Otherwise the first
   // paint shows every element at its default style (opacity 1), then the
   // animation flips them to opacity 0 ("from" via fill-mode both), then they
@@ -482,7 +484,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
           }}
             onMouseEnter={e => { e.currentTarget.style.background = isMinimal ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.16)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.35)'; e.currentTarget.style.transform = 'scale(1.03)' }}
             onMouseLeave={e => { e.currentTarget.style.background = isMinimal ? 'transparent' : 'rgba(255,255,255,.07)'; e.currentTarget.style.borderColor = isMinimal ? 'rgba(255,255,255,.25)' : 'rgba(255,255,255,.18)'; e.currentTarget.style.transform = 'scale(1)' }}
-          >View Gallery</button>
+          >{wsTxt.viewGallery}</button>
         )}
 
         {showFindButton && (
@@ -502,7 +504,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <circle cx="12" cy="8" r="4" /><path d="M5 20a7 7 0 0 1 14 0" />
             </svg>
-            Find My Photos
+            {wsTxt.findMyPhotos}
           </button>
         )}
       </div>
@@ -1233,6 +1235,7 @@ export function App() {
           faceSearchAvailable={faceSearchAvailable}
           facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}
           onFindMyPhotos={() => setShowFaceSearch(true)}
+          lang={lang}
         />
         {/* Face search experience — full-screen flow with camera, thinking, results */}
         {showFaceSearch && gallery && (
