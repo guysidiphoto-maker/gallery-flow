@@ -27,6 +27,7 @@ const translations = {
     enter: 'Enter',
     originalStillUploading: 'HD copy still uploading — saved web-quality version. Try again in a few minutes.',
     someOriginalsStillUploading: 'Some HD originals are still uploading — those photos saved as web-quality. Try the batch again in a few minutes for full HD.',
+    privacyModeBadge: 'Privacy mode — take a selfie to see your photos',
   },
   he: {
     viewGallery: 'צפה בגלריה',
@@ -54,6 +55,7 @@ const translations = {
     enter: 'כניסה',
     originalStillUploading: 'גרסת HD עדיין בהעלאה — שמרנו את גרסת הרשת. נסה שוב בעוד כמה דקות.',
     someOriginalsStillUploading: 'חלק מהגרסאות באיכות HD עדיין בהעלאה — אותן תמונות נשמרו באיכות רשת. נסה שוב את ההורדה הקבוצתית בעוד כמה דקות.',
+    privacyModeBadge: 'מצב פרטי — צלם סלפי כדי לראות את התמונות שלך',
   },
 } as const
 
