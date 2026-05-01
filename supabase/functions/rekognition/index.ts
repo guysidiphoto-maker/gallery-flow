@@ -573,7 +573,7 @@ async function actionSearch(req: Request): Promise<Response> {
   if (imageIds.length > 0) {
     const { data: rows } = await sb
       .from('images')
-      .select('id, filename, storage_path:web_preview_path, original_path, thumbnail_path, is_top_pick, sort_order, section_id')
+      .select('id, filename, storage_path:web_preview_path, original_path, original_uploaded, thumbnail_path, is_top_pick, sort_order, section_id')
       .in('id', imageIds)
     images = rows ?? []
   }
