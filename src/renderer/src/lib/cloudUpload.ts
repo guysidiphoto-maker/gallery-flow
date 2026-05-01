@@ -445,6 +445,24 @@ export async function publishGallery(
         log('phase:previews-done', `thumbs=${store.progress.thumbsUploaded} previews=${store.progress.previewsUploaded}`)
       } else {
         log('phase:originals-done', `uploaded=${store.progress.originalsUploaded} failed=${store.progress.originalsFailed}`)
+        // Belt-and-suspenders: bulk-flip original_uploaded for every image
+        // whose original made it to storage. The per-item update inside
+        // onItemComplete is best-effort (fire-and-forget) and has been
+        // observed to silently fail in practice; this single UPDATE is the
+        // reliable backstop. Idempotent.
+        const uploadedFilenames = usePublish.getState().images
+          .filter(i => i.originalUploaded)
+          .map(i => i.filename)
+        if (uploadedFilenames.length > 0) {
+          supabase.from('images')
+            .update({ original_uploaded: true })
+            .eq('gallery_id', galleryId)
+            .in('filename', uploadedFilenames)
+            .then(({ error }) => {
+              if (error) log('original-flag-bulk-update-failed', error.message)
+              else log('original-flag-bulk-update-ok', `${uploadedFilenames.length} rows`)
+            })
+        }
       }
     },
 
