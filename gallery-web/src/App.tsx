@@ -1440,11 +1440,19 @@ export function App() {
   }
 
   async function handleImageDownload(img: GalleryImage) {
-    const { url, downgraded } = await resolveDownloadUrl(img)
-    if (downgraded) {
-      showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+    // Show the saving indicator immediately on click — covers the HEAD check,
+    // the fetch, and the blob conversion. Without this the user sees nothing
+    // happen for a beat (especially on slow connections) and clicks again.
+    setSavingPhoto(true)
+    try {
+      const { url, downgraded } = await resolveDownloadUrl(img)
+      if (downgraded) {
+        showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+      }
+      await handleDownload(url, img.filename)
+    } finally {
+      setSavingPhoto(false)
     }
-    handleDownload(url, img.filename)
   }
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
