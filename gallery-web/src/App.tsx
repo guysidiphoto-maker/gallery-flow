@@ -1416,16 +1416,35 @@ export function App() {
     setTimeout(() => setHdNotice(prev => prev === msg ? null : prev), 4000)
   }
 
-  /** Wrapper around handleDownload that surfaces a friendly notice when
-   * the guest asked for HD but only the web preview is currently in
-   * storage. The URL fallback is already handled by originalUrl(); this
-   * just prevents the silent downgrade from feeling broken. */
-  function handleImageDownload(img: GalleryImage) {
+  /** Trust storage, not the DB flag. The audit (and a real downloaded-only-
+   *  111KB report from a guest) showed images.original_uploaded going stale
+   *  vs. the actual file in S3 — the photographer ships the originals fine
+   *  but the per-row UPDATE silently drops, and the guest gets a 100KB web
+   *  preview instead of the 8 MB original. HEAD-check the original URL and
+   *  fall back ONLY when storage genuinely says 404. ~50 ms penalty on the
+   *  click is invisible next to the actual download. */
+  async function resolveDownloadUrl(img: GalleryImage): Promise<{ url: string; downgraded: boolean }> {
     const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
-    if (wantsHd && isOriginalPending(img)) {
+    if (!wantsHd || !img.original_path) {
+      return { url: wantsHd ? originalUrl(img) : webUrl(img), downgraded: false }
+    }
+    const candidate = storageUrl(imgBucket, img.original_path)
+    try {
+      const head = await fetch(candidate, { method: 'HEAD' })
+      if (head.ok) return { url: candidate, downgraded: false }
+    } catch {
+      // Network blip — assume present and let the actual download surface any real error.
+      return { url: candidate, downgraded: false }
+    }
+    return { url: webUrl(img), downgraded: true }
+  }
+
+  async function handleImageDownload(img: GalleryImage) {
+    const { url, downgraded } = await resolveDownloadUrl(img)
+    if (downgraded) {
       showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
     }
-    handleDownload(downloadUrl(img), img.filename)
+    handleDownload(url, img.filename)
   }
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
@@ -1470,12 +1489,17 @@ export function App() {
   }
 
   async function handleBatchDownload(imgs: GalleryImage[]) {
-    // If any of the selected images would silently fall back from HD to web,
-    // tell the guest up front. Single notice covers the whole batch.
-    const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
-    if (wantsHd && imgs.some(isOriginalPending)) {
-      showHdNotice(txt.someOriginalsStillUploading ?? 'Some HD originals are still uploading — those photos saved as web-quality. Try the batch again in a few minutes for full HD.')
+    // Resolve URLs in parallel BEFORE the download loop. HEAD-check each
+    // original so a stale original_uploaded flag doesn't downgrade the
+    // batch silently (same bug fixed in handleImageDownload). Parallel
+    // HEADs add ~few hundred ms total even for large selections.
+    setDlProgress(`Checking ${imgs.length} files...`)
+    const resolved = await Promise.all(imgs.map(resolveDownloadUrl))
+    const downgradedCount = resolved.filter(r => r.downgraded).length
+    if (downgradedCount > 0) {
+      showHdNotice(txt.someOriginalsStillUploading ?? `${downgradedCount} HD originals are still uploading — those photos saved as web-quality. Try the batch again in a few minutes for full HD.`)
     }
+    const urlFor = (i: number) => resolved[i].url
     // On mobile with Web Share API: fetch all files and share in ONE share sheet.
     // The user picks "Save X Images" and all photos go to the camera roll together.
     if (isMobile && navigator.share) {
@@ -1487,7 +1511,7 @@ export function App() {
           setDlProgress(`Loading ${i + 1} / ${imgs.length}...`)
           setDownloadProgress({ current: i + 1, total: imgs.length })
           try {
-            const res = await fetch(downloadUrl(imgs[i]))
+            const res = await fetch(urlFor(i))
             const blob = await res.blob()
             const cleanName = imgs[i].filename.replace(/\.[^.]+$/, '') + '.jpg'
             files.push(new File([blob], cleanName, { type: 'image/jpeg' }))
