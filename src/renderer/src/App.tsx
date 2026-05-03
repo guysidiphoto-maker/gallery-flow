@@ -1525,8 +1525,14 @@ function MainApp({ business }: { business: Business | null }) {
     for (const p of clientProjects) {
       if (p.publishState?.status === 'live') {
         const dbId = p.publishState.galleryDbId || p.id
-        deleteGalleryFromCloud(dbId).then(({ error }) => {
-          if (error) console.error('[delete-cloud]', error)
+        deleteGalleryFromCloud(dbId).then(res => {
+          if (!res.ok) {
+            console.error('[delete-cloud]', res.errors.join('; '), res.stats)
+            useGallery.getState().addToast(
+              `Cloud deletion incomplete for "${p.name}": ${res.errors.join('; ')}. Retry from the project menu.`,
+              'error',
+            )
+          }
         })
       }
     }
@@ -1791,8 +1797,14 @@ function MainApp({ business }: { business: Business | null }) {
             // Delete from cloud if published
             if (project?.publishState?.status === 'live') {
               const dbId = project.publishState.galleryDbId || project.id
-              deleteGalleryFromCloud(dbId).then(({ error }) => {
-                if (error) console.error('[delete-cloud]', error)
+              deleteGalleryFromCloud(dbId).then(res => {
+                if (!res.ok) {
+                  console.error('[delete-cloud]', res.errors.join('; '), res.stats)
+                  useGallery.getState().addToast(
+                    `Cloud deletion incomplete for "${project?.name || 'gallery'}": ${res.errors.join('; ')}. Retry from the project menu.`,
+                    'error',
+                  )
+                }
               })
             }
             setProjects(prev => {
@@ -1837,8 +1849,14 @@ function MainApp({ business }: { business: Business | null }) {
                 const project = projects.find(p => p.id === id)
                 if (project?.publishState?.status === 'live') {
                   const dbId = project.publishState.galleryDbId || project.id
-                  deleteGalleryFromCloud(dbId).then(({ error }) => {
-                    if (error) console.error('[delete-cloud]', error)
+                  deleteGalleryFromCloud(dbId).then(res => {
+                    if (!res.ok) {
+                      console.error('[delete-cloud]', res.errors.join('; '), res.stats)
+                      useGallery.getState().addToast(
+                        `Cloud deletion incomplete for "${project?.name || 'gallery'}": ${res.errors.join('; ')}. Retry from the project menu.`,
+                        'error',
+                      )
+                    }
                   })
                 }
                 setProjects(prev => {
