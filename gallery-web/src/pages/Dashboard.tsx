@@ -263,7 +263,30 @@ export function Dashboard() {
     if (!editingGallery) return
     await supabase.from('galleries').update({ status: 'live', published_at: new Date().toISOString() }).eq('id', editingGallery.id)
     setEditingGallery({ ...editingGallery, status: 'live', published_at: new Date().toISOString() })
+
+    // Kick off face indexing if the photographer enabled it. Without this,
+    // FaceFinder is a dead button on web-published galleries — the desktop
+    // app calls this same edge action automatically; we matched the behaviour.
+    // Best-effort: failure here doesn't fail the publish, and the action is
+    // safely re-runnable on the next publish or from the desktop.
+    const settings = editingGallery.delivery_settings as { faceIndexEnabled?: boolean } | null
+    if (settings?.faceIndexEnabled) {
+      void supabase.functions.invoke('rekognition', {
+        body: { action: 'index_gallery', galleryId: editingGallery.id },
+      }).catch(err => console.warn('[face-index]', err))
+    }
+
     fetchGalleries()
+  }
+
+  const [copiedGalleryId, setCopiedGalleryId] = useState<string | null>(null)
+  function copyGalleryLink(galleryId: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    const url = `${window.location.origin}/gallery/${galleryId}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedGalleryId(galleryId)
+      setTimeout(() => setCopiedGalleryId(prev => prev === galleryId ? null : prev), 1800)
+    })
   }
 
   const imgUrl = (path: string) => `https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/gallery-images/${path}`
@@ -583,12 +606,12 @@ export function Dashboard() {
                     </h3>
                     <span style={{
                       fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 20,
-                      background: g.status === 'published' ? 'rgba(34,197,94,.12)' : 'rgba(250,204,21,.10)',
-                      color: g.status === 'published' ? '#4ade80' : '#fde047',
+                      background: (g.status === 'live' || g.status === 'published') ? 'rgba(34,197,94,.12)' : 'rgba(250,204,21,.10)',
+                      color: (g.status === 'live' || g.status === 'published') ? '#4ade80' : '#fde047',
                       letterSpacing: '0.02em', whiteSpace: 'nowrap' as const,
-                      border: `1px solid ${g.status === 'published' ? 'rgba(34,197,94,.2)' : 'rgba(250,204,21,.15)'}`,
+                      border: `1px solid ${(g.status === 'live' || g.status === 'published') ? 'rgba(34,197,94,.2)' : 'rgba(250,204,21,.15)'}`,
                     }}>
-                      {g.status === 'published' ? 'פורסם' : 'טיוטה'}
+                      {(g.status === 'live' || g.status === 'published') ? 'פורסם' : 'טיוטה'}
                     </span>
                   </div>
 
@@ -608,6 +631,41 @@ export function Dashboard() {
                       </span>
                     )}
                   </div>
+
+                  {(g.status === 'live' || g.status === 'published') && (
+                    <button
+                      onClick={(e) => copyGalleryLink(g.id, e)}
+                      style={{
+                        marginTop: 14, width: '100%',
+                        padding: '10px 14px', borderRadius: 10,
+                        background: copiedGalleryId === g.id
+                          ? 'rgba(34,197,94,.14)'
+                          : 'rgba(99,102,241,.10)',
+                        border: `1px solid ${copiedGalleryId === g.id ? 'rgba(34,197,94,.3)' : 'rgba(99,102,241,.25)'}`,
+                        color: copiedGalleryId === g.id ? '#4ade80' : '#a5b4fc',
+                        fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        transition: 'all .2s',
+                      }}
+                    >
+                      {copiedGalleryId === g.id ? (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <polyline points="20 6 9 17 4 12"/>
+                          </svg>
+                          הקישור הועתק
+                        </>
+                      ) : (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                          </svg>
+                          העתק קישור ללקוח
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               )
             })}
