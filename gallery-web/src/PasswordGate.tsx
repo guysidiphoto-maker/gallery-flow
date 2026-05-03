@@ -1,30 +1,37 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from './supabase'
+import { verifyPassword, getStoredToken } from './lib/galleryClient'
 
 interface PasswordGateProps {
   galleryId: string
   galleryName: string
   onUnlock: () => void
+  // When true (gallery has signed_gate_enabled), the legacy sessionStorage
+  // flag is not enough — only a fresh signed token will auto-unlock. Prevents
+  // mid-rollout users from seeing an empty gallery.
+  requireToken?: boolean
 }
 
-const STORAGE_KEY_PREFIX = 'gf_unlocked_'
+// Legacy session flag — kept so existing tabs unlocked before the rollout
+// don't get re-prompted while their session is still active.
+const LEGACY_KEY_PREFIX = 'gf_unlocked_'
 
-type VerifyResponse = { ok: boolean; retry_after_seconds?: number }
-
-export function PasswordGate({ galleryId, galleryName, onUnlock }: PasswordGateProps) {
+export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken }: PasswordGateProps) {
   const [value, setValue] = useState('')
   const [error, setError] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [cooldownLeft, setCooldownLeft] = useState(0)
   const tickRef = useRef<number | null>(null)
 
+  // Auto-unlock if a fresh signed-gate token is already stored, OR (legacy)
+  // the old sessionStorage flag is set. Both are valid recognition signals
+  // during the rollout; once every gallery is on the signed gate the legacy
+  // branch can be removed.
   useEffect(() => {
-    if (sessionStorage.getItem(STORAGE_KEY_PREFIX + galleryId) === '1') {
-      onUnlock()
-    }
-  }, [galleryId, onUnlock])
+    if (getStoredToken(galleryId)) { onUnlock(); return }
+    if (requireToken) return  // signed-gate gallery: never honour legacy flag
+    if (sessionStorage.getItem(LEGACY_KEY_PREFIX + galleryId) === '1') onUnlock()
+  }, [galleryId, onUnlock, requireToken])
 
-  // Tick the cooldown countdown each second.
   useEffect(() => {
     if (cooldownLeft <= 0) return
     tickRef.current = window.setTimeout(() => {
@@ -39,15 +46,14 @@ export function PasswordGate({ galleryId, galleryName, onUnlock }: PasswordGateP
     e.preventDefault()
     if (submitting || cooldownLeft > 0) return
     setSubmitting(true)
-    const { data, error: rpcErr } = await supabase.rpc('verify_gallery_password', {
-      p_gallery_id: galleryId,
-      p_password: value,
-    })
+    const res = await verifyPassword(galleryId, value)
     setSubmitting(false)
 
-    const res = (data ?? {}) as VerifyResponse
-    if (!rpcErr && res.ok === true) {
-      sessionStorage.setItem(STORAGE_KEY_PREFIX + galleryId, '1')
+    if (res.ok === true) {
+      // verifyPassword already stashed the signed token (if any) in
+      // localStorage; flip the legacy flag too so older tabs/code paths
+      // still recognise the unlock.
+      sessionStorage.setItem(LEGACY_KEY_PREFIX + galleryId, '1')
       onUnlock()
       return
     }
@@ -109,5 +115,6 @@ export function PasswordGate({ galleryId, galleryName, onUnlock }: PasswordGateP
 }
 
 export function isGalleryUnlocked(galleryId: string): boolean {
-  return sessionStorage.getItem(STORAGE_KEY_PREFIX + galleryId) === '1'
+  if (getStoredToken(galleryId)) return true
+  return sessionStorage.getItem(LEGACY_KEY_PREFIX + galleryId) === '1'
 }

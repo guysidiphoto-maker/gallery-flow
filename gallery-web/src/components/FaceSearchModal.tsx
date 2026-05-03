@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback } from 'react'
 import { supabase } from '../supabase'
+import { getStoredToken } from '../lib/galleryClient'
 
 interface FaceSearchModalProps {
   galleryId: string
@@ -33,6 +34,8 @@ export function FaceSearchModal({ galleryId, onClose, onMatches }: FaceSearchMod
       const form = new FormData()
       form.append('galleryId', galleryId)
       form.append('selfie', file)
+      const token = getStoredToken(galleryId)
+      if (token) form.append('token', token)
 
       const { data, error } = await supabase.functions.invoke('rekognition', {
         body: form,

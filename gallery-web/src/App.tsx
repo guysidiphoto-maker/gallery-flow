@@ -6,6 +6,13 @@ import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
 import { FaceSearchExperience } from './components/FaceSearchExperience'
 import { t, type Lang } from './i18n'
+import {
+  getMeta as gcGetMeta,
+  getImages as gcGetImages,
+  getStories as gcGetStories,
+  getHidden as gcGetHidden,
+  setHidden as gcSetHidden,
+} from './lib/galleryClient'
 
 // ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
 
@@ -944,14 +951,11 @@ export function App() {
   // Load hidden images for this gallery
   useEffect(() => {
     if (!gallery) return
-    supabase
-      .from('gallery_hidden_images')
-      .select('image_id')
-      .eq('gallery_id', gallery.id)
-      .then(({ data }) => {
-        if (data) setHiddenImageIds(new Set(data.map(r => r.image_id)))
-      })
-  }, [gallery?.id])
+    if (!unlocked) return  // gated galleries: wait for the unlock token
+    gcGetHidden(gallery.id).then(ids => {
+      setHiddenImageIds(new Set(ids))
+    })
+  }, [gallery?.id, unlocked])
 
   // On first load, if the URL has a hash (e.g. #section-abc), scroll to it
   // once the masonry has rendered.
@@ -968,54 +972,48 @@ export function App() {
   }, [showWelcome, images.length])
 
   async function loadGallery(id: string) {
-    const { data: g, error: ge } = await supabase
-      .from('galleries')
-      .select('*')
-      .eq('id', id)
-      .in('status', ['live', 'published', 'draft'])
-      .single()
-
-    if (ge || !g) {
+    const meta = await gcGetMeta(id)
+    if (!meta) {
       setError('Gallery not found')
       return
     }
+    const g = meta as unknown as Gallery
+    const gateOn = (meta as { signed_gate_enabled?: boolean }).signed_gate_enabled === true
+    const hasPw  = (meta as { has_password?: boolean }).has_password === true
 
     if (isGalleryUnlocked(id)) {
       setUnlocked(true)
     }
 
-    // In private face-search mode, anon RLS blocks the bulk image fetch — the
-    // matched rows come back from the rekognition edge function instead. The
-    // server is the source of truth here; do NOT fall back to a public fetch.
+    // In private face-search mode, the bulk image fetch returns nothing — the
+    // matched rows come back from the rekognition edge function instead.
     const isPrivateFaceMode =
       ((g.delivery_settings as { facePrivacyMode?: string } | null)?.facePrivacyMode) === 'private'
 
-    // Fetch images + sections in parallel. We commit them together with the
-    // gallery in a single setState burst so the first render after the loader
-    // already has the data the welcome screen needs — no empty-grid flash.
-    //
-    // PostgREST caps a single query at 1000 rows; large galleries (Alma
-    // Lisbon ships >1100) need pagination or the tail rows silently drop —
-    // a pill says "Day 2 · 200" but only 88 actually render. We page in
-    // chunks of 1000 until a partial page comes back.
+    // For galleries that are signed-gate-enabled AND password-protected, we
+    // must wait for the user to unlock before fetching images / stories /
+    // hidden state — those RPCs require a token. The PasswordGate effect
+    // re-runs loadGallery? No: it just flips `unlocked`, and the dependent
+    // useEffects pick up the rest (hidden, etc). For images + stories we
+    // mirror that here: skip the heavy fetch when the gate hasn't been passed.
+    const mustWaitForUnlock = gateOn && hasPw && !isGalleryUnlocked(id)
+
     const fetchAllImages = async (): Promise<GalleryImage[]> => {
       const PAGE = 1000
       const out: GalleryImage[] = []
       for (let offset = 0; ; offset += PAGE) {
-        const { data, error } = await supabase
-          .from('images')
-          .select('id, filename, storage_path:web_preview_path, original_path, original_uploaded, thumbnail_path, is_top_pick, sort_order, section_id')
-          .eq('gallery_id', id)
-          .order('sort_order', { ascending: true })
-          .range(offset, offset + PAGE - 1)
-        if (error || !data) break
-        out.push(...(data as GalleryImage[]))
-        if (data.length < PAGE) break
+        const rows = await gcGetImages<GalleryImage>(id, { offset, limit: PAGE })
+        out.push(...rows)
+        if (rows.length < PAGE) break
       }
       return out
     }
     const [imgs, secsRes] = await Promise.all([
-      isPrivateFaceMode ? Promise.resolve([] as GalleryImage[]) : fetchAllImages(),
+      (isPrivateFaceMode || mustWaitForUnlock) ? Promise.resolve([] as GalleryImage[]) : fetchAllImages(),
+      // gallery_sections is intentionally left on the legacy public path —
+      // section names ("Day 1", "Day 2") are far less sensitive than image
+      // contents, and gating them here would force every PasswordGate render
+      // to wait on token issuance for what is essentially a label.
       supabase
         .from('gallery_sections')
         .select('id, name, sort_order')
@@ -1026,17 +1024,12 @@ export function App() {
     setSections(secsRes.data || [])
     setGallery(g)
 
-    // Stories load after — they appear behind a toggle in section-nav, so
-    // they don't affect the initial welcome screen render.
-    const { data: st } = await supabase
-      .from('stories')
-      .select('*')
-      .eq('gallery_id', id)
+    if (mustWaitForUnlock) return  // stories deferred to the unlock effect below
 
-    // Only include stories whose video files actually exist in storage
-    if (st && st.length > 0) {
+    const stories = await gcGetStories<Story>(id)
+    if (stories.length > 0) {
       const verified: Story[] = []
-      for (const story of st) {
+      for (const story of stories) {
         const url = storageUrl('gallery-stories', story.storage_path)
         try {
           const res = await fetch(url, { method: 'HEAD' })
@@ -1046,6 +1039,37 @@ export function App() {
       setStories(verified)
     }
   }
+
+  // After unlock, fetch the gated content (images + stories) for galleries
+  // that deferred them in loadGallery. No-op for galleries already loaded.
+  useEffect(() => {
+    if (!gallery || !unlocked || images.length > 0) return
+    const isPrivateFaceMode =
+      ((gallery.delivery_settings as { facePrivacyMode?: string } | null)?.facePrivacyMode) === 'private'
+    if (isPrivateFaceMode) return
+    ;(async () => {
+      const PAGE = 1000
+      const out: GalleryImage[] = []
+      for (let offset = 0; ; offset += PAGE) {
+        const rows = await gcGetImages<GalleryImage>(gallery.id, { offset, limit: PAGE })
+        out.push(...rows)
+        if (rows.length < PAGE) break
+      }
+      setImages(out)
+      const stories = await gcGetStories<Story>(gallery.id)
+      if (stories.length > 0) {
+        const verified: Story[] = []
+        for (const story of stories) {
+          const url = storageUrl('gallery-stories', story.storage_path)
+          try {
+            const res = await fetch(url, { method: 'HEAD' })
+            if (res.ok) verified.push(story)
+          } catch { /* skip */ }
+        }
+        setStories(verified)
+      }
+    })()
+  }, [gallery?.id, unlocked])
 
   const handleUnlock = useCallback(() => setUnlocked(true), [])
 
@@ -1070,14 +1094,12 @@ export function App() {
   const toggleHideImage = useCallback(async (imageId: string) => {
     if (!gallery) return
     const isHidden = hiddenImageIds.has(imageId)
-    if (isHidden) {
-      await supabase.from('gallery_hidden_images').delete()
-        .eq('gallery_id', gallery.id).eq('image_id', imageId)
-      setHiddenImageIds(prev => { const next = new Set(prev); next.delete(imageId); return next })
-    } else {
-      await supabase.from('gallery_hidden_images').insert({ gallery_id: gallery.id, image_id: imageId })
-      setHiddenImageIds(prev => new Set(prev).add(imageId))
-    }
+    await gcSetHidden(gallery.id, imageId, !isHidden)
+    setHiddenImageIds(prev => {
+      const next = new Set(prev)
+      if (isHidden) next.delete(imageId); else next.add(imageId)
+      return next
+    })
   }, [gallery, hiddenImageIds])
 
   // Visible images: guests see only non-hidden, clients see all. Face search
@@ -1156,11 +1178,13 @@ export function App() {
   // verify_gallery_password() RPC. We rely on accessType alone to know
   // whether a gate is required.
   if (accessType === 'password' && !unlocked) {
+    const signedGateOn = (gallery as { signed_gate_enabled?: boolean }).signed_gate_enabled === true
     return (
       <PasswordGate
         galleryId={gallery.id}
         galleryName={galleryTitle}
         onUnlock={handleUnlock}
+        requireToken={signedGateOn}
       />
     )
   }
