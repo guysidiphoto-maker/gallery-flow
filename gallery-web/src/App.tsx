@@ -1443,6 +1443,10 @@ export function App() {
     // Show the saving indicator immediately on click — covers the HEAD check,
     // the fetch, and the blob conversion. Without this the user sees nothing
     // happen for a beat (especially on slow connections) and clicks again.
+    // Minimum visible duration so a fast desktop download doesn't flash too
+    // briefly to register as "yes, something happened".
+    const MIN_VISIBLE_MS = 600
+    const shownAt = Date.now()
     setSavingPhoto(true)
     try {
       const { url, downgraded } = await resolveDownloadUrl(img)
@@ -1451,6 +1455,10 @@ export function App() {
       }
       await handleDownload(url, img.filename)
     } finally {
+      const elapsed = Date.now() - shownAt
+      if (elapsed < MIN_VISIBLE_MS) {
+        await new Promise(r => setTimeout(r, MIN_VISIBLE_MS - elapsed))
+      }
       setSavingPhoto(false)
     }
   }
@@ -2064,18 +2072,29 @@ export function App() {
         </div>
       )}
 
-      {/* ── Saving photo indicator (mobile) ── */}
+      {/* ── Saving photo indicator (full-screen so the click never feels lost) ── */}
       {savingPhoto && (
+        <div
+          aria-busy="true"
+          aria-live="polite"
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,.55)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'wait',
+          }}
+        >
         <div style={{
-          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-          zIndex: 9999, padding: '20px 32px', borderRadius: 16,
-          background: 'rgba(0,0,0,.85)', backdropFilter: 'blur(20px)',
-          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '28px 44px', borderRadius: 20,
+          background: 'rgba(15,15,20,.95)', border: '1px solid rgba(255,255,255,.08)',
+          display: 'flex', alignItems: 'center', gap: 18,
           boxShadow: '0 8px 40px rgba(0,0,0,.5)',
           animation: 'fadeIn .2s ease',
         }}>
-          <div className="loader" style={{ width: 20, height: 20 }} />
-          <span style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{txt.saving}</span>
+          <div className="loader" style={{ width: 28, height: 28 }} />
+          <span style={{ color: '#fff', fontSize: 18, fontWeight: 600, letterSpacing: '.02em' }}>{txt.saving}</span>
+        </div>
         </div>
       )}
 
