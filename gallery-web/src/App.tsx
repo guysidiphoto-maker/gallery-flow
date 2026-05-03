@@ -1416,16 +1416,37 @@ export function App() {
     setTimeout(() => setHdNotice(prev => prev === msg ? null : prev), 4000)
   }
 
-  /** Wrapper around handleDownload that surfaces a friendly notice when
-   * the guest asked for HD but only the web preview is currently in
-   * storage. The URL fallback is already handled by originalUrl(); this
-   * just prevents the silent downgrade from feeling broken. */
-  function handleImageDownload(img: GalleryImage) {
+  /** Trust storage, not the DB flag. The audit (and a real downloaded-only-
+   *  111KB report from a guest) showed images.original_uploaded going stale
+   *  vs. the actual file in S3 — the photographer ships the originals fine
+   *  but the per-row UPDATE silently drops, and the guest gets a 100KB web
+   *  preview instead of the 8 MB original. HEAD-check the original URL and
+   *  fall back ONLY when storage genuinely says 404. ~50 ms penalty on the
+   *  click is invisible next to the actual download. */
+  async function handleImageDownload(img: GalleryImage) {
     const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
-    if (wantsHd && isOriginalPending(img)) {
-      showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+    let url: string
+    if (wantsHd && img.original_path) {
+      const candidate = storageUrl(imgBucket, img.original_path)
+      let originalExists = true
+      try {
+        const head = await fetch(candidate, { method: 'HEAD' })
+        originalExists = head.ok
+      } catch {
+        // Network blip — assume present and let the actual download retry
+        // surface any real error.
+        originalExists = true
+      }
+      if (originalExists) {
+        url = candidate
+      } else {
+        url = webUrl(img)
+        showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+      }
+    } else {
+      url = wantsHd ? originalUrl(img) : webUrl(img)
     }
-    handleDownload(downloadUrl(img), img.filename)
+    handleDownload(url, img.filename)
   }
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
