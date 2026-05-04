@@ -2093,6 +2093,8 @@ export function App() {
           onClose={() => { setViewerIndex(null); setViewerList(null) }}
           onNavigate={setViewerIndex}
           onDownload={handleDownload}
+          favoritedIds={favoritedIds}
+          onToggleFavorite={toggleImageFavorite}
         />
       )}
 
