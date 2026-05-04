@@ -588,46 +588,120 @@ export function Dashboard() {
             ))}
           </div>
         ) : galleries.length === 0 ? (
-          /* ======= Empty state ======= */
+          /* ======= Empty state — first-time photographer onboarding ======= */
           <div style={{
-            textAlign: 'center', padding: '100px 24px',
+            textAlign: 'center', padding: '60px 24px 100px',
             animation: 'fadeInUp .5s ease both',
+            position: 'relative',
           }}>
+            {/* Welcome hero card */}
             <div style={{
-              width: 120, height: 120, borderRadius: 32, margin: '0 auto 28px',
-              background: `linear-gradient(135deg, rgba(99,102,241,.12), rgba(167,139,250,.08))`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              border: `1px solid rgba(99,102,241,.15)`,
+              maxWidth: 720, margin: '0 auto 32px',
+              padding: '48px 32px',
+              borderRadius: 28,
+              background: `linear-gradient(135deg, rgba(99,102,241,.12), rgba(167,139,250,.06))`,
+              border: `1px solid rgba(99,102,241,.18)`,
+              boxShadow: '0 18px 60px rgba(99,102,241,.10)',
+              position: 'relative', overflow: 'hidden',
             }}>
-              <span style={{ fontSize: 52, filter: 'grayscale(0.2)' }}>🖼️</span>
+              {/* Decorative glow */}
+              <div style={{
+                position: 'absolute', top: -80, right: -80,
+                width: 240, height: 240, borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(99,102,241,.18), transparent 70%)',
+                pointerEvents: 'none',
+              }} />
+              <div style={{
+                width: 88, height: 88, borderRadius: 24, margin: '0 auto 24px',
+                background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: `0 12px 32px ${accentGlow}`,
+                position: 'relative',
+              }}>
+                <span style={{ fontSize: 44 }}>📸</span>
+              </div>
+              <h2 style={{
+                fontSize: 32, fontWeight: 800, marginBottom: 14, color: textPrimary,
+                letterSpacing: '-0.025em', position: 'relative',
+              }}>
+                ברוך הבא ל-Pixflow
+              </h2>
+              <p style={{
+                color: textSecondary, fontSize: 17, marginBottom: 14, lineHeight: 1.65,
+                maxWidth: 520, marginInline: 'auto',
+              }}>
+                גלריות מהירות, פרטיות ויפות לאירועים. עם זיהוי פנים אופציונלי שמאפשר לאורחים למצוא את עצמם בסלפי.
+              </p>
+              <p style={{
+                color: '#a5b4fc', fontSize: 13, marginBottom: 32, fontWeight: 600,
+              }}>
+                ✨ קיבלת 100 טוקנים חינם להתחלה — מספיק לעלות 100 תמונות
+              </p>
+              <div style={{
+                display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap',
+              }}>
+                <button
+                  onClick={() => setShowModal(true)}
+                  style={{
+                    background: `linear-gradient(135deg, ${accent}, ${accentLight})`, color: '#fff',
+                    border: 'none', borderRadius: 14, padding: '16px 32px', fontSize: 15,
+                    fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                    transition: 'transform .15s, box-shadow .15s',
+                    boxShadow: `0 6px 24px ${accentGlow}`,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(99,102,241,.4)` }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = `0 6px 24px ${accentGlow}` }}
+                >
+                  <span style={{ fontSize: 18 }}>🎯</span>
+                  צור גלריה ראשונה
+                </button>
+                <a
+                  href="/demo"
+                  target="_blank"
+                  rel="noopener"
+                  style={{
+                    textDecoration: 'none',
+                    background: 'transparent', color: textPrimary,
+                    border: `1px solid ${border}`, borderRadius: 14, padding: '16px 28px', fontSize: 15,
+                    fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                    transition: 'all .15s',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.5)'; e.currentTarget.style.background = 'rgba(99,102,241,.06)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.background = 'transparent' }}
+                >
+                  <span style={{ fontSize: 18 }}>🚀</span>
+                  נסה את הדמו
+                </a>
+              </div>
             </div>
-            <h2 style={{
-              fontSize: 26, fontWeight: 700, marginBottom: 12, color: textPrimary,
-              letterSpacing: '-0.02em',
+
+            {/* Three feature highlights below */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: 16, maxWidth: 720, margin: '0 auto',
             }}>
-              אין גלריות עדיין
-            </h2>
-            <p style={{
-              color: textSecondary, fontSize: 16, marginBottom: 36, lineHeight: 1.7,
-              maxWidth: 380, marginInline: 'auto',
-            }}>
-              צרו את הגלריה הראשונה שלכם ושתפו תמונות עם הלקוחות
-            </p>
-            <button
-              onClick={() => setShowModal(true)}
-              style={{
-                background: `linear-gradient(135deg, ${accent}, ${accentLight})`, color: '#fff',
-                border: 'none', borderRadius: 16, padding: '18px 48px', fontSize: 17,
-                fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-                transition: 'transform .15s, box-shadow .15s',
-                boxShadow: `0 6px 28px ${accentGlow}`,
-                letterSpacing: '0.01em',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 10px 36px rgba(99,102,241,.35)`; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 6px 28px ${accentGlow}`; }}
-            >
-              צור גלריה חדשה
-            </button>
+              {[
+                { icon: '⚡', title: 'מהיר במיוחד', desc: 'תצוגות web + thumb לכל תמונה — גלריות נטענות פי 50 מ-S3 רגיל' },
+                { icon: '🔒', title: 'פרטי ובטוח', desc: 'הגנת סיסמה אמיתית בצד השרת — לא רק מסך שעוקפים בדפדפן' },
+                { icon: '🎨', title: 'זיהוי פנים', desc: 'אורחים מצלמים סלפי ומקבלים את התמונות שלהם בלבד' },
+              ].map(f => (
+                <div key={f.title} style={{
+                  padding: '22px 20px', borderRadius: 16,
+                  background: card, border: `1px solid ${border}`,
+                  textAlign: 'right' as const,
+                }}>
+                  <div style={{ fontSize: 28, marginBottom: 10 }}>{f.icon}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: textPrimary, marginBottom: 6 }}>
+                    {f.title}
+                  </div>
+                  <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.55 }}>
+                    {f.desc}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           /* ======= Gallery grid ======= */
