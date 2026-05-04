@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase } from '../supabase'
+import { uploadMany } from '../lib/uploadPipeline'
+import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 
 interface Gallery {
   id: string
@@ -64,12 +66,15 @@ export function Dashboard() {
   const [creating, setCreating] = useState(false)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [businessId, setBusinessId] = useState<string | null>(null)
+  const [businessSlug, setBusinessSlug] = useState<string | null>(null)
+  const [tokenBalance, setTokenBalance] = useState<number>(0)
+  const [showBuyTokens, setShowBuyTokens] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
   const [editTab, setEditTab] = useState<'photos' | 'settings' | 'welcome'>('photos')
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // New delivery settings state
@@ -89,12 +94,13 @@ export function Dashboard() {
     // Look up existing business for this user
     const { data: biz } = await supabase
       .from('businesses')
-      .select('id')
+      .select('id, slug')
       .eq('user_id', user!.id)
       .maybeSingle()
 
     if (biz) {
       setBusinessId(biz.id)
+      setBusinessSlug(biz.slug)
     } else {
       // Auto-create a business record for new users
       const displayName = user!.user_metadata?.full_name || user!.user_metadata?.name || user!.email || 'Studio'
@@ -102,15 +108,22 @@ export function Dashboard() {
       const { data: newBiz, error } = await supabase
         .from('businesses')
         .insert({ user_id: user!.id, business_name: displayName, slug })
-        .select('id')
+        .select('id, slug')
         .single()
       if (error) {
         console.error('Failed to create business:', error)
       } else if (newBiz) {
         setBusinessId(newBiz.id)
+        setBusinessSlug(newBiz.slug)
       }
     }
     fetchGalleries()
+    fetchTokenBalance()
+  }
+
+  async function fetchTokenBalance() {
+    const balance = await getMyTokenBalance()
+    setTokenBalance(balance)
   }
 
   async function fetchGalleries() {
@@ -216,39 +229,45 @@ export function Dashboard() {
   }
 
   async function handleFileUpload(files: FileList | null) {
-    if (!files || !editingGallery || !businessId) return
-    setUploading(true)
-    const total = files.length
-    let done = 0
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop() || 'jpg'
-      const path = `${editingGallery.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: uploadErr } = await supabase.storage
-        .from('gallery-images')
-        .upload(path, file, { contentType: file.type })
-      if (!uploadErr) {
-        await supabase.from('images').insert({
-          gallery_id: editingGallery.id,
-          filename: file.name,
-          storage_path: path,
-          is_top_pick: false,
-          sort_order: galleryImages.length + done,
-        })
-      }
-      done++
-      setUploadProgress(Math.round((done / total) * 100))
+    if (!files || !editingGallery || !businessId || !businessSlug) return
+    if (tokenBalance < files.length) {
+      const wanted = files.length
+      const have = tokenBalance
+      alert(`אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}. רכוש חבילה כדי להמשיך.`)
+      setShowBuyTokens(true)
+      return
     }
-    // Update image count
-    await supabase.from('galleries').update({ image_count: galleryImages.length + done }).eq('id', editingGallery.id)
-    // Refresh
+    setUploading(true)
+    setUploadBatch({ completed: 0, total: files.length, failed: 0 })
+    const result = await uploadMany(
+      Array.from(files),
+      {
+        galleryId: editingGallery.id,
+        businessSlug,
+        sortOrder: galleryImages.length,
+      },
+      (b) => setUploadBatch(b),
+      3,
+    )
+    if (result.failed.length > 0) {
+      const insufficient = result.failed.find(f => f.error.includes('insufficient_tokens'))
+      if (insufficient) {
+        alert('הטוקנים נגמרו באמצע ההעלאה. רכוש חבילה כדי להמשיך עם השאר.')
+        setShowBuyTokens(true)
+      } else {
+        alert(`${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.`)
+      }
+    }
+    // Refresh balance + image list
+    fetchTokenBalance()
     const { data } = await supabase
       .from('images')
-      .select('id, filename, storage_path, thumbnail_path, is_top_pick, sort_order')
+      .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order')
       .eq('gallery_id', editingGallery.id)
       .order('sort_order', { ascending: true })
     setGalleryImages(data ?? [])
     setUploading(false)
-    setUploadProgress(0)
+    setUploadBatch(null)
     fetchGalleries()
   }
 
@@ -374,6 +393,29 @@ export function Dashboard() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <button
+            onClick={() => setShowBuyTokens(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 14px', borderRadius: 10,
+              background: tokenBalance < 50
+                ? 'linear-gradient(135deg, rgba(239,68,68,.18), rgba(220,38,38,.10))'
+                : `linear-gradient(135deg, rgba(99,102,241,.18), rgba(129,140,248,.10))`,
+              border: `1px solid ${tokenBalance < 50 ? 'rgba(239,68,68,.35)' : 'rgba(99,102,241,.35)'}`,
+              color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              fontFamily: 'Inter, sans-serif',
+              transition: 'all .2s',
+            }}
+            title="קנה טוקנים"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M12 7v10M9 9h4.5a2.5 2.5 0 0 1 0 5H9m0 0h5"/>
+            </svg>
+            <span>{tokenBalance.toLocaleString('he-IL')}</span>
+            <span style={{ opacity: .65, fontWeight: 500 }}>טוקנים</span>
+          </button>
           <a href="/" style={{
             color: textSecondary, textDecoration: 'none', fontSize: 14,
             fontWeight: 600, letterSpacing: '-0.01em',
@@ -699,11 +741,28 @@ export function Dashboard() {
                         marginBottom: 28,
                       }}
                     >
-                      {uploading ? (
+                      {uploading && uploadBatch ? (
                         <div>
-                          <div style={{ fontSize: 14, color: accentLight, fontWeight: 600, marginBottom: 8 }}>מעלה תמונות... {uploadProgress}%</div>
+                          <div style={{ fontSize: 14, color: accentLight, fontWeight: 600, marginBottom: 4 }}>
+                            מעלה תמונות {uploadBatch.completed} / {uploadBatch.total}
+                            {uploadBatch.failed > 0 && (
+                              <span style={{ color: '#fca5a5', marginRight: 8, fontSize: 12 }}>
+                                ({uploadBatch.failed} נכשלו)
+                              </span>
+                            )}
+                          </div>
+                          {uploadBatch.current && (
+                            <div style={{ fontSize: 11, color: textMuted, marginBottom: 8, direction: 'ltr', textAlign: 'right' }}>
+                              {uploadBatch.current}
+                            </div>
+                          )}
                           <div style={{ width: '100%', height: 4, borderRadius: 4, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
-                            <div style={{ width: `${uploadProgress}%`, height: '100%', background: `linear-gradient(90deg, ${accent}, ${accentLight})`, borderRadius: 4, transition: 'width .3s' }} />
+                            <div style={{
+                              width: `${Math.round((uploadBatch.completed / Math.max(1, uploadBatch.total)) * 100)}%`,
+                              height: '100%',
+                              background: `linear-gradient(90deg, ${accent}, ${accentLight})`,
+                              borderRadius: 4, transition: 'width .3s',
+                            }} />
                           </div>
                         </div>
                       ) : (
@@ -1349,6 +1408,93 @@ export function Dashboard() {
                 ביטול
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ───────────── Buy Tokens Modal ───────────── */}
+      {showBuyTokens && (
+        <div
+          onClick={() => setShowBuyTokens(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 2000,
+            background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(10px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, animation: 'overlayIn .2s ease both',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: bg, width: '100%', maxWidth: 720,
+              borderRadius: 24, padding: 36,
+              border: `1px solid ${border}`,
+              animation: 'modalIn .3s ease both',
+              boxShadow: '0 30px 100px rgba(0,0,0,.6)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <h2 style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+                קנה טוקנים
+              </h2>
+              <button onClick={() => setShowBuyTokens(false)} style={{
+                background: 'transparent', border: 'none', color: textMuted, fontSize: 22,
+                cursor: 'pointer', lineHeight: 1, padding: 4,
+              }}>×</button>
+            </div>
+            <p style={{ fontSize: 14, color: textSecondary, margin: '0 0 24px', lineHeight: 1.5 }}>
+              טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              {TOKEN_PACKAGES.map(pkg => (
+                <button
+                  key={pkg.planId}
+                  onClick={async () => {
+                    const url = await startCheckout(pkg.planId)
+                    if (url) { window.location.href = url }
+                    else { alert('שגיאה בפתיחת תשלום. נסה שוב.') }
+                  }}
+                  style={{
+                    position: 'relative',
+                    background: pkg.highlight
+                      ? `linear-gradient(135deg, rgba(99,102,241,.12), rgba(129,140,248,.06))`
+                      : card,
+                    border: `1px solid ${pkg.highlight ? 'rgba(99,102,241,.4)' : border}`,
+                    borderRadius: 18, padding: 24, textAlign: 'right' as const,
+                    cursor: 'pointer', transition: 'all .2s',
+                    color: textPrimary, fontFamily: 'Inter, sans-serif',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(99,102,241,.18)` }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}
+                >
+                  {pkg.highlight && (
+                    <div style={{
+                      position: 'absolute', top: -10, right: 16,
+                      padding: '4px 12px', borderRadius: 10,
+                      background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
+                      fontSize: 11, fontWeight: 700, letterSpacing: '.04em',
+                    }}>
+                      {pkg.highlight}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{pkg.name}</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 4, letterSpacing: '-0.02em' }}>
+                    {pkg.tokens.toLocaleString('he-IL')}
+                  </div>
+                  <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>טוקנים בחודש</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#a5b4fc' }}>
+                    ₪{pkg.pricePerMonthIls}
+                    <span style={{ fontSize: 12, fontWeight: 500, color: textMuted }}> / חודש</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <p style={{ fontSize: 11, color: textMuted, margin: '20px 0 0', textAlign: 'center', lineHeight: 1.5 }}>
+              חיוב חודשי דרך LemonSqueezy. אפשר לבטל בכל זמן.<br />
+              טוקנים שלא בשימוש מצטברים, לא מתאפסים בסוף חודש.
+            </p>
           </div>
         </div>
       )}
