@@ -89,17 +89,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ? `${title} by ${studioName} — ${imageCount} photos`
     : `${title} — ${imageCount} photos`
 
-  let coverUrl = ''
-  if (s.coverImageUrl) {
-    coverUrl = s.coverImageUrl as string
-  } else {
-    const { data: imgs } = await supabase
-      .from('images').select('storage_path:web_preview_path')
-      .eq('gallery_id', gallery.id as string).order('sort_order').limit(1)
-    if (imgs?.[0]) {
-      coverUrl = `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${imgs[0].storage_path}`
-    }
-  }
+  // Always point og:image at the branded generator. /api/og falls back to a
+  // Pixflow-only card if it can't load the gallery, so this is safe even when
+  // the cover hasn't been set yet — and it beats handing crawlers a raw 8MB
+  // photo URL.
+  const ogImage = `https://pixflow-ai.com/api/og?gallery=${encodeURIComponent(gallery.id as string)}`
 
   res.setHeader('Content-Type', 'text/html')
   res.setHeader('Cache-Control', 'public, s-maxage=3600')
@@ -111,12 +105,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 <meta property="og:description" content="${description}" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://pixflow-ai.com${path}" />
-${coverUrl ? `<meta property="og:image" content="${coverUrl}" />` : ''}
+<meta property="og:image" content="${ogImage}" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="${title}" />
 <meta name="twitter:description" content="${description}" />
-${coverUrl ? `<meta name="twitter:image" content="${coverUrl}" />` : ''}
+<meta name="twitter:image" content="${ogImage}" />
 </head><body></body></html>`)
 }
