@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { getStoredToken } from '../lib/galleryClient'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -207,6 +208,8 @@ export function FaceSearchExperience({
       const form = new FormData()
       form.append('galleryId', galleryId)
       form.append('selfie', file)
+      const token = getStoredToken(galleryId)
+      if (token) form.append('token', token)
 
       const { data, error } = await supabase.functions.invoke('rekognition', {
         body: form,
