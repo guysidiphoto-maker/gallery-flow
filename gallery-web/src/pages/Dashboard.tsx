@@ -11,6 +11,8 @@ interface Gallery {
   published_at: string | null
   status: string
   delivery_settings?: Record<string, unknown>
+  download_count?: number
+  favorite_count?: number
 }
 
 interface GalleryImage {
@@ -173,7 +175,7 @@ export function Dashboard() {
     }
     const { data, error } = await supabase
       .from('galleries')
-      .select('id, name, image_count, published_at, status')
+      .select('id, name, image_count, published_at, status, download_count, favorite_count')
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
@@ -685,16 +687,28 @@ export function Dashboard() {
                   </div>
 
                   <div style={{
-                    display: 'flex', gap: 24, fontSize: 13, color: textSecondary,
+                    display: 'flex', gap: 18, fontSize: 13, color: textSecondary, flexWrap: 'wrap',
                     borderTop: `1px solid ${isHovered ? 'rgba(99,102,241,.15)' : border}`,
                     paddingTop: 16, transition: 'border-color .3s',
                   }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ opacity: 0.6 }}>📷</span>
-                      {g.image_count ?? 0} תמונות
+                      {g.image_count ?? 0}
                     </span>
+                    {(g.status === 'live' || g.status === 'published') && (g.download_count ?? 0) > 0 && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#a5b4fc' }} title="הורדות">
+                        <span style={{ opacity: 0.6 }}>⬇️</span>
+                        {(g.download_count ?? 0).toLocaleString('he-IL')}
+                      </span>
+                    )}
+                    {(g.status === 'live' || g.status === 'published') && (g.favorite_count ?? 0) > 0 && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#fca5a5' }} title="מועדפים">
+                        <span>♥</span>
+                        {(g.favorite_count ?? 0).toLocaleString('he-IL')}
+                      </span>
+                    )}
                     {g.published_at && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginInlineStart: 'auto' }}>
                         <span style={{ opacity: 0.6 }}>📅</span>
                         {new Date(g.published_at).toLocaleDateString('he-IL')}
                       </span>
