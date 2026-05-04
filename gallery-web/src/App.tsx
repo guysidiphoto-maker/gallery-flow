@@ -65,7 +65,7 @@ function useColumnCount(layoutMode: string): number {
   return cols
 }
 
-function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide, favoritedIds, onToggleFavorite }: {
+function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide, favoritedIds, onToggleFavorite, watermark }: {
   images: GalleryImage[]
   thumbUrl: (img: GalleryImage) => string
   layoutMode: string
@@ -81,6 +81,7 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
   onToggleHide?: (id: string) => void
   favoritedIds?: Set<string>
   onToggleFavorite?: (id: string) => void
+  watermark?: { text: string; position: string } | null
 }) {
   const cols = useColumnCount(layoutMode)
   const imgRefs = useRef<Map<string, HTMLImageElement>>(new Map())
@@ -270,6 +271,28 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                     </svg>
                   </button>
+                )}
+                {/* Watermark overlay — purely presentational; the original
+                    download is unaffected. Only renders for previews. */}
+                {watermark?.text && (
+                  <div
+                    aria-hidden
+                    style={{
+                      position: 'absolute', pointerEvents: 'none',
+                      ...(watermark.position === 'bottom-left'  ? { bottom: 8, left: 8 }
+                        : watermark.position === 'top-right'    ? { top: 8, right: 8 }
+                        : watermark.position === 'top-left'     ? { top: 8, left: 8 }
+                        : watermark.position === 'center'       ? { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+                        : { bottom: 8, right: 8 }),
+                      color: 'rgba(255,255,255,.75)',
+                      fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
+                      textShadow: '0 1px 4px rgba(0,0,0,.6)',
+                      maxWidth: '60%',
+                      overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {watermark.text}
+                  </div>
                 )}
               </div>
             )
@@ -1229,6 +1252,19 @@ export function App() {
     : (raw as Record<string, unknown>).allowDownloads !== false
   const facePrivacyMode = ((raw as Record<string, unknown>).facePrivacyMode as 'open' | 'private') || 'open'
 
+  // Theme color — selected by the photographer in the Design tab.
+  const themeColorId = ((raw as Record<string, unknown>).themeColor as string) || 'indigo'
+  const themeColors: Record<string, string> = {
+    indigo: '#6366f1', rose: '#f43f5e', amber: '#f59e0b', teal: '#14b8a6', slate: '#64748b',
+  }
+  const themeAccent = themeColors[themeColorId] ?? themeColors.indigo
+
+  // Watermark settings — applied as a CSS overlay on web previews. Originals
+  // download untouched (the watermark is presentation-only, not baked in).
+  const watermarkEnabled = (raw as Record<string, unknown>).watermarkEnabled === true
+  const watermarkText = (((raw as Record<string, unknown>).watermarkText as string) || studioName || '').trim()
+  const watermarkPosition = ((raw as Record<string, unknown>).watermarkPosition as string) || 'bottom-right'
+
   // ── Password gate ──────────────────────────────────────────────────────
   // We no longer have the plaintext password on the client; the gate calls
   // verify_gallery_password() RPC. We rely on accessType alone to know
@@ -1700,8 +1736,21 @@ export function App() {
     || (heroFallbackImage ? webUrl(heroFallbackImage) : null)
   const hasCustomCover = !!coverUrl
 
+  // Convert the chosen theme accent (#rrggbb) to "r, g, b" so it can override
+  // the existing --accent CSS variable used everywhere in styles.css.
+  const themeAccentRgb = (() => {
+    const hex = themeAccent.replace('#', '')
+    const r = parseInt(hex.slice(0, 2), 16)
+    const g = parseInt(hex.slice(2, 4), 16)
+    const b = parseInt(hex.slice(4, 6), 16)
+    return `${r}, ${g}, ${b}`
+  })()
+
   return (
     <>
+      {/* Override the global accent CSS variable to match the photographer's
+          chosen theme color. Cascades into every existing rgb(var(--accent)) ref. */}
+      <style>{`:root { --accent: ${themeAccentRgb}; }`}</style>
       {/* Hero */}
       {/* Feed mode: mobile sticky header */}
       {isFeedMode && (
@@ -2004,6 +2053,7 @@ export function App() {
               onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
               favoritedIds={favoritedIds}
               onToggleFavorite={toggleImageFavorite}
+              watermark={watermarkEnabled && watermarkText ? { text: watermarkText, position: watermarkPosition } : null}
             />
           </section>
         )
@@ -2062,6 +2112,7 @@ export function App() {
               onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
               favoritedIds={favoritedIds}
               onToggleFavorite={toggleImageFavorite}
+              watermark={watermarkEnabled && watermarkText ? { text: watermarkText, position: watermarkPosition } : null}
             />
           </section>
         )
