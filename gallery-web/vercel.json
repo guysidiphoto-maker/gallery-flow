@@ -5,6 +5,7 @@
   "installCommand": "npm install",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/gallery/:id", "destination": "/api/share?id=:id" },
     { "source": "/:slug/gallery/:id", "destination": "/api/gallery-page" },
     { "source": "/:business/:gallery", "destination": "/api/gallery-page" },
     { "source": "/(.*)", "destination": "/index.html" }
