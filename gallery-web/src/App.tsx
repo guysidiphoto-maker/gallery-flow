@@ -6,7 +6,7 @@ import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
 import { FaceSearchExperience } from './components/FaceSearchExperience'
 import { t, type Lang } from './i18n'
-import { logDownload, logBatchDownload } from './lib/activityLog'
+import { logDownload, logBatchDownload, toggleFavorite as apiToggleFavorite } from './lib/activityLog'
 
 // ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
 
@@ -58,7 +58,7 @@ function useColumnCount(layoutMode: string): number {
   return cols
 }
 
-function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide }: {
+function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide, favoritedIds, onToggleFavorite }: {
   images: GalleryImage[]
   thumbUrl: (img: GalleryImage) => string
   layoutMode: string
@@ -72,6 +72,8 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
   clientMode?: boolean
   hiddenIds?: Set<string>
   onToggleHide?: (id: string) => void
+  favoritedIds?: Set<string>
+  onToggleFavorite?: (id: string) => void
 }) {
   const cols = useColumnCount(layoutMode)
   const imgRefs = useRef<Map<string, HTMLImageElement>>(new Map())
@@ -231,6 +233,34 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                  </button>
+                )}
+                {/* Heart / favorite — always visible when favorited; hover-revealed when not */}
+                {!selectMode && onToggleFavorite && (
+                  <button
+                    className="grid-item__fav"
+                    aria-label={favoritedIds?.has(img.id) ? 'Remove favorite' : 'Add favorite'}
+                    onClick={e => { e.stopPropagation(); onToggleFavorite(img.id) }}
+                    style={{
+                      position: 'absolute', top: 10, right: 10,
+                      width: 34, height: 34, borderRadius: '50%',
+                      border: '1px solid rgba(255,255,255,.12)',
+                      background: 'rgba(0,0,0,.45)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: favoritedIds?.has(img.id) ? 1 : 0,
+                      transition: 'all .18s cubic-bezier(.16,1,.3,1)',
+                      boxShadow: favoritedIds?.has(img.id) ? '0 2px 12px rgba(239,68,68,.3)' : '0 2px 8px rgba(0,0,0,.25)',
+                    }}
+                    onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.85)' }}
+                    onMouseUp={e => { e.currentTarget.style.transform = '' }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = '' }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24"
+                      fill={favoritedIds?.has(img.id) ? '#ef4444' : 'none'}
+                      stroke={favoritedIds?.has(img.id) ? '#ef4444' : '#fff'}
+                      strokeWidth="2">
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                     </svg>
                   </button>
                 )}
@@ -839,6 +869,7 @@ export function App() {
   const [clientCodeInput, setClientCodeInput] = useState('')
   const [clientCodeError, setClientCodeError] = useState(false)
   const [hiddenImageIds, setHiddenImageIds] = useState<Set<string>>(new Set())
+  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set())
   // Stories are collapsed by default. The viewer surfaces them via a toggle
   // button in the section-nav toolbar so the gallery doesn't open with a big
   // stories block above the photos.
@@ -953,6 +984,30 @@ export function App() {
         if (data) setHiddenImageIds(new Set(data.map(r => r.image_id)))
       })
   }, [gallery?.id])
+
+  // Hydrate guest favorites from localStorage. RLS doesn't allow anon to
+  // read gallery_favorites (the photographer's analytics signal is owner-
+  // only); the guest-side source of truth is local. The DB row is fired
+  // on each toggle for the photographer's Activities tab.
+  useEffect(() => {
+    if (!gallery) return
+    try {
+      const raw = localStorage.getItem(`gf_favs_${gallery.id}`)
+      if (raw) setFavoritedIds(new Set(JSON.parse(raw) as string[]))
+    } catch { /* ignore corrupt entries */ }
+  }, [gallery?.id])
+
+  const toggleImageFavorite = useCallback((imageId: string) => {
+    if (!gallery) return
+    setFavoritedIds(prev => {
+      const next = new Set(prev)
+      const wasFav = next.has(imageId)
+      if (wasFav) next.delete(imageId); else next.add(imageId)
+      try { localStorage.setItem(`gf_favs_${gallery.id}`, JSON.stringify(Array.from(next))) } catch { /* full / disabled */ }
+      void apiToggleFavorite(gallery.id, imageId, !wasFav)
+      return next
+    })
+  }, [gallery])
 
   // On first load, if the URL has a hash (e.g. #section-abc), scroll to it
   // once the masonry has rendered.
@@ -1899,6 +1954,8 @@ export function App() {
               clientMode={viewerRole === 'client'}
               hiddenIds={hiddenImageIds}
               onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
+              favoritedIds={favoritedIds}
+              onToggleFavorite={toggleImageFavorite}
             />
           </section>
         )
@@ -1955,6 +2012,8 @@ export function App() {
               clientMode={viewerRole === 'client'}
               hiddenIds={hiddenImageIds}
               onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
+              favoritedIds={favoritedIds}
+              onToggleFavorite={toggleImageFavorite}
             />
           </section>
         )
