@@ -13,6 +13,7 @@ import {
   getHidden as gcGetHidden,
   setHidden as gcSetHidden,
 } from './lib/galleryClient'
+import { logDownload, logBatchDownload } from './lib/activityLog'
 
 // ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
 
@@ -1469,6 +1470,10 @@ export function App() {
       showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
     }
     handleDownload(url, img.filename)
+    if (gallery) {
+      const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+      void logDownload(gallery.id, img.id, wantsHd ? 'original' : 'web', 'single')
+    }
   }
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
@@ -1513,10 +1518,13 @@ export function App() {
   }
 
   async function handleBatchDownload(imgs: GalleryImage[]) {
+    if (gallery && imgs.length > 0) {
+      const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+      void logBatchDownload(gallery.id, imgs.map(i => i.id), wantsHd ? 'original' : 'web')
+    }
     // Resolve URLs in parallel BEFORE the download loop. HEAD-check each
     // original so a stale original_uploaded flag doesn't downgrade the
-    // batch silently (same bug fixed in handleImageDownload). Parallel
-    // HEADs add ~few hundred ms total even for large selections.
+    // batch silently. Parallel HEADs add ~few hundred ms total.
     setDlProgress(`Checking ${imgs.length} files...`)
     const resolved = await Promise.all(imgs.map(resolveDownloadUrl))
     const downgradedCount = resolved.filter(r => r.downgraded).length

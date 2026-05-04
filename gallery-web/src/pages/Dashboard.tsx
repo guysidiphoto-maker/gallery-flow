@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase } from '../supabase'
+import { uploadMany } from '../lib/uploadPipeline'
+import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 
 interface Gallery {
   id: string
@@ -64,12 +66,24 @@ export function Dashboard() {
   const [creating, setCreating] = useState(false)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [businessId, setBusinessId] = useState<string | null>(null)
+  const [businessSlug, setBusinessSlug] = useState<string | null>(null)
+  const [tokenBalance, setTokenBalance] = useState<number>(0)
+  const [showBuyTokens, setShowBuyTokens] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
-  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'welcome'>('photos')
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'welcome'>('photos')
+  const [activitySummary, setActivitySummary] = useState<{
+    downloads_total: number
+    favorites_total: number
+    emails_total: number
+    recent_downloads: Array<{ id: string; image_id: string | null; resolution: string; download_kind: string; created_at: string }>
+    recent_favorites: Array<{ id: string; image_id: string; guest_name: string | null; note: string | null; created_at: string }>
+    recent_emails: Array<{ id: string; recipient_email: string; subject: string | null; status: string; created_at: string }>
+  } | null>(null)
+  const [activityLoading, setActivityLoading] = useState(false)
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // New delivery settings state
@@ -85,16 +99,35 @@ export function Dashboard() {
     initBusiness()
   }, [user])
 
+  // Lazy-load activity summary when the tab opens. Re-fetches when switching
+  // galleries, but caches per-gallery within the editor session.
+  useEffect(() => {
+    if (editTab !== 'activities' || !editingGallery) return
+    setActivityLoading(true)
+    supabase
+      .rpc('gallery_activity_summary', { p_gallery_id: editingGallery.id })
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('[activities] fetch failed', error)
+          setActivitySummary(null)
+        } else if (data) {
+          setActivitySummary(data as typeof activitySummary)
+        }
+        setActivityLoading(false)
+      })
+  }, [editTab, editingGallery?.id])
+
   async function initBusiness() {
     // Look up existing business for this user
     const { data: biz } = await supabase
       .from('businesses')
-      .select('id')
+      .select('id, slug')
       .eq('user_id', user!.id)
       .maybeSingle()
 
     if (biz) {
       setBusinessId(biz.id)
+      setBusinessSlug(biz.slug)
     } else {
       // Auto-create a business record for new users
       const displayName = user!.user_metadata?.full_name || user!.user_metadata?.name || user!.email || 'Studio'
@@ -102,15 +135,22 @@ export function Dashboard() {
       const { data: newBiz, error } = await supabase
         .from('businesses')
         .insert({ user_id: user!.id, business_name: displayName, slug })
-        .select('id')
+        .select('id, slug')
         .single()
       if (error) {
         console.error('Failed to create business:', error)
       } else if (newBiz) {
         setBusinessId(newBiz.id)
+        setBusinessSlug(newBiz.slug)
       }
     }
     fetchGalleries()
+    fetchTokenBalance()
+  }
+
+  async function fetchTokenBalance() {
+    const balance = await getMyTokenBalance()
+    setTokenBalance(balance)
   }
 
   async function fetchGalleries() {
@@ -216,39 +256,45 @@ export function Dashboard() {
   }
 
   async function handleFileUpload(files: FileList | null) {
-    if (!files || !editingGallery || !businessId) return
-    setUploading(true)
-    const total = files.length
-    let done = 0
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop() || 'jpg'
-      const path = `${editingGallery.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: uploadErr } = await supabase.storage
-        .from('gallery-images')
-        .upload(path, file, { contentType: file.type })
-      if (!uploadErr) {
-        await supabase.from('images').insert({
-          gallery_id: editingGallery.id,
-          filename: file.name,
-          storage_path: path,
-          is_top_pick: false,
-          sort_order: galleryImages.length + done,
-        })
-      }
-      done++
-      setUploadProgress(Math.round((done / total) * 100))
+    if (!files || !editingGallery || !businessId || !businessSlug) return
+    if (tokenBalance < files.length) {
+      const wanted = files.length
+      const have = tokenBalance
+      alert(`אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}. רכוש חבילה כדי להמשיך.`)
+      setShowBuyTokens(true)
+      return
     }
-    // Update image count
-    await supabase.from('galleries').update({ image_count: galleryImages.length + done }).eq('id', editingGallery.id)
-    // Refresh
+    setUploading(true)
+    setUploadBatch({ completed: 0, total: files.length, failed: 0 })
+    const result = await uploadMany(
+      Array.from(files),
+      {
+        galleryId: editingGallery.id,
+        businessSlug,
+        sortOrder: galleryImages.length,
+      },
+      (b) => setUploadBatch(b),
+      3,
+    )
+    if (result.failed.length > 0) {
+      const insufficient = result.failed.find(f => f.error.includes('insufficient_tokens'))
+      if (insufficient) {
+        alert('הטוקנים נגמרו באמצע ההעלאה. רכוש חבילה כדי להמשיך עם השאר.')
+        setShowBuyTokens(true)
+      } else {
+        alert(`${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.`)
+      }
+    }
+    // Refresh balance + image list
+    fetchTokenBalance()
     const { data } = await supabase
       .from('images')
-      .select('id, filename, storage_path, thumbnail_path, is_top_pick, sort_order')
+      .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order')
       .eq('gallery_id', editingGallery.id)
       .order('sort_order', { ascending: true })
     setGalleryImages(data ?? [])
     setUploading(false)
-    setUploadProgress(0)
+    setUploadBatch(null)
     fetchGalleries()
   }
 
@@ -397,6 +443,29 @@ export function Dashboard() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <button
+            onClick={() => setShowBuyTokens(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 14px', borderRadius: 10,
+              background: tokenBalance < 50
+                ? 'linear-gradient(135deg, rgba(239,68,68,.18), rgba(220,38,38,.10))'
+                : `linear-gradient(135deg, rgba(99,102,241,.18), rgba(129,140,248,.10))`,
+              border: `1px solid ${tokenBalance < 50 ? 'rgba(239,68,68,.35)' : 'rgba(99,102,241,.35)'}`,
+              color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              fontFamily: 'Inter, sans-serif',
+              transition: 'all .2s',
+            }}
+            title="קנה טוקנים"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M12 7v10M9 9h4.5a2.5 2.5 0 0 1 0 5H9m0 0h5"/>
+            </svg>
+            <span>{tokenBalance.toLocaleString('he-IL')}</span>
+            <span style={{ opacity: .65, fontWeight: 500 }}>טוקנים</span>
+          </button>
           <a href="/" style={{
             color: textSecondary, textDecoration: 'none', fontSize: 14,
             fontWeight: 600, letterSpacing: '-0.01em',
@@ -723,6 +792,7 @@ export function Dashboard() {
               }}>
                 {([
                   { id: 'photos' as const, label: '📷 תמונות', },
+                  { id: 'activities' as const, label: '📊 פעילות', },
                   { id: 'settings' as const, label: '⚙️ הגדרות', },
                   { id: 'welcome' as const, label: '🎬 מסך וואלקם', },
                 ]).map(t => (
@@ -757,11 +827,28 @@ export function Dashboard() {
                         marginBottom: 28,
                       }}
                     >
-                      {uploading ? (
+                      {uploading && uploadBatch ? (
                         <div>
-                          <div style={{ fontSize: 14, color: accentLight, fontWeight: 600, marginBottom: 8 }}>מעלה תמונות... {uploadProgress}%</div>
+                          <div style={{ fontSize: 14, color: accentLight, fontWeight: 600, marginBottom: 4 }}>
+                            מעלה תמונות {uploadBatch.completed} / {uploadBatch.total}
+                            {uploadBatch.failed > 0 && (
+                              <span style={{ color: '#fca5a5', marginRight: 8, fontSize: 12 }}>
+                                ({uploadBatch.failed} נכשלו)
+                              </span>
+                            )}
+                          </div>
+                          {uploadBatch.current && (
+                            <div style={{ fontSize: 11, color: textMuted, marginBottom: 8, direction: 'ltr', textAlign: 'right' }}>
+                              {uploadBatch.current}
+                            </div>
+                          )}
                           <div style={{ width: '100%', height: 4, borderRadius: 4, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
-                            <div style={{ width: `${uploadProgress}%`, height: '100%', background: `linear-gradient(90deg, ${accent}, ${accentLight})`, borderRadius: 4, transition: 'width .3s' }} />
+                            <div style={{
+                              width: `${Math.round((uploadBatch.completed / Math.max(1, uploadBatch.total)) * 100)}%`,
+                              height: '100%',
+                              background: `linear-gradient(90deg, ${accent}, ${accentLight})`,
+                              borderRadius: 4, transition: 'width .3s',
+                            }} />
                           </div>
                         </div>
                       ) : (
@@ -801,6 +888,163 @@ export function Dashboard() {
                       <p style={{ textAlign: 'center', color: textMuted, fontSize: 14, padding: '40px 0' }}>
                         אין עדיין תמונות בגלריה הזו. העלו תמונות למעלה.
                       </p>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Activities Tab ── */}
+                {editTab === 'activities' && (
+                  <div style={{ padding: '0 4px' }}>
+                    {activityLoading && !activitySummary ? (
+                      <div style={{ textAlign: 'center', padding: '60px 0', color: textMuted }}>
+                        <div style={{
+                          width: 28, height: 28, margin: '0 auto 16px',
+                          border: `3px solid ${border}`, borderTopColor: accent,
+                          borderRadius: '50%', animation: 'spin 0.8s linear infinite',
+                        }} />
+                        טוען נתוני פעילות...
+                      </div>
+                    ) : !activitySummary || (activitySummary.downloads_total === 0 && activitySummary.favorites_total === 0 && activitySummary.emails_total === 0) ? (
+                      <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                        <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>📊</div>
+                        <h3 style={{ fontSize: 18, fontWeight: 700, color: textPrimary, margin: '0 0 8px' }}>
+                          עדיין אין פעילות
+                        </h3>
+                        <p style={{ color: textSecondary, fontSize: 14, lineHeight: 1.6, margin: 0, maxWidth: 380, marginInline: 'auto' }}>
+                          אחרי שתשתף את הקישור עם הלקוח ותחילו ההורדות, תראה כאן הכל — הורדות, מועדפים, ושיתופים.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Stat cards */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 28 }}>
+                          {[
+                            { label: 'הורדות', value: activitySummary.downloads_total, color: '#a5b4fc', icon: '⬇️' },
+                            { label: 'מועדפים', value: activitySummary.favorites_total, color: '#fca5a5', icon: '♥' },
+                            { label: 'שיתופי מייל', value: activitySummary.emails_total, color: '#86efac', icon: '✉️' },
+                          ].map(s => (
+                            <div key={s.label} style={{
+                              padding: '20px 22px', borderRadius: 16,
+                              background: card, border: `1px solid ${border}`,
+                            }}>
+                              <div style={{ fontSize: 11, color: textMuted, marginBottom: 8, letterSpacing: '.04em', display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <span>{s.icon}</span>
+                                <span>{s.label}</span>
+                              </div>
+                              <div style={{ fontSize: 28, fontWeight: 800, color: s.color, letterSpacing: '-0.02em' }}>
+                                {s.value.toLocaleString('he-IL')}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Recent downloads */}
+                        {activitySummary.recent_downloads.length > 0 && (
+                          <section style={{ marginBottom: 28 }}>
+                            <h4 style={{ fontSize: 13, fontWeight: 700, color: textPrimary, margin: '0 0 12px', letterSpacing: '.02em' }}>
+                              הורדות אחרונות
+                            </h4>
+                            <div style={{ background: card, border: `1px solid ${border}`, borderRadius: 12, overflow: 'hidden' }}>
+                              {activitySummary.recent_downloads.slice(0, 10).map(d => {
+                                const img = galleryImages.find(g => g.id === d.image_id)
+                                return (
+                                  <div key={d.id} style={{
+                                    display: 'flex', alignItems: 'center', gap: 12,
+                                    padding: '10px 16px', borderBottom: `1px solid ${border}`,
+                                    fontSize: 12,
+                                  }}>
+                                    <span style={{ color: textMuted, minWidth: 100 }}>
+                                      {new Date(d.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                    <span style={{ flex: 1, color: textPrimary, direction: 'ltr', textAlign: 'right' }}>
+                                      {img?.filename ?? '(תמונה נמחקה)'}
+                                    </span>
+                                    <span style={{
+                                      padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
+                                      background: d.resolution === 'original' ? 'rgba(34,197,94,.14)' : 'rgba(99,102,241,.14)',
+                                      color: d.resolution === 'original' ? '#4ade80' : '#a5b4fc',
+                                    }}>
+                                      {d.resolution === 'original' ? 'מקור' : 'web'}
+                                    </span>
+                                    {d.download_kind === 'batch' && (
+                                      <span style={{ fontSize: 10, color: textMuted }}>📦</span>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </section>
+                        )}
+
+                        {/* Recent favorites */}
+                        {activitySummary.recent_favorites.length > 0 && (
+                          <section style={{ marginBottom: 28 }}>
+                            <h4 style={{ fontSize: 13, fontWeight: 700, color: textPrimary, margin: '0 0 12px', letterSpacing: '.02em' }}>
+                              מועדפים אחרונים
+                            </h4>
+                            <div style={{ background: card, border: `1px solid ${border}`, borderRadius: 12, overflow: 'hidden' }}>
+                              {activitySummary.recent_favorites.slice(0, 10).map(f => {
+                                const img = galleryImages.find(g => g.id === f.image_id)
+                                return (
+                                  <div key={f.id} style={{
+                                    padding: '10px 16px', borderBottom: `1px solid ${border}`,
+                                    fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4,
+                                  }}>
+                                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                                      <span style={{ color: textMuted, minWidth: 100 }}>
+                                        {new Date(f.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                      <span style={{ flex: 1, color: textPrimary, direction: 'ltr', textAlign: 'right' }}>
+                                        {img?.filename ?? '(תמונה נמחקה)'}
+                                      </span>
+                                      {f.guest_name && (
+                                        <span style={{ fontSize: 11, color: textSecondary }}>— {f.guest_name}</span>
+                                      )}
+                                    </div>
+                                    {f.note && (
+                                      <div style={{ fontSize: 11, color: textSecondary, fontStyle: 'italic', paddingRight: 112 }}>
+                                        "{f.note}"
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </section>
+                        )}
+
+                        {/* Recent email shares */}
+                        {activitySummary.recent_emails.length > 0 && (
+                          <section style={{ marginBottom: 12 }}>
+                            <h4 style={{ fontSize: 13, fontWeight: 700, color: textPrimary, margin: '0 0 12px', letterSpacing: '.02em' }}>
+                              שיתופי מייל אחרונים
+                            </h4>
+                            <div style={{ background: card, border: `1px solid ${border}`, borderRadius: 12, overflow: 'hidden' }}>
+                              {activitySummary.recent_emails.slice(0, 10).map(e => (
+                                <div key={e.id} style={{
+                                  display: 'flex', alignItems: 'center', gap: 12,
+                                  padding: '10px 16px', borderBottom: `1px solid ${border}`,
+                                  fontSize: 12,
+                                }}>
+                                  <span style={{ color: textMuted, minWidth: 100 }}>
+                                    {new Date(e.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                  <span style={{ flex: 1, color: textPrimary, direction: 'ltr', textAlign: 'right' }}>
+                                    {e.recipient_email}
+                                  </span>
+                                  <span style={{
+                                    padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
+                                    background: e.status === 'sent' ? 'rgba(34,197,94,.14)' : 'rgba(239,68,68,.14)',
+                                    color: e.status === 'sent' ? '#4ade80' : '#fca5a5',
+                                  }}>
+                                    {e.status === 'sent' ? 'נשלח' : 'נכשל'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -1407,6 +1651,93 @@ export function Dashboard() {
                 ביטול
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ───────────── Buy Tokens Modal ───────────── */}
+      {showBuyTokens && (
+        <div
+          onClick={() => setShowBuyTokens(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 2000,
+            background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(10px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, animation: 'overlayIn .2s ease both',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: bg, width: '100%', maxWidth: 720,
+              borderRadius: 24, padding: 36,
+              border: `1px solid ${border}`,
+              animation: 'modalIn .3s ease both',
+              boxShadow: '0 30px 100px rgba(0,0,0,.6)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <h2 style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+                קנה טוקנים
+              </h2>
+              <button onClick={() => setShowBuyTokens(false)} style={{
+                background: 'transparent', border: 'none', color: textMuted, fontSize: 22,
+                cursor: 'pointer', lineHeight: 1, padding: 4,
+              }}>×</button>
+            </div>
+            <p style={{ fontSize: 14, color: textSecondary, margin: '0 0 24px', lineHeight: 1.5 }}>
+              טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              {TOKEN_PACKAGES.map(pkg => (
+                <button
+                  key={pkg.planId}
+                  onClick={async () => {
+                    const url = await startCheckout(pkg.planId)
+                    if (url) { window.location.href = url }
+                    else { alert('שגיאה בפתיחת תשלום. נסה שוב.') }
+                  }}
+                  style={{
+                    position: 'relative',
+                    background: pkg.highlight
+                      ? `linear-gradient(135deg, rgba(99,102,241,.12), rgba(129,140,248,.06))`
+                      : card,
+                    border: `1px solid ${pkg.highlight ? 'rgba(99,102,241,.4)' : border}`,
+                    borderRadius: 18, padding: 24, textAlign: 'right' as const,
+                    cursor: 'pointer', transition: 'all .2s',
+                    color: textPrimary, fontFamily: 'Inter, sans-serif',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(99,102,241,.18)` }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}
+                >
+                  {pkg.highlight && (
+                    <div style={{
+                      position: 'absolute', top: -10, right: 16,
+                      padding: '4px 12px', borderRadius: 10,
+                      background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
+                      fontSize: 11, fontWeight: 700, letterSpacing: '.04em',
+                    }}>
+                      {pkg.highlight}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{pkg.name}</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 4, letterSpacing: '-0.02em' }}>
+                    {pkg.tokens.toLocaleString('he-IL')}
+                  </div>
+                  <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>טוקנים בחודש</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#a5b4fc' }}>
+                    ₪{pkg.pricePerMonthIls}
+                    <span style={{ fontSize: 12, fontWeight: 500, color: textMuted }}> / חודש</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <p style={{ fontSize: 11, color: textMuted, margin: '20px 0 0', textAlign: 'center', lineHeight: 1.5 }}>
+              חיוב חודשי דרך LemonSqueezy. אפשר לבטל בכל זמן.<br />
+              טוקנים שלא בשימוש מצטברים, לא מתאפסים בסוף חודש.
+            </p>
           </div>
         </div>
       )}
