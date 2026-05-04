@@ -82,6 +82,8 @@ export function Dashboard() {
   } | null>(null)
   const [activityLoading, setActivityLoading] = useState(false)
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set())
+  const [selectMode, setSelectMode] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -336,6 +338,43 @@ export function Dashboard() {
   }
 
   const imgUrl = (path: string) => `https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/gallery-images/${path}`
+
+  // ─── Bulk actions (selectMode) ───────────────────────────────────────────
+  function exitSelectMode() {
+    setSelectMode(false)
+    setSelectedImageIds(new Set())
+  }
+  async function bulkDeleteSelected() {
+    if (!editingGallery || selectedImageIds.size === 0) return
+    const count = selectedImageIds.size
+    if (!confirm(`למחוק ${count} תמונות? פעולה זו לא ניתנת לביטול.`)) return
+    const ids = Array.from(selectedImageIds)
+    const { error } = await supabase.from('images').delete().in('id', ids)
+    if (error) {
+      alert('שגיאה במחיקה: ' + error.message)
+      return
+    }
+    setGalleryImages(prev => prev.filter(i => !selectedImageIds.has(i.id)))
+    await supabase.from('galleries')
+      .update({ image_count: Math.max(0, galleryImages.length - ids.length) })
+      .eq('id', editingGallery.id)
+    fetchGalleries()
+    exitSelectMode()
+  }
+  async function bulkToggleTopPick(makeTopPick: boolean) {
+    if (!editingGallery || selectedImageIds.size === 0) return
+    const ids = Array.from(selectedImageIds)
+    const { error } = await supabase.from('images').update({ is_top_pick: makeTopPick }).in('id', ids)
+    if (error) {
+      alert('שגיאה: ' + error.message)
+      return
+    }
+    setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, is_top_pick: makeTopPick } : i))
+    exitSelectMode()
+  }
+  function selectAllImages() {
+    setSelectedImageIds(new Set(galleryImages.map(i => i.id)))
+  }
 
   /* ---------- Loading state ---------- */
   if (loading) {
@@ -812,6 +851,49 @@ export function Dashboard() {
                 {/* ── Photos Tab ── */}
                 {editTab === 'photos' && (
                   <div>
+                    {/* Bulk action toolbar */}
+                    {selectMode && (
+                      <div style={{
+                        position: 'sticky', top: 0, zIndex: 10,
+                        marginBottom: 16, padding: '12px 18px', borderRadius: 14,
+                        background: 'rgba(99,102,241,.14)',
+                        border: `1px solid rgba(99,102,241,.35)`,
+                        backdropFilter: 'blur(10px)',
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        animation: 'fadeIn .2s ease',
+                      }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: '#a5b4fc' }}>
+                          {selectedImageIds.size} {selectedImageIds.size === 1 ? 'תמונה נבחרה' : 'תמונות נבחרו'}
+                        </span>
+                        <button onClick={selectAllImages} style={{
+                          marginInlineStart: 'auto',
+                          background: 'transparent', border: `1px solid ${border}`, borderRadius: 8,
+                          color: textSecondary, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif',
+                        }}>בחר הכל</button>
+                        <button onClick={() => bulkToggleTopPick(true)} style={{
+                          background: 'rgba(250,204,21,.12)', border: '1px solid rgba(250,204,21,.3)',
+                          borderRadius: 8, color: '#fde047', padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif', display: 'flex', alignItems: 'center', gap: 4,
+                        }}>★ סמן כמועדף</button>
+                        <button onClick={() => bulkToggleTopPick(false)} style={{
+                          background: 'transparent', border: `1px solid ${border}`,
+                          borderRadius: 8, color: textSecondary, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif',
+                        }}>בטל סימון</button>
+                        <button onClick={bulkDeleteSelected} style={{
+                          background: 'rgba(239,68,68,.14)', border: '1px solid rgba(239,68,68,.35)',
+                          borderRadius: 8, color: '#fca5a5', padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif', fontWeight: 600,
+                        }}>🗑 מחק</button>
+                        <button onClick={exitSelectMode} style={{
+                          background: 'transparent', border: 'none',
+                          color: textMuted, padding: '6px 8px', fontSize: 14, cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif',
+                        }}>×</button>
+                      </div>
+                    )}
+
                     {/* Upload area */}
                     <input ref={fileInputRef} type="file" multiple accept="image/*" style={{ display: 'none' }}
                       onChange={e => handleFileUpload(e.target.files)} />
@@ -866,22 +948,65 @@ export function Dashboard() {
                         display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6,
                         borderRadius: 12, overflow: 'hidden',
                       }}>
-                        {galleryImages.map(img => (
-                          <div key={img.id} style={{ position: 'relative', aspectRatio: '1', overflow: 'hidden', background: 'rgba(255,255,255,.03)' }}>
-                            <img
-                              src={imgUrl(img.thumbnail_path || img.storage_path)}
-                              alt="" loading="lazy"
-                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                            />
-                            {img.is_top_pick && (
-                              <div style={{
-                                position: 'absolute', top: 4, right: 4,
-                                background: 'rgba(99,102,241,.85)', color: '#fff',
-                                fontSize: 8, padding: '2px 6px', borderRadius: 4, fontWeight: 700,
-                              }}>★</div>
-                            )}
-                          </div>
-                        ))}
+                        {galleryImages.map(img => {
+                          const isSelected = selectedImageIds.has(img.id)
+                          return (
+                            <div
+                              key={img.id}
+                              onClick={() => {
+                                if (!selectMode) { setSelectMode(true); setSelectedImageIds(new Set([img.id])); return }
+                                setSelectedImageIds(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(img.id)) next.delete(img.id); else next.add(img.id)
+                                  if (next.size === 0) setSelectMode(false)
+                                  return next
+                                })
+                              }}
+                              style={{
+                                position: 'relative', aspectRatio: '1', overflow: 'hidden',
+                                background: 'rgba(255,255,255,.03)',
+                                cursor: 'pointer',
+                                outline: isSelected ? `3px solid ${accent}` : 'none',
+                                outlineOffset: isSelected ? -3 : 0,
+                                transform: isSelected ? 'scale(0.96)' : 'scale(1)',
+                                transition: 'transform .15s ease, outline-offset .15s',
+                              }}
+                            >
+                              <img
+                                src={imgUrl(img.thumbnail_path || img.storage_path)}
+                                alt="" loading="lazy"
+                                style={{
+                                  width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                                  filter: isSelected ? 'brightness(0.7)' : 'none',
+                                  transition: 'filter .15s',
+                                }}
+                              />
+                              {img.is_top_pick && (
+                                <div style={{
+                                  position: 'absolute', top: 4, right: 4,
+                                  background: 'rgba(99,102,241,.85)', color: '#fff',
+                                  fontSize: 8, padding: '2px 6px', borderRadius: 4, fontWeight: 700,
+                                }}>★</div>
+                              )}
+                              {selectMode && (
+                                <div style={{
+                                  position: 'absolute', top: 6, left: 6,
+                                  width: 22, height: 22, borderRadius: '50%',
+                                  background: isSelected ? accent : 'rgba(0,0,0,.6)',
+                                  border: `2px solid ${isSelected ? accent : 'rgba(255,255,255,.7)'}`,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  transition: 'all .15s',
+                                }}>
+                                  {isSelected && (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5">
+                                      <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                     {galleryImages.length === 0 && !uploading && (
