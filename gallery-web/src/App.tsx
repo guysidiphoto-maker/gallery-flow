@@ -6,6 +6,7 @@ import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
 import { FaceSearchExperience } from './components/FaceSearchExperience'
 import { t, type Lang } from './i18n'
+import { logDownload, logBatchDownload } from './lib/activityLog'
 
 // ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
 
@@ -1426,6 +1427,9 @@ export function App() {
       showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
     }
     handleDownload(downloadUrl(img), img.filename)
+    if (gallery) {
+      void logDownload(gallery.id, img.id, wantsHd ? 'original' : 'web', 'single')
+    }
   }
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
@@ -1470,6 +1474,10 @@ export function App() {
   }
 
   async function handleBatchDownload(imgs: GalleryImage[]) {
+    if (gallery && imgs.length > 0) {
+      const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+      void logBatchDownload(gallery.id, imgs.map(i => i.id), wantsHd ? 'original' : 'web')
+    }
     // If any of the selected images would silently fall back from HD to web,
     // tell the guest up front. Single notice covers the whole batch.
     const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
