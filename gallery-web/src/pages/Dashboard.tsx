@@ -343,6 +343,45 @@ export function Dashboard() {
   }
 
   const [copiedGalleryId, setCopiedGalleryId] = useState<string | null>(null)
+  const [shareGallery, setShareGallery] = useState<Gallery | null>(null)
+  const [shareEmail, setShareEmail] = useState('')
+  const [shareSubject, setShareSubject] = useState('')
+  const [shareMessage, setShareMessage] = useState('')
+  const [shareSending, setShareSending] = useState(false)
+  const [shareSent, setShareSent] = useState(false)
+
+  function openEmailShare(g: Gallery) {
+    setShareGallery(g)
+    setShareSubject(`התמונות שלך מ-${g.name} מוכנות`)
+    setShareMessage('')
+    setShareEmail('')
+    setShareSent(false)
+  }
+
+  async function sendShareEmail() {
+    if (!shareGallery || !shareEmail) return
+    setShareSending(true)
+    try {
+      const { sendGalleryShareEmail } = await import('../lib/shareGallery')
+      const res = await sendGalleryShareEmail({
+        galleryId: shareGallery.id,
+        recipientEmail: shareEmail,
+        subject: shareSubject || undefined,
+        message: shareMessage || undefined,
+      })
+      if (res.ok) {
+        setShareSent(true)
+        setTimeout(() => { setShareGallery(null); setShareSent(false) }, 1800)
+      } else {
+        alert('שגיאה בשליחה: ' + (res.error || 'לא ידוע'))
+      }
+    } catch (err) {
+      alert('שגיאה: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setShareSending(false)
+    }
+  }
+
   function copyGalleryLink(galleryId: string, e: React.MouseEvent) {
     e.stopPropagation()
     const url = `${window.location.origin}/gallery/${galleryId}`
@@ -830,38 +869,60 @@ export function Dashboard() {
                   </div>
 
                   {(g.status === 'live' || g.status === 'published') && (
-                    <button
-                      onClick={(e) => copyGalleryLink(g.id, e)}
-                      style={{
-                        marginTop: 14, width: '100%',
-                        padding: '10px 14px', borderRadius: 10,
-                        background: copiedGalleryId === g.id
-                          ? 'rgba(34,197,94,.14)'
-                          : 'rgba(99,102,241,.10)',
-                        border: `1px solid ${copiedGalleryId === g.id ? 'rgba(34,197,94,.3)' : 'rgba(99,102,241,.25)'}`,
-                        color: copiedGalleryId === g.id ? '#4ade80' : '#a5b4fc',
-                        fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                        transition: 'all .2s',
-                      }}
-                    >
-                      {copiedGalleryId === g.id ? (
-                        <>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                            <polyline points="20 6 9 17 4 12"/>
-                          </svg>
-                          הקישור הועתק
-                        </>
-                      ) : (
-                        <>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                          </svg>
-                          העתק קישור ללקוח
-                        </>
-                      )}
-                    </button>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                      <button
+                        onClick={(e) => copyGalleryLink(g.id, e)}
+                        style={{
+                          flex: 1,
+                          padding: '10px 14px', borderRadius: 10,
+                          background: copiedGalleryId === g.id
+                            ? 'rgba(34,197,94,.14)'
+                            : 'rgba(99,102,241,.10)',
+                          border: `1px solid ${copiedGalleryId === g.id ? 'rgba(34,197,94,.3)' : 'rgba(99,102,241,.25)'}`,
+                          color: copiedGalleryId === g.id ? '#4ade80' : '#a5b4fc',
+                          fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                          transition: 'all .2s',
+                        }}
+                      >
+                        {copiedGalleryId === g.id ? (
+                          <>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                              <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            הקישור הועתק
+                          </>
+                        ) : (
+                          <>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                            </svg>
+                            העתק קישור
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openEmailShare(g) }}
+                        title="שלח במייל ללקוח"
+                        style={{
+                          padding: '10px 14px', borderRadius: 10,
+                          background: 'rgba(99,102,241,.10)',
+                          border: '1px solid rgba(99,102,241,.25)',
+                          color: '#a5b4fc',
+                          fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                          transition: 'all .2s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,.18)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,.10)' }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                          <polyline points="22,6 12,13 2,6"/>
+                        </svg>
+                      </button>
+                    </div>
                   )}
                 </div>
               )
@@ -1957,6 +2018,138 @@ export function Dashboard() {
                 ביטול
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ───────────── Email Share Modal ───────────── */}
+      {shareGallery && (
+        <div
+          onClick={() => !shareSending && setShareGallery(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 2100,
+            background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(10px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, animation: 'overlayIn .2s ease both',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: bg, width: '100%', maxWidth: 520,
+              borderRadius: 22, padding: 32,
+              border: `1px solid ${border}`,
+              animation: 'modalIn .3s ease both',
+              boxShadow: '0 30px 100px rgba(0,0,0,.6)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+                שלח קישור במייל
+              </h2>
+              <button onClick={() => setShareGallery(null)} disabled={shareSending} style={{
+                background: 'transparent', border: 'none', color: textMuted, fontSize: 20,
+                cursor: shareSending ? 'not-allowed' : 'pointer', lineHeight: 1, padding: 4,
+                opacity: shareSending ? 0.5 : 1,
+              }}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: textSecondary, margin: '0 0 22px', lineHeight: 1.5 }}>
+              שולח לכתובת המייל קישור לגלריה <strong>{shareGallery.name}</strong>. הלקוח יקבל מייל ממותג עם הקישור הציבורי.
+            </p>
+
+            {shareSent ? (
+              <div style={{
+                padding: '32px 20px', textAlign: 'center',
+                background: 'rgba(34,197,94,.08)', border: '1px solid rgba(34,197,94,.25)',
+                borderRadius: 14, color: '#4ade80',
+              }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>✓</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>המייל נשלח</div>
+              </div>
+            ) : (
+              <>
+                <label style={{ display: 'block', marginBottom: 14 }}>
+                  <span style={{ display: 'block', fontSize: 12, color: textMuted, marginBottom: 6, fontWeight: 600 }}>
+                    כתובת מייל של הלקוח
+                  </span>
+                  <input
+                    type="email"
+                    value={shareEmail}
+                    onChange={e => setShareEmail(e.target.value)}
+                    placeholder="client@example.com"
+                    style={{
+                      width: '100%', padding: '11px 14px', borderRadius: 10,
+                      background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                      color: textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none',
+                      direction: 'ltr', textAlign: 'left',
+                    }}
+                  />
+                </label>
+                <label style={{ display: 'block', marginBottom: 14 }}>
+                  <span style={{ display: 'block', fontSize: 12, color: textMuted, marginBottom: 6, fontWeight: 600 }}>
+                    נושא
+                  </span>
+                  <input
+                    type="text"
+                    value={shareSubject}
+                    onChange={e => setShareSubject(e.target.value)}
+                    style={{
+                      width: '100%', padding: '11px 14px', borderRadius: 10,
+                      background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                      color: textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none',
+                    }}
+                  />
+                </label>
+                <label style={{ display: 'block', marginBottom: 24 }}>
+                  <span style={{ display: 'block', fontSize: 12, color: textMuted, marginBottom: 6, fontWeight: 600 }}>
+                    הודעה אישית (אופציונלי)
+                  </span>
+                  <textarea
+                    value={shareMessage}
+                    onChange={e => setShareMessage(e.target.value)}
+                    rows={3}
+                    placeholder="תודה רבה על האירוע! תהנו מהתמונות..."
+                    style={{
+                      width: '100%', padding: '11px 14px', borderRadius: 10,
+                      background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                      color: textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none',
+                      resize: 'vertical', minHeight: 80,
+                    }}
+                  />
+                </label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    onClick={() => setShareGallery(null)}
+                    disabled={shareSending}
+                    style={{
+                      flex: 1, padding: '12px 0', borderRadius: 12,
+                      background: 'transparent', color: textSecondary,
+                      border: `1px solid ${border}`, fontSize: 14, fontWeight: 600,
+                      cursor: shareSending ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit', opacity: shareSending ? 0.5 : 1,
+                    }}
+                  >
+                    ביטול
+                  </button>
+                  <button
+                    onClick={sendShareEmail}
+                    disabled={shareSending || !shareEmail}
+                    style={{
+                      flex: 1, padding: '12px 0', borderRadius: 12,
+                      background: shareSending || !shareEmail
+                        ? 'rgba(99,102,241,.4)'
+                        : `linear-gradient(135deg, ${accent}, ${accentLight})`,
+                      color: '#fff', border: 'none', fontSize: 14, fontWeight: 700,
+                      cursor: shareSending || !shareEmail ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit',
+                      transition: 'all .15s',
+                    }}
+                  >
+                    {shareSending ? 'שולח...' : 'שלח'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
