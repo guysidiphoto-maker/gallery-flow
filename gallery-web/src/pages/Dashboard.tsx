@@ -1255,6 +1255,7 @@ export function Dashboard() {
                         <button
                           onClick={(e) => copyGalleryLink(g.id, e)}
                           title="העתק קישור"
+                          aria-label={copiedGalleryId === g.id ? 'הקישור הועתק' : 'העתק קישור'}
                           style={{
                             width: 34, height: 34, borderRadius: 2,
                             background: 'rgba(255,255,255,.96)',
@@ -1270,6 +1271,7 @@ export function Dashboard() {
                         <button
                           onClick={(e) => { e.stopPropagation(); openEmailShare(g) }}
                           title="שלח במייל ללקוח"
+                          aria-label="שלח במייל ללקוח"
                           style={{
                             width: 34, height: 34, borderRadius: 2,
                             background: 'rgba(255,255,255,.96)',
@@ -1351,14 +1353,18 @@ export function Dashboard() {
             display: 'flex', alignItems: 'stretch', justifyContent: 'center',
             animation: 'overlayIn .2s ease both',
           }} onClick={() => setEditingGallery(null)}>
-            <div style={{
-              background: bg,
-              width: 'calc(100vw - 32px)', maxWidth: 1440,
-              height: 'calc(100vh - 32px)', maxHeight: 920,
-              margin: '16px',
-              borderRadius: 4, overflow: 'hidden', display: 'flex', flexDirection: 'column',
-              border: `1px solid ${border}`, animation: 'modalIn .3s ease both',
-            }} onClick={e => e.stopPropagation()}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="gallery-editor-heading"
+              style={{
+                background: bg,
+                width: 'calc(100vw - 32px)', maxWidth: 1440,
+                height: 'calc(100vh - 32px)', maxHeight: 920,
+                margin: '16px',
+                borderRadius: 4, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                border: `1px solid ${border}`, animation: 'modalIn .3s ease both',
+              }} onClick={e => e.stopPropagation()}>
               {/* Editor header — name + status pill on the right (RTL),
                   Preview + Share/Publish on the left. Mirrors Pixieset's
                   rhythm exactly. */}
@@ -1375,7 +1381,7 @@ export function Dashboard() {
                     <Icon name="close" size={18} strokeWidth={1.85} />
                   </button>
                   <div>
-                    <h2 style={{ fontSize: 20, fontWeight: 500, margin: 0, letterSpacing: '-0.015em', color: textPrimary }}>
+                    <h2 id="gallery-editor-heading" style={{ fontSize: 20, fontWeight: 500, margin: 0, letterSpacing: '-0.015em', color: textPrimary }}>
                       {editingGallery.name}
                     </h2>
                     <div style={{
@@ -2973,6 +2979,9 @@ export function Dashboard() {
                   animation: 'overlayIn .2s ease both',
                 }}>
                 <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="add-set-heading"
                   onClick={e => e.stopPropagation()}
                   style={{
                     background: '#fff',
@@ -2985,7 +2994,7 @@ export function Dashboard() {
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     marginBottom: 28,
                   }}>
-                    <h3 style={{
+                    <h3 id="add-set-heading" style={{
                       fontSize: 12, fontWeight: 500, margin: 0, color: textPrimary,
                       letterSpacing: '0.22em', textTransform: 'uppercase',
                     }}>New Photo Set</h3>
@@ -3162,6 +3171,9 @@ export function Dashboard() {
           onClick={() => setShowModal(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-gallery-heading"
             style={{
               background: bg,
               borderRadius: 4, padding: '40px 44px 36px', width: '90%', maxWidth: 560,
@@ -3190,7 +3202,7 @@ export function Dashboard() {
               </button>
             </div>
 
-            <h2 style={{
+            <h2 id="new-gallery-heading" style={{
               fontSize: 28, fontWeight: 500, margin: '0 0 10px',
               color: textPrimary, letterSpacing: '-0.02em', lineHeight: 1.1,
             }}>
@@ -3505,6 +3517,9 @@ export function Dashboard() {
                 animation: 'overlayIn .2s ease both',
               }}>
               <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="face-confirm-heading"
                 onClick={(e) => e.stopPropagation()}
                 style={{
                   background: '#fff', width: 'calc(100vw - 40px)', maxWidth: 460,
@@ -3518,7 +3533,7 @@ export function Dashboard() {
                 }}>
                   Heads up
                 </div>
-                <h3 style={{
+                <h3 id="face-confirm-heading" style={{
                   fontSize: 22, fontWeight: 500, margin: '0 0 14px',
                   color: textPrimary, letterSpacing: '-0.015em', lineHeight: 1.15,
                 }}>
@@ -3583,6 +3598,9 @@ export function Dashboard() {
           }}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="email-share-heading"
             onClick={e => e.stopPropagation()}
             style={{
               background: bg, width: '100%', maxWidth: 520,
@@ -3593,10 +3611,10 @@ export function Dashboard() {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-              <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+              <h2 id="email-share-heading" style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
                 שלח קישור במייל
               </h2>
-              <button onClick={() => setShareGallery(null)} disabled={shareSending} style={{
+              <button onClick={() => setShareGallery(null)} disabled={shareSending} aria-label="סגירה" style={{
                 background: 'transparent', border: 'none', color: textMuted, fontSize: 20,
                 cursor: shareSending ? 'not-allowed' : 'pointer', lineHeight: 1, padding: 4,
                 opacity: shareSending ? 0.5 : 1,
@@ -3715,6 +3733,9 @@ export function Dashboard() {
           }}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="buy-tokens-heading"
             onClick={e => e.stopPropagation()}
             style={{
               background: bg, width: '100%', maxWidth: 720,
@@ -3725,10 +3746,10 @@ export function Dashboard() {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-              <h2 style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+              <h2 id="buy-tokens-heading" style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
                 קנה טוקנים
               </h2>
-              <button onClick={() => setShowBuyTokens(false)} style={{
+              <button onClick={() => setShowBuyTokens(false)} aria-label="סגירה" style={{
                 background: 'transparent', border: 'none', color: textMuted, fontSize: 22,
                 cursor: 'pointer', lineHeight: 1, padding: 4,
               }}>×</button>
