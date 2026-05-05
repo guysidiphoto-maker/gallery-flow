@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase, storageUrl } from '../supabase'
-import { loadPortfolioSettings, getFontFamily, type PortfolioSettings, DEFAULT_SETTINGS } from '../components/PortfolioEditor'
+import { loadPortfolioSettings, getFontFamily, type PortfolioSettings, DEFAULT_SETTINGS } from '../components/portfolioSettings'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

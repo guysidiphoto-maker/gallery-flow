@@ -1,8 +1,14 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react'
 import { supabase, storageUrl } from '../supabase'
-import { TenderBuilder } from '../components/TenderBuilder'
-import { SocialManager } from '../components/SocialManager'
-import { PortfolioEditor, loadPortfolioSettings } from '../components/PortfolioEditor'
+// Heavy panels are only rendered when their tab is active. Lazy-loading
+// them strips ~220KB (html2canvas + jsPDF in TenderBuilder, plus the rest
+// of PortfolioEditor + SocialManager) from the initial bundle most clients
+// land on. The settings utility (loadPortfolioSettings) lives in a
+// dependency-free file so the eager import below stays light.
+const TenderBuilder    = lazy(() => import('../components/TenderBuilder').then(m => ({ default: m.TenderBuilder })))
+const SocialManager    = lazy(() => import('../components/SocialManager').then(m => ({ default: m.SocialManager })))
+const PortfolioEditor  = lazy(() => import('../components/PortfolioEditor').then(m => ({ default: m.PortfolioEditor })))
+import { loadPortfolioSettings } from '../components/portfolioSettings'
 import { Icon, type IconName } from '../components/Icon'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -690,13 +696,15 @@ export function ClientDashboard() {
 
         {/* ── Content Calendar Tab ─────────────────────────────────── */}
         {tab === 'calendar' && (
-          <SocialManager
-            galleries={galleries}
-            allImages={allImages}
-            topPicks={topPicks}
-            clientId={clientId}
-            storageUrl={storageUrl}
-          />
+          <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
+            <SocialManager
+              galleries={galleries}
+              allImages={allImages}
+              topPicks={topPicks}
+              clientId={clientId}
+              storageUrl={storageUrl}
+            />
+          </Suspense>
         )}
 
         {/* ── Galleries Tab ───────────────────────────────────────────── */}
@@ -995,23 +1003,27 @@ export function ClientDashboard() {
 
         {/* ── My Page Tab ─────────────────────────────────────────────── */}
         {tab === 'page' && (
-          <PortfolioEditor
-            clientId={clientId}
-            clientName={clientName}
-            studioName={studioName}
-            galleries={galleries}
-            covers={covers}
-            publicUrl={`https://pixflow-ai.com/${slug}/client/${clientId}`}
-          />
+          <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
+            <PortfolioEditor
+              clientId={clientId}
+              clientName={clientName}
+              studioName={studioName}
+              galleries={galleries}
+              covers={covers}
+              publicUrl={`https://pixflow-ai.com/${slug}/client/${clientId}`}
+            />
+          </Suspense>
         )}
 
         {tab === 'tender' && (
-          <TenderBuilder
-            galleries={galleries}
-            allImages={allImages}
-            covers={covers}
-            businessName={studioName || 'Studio'}
-          />
+          <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
+            <TenderBuilder
+              galleries={galleries}
+              allImages={allImages}
+              covers={covers}
+              businessName={studioName || 'Studio'}
+            />
+          </Suspense>
         )}
       </div>
 
