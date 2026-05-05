@@ -212,7 +212,38 @@ export function Dashboard() {
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
-    setGalleries(data ?? [])
+
+    // Cover-image fallback. The desktop uploader doesn't auto-set
+    // delivery_settings.coverImageUrl, so for galleries that have images
+    // but no explicit cover, fall back to the gallery's first image's
+    // thumbnail. Without this, every desktop-uploaded gallery shows a
+    // grey placeholder card on the dashboard.
+    const list = data ?? []
+    const galleriesNeedingCover = list.filter(g =>
+      !((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl)
+      && (g.image_count ?? 0) > 0
+    )
+    if (galleriesNeedingCover.length > 0) {
+      const covers = await Promise.all(galleriesNeedingCover.map(async g => {
+        const { data: img } = await supabase.from('images')
+          .select('thumbnail_path, storage_path, web_preview_path')
+          .eq('gallery_id', g.id)
+          .order('sort_order', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (!img) return { id: g.id, url: null }
+        const path = img.thumbnail_path || img.storage_path || img.web_preview_path
+        return { id: g.id, url: path ? imgUrl(path) : null }
+      }))
+      const coverById = new Map(covers.map(c => [c.id, c.url]))
+      for (const g of list) {
+        const url = coverById.get(g.id)
+        if (url && !((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl)) {
+          g.delivery_settings = { ...(g.delivery_settings ?? {}), coverImageUrl: url }
+        }
+      }
+    }
+    setGalleries(list)
     setLoadingGalleries(false)
   }
 
@@ -572,8 +603,11 @@ export function Dashboard() {
   const displayName = user.user_metadata?.full_name || user.user_metadata?.name || user.email
 
   const totalPhotos = galleries.reduce((sum, g) => sum + (g.image_count ?? 0), 0)
-  const publishedCount = galleries.filter((g) => g.status === 'published').length
-  const draftCount = galleries.filter((g) => g.status !== 'published').length
+  // "Live" matches both 'published' (web) and 'live' (desktop) statuses.
+  // Without including 'live', desktop-published galleries are counted as
+  // drafts in the stats row even though their cards say PUBLISHED.
+  const publishedCount = galleries.filter((g) => g.status === 'published' || g.status === 'live').length
+  const draftCount = galleries.length - publishedCount
 
   const statCards: { label: string; value: number | string; icon: IconName; color: string }[] = [
     { label: 'Galleries',  value: galleries.length, icon: 'gallery', color: textPrimary },
@@ -855,10 +889,11 @@ export function Dashboard() {
                   <span>{s.label}</span>
                 </div>
                 <div style={{
-                  fontSize: 32, fontWeight: 500,
-                  letterSpacing: '-0.02em', color: textPrimary, lineHeight: 1,
+                  fontSize: 26, fontWeight: 400,
+                  letterSpacing: '-0.025em', color: textPrimary, lineHeight: 1,
+                  fontFeatureSettings: '"tnum" 1, "lnum" 1',
                 }}>
-                  {s.value}
+                  {(typeof s.value === 'number' ? s.value : Number(s.value) || 0).toLocaleString('he-IL')}
                 </div>
               </div>
             ))}
