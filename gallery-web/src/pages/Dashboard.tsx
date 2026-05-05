@@ -73,7 +73,9 @@ export function Dashboard() {
   const [showBuyTokens, setShowBuyTokens] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
-  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'welcome'>('photos')
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome'>('photos')
+  const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number }>>([])
+  const [newSectionName, setNewSectionName] = useState('')
   const [activitySummary, setActivitySummary] = useState<{
     downloads_total: number
     favorites_total: number
@@ -251,12 +253,53 @@ export function Dashboard() {
   async function openGalleryEditor(g: Gallery) {
     setEditingGallery(g)
     setEditTab('photos')
-    const { data } = await supabase
-      .from('images')
-      .select('id, filename, storage_path, thumbnail_path, is_top_pick, sort_order')
-      .eq('gallery_id', g.id)
-      .order('sort_order', { ascending: true })
-    setGalleryImages(data ?? [])
+    const [imagesRes, sectionsRes] = await Promise.all([
+      supabase
+        .from('images')
+        .select('id, filename, storage_path, thumbnail_path, is_top_pick, sort_order')
+        .eq('gallery_id', g.id)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('gallery_sections')
+        .select('id, name, sort_order')
+        .eq('gallery_id', g.id)
+        .order('sort_order', { ascending: true }),
+    ])
+    setGalleryImages(imagesRes.data ?? [])
+    setSections(sectionsRes.data ?? [])
+  }
+
+  async function addSection() {
+    if (!editingGallery || !newSectionName.trim()) return
+    const { data, error } = await supabase
+      .from('gallery_sections')
+      .insert({
+        gallery_id: editingGallery.id,
+        name: newSectionName.trim(),
+        sort_order: sections.length,
+      })
+      .select('id, name, sort_order')
+      .single()
+    if (error) { alert('שגיאה: ' + error.message); return }
+    if (data) setSections(prev => [...prev, data])
+    setNewSectionName('')
+  }
+
+  async function renameSection(id: string, name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    const { error } = await supabase.from('gallery_sections').update({ name: trimmed }).eq('id', id)
+    if (error) { alert('שגיאה: ' + error.message); return }
+    setSections(prev => prev.map(s => s.id === id ? { ...s, name: trimmed } : s))
+  }
+
+  async function deleteSection(id: string) {
+    if (!confirm('למחוק את הקטע? התמונות שבתוכו יישארו בגלריה.')) return
+    // First unset section_id on images so they don't disappear from the gallery
+    await supabase.from('images').update({ section_id: null }).eq('section_id', id)
+    const { error } = await supabase.from('gallery_sections').delete().eq('id', id)
+    if (error) { alert('שגיאה: ' + error.message); return }
+    setSections(prev => prev.filter(s => s.id !== id))
   }
 
   async function handleFileUpload(files: FileList | null) {
@@ -995,6 +1038,7 @@ export function Dashboard() {
               }}>
                 {([
                   { id: 'photos' as const, label: '📷 תמונות', },
+                  { id: 'sections' as const, label: '📂 קטעים', },
                   { id: 'activities' as const, label: '📊 פעילות', },
                   { id: 'settings' as const, label: '⚙️ הגדרות', },
                   { id: 'welcome' as const, label: '🎬 מסך וואלקם', },
@@ -1177,6 +1221,95 @@ export function Dashboard() {
                       <p style={{ textAlign: 'center', color: textMuted, fontSize: 14, padding: '40px 0' }}>
                         אין עדיין תמונות בגלריה הזו. העלו תמונות למעלה.
                       </p>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Sections Tab ── */}
+                {editTab === 'sections' && (
+                  <div style={{ padding: '0 4px' }}>
+                    <p style={{ fontSize: 13, color: textSecondary, marginBottom: 22, lineHeight: 1.6 }}>
+                      ארגן את הגלריה לקטעים — "יום 1", "טקס", "רחבה" — והאורחים יוכלו לדפדף ביניהם בקלות.
+                    </p>
+
+                    {/* Add new section */}
+                    <div style={{
+                      display: 'flex', gap: 10, marginBottom: 22,
+                      padding: '14px 16px', borderRadius: 14,
+                      background: card, border: `1px solid ${border}`,
+                    }}>
+                      <input
+                        type="text"
+                        value={newSectionName}
+                        onChange={e => setNewSectionName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') addSection() }}
+                        placeholder="שם קטע חדש (למשל: יום 1)"
+                        style={{
+                          flex: 1, padding: '10px 14px', borderRadius: 10,
+                          background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                          color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
+                        }}
+                      />
+                      <button
+                        onClick={addSection}
+                        disabled={!newSectionName.trim()}
+                        style={{
+                          padding: '10px 20px', borderRadius: 10,
+                          background: newSectionName.trim()
+                            ? `linear-gradient(135deg, ${accent}, ${accentLight})`
+                            : 'rgba(99,102,241,.4)',
+                          border: 'none', color: '#fff', fontSize: 13, fontWeight: 600,
+                          cursor: newSectionName.trim() ? 'pointer' : 'not-allowed',
+                          fontFamily: 'inherit', transition: 'all .15s',
+                        }}
+                      >
+                        הוסף
+                      </button>
+                    </div>
+
+                    {/* Sections list */}
+                    {sections.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '40px 20px', color: textMuted }}>
+                        <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.5 }}>📂</div>
+                        <div style={{ fontSize: 14 }}>עדיין אין קטעים. הוסף את הקטע הראשון למעלה.</div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {sections.map(s => (
+                          <div key={s.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            padding: '12px 16px', borderRadius: 12,
+                            background: card, border: `1px solid ${border}`,
+                            transition: 'border-color .15s',
+                          }}>
+                            <span style={{ fontSize: 16, opacity: 0.55 }}>📂</span>
+                            <input
+                              type="text"
+                              defaultValue={s.name}
+                              onBlur={e => { if (e.target.value.trim() && e.target.value.trim() !== s.name) renameSection(s.id, e.target.value) }}
+                              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                              style={{
+                                flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                                color: textPrimary, fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
+                                padding: '4px 0',
+                              }}
+                            />
+                            <button
+                              onClick={() => deleteSection(s.id)}
+                              title="מחק"
+                              style={{
+                                background: 'transparent', border: `1px solid ${border}`, borderRadius: 8,
+                                color: '#fca5a5', padding: '6px 10px', fontSize: 12, cursor: 'pointer',
+                                fontFamily: 'inherit', transition: 'all .15s',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,.35)' }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = border }}
+                            >
+                              🗑 מחק
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}
