@@ -156,6 +156,12 @@ export function Dashboard() {
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
+  // Photo-grid view state — hovered tile + open per-tile menu + grid size
+  // (Pixieset offers Regular/Large) + sort order.
+  const [hoveredImageId, setHoveredImageId] = useState<string | null>(null)
+  const [imageMenuOpenId, setImageMenuOpenId] = useState<string | null>(null)
+  const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
+  const [photoSort, setPhotoSort] = useState<'order' | 'name' | 'newest'>('order')
   const [uploading, setUploading] = useState(false)
   const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -601,6 +607,42 @@ export function Dashboard() {
   }
   function selectAllImages() {
     setSelectedImageIds(new Set(galleryImages.map(i => i.id)))
+  }
+
+  // Single-image actions — invoked from the per-tile hover overlay so the
+  // photographer can star, move, or delete one photo without entering
+  // select mode. Each updates the local galleryImages state optimistically.
+  async function toggleSingleTopPick(imageId: string) {
+    const img = galleryImages.find(i => i.id === imageId)
+    if (!img) return
+    const next = !img.is_top_pick
+    const { error } = await supabase.from('images').update({ is_top_pick: next }).eq('id', imageId)
+    if (error) { alert('שגיאה: ' + error.message); return }
+    setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, is_top_pick: next } : i))
+  }
+  async function moveImageToSection(imageId: string, sectionId: string | null) {
+    const { error } = await supabase.from('images').update({ section_id: sectionId }).eq('id', imageId)
+    if (error) { alert('שגיאה: ' + error.message); return }
+    setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, section_id: sectionId } : i))
+  }
+  async function deleteSingleImage(imageId: string) {
+    if (!editingGallery) return
+    if (!confirm('למחוק את התמונה? פעולה זו לא ניתנת לביטול.')) return
+    const { error } = await supabase.from('images').delete().eq('id', imageId)
+    if (error) { alert('שגיאה במחיקה: ' + error.message); return }
+    setGalleryImages(prev => prev.filter(i => i.id !== imageId))
+    await supabase.from('galleries')
+      .update({ image_count: Math.max(0, galleryImages.length - 1) })
+      .eq('id', editingGallery.id)
+    fetchGalleries()
+  }
+  function downloadOriginal(imageId: string) {
+    const img = galleryImages.find(i => i.id === imageId)
+    if (!img) return
+    const url = imgUrl(img.storage_path)
+    const a = document.createElement('a')
+    a.href = url; a.download = img.filename || 'photo.jpg'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
   }
 
   /* ---------- Loading state ---------- */
@@ -1611,21 +1653,67 @@ export function Dashboard() {
                       <input ref={fileInputRef} type="file" multiple accept="image/*"
                         style={{ display: 'none' }}
                         onChange={e => handleFileUpload(e.target.files)} />
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploading}
-                        style={{
-                          padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-                          background: textPrimary, border: `1px solid ${textPrimary}`,
-                          color: '#fff', cursor: uploading ? 'wait' : 'pointer',
-                          fontFamily: 'inherit', opacity: uploading ? 0.6 : 1,
-                          letterSpacing: '0.18em', textTransform: 'uppercase',
-                          display: 'inline-flex', alignItems: 'center', gap: 8,
-                        }}
-                      >
-                        <Icon name="plus" size={13} strokeWidth={2} />
-                        Add Media
-                      </button>
+                      {/* Right cluster — sort dropdown + grid size toggle + Add Media */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {/* Sort */}
+                        <select
+                          value={photoSort}
+                          onChange={(e) => setPhotoSort(e.target.value as typeof photoSort)}
+                          aria-label="מיון תמונות"
+                          style={{
+                            padding: '8px 12px', borderRadius: 2,
+                            border: `1px solid ${border}`,
+                            background: '#fff', color: textPrimary,
+                            fontSize: 11, fontFamily: 'inherit',
+                            letterSpacing: '0.14em', textTransform: 'uppercase',
+                            cursor: 'pointer', outline: 'none',
+                          }}
+                        >
+                          <option value="order">סדר ידני</option>
+                          <option value="name">שם</option>
+                          <option value="newest">חדש קודם</option>
+                        </select>
+                        {/* Grid size toggle */}
+                        <div style={{
+                          display: 'flex', border: `1px solid ${border}`, borderRadius: 2,
+                        }}>
+                          {([
+                            { id: 'regular' as const, label: 'Regular' },
+                            { id: 'large'   as const, label: 'Large' },
+                          ]).map(s => (
+                            <button
+                              key={s.id}
+                              onClick={() => setGridSize(s.id)}
+                              aria-label={`Grid ${s.label}`}
+                              title={s.label}
+                              style={{
+                                padding: '8px 10px', cursor: 'pointer',
+                                background: gridSize === s.id ? textPrimary : '#fff',
+                                color: gridSize === s.id ? '#fff' : textPrimary,
+                                border: 'none', borderInlineStart: s.id === 'large' ? `1px solid ${border}` : 'none',
+                                fontFamily: 'inherit', display: 'flex', alignItems: 'center',
+                              }}
+                            >
+                              <Icon name={s.id === 'regular' ? 'sections' : 'gallery'} size={13} strokeWidth={1.85} />
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={uploading}
+                          style={{
+                            padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                            background: textPrimary, border: `1px solid ${textPrimary}`,
+                            color: '#fff', cursor: uploading ? 'wait' : 'pointer',
+                            fontFamily: 'inherit', opacity: uploading ? 0.6 : 1,
+                            letterSpacing: '0.18em', textTransform: 'uppercase',
+                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                          }}
+                        >
+                          <Icon name="plus" size={13} strokeWidth={2} />
+                          Add Media
+                        </button>
+                      </div>
                     </div>
 
                     {/* Bulk action toolbar — sticky inline strip */}
@@ -1701,31 +1789,57 @@ export function Dashboard() {
                     )}
 
                     {/* Image grid — tight Pixieset-style packing, no card
-                        wrappers, square cells, hover overlay reveals star + checkbox.
-                        Filtered by activeSectionId when a set is selected. */}
+                        wrappers, square cells, hover overlay reveals star + menu.
+                        Filtered by activeSectionId, sorted per photoSort,
+                        cell size driven by gridSize toggle. */}
                     {(() => {
-                      const visibleImages = activeSectionId
+                      let visibleImages = activeSectionId
                         ? (galleryImages as GalleryImage[]).filter(im => im.section_id === activeSectionId)
                         : galleryImages
+                      // Sort — operate on a copy so the underlying state stays
+                      // in upload-order for any other consumers
+                      visibleImages = [...visibleImages].sort((a, b) => {
+                        if (photoSort === 'name') return (a.filename || '').localeCompare(b.filename || '')
+                        if (photoSort === 'newest') return (b.sort_order ?? 0) - (a.sort_order ?? 0)
+                        return (a.sort_order ?? 0) - (b.sort_order ?? 0)
+                      })
+                      const minCell = gridSize === 'large' ? 220 : 140
                       return visibleImages.length > 0 && (
                       <div style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                        gridTemplateColumns: `repeat(auto-fill, minmax(${minCell}px, 1fr))`,
                         gap: 4,
                       }}>
                         {visibleImages.map(img => {
                           const isSelected = selectedImageIds.has(img.id)
+                          const isHovered = hoveredImageId === img.id
+                          const isMenuOpen = imageMenuOpenId === img.id
+                          // The hover overlay only appears when not in select
+                          // mode — once you're selecting, the click target is
+                          // the whole tile and per-tile actions disappear.
+                          const showHoverOverlay = isHovered && !selectMode
                           return (
                             <div
                               key={img.id}
-                              onClick={() => {
-                                if (!selectMode) { setSelectMode(true); setSelectedImageIds(new Set([img.id])); return }
-                                setSelectedImageIds(prev => {
-                                  const next = new Set(prev)
-                                  if (next.has(img.id)) next.delete(img.id); else next.add(img.id)
-                                  if (next.size === 0) setSelectMode(false)
-                                  return next
-                                })
+                              onMouseEnter={() => setHoveredImageId(img.id)}
+                              onMouseLeave={() => { setHoveredImageId(null); }}
+                              onClick={(e) => {
+                                // If a menu trigger or star button was clicked,
+                                // their own handlers stop propagation.
+                                if (selectMode) {
+                                  setSelectedImageIds(prev => {
+                                    const next = new Set(prev)
+                                    if (next.has(img.id)) next.delete(img.id); else next.add(img.id)
+                                    if (next.size === 0) setSelectMode(false)
+                                    return next
+                                  })
+                                } else {
+                                  // First click on a tile (no select mode) enters
+                                  // select mode with this tile selected — same as
+                                  // before, lets the user still bulk-select fast.
+                                  setSelectMode(true); setSelectedImageIds(new Set([img.id]))
+                                }
+                                e.stopPropagation()
                               }}
                               style={{
                                 position: 'relative', aspectRatio: '1', overflow: 'hidden',
@@ -1744,17 +1858,50 @@ export function Dashboard() {
                                   transition: 'filter .15s',
                                 }}
                               />
-                              {img.is_top_pick && (
-                                <div style={{
-                                  position: 'absolute', top: 8, insetInlineStart: 8,
-                                  width: 24, height: 24, borderRadius: '50%',
-                                  background: 'rgba(255,255,255,.92)',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  color: textPrimary,
-                                }}>
-                                  <Icon name="star" size={12} strokeWidth={1.85} />
-                                </div>
+
+                              {/* Star — always shown if pinned, otherwise only on hover.
+                                  Click toggles is_top_pick without entering select mode. */}
+                              {(img.is_top_pick || showHoverOverlay) && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleSingleTopPick(img.id) }}
+                                  aria-label={img.is_top_pick ? 'הסר מן המועדפים' : 'הוסף למועדפים'}
+                                  style={{
+                                    position: 'absolute', top: 8, insetInlineStart: 8,
+                                    width: 26, height: 26, borderRadius: '50%',
+                                    background: img.is_top_pick ? '#fff' : 'rgba(255,255,255,.85)',
+                                    border: 'none', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    color: textPrimary, padding: 0,
+                                  }}
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24"
+                                    fill={img.is_top_pick ? textPrimary : 'none'}
+                                    stroke="currentColor" strokeWidth="1.85"
+                                    strokeLinecap="round" strokeLinejoin="round">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                  </svg>
+                                </button>
                               )}
+
+                              {/* Menu trigger — only on hover */}
+                              {showHoverOverlay && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setImageMenuOpenId(isMenuOpen ? null : img.id) }}
+                                  aria-label="תפריט תמונה"
+                                  style={{
+                                    position: 'absolute', top: 8, insetInlineEnd: 8,
+                                    width: 26, height: 26, borderRadius: '50%',
+                                    background: 'rgba(255,255,255,.85)', border: 'none',
+                                    cursor: 'pointer', padding: 0,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    color: textPrimary,
+                                  }}
+                                >
+                                  <Icon name="menu" size={14} strokeWidth={1.85} />
+                                </button>
+                              )}
+
+                              {/* Selection chip — shown in select mode in place of menu */}
                               {selectMode && (
                                 <div style={{
                                   position: 'absolute', top: 8, insetInlineEnd: 8,
@@ -1769,6 +1916,68 @@ export function Dashboard() {
                                       <polyline points="20 6 9 17 4 12"/>
                                     </svg>
                                   )}
+                                </div>
+                              )}
+
+                              {/* Per-tile menu — appears below the trigger */}
+                              {isMenuOpen && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    position: 'absolute', top: 38, insetInlineEnd: 8,
+                                    background: cardSolid, border: `1px solid ${border}`,
+                                    boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 5,
+                                    minWidth: 180, padding: 4, direction: 'rtl' as const,
+                                  }}
+                                >
+                                  {/* Move to set — sub-list */}
+                                  {sections.length > 0 && (
+                                    <>
+                                      <div style={{
+                                        padding: '8px 10px 4px', fontSize: 9, fontWeight: 500,
+                                        letterSpacing: '0.18em', textTransform: 'uppercase', color: textMuted,
+                                      }}>העבר לסט</div>
+                                      <button onClick={() => { moveImageToSection(img.id, null); setImageMenuOpenId(null) }} style={{
+                                        width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                        background: img.section_id === null ? bgSubtle : 'transparent',
+                                        border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                                        fontSize: 12, color: textPrimary,
+                                      }}>ללא סט</button>
+                                      {sections.map(s => (
+                                        <button key={s.id}
+                                          onClick={() => { moveImageToSection(img.id, s.id); setImageMenuOpenId(null) }}
+                                          style={{
+                                            width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                            background: img.section_id === s.id ? bgSubtle : 'transparent',
+                                            border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                                            fontSize: 12, color: textPrimary,
+                                          }}>{s.name}</button>
+                                      ))}
+                                      <div style={{ height: 1, background: border, margin: '4px 0' }} />
+                                    </>
+                                  )}
+                                  <button
+                                    onClick={() => { downloadOriginal(img.id); setImageMenuOpenId(null) }}
+                                    style={{
+                                      width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                      background: 'transparent', border: 'none', cursor: 'pointer',
+                                      fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    }}>
+                                    <span>הורדה</span>
+                                    <Icon name="download" size={13} strokeWidth={1.85} />
+                                  </button>
+                                  <button
+                                    onClick={() => { deleteSingleImage(img.id); setImageMenuOpenId(null) }}
+                                    style={{
+                                      width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                      background: 'transparent', border: 'none', cursor: 'pointer',
+                                      fontFamily: 'inherit', fontSize: 12, color: '#dc2626',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    }}>
+                                    <span>מחיקה</span>
+                                    <Icon name="trash" size={13} strokeWidth={1.85} />
+                                  </button>
                                 </div>
                               )}
                             </div>
