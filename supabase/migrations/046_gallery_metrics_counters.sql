@@ -12,8 +12,12 @@ ALTER TABLE galleries
   ADD COLUMN IF NOT EXISTS favorite_count INTEGER NOT NULL DEFAULT 0;
 
 -- ── triggers: download log ──────────────────────────────────────────────────
+-- Pin search_path so a malicious schema in the caller's path can't shadow
+-- the `galleries` table reference (Supabase advisor 0011).
 CREATE OR REPLACE FUNCTION _bump_gallery_download_count() RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
 BEGIN
   UPDATE galleries SET download_count = download_count + 1
    WHERE id = NEW.gallery_id;
@@ -28,7 +32,9 @@ CREATE TRIGGER gallery_download_log_bump
 
 -- ── triggers: favorites ─────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION _bump_gallery_favorite_count() RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
     UPDATE galleries SET favorite_count = favorite_count + 1
