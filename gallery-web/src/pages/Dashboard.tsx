@@ -1267,177 +1267,314 @@ export function Dashboard() {
         )}
 
         {/* ======= Gallery Editor Modal ======= */}
-        {editingGallery && (
+        {editingGallery && (() => {
+          const editorCover = ((editingGallery.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl as string | undefined)
+            || coverFallback[editingGallery.id]
+            || null
+          const isLiveStatus = editingGallery.status === 'live' || editingGallery.status === 'published'
+          return (
           <div style={{
             position: 'fixed', inset: 0, zIndex: 1000,
-            background: 'rgba(0,0,0,.8)', backdropFilter: 'blur(8px)',
+            background: 'rgba(20,20,19,.55)', backdropFilter: 'blur(6px)',
             display: 'flex', alignItems: 'stretch', justifyContent: 'center',
             animation: 'overlayIn .2s ease both',
           }} onClick={() => setEditingGallery(null)}>
             <div style={{
-              background: bg, width: '100%', maxWidth: 1000, margin: '20px',
-              borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              background: bg,
+              width: 'calc(100vw - 32px)', maxWidth: 1440,
+              height: 'calc(100vh - 32px)', maxHeight: 920,
+              margin: '16px',
+              borderRadius: 4, overflow: 'hidden', display: 'flex', flexDirection: 'column',
               border: `1px solid ${border}`, animation: 'modalIn .3s ease both',
             }} onClick={e => e.stopPropagation()}>
-              {/* Editor header */}
+              {/* Editor header — name + status pill on the right (RTL),
+                  Preview + Share/Publish on the left. Mirrors Pixieset's
+                  rhythm exactly. */}
               <div style={{
-                padding: '20px 28px', borderBottom: `1px solid ${border}`,
+                padding: '18px 32px', borderBottom: `1px solid ${border}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: bgSubtle,
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <button onClick={() => setEditingGallery(null)} style={{
-                    background: 'none', border: 'none', color: textSecondary, cursor: 'pointer', fontSize: 20, padding: 4,
-                  }}>←</button>
+                  <button onClick={() => setEditingGallery(null)} aria-label="חזרה" style={{
+                    background: 'none', border: 'none', color: textSecondary, cursor: 'pointer',
+                    padding: 4, display: 'flex', alignItems: 'center',
+                  }}>
+                    <Icon name="close" size={18} strokeWidth={1.85} />
+                  </button>
                   <div>
-                    <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>{editingGallery.name}</h2>
-                    <p style={{ fontSize: 12, color: textMuted, margin: '2px 0 0' }}>{galleryImages.length} תמונות · {editingGallery.status === 'live' ? 'פורסם' : 'טיוטה'}</p>
+                    <h2 style={{ fontSize: 20, fontWeight: 500, margin: 0, letterSpacing: '-0.015em', color: textPrimary }}>
+                      {editingGallery.name}
+                    </h2>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 8, marginTop: 4,
+                      fontSize: 10, fontWeight: 500, letterSpacing: '0.18em',
+                      textTransform: 'uppercase', color: textMuted,
+                    }}>
+                      <span style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: isLiveStatus ? statusLive : border,
+                      }} />
+                      <span>{isLiveStatus ? 'Published' : 'Draft'}</span>
+                      <span style={{ color: border, marginInline: 2 }}>·</span>
+                      <span>{galleryImages.length} תמונות</span>
+                    </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   <a href={`/gallery/${editingGallery.id}`} target="_blank" style={{
-                    padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600,
-                    background: glass, border: `1px solid ${border}`, color: textSecondary,
+                    padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                    background: 'transparent', border: `1px solid ${border}`, color: textPrimary,
                     textDecoration: 'none', fontFamily: 'inherit',
-                  }}>👁 תצוגה מקדימה</a>
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <Icon name="arrow-out" size={13} strokeWidth={1.85} />
+                    Preview
+                  </a>
                   {editingGallery.status !== 'live' && (
                     <button onClick={publishGallery} style={{
-                      padding: '8px 20px', borderRadius: 10, fontSize: 12, fontWeight: 700,
-                      background: `linear-gradient(135deg, ${accent}, ${accentLight})`, border: 'none',
+                      padding: '10px 22px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                      background: textPrimary, border: `1px solid ${textPrimary}`,
                       color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
-                      boxShadow: `0 4px 16px ${accentGlow}`,
-                    }}>פרסם גלריה</button>
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                    }}>Publish</button>
                   )}
                 </div>
               </div>
 
-              {/* Editor tabs */}
-              <div style={{
-                display: 'flex', gap: 4, padding: '12px 28px', borderBottom: `1px solid ${border}`,
-                background: bgSubtle,
-              }}>
-                {([
-                  { id: 'photos' as const,     icon: 'photo'    as IconName, label: 'תמונות' },
-                  { id: 'sections' as const,   icon: 'sections' as IconName, label: 'קטעים' },
-                  { id: 'activities' as const, icon: 'activity' as IconName, label: 'פעילות' },
-                  { id: 'settings' as const,   icon: 'settings' as IconName, label: 'הגדרות' },
-                  { id: 'welcome' as const,    icon: 'bolt'     as IconName, label: 'מסך פתיחה' },
-                ]).map(t => (
-                  <button key={t.id} onClick={() => setEditTab(t.id)} style={{
-                    padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                    fontSize: 13, fontWeight: editTab === t.id ? 600 : 500, fontFamily: 'inherit',
-                    background: editTab === t.id ? `rgba(45,196,121,.18)` : 'transparent',
-                    color: editTab === t.id ? accentLight : textSecondary,
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    transition: 'all .15s',
+              {/* Editor body — split layout. Sidebar holds cover preview +
+                  vertical icon tabs (mirrors Pixieset). Main area holds the
+                  active tab's content. RTL flow keeps the sidebar visually
+                  on the right side of the modal — natural for Hebrew users. */}
+              <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+                {/* ── Sidebar ─────────────────────────────────── */}
+                <aside style={{
+                  width: 260, flexShrink: 0,
+                  borderInlineStart: `1px solid ${border}`,
+                  background: bg,
+                  display: 'flex', flexDirection: 'column',
+                  overflowY: 'auto',
+                }}>
+                  {/* Cover preview — full-bleed thumbnail at top of sidebar */}
+                  <div style={{
+                    aspectRatio: '4 / 3', width: '100%', overflow: 'hidden',
+                    background: editorCover ? bgSubtle : `linear-gradient(135deg, ${bgSubtle}, ${border})`,
+                    borderBottom: `1px solid ${border}`,
+                    position: 'relative',
                   }}>
-                    <Icon name={t.icon} size={15} strokeWidth={1.85} />
-                    <span>{t.label}</span>
-                  </button>
-                ))}
-              </div>
+                    {editorCover ? (
+                      <img src={editorCover} alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    ) : (
+                      <div style={{
+                        position: 'absolute', inset: 0, display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', color: textMuted,
+                      }}>
+                        <Icon name="photo" size={32} strokeWidth={1.2} />
+                      </div>
+                    )}
+                  </div>
 
-              {/* Editor content */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: 28 }}>
+                  {/* Vertical icon-tab strip — single row of 5 icons,
+                      label appears below the active one only (Pixieset pattern). */}
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-around',
+                    padding: '14px 12px', borderBottom: `1px solid ${border}`,
+                  }}>
+                    {([
+                      { id: 'photos' as const,     icon: 'photo'    as IconName, label: 'תמונות' },
+                      { id: 'sections' as const,   icon: 'sections' as IconName, label: 'קטעים' },
+                      { id: 'welcome' as const,    icon: 'palette'  as IconName, label: 'עיצוב' },
+                      { id: 'activities' as const, icon: 'activity' as IconName, label: 'פעילות' },
+                      { id: 'settings' as const,   icon: 'settings' as IconName, label: 'הגדרות' },
+                    ]).map(t => {
+                      const active = editTab === t.id
+                      return (
+                        <button key={t.id} onClick={() => setEditTab(t.id)} aria-label={t.label} style={{
+                          background: 'transparent', border: 'none', cursor: 'pointer',
+                          padding: 8, display: 'flex', flexDirection: 'column',
+                          alignItems: 'center', gap: 4,
+                          color: active ? textPrimary : textMuted,
+                          fontFamily: 'inherit',
+                          position: 'relative',
+                        }}>
+                          <Icon name={t.icon} size={18} strokeWidth={active ? 1.85 : 1.5} />
+                          {active && (
+                            <span style={{
+                              fontSize: 9, fontWeight: 600, letterSpacing: '0.14em',
+                              textTransform: 'uppercase', color: textPrimary,
+                            }}>{t.label}</span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Sections eyebrow + list (only meaningful in photos tab,
+                      but always visible so the layout is stable) */}
+                  <div style={{ padding: '20px 18px 12px' }}>
+                    <div style={{
+                      fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                      color: textMuted, textTransform: 'uppercase',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      marginBottom: 10,
+                    }}>
+                      <span>Photos</span>
+                    </div>
+                    <button onClick={() => setEditTab('sections')} style={{
+                      width: '100%', textAlign: 'right' as const,
+                      padding: '10px 12px', borderRadius: 2,
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      fontFamily: 'inherit', fontSize: 13, fontWeight: 500,
+                      color: textPrimary,
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    }}>
+                      <span>כל התמונות</span>
+                      <span style={{ color: textMuted, fontSize: 12, fontWeight: 400 }}>
+                        {galleryImages.length}
+                      </span>
+                    </button>
+                    {sections.map(s => (
+                      <div key={s.id} style={{
+                        padding: '10px 12px', borderRadius: 2,
+                        fontSize: 13, color: textSecondary,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      }}>
+                        <span>{s.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </aside>
+
+                {/* ── Main content pane ──────────────────────────── */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', minWidth: 0 }}>
 
                 {/* ── Photos Tab ── */}
                 {editTab === 'photos' && (
-                  <div>
-                    {/* Bulk action toolbar */}
+                  <div
+                    onDragOver={e => { e.preventDefault() }}
+                    onDrop={e => { e.preventDefault(); handleFileUpload(e.dataTransfer.files) }}
+                    style={{ minHeight: '100%' }}
+                  >
+                    {/* Top strip — section title + Add Media CTA. Drop zone
+                        is gone; the entire main pane accepts drag-drop, and
+                        clicking Add Media opens the native file picker. */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      marginBottom: 24,
+                    }}>
+                      <h3 style={{
+                        fontSize: 22, fontWeight: 500, margin: 0,
+                        letterSpacing: '-0.015em', color: textPrimary,
+                      }}>
+                        כל התמונות
+                        <span style={{
+                          marginInlineStart: 12, color: textMuted,
+                          fontSize: 14, fontWeight: 400,
+                        }}>
+                          {galleryImages.length}
+                        </span>
+                      </h3>
+                      <input ref={fileInputRef} type="file" multiple accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={e => handleFileUpload(e.target.files)} />
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploading}
+                        style={{
+                          padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                          background: textPrimary, border: `1px solid ${textPrimary}`,
+                          color: '#fff', cursor: uploading ? 'wait' : 'pointer',
+                          fontFamily: 'inherit', opacity: uploading ? 0.6 : 1,
+                          letterSpacing: '0.18em', textTransform: 'uppercase',
+                          display: 'inline-flex', alignItems: 'center', gap: 8,
+                        }}
+                      >
+                        <Icon name="plus" size={13} strokeWidth={2} />
+                        Add Media
+                      </button>
+                    </div>
+
+                    {/* Bulk action toolbar — sticky inline strip */}
                     {selectMode && (
                       <div style={{
                         position: 'sticky', top: 0, zIndex: 10,
-                        marginBottom: 16, padding: '12px 18px', borderRadius: 14,
-                        background: 'rgba(45,196,121,.14)',
-                        border: `1px solid rgba(45,196,121,.35)`,
-                        backdropFilter: 'blur(10px)',
+                        marginBottom: 16, padding: '10px 16px',
+                        background: textPrimary, color: '#fff',
                         display: 'flex', alignItems: 'center', gap: 12,
-                        animation: 'fadeIn .2s ease',
+                        fontSize: 12,
                       }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: '#16a274' }}>
+                        <span style={{ fontWeight: 500, letterSpacing: '0.04em' }}>
                           {selectedImageIds.size} {selectedImageIds.size === 1 ? 'תמונה נבחרה' : 'תמונות נבחרו'}
                         </span>
                         <button onClick={selectAllImages} style={{
                           marginInlineStart: 'auto',
-                          background: 'transparent', border: `1px solid ${border}`, borderRadius: 8,
-                          color: textSecondary, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-                          fontFamily: 'inherit',
+                          background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
+                          color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
+                          fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
                         }}>בחר הכל</button>
                         <button onClick={() => bulkToggleTopPick(true)} style={{
-                          background: 'rgba(250,204,21,.12)', border: '1px solid rgba(250,204,21,.3)',
-                          borderRadius: 8, color: '#fde047', padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-                          fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4,
-                        }}>★ סמן כמועדף</button>
+                          background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
+                          color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
+                          fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
+                          display: 'flex', alignItems: 'center', gap: 4,
+                        }}>★ Pin</button>
                         <button onClick={() => bulkToggleTopPick(false)} style={{
-                          background: 'transparent', border: `1px solid ${border}`,
-                          borderRadius: 8, color: textSecondary, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}>בטל סימון</button>
+                          background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
+                          color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
+                          fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
+                        }}>Unpin</button>
                         <button onClick={bulkDeleteSelected} style={{
-                          background: 'rgba(239,68,68,.14)', border: '1px solid rgba(239,68,68,.35)',
-                          borderRadius: 8, color: '#fca5a5', padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-                          fontFamily: 'inherit', fontWeight: 600,
-                        }}>מחק</button>
-                        <button onClick={exitSelectMode} style={{
+                          background: '#dc2626', border: `1px solid #dc2626`, borderRadius: 2,
+                          color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
+                          fontFamily: 'inherit', fontWeight: 500,
+                          letterSpacing: '0.14em', textTransform: 'uppercase',
+                        }}>Delete</button>
+                        <button onClick={exitSelectMode} aria-label="Cancel" style={{
                           background: 'transparent', border: 'none',
-                          color: textMuted, padding: '6px 8px', fontSize: 14, cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}>×</button>
+                          color: '#fff', padding: '6px 8px', cursor: 'pointer',
+                          fontFamily: 'inherit', display: 'flex', alignItems: 'center',
+                        }}>
+                          <Icon name="close" size={14} strokeWidth={2} />
+                        </button>
                       </div>
                     )}
 
-                    {/* Upload area */}
-                    <input ref={fileInputRef} type="file" multiple accept="image/*" style={{ display: 'none' }}
-                      onChange={e => handleFileUpload(e.target.files)} />
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = accent }}
-                      onDragLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,.06)' }}
-                      onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'rgba(0,0,0,.06)'; handleFileUpload(e.dataTransfer.files) }}
-                      style={{
-                        border: '2px dashed rgba(0,0,0,.06)', borderRadius: 16,
-                        padding: '48px 28px', textAlign: 'center', cursor: 'pointer',
-                        background: glass, transition: 'border-color .2s, background .2s',
-                        marginBottom: 28,
-                      }}
-                    >
-                      {uploading && uploadBatch ? (
-                        <div>
-                          <div style={{ fontSize: 14, color: accentLight, fontWeight: 600, marginBottom: 4 }}>
-                            מעלה תמונות {uploadBatch.completed} / {uploadBatch.total}
-                            {uploadBatch.failed > 0 && (
-                              <span style={{ color: '#fca5a5', marginRight: 8, fontSize: 12 }}>
-                                ({uploadBatch.failed} נכשלו)
-                              </span>
-                            )}
-                          </div>
-                          {uploadBatch.current && (
-                            <div style={{ fontSize: 11, color: textMuted, marginBottom: 8, direction: 'ltr', textAlign: 'right' }}>
-                              {uploadBatch.current}
-                            </div>
+                    {/* Upload progress strip — replaces the old big drop-zone
+                        progress UI; sits inline above the grid while active. */}
+                    {uploading && uploadBatch && (
+                      <div style={{
+                        marginBottom: 20, padding: '14px 18px',
+                        background: bgSubtle, border: `1px solid ${border}`,
+                      }}>
+                        <div style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          fontSize: 12, color: textPrimary, marginBottom: 8,
+                          fontWeight: 500, letterSpacing: '0.04em',
+                        }}>
+                          <span>מעלה {uploadBatch.completed} / {uploadBatch.total}</span>
+                          {uploadBatch.failed > 0 && (
+                            <span style={{ color: '#A67C52' }}>{uploadBatch.failed} נכשלו</span>
                           )}
-                          <div style={{ width: '100%', height: 4, borderRadius: 4, background: 'rgba(0,0,0,.04)', overflow: 'hidden' }}>
-                            <div style={{
-                              width: `${Math.round((uploadBatch.completed / Math.max(1, uploadBatch.total)) * 100)}%`,
-                              height: '100%',
-                              background: `linear-gradient(90deg, ${accent}, ${accentLight})`,
-                              borderRadius: 4, transition: 'width .3s',
-                            }} />
-                          </div>
                         </div>
-                      ) : (
-                        <>
-                          <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.5 }}>📁</div>
-                          <div style={{ fontSize: 16, fontWeight: 600, color: textPrimary, marginBottom: 4 }}>גררו תמונות לכאן</div>
-                          <div style={{ fontSize: 13, color: textMuted }}>או לחצו לבחירת קבצים · JPG, PNG, WebP</div>
-                        </>
-                      )}
-                    </div>
+                        <div style={{ width: '100%', height: 2, background: border, overflow: 'hidden' }}>
+                          <div style={{
+                            width: `${Math.round((uploadBatch.completed / Math.max(1, uploadBatch.total)) * 100)}%`,
+                            height: '100%', background: textPrimary,
+                            transition: 'width .3s',
+                          }} />
+                        </div>
+                      </div>
+                    )}
 
-                    {/* Image grid */}
+                    {/* Image grid — tight Pixieset-style packing, no card
+                        wrappers, square cells, hover overlay reveals star + checkbox. */}
                     {galleryImages.length > 0 && (
                       <div style={{
-                        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6,
-                        borderRadius: 12, overflow: 'hidden',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                        gap: 4,
                       }}>
                         {galleryImages.map(img => {
                           const isSelected = selectedImageIds.has(img.id)
@@ -1455,12 +1592,10 @@ export function Dashboard() {
                               }}
                               style={{
                                 position: 'relative', aspectRatio: '1', overflow: 'hidden',
-                                background: 'rgba(0,0,0,.02)',
-                                cursor: 'pointer',
-                                outline: isSelected ? `3px solid ${accent}` : 'none',
-                                outlineOffset: isSelected ? -3 : 0,
-                                transform: isSelected ? 'scale(0.96)' : 'scale(1)',
-                                transition: 'transform .15s ease, outline-offset .15s',
+                                background: bgSubtle, cursor: 'pointer',
+                                outline: isSelected ? `2px solid ${textPrimary}` : 'none',
+                                outlineOffset: isSelected ? -2 : 0,
+                                transition: 'transform .25s cubic-bezier(.2,.7,.2,1)',
                               }}
                             >
                               <img
@@ -1468,28 +1603,32 @@ export function Dashboard() {
                                 alt="" loading="lazy"
                                 style={{
                                   width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                                  filter: isSelected ? 'brightness(0.7)' : 'none',
+                                  filter: isSelected ? 'brightness(0.55)' : 'none',
                                   transition: 'filter .15s',
                                 }}
                               />
                               {img.is_top_pick && (
                                 <div style={{
-                                  position: 'absolute', top: 4, right: 4,
-                                  background: 'rgba(45,196,121,.85)', color: '#fff',
-                                  fontSize: 8, padding: '2px 6px', borderRadius: 4, fontWeight: 700,
-                                }}>★</div>
+                                  position: 'absolute', top: 8, insetInlineStart: 8,
+                                  width: 24, height: 24, borderRadius: '50%',
+                                  background: 'rgba(255,255,255,.92)',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  color: textPrimary,
+                                }}>
+                                  <Icon name="star" size={12} strokeWidth={1.85} />
+                                </div>
                               )}
                               {selectMode && (
                                 <div style={{
-                                  position: 'absolute', top: 6, left: 6,
+                                  position: 'absolute', top: 8, insetInlineEnd: 8,
                                   width: 22, height: 22, borderRadius: '50%',
-                                  background: isSelected ? accent : 'rgba(0,0,0,.6)',
-                                  border: `2px solid ${isSelected ? accent : 'rgba(255,255,255,.7)'}`,
+                                  background: isSelected ? textPrimary : 'rgba(255,255,255,.85)',
+                                  border: `1.5px solid ${isSelected ? textPrimary : 'rgba(255,255,255,.95)'}`,
                                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                                   transition: 'all .15s',
                                 }}>
                                   {isSelected && (
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
                                       <polyline points="20 6 9 17 4 12"/>
                                     </svg>
                                   )}
@@ -1501,9 +1640,24 @@ export function Dashboard() {
                       </div>
                     )}
                     {galleryImages.length === 0 && !uploading && (
-                      <p style={{ textAlign: 'center', color: textMuted, fontSize: 14, padding: '40px 0' }}>
-                        אין עדיין תמונות בגלריה הזו. העלו תמונות למעלה.
-                      </p>
+                      <div style={{
+                        textAlign: 'center', padding: '80px 24px',
+                        background: bgSubtle, border: `1px dashed ${border}`,
+                      }}>
+                        <Icon name="photo" size={36} strokeWidth={1.2} style={{ opacity: 0.4 }} />
+                        <p style={{
+                          marginTop: 16, color: textSecondary, fontSize: 14,
+                          fontWeight: 500,
+                        }}>
+                          אין עדיין תמונות בגלריה הזו
+                        </p>
+                        <p style={{
+                          marginTop: 6, color: textMuted, fontSize: 11,
+                          fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
+                        }}>
+                          Drag photos anywhere · or click Add Media
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
@@ -2042,10 +2196,12 @@ export function Dashboard() {
                     </div>
                   </div>
                 )}
+                </div>
               </div>
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* ======= Download Tracking Section ======= */}
         {galleries.length > 0 && (
