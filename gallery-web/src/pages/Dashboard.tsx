@@ -52,6 +52,27 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
     .dash-toggle-on .dash-toggle-knob { transform:translateX(22px); }
     @keyframes pulse    { 0%,100% { opacity:.4; } 50% { opacity:1; } }
     @keyframes overlayIn { from { opacity:0; } to { opacity:1; } }
+
+    /* Sidebar mobile transformation. Above 900px the sidebar is a permanent
+       sticky 240px column. Below 900px it becomes an off-canvas drawer that
+       slides in from the right (RTL); the hamburger button in the topbar
+       toggles it; a backdrop dims the rest. */
+    @media (max-width: 900px) {
+      .dash-sidebar {
+        position: fixed !important;
+        right: 0 !important;
+        top: 0 !important;
+        height: 100vh !important;
+        transform: translateX(100%);
+        transition: transform .25s cubic-bezier(.4,0,.2,1);
+        box-shadow: -8px 0 32px rgba(0,0,0,.4);
+      }
+      .dash-sidebar.dash-sidebar--open {
+        transform: translateX(0);
+      }
+      .dash-sidebar-backdrop { display: block !important; }
+      .dash-hamburger { display: flex !important; }
+    }
   `
   document.head.appendChild(style)
 }
@@ -69,6 +90,7 @@ export function Dashboard() {
   const [businessSlug, setBusinessSlug] = useState<string | null>(null)
   const [tokenBalance, setTokenBalance] = useState<number>(0)
   const [showBuyTokens, setShowBuyTokens] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
   const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'welcome'>('photos')
@@ -422,14 +444,51 @@ export function Dashboard() {
       display: 'flex',
     }}>
       {/* ======= Sidebar ======= */}
-      <aside style={{
-        width: 240, flexShrink: 0,
-        background: 'rgba(10,10,18,.6)',
-        borderInlineStart: `1px solid ${border}`,
-        display: 'flex', flexDirection: 'column',
-        padding: '24px 18px',
-        position: 'sticky', top: 0, height: '100vh',
-      }}>
+      {/* Mobile backdrop — visible only when the drawer is open under 900px */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 199,
+            background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(4px)',
+            display: 'none',
+          }}
+          className="dash-sidebar-backdrop"
+        />
+      )}
+
+      <aside
+        className={`dash-sidebar ${sidebarOpen ? 'dash-sidebar--open' : ''}`}
+        style={{
+          width: 240, flexShrink: 0,
+          background: 'rgba(10,10,18,.85)',
+          borderInlineStart: `1px solid ${border}`,
+          display: 'flex', flexDirection: 'column',
+          padding: '24px 18px',
+          position: 'sticky', top: 0, height: '100vh',
+          zIndex: 200,
+        }}
+      >
+        {/* Mobile close X — visible only via .dash-hamburger media query */}
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="dash-hamburger"
+          aria-label="Close menu"
+          style={{
+            display: 'none', alignItems: 'center', justifyContent: 'center',
+            position: 'absolute', top: 14, left: 14,
+            width: 32, height: 32, borderRadius: 8,
+            background: 'rgba(255,255,255,.04)',
+            border: `1px solid ${border}`,
+            color: textPrimary, cursor: 'pointer', padding: 0,
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+
         {/* Logo */}
         <a href="/" style={{
           display: 'flex', alignItems: 'center', gap: 10,
@@ -541,18 +600,39 @@ export function Dashboard() {
 
       {/* ======= Right column ======= */}
       <div style={{ flex: 1, minWidth: 0 }}>
-      {/* ======= Top bar — page title only; profile + tokens live in sidebar ======= */}
+      {/* ======= Top bar — page title + mobile hamburger ======= */}
       <header style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '18px 32px',
+        padding: '14px 20px',
         background: 'rgba(10,10,18,.6)',
         backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
         borderBottom: `1px solid ${border}`,
         position: 'sticky', top: 0, zIndex: 100,
       }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
-          הגלריות שלי
-        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Hamburger — mobile only via CSS */}
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="dash-hamburger"
+            aria-label="Open menu"
+            style={{
+              display: 'none', alignItems: 'center', justifyContent: 'center',
+              width: 38, height: 38, borderRadius: 10,
+              background: 'rgba(255,255,255,.04)',
+              border: `1px solid ${border}`,
+              color: textPrimary, cursor: 'pointer', padding: 0,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
+          <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+            הגלריות שלי
+          </h1>
+        </div>
       </header>
 
       {/* ======= Main content ======= */}
