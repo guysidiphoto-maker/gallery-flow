@@ -1355,6 +1355,98 @@ export function Dashboard() {
                         ))}
                       </div>
                     </div>
+
+                    {/* Theme color */}
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🌈 צבע ראשי</div>
+                      <div style={{ fontSize: 12, color: textMuted, marginBottom: 10 }}>הצבע שמופיע בכפתורים, מסגרות ולוגו של הגלריה</div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        {([
+                          { id: 'indigo', label: 'אינדיגו', color: '#6366f1' },
+                          { id: 'rose',   label: 'ורוד',   color: '#f43f5e' },
+                          { id: 'amber',  label: 'זהב',    color: '#f59e0b' },
+                          { id: 'teal',   label: 'טורקיז', color: '#14b8a6' },
+                          { id: 'slate',  label: 'אפור',   color: '#64748b' },
+                        ] as const).map(c => {
+                          const active = (editingGallery.delivery_settings?.themeColor || 'indigo') === c.id
+                          return (
+                            <button key={c.id} onClick={() => updateGallerySetting('themeColor', c.id)} style={{
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                              padding: '8px 14px', borderRadius: 12,
+                              background: active ? `rgba(255,255,255,.04)` : 'transparent',
+                              border: `2px solid ${active ? c.color : 'rgba(255,255,255,.05)'}`,
+                              cursor: 'pointer', fontFamily: 'inherit',
+                              transition: 'all .15s',
+                            }}>
+                              <div style={{
+                                width: 28, height: 28, borderRadius: 8,
+                                background: c.color,
+                                boxShadow: active ? `0 4px 16px ${c.color}66` : 'none',
+                              }} />
+                              <span style={{
+                                fontSize: 11, fontWeight: 600,
+                                color: active ? c.color : textMuted,
+                              }}>
+                                {c.label}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Watermark */}
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>💧 ווטרמרק</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500 }}>הצג ווטרמרק על תצוגות web</div>
+                          <div style={{ fontSize: 11, color: textMuted }}>שם העסק יופיע בפינה — מקור ההורדה תמיד נקי</div>
+                        </div>
+                        <div className={`dash-toggle ${editingGallery.delivery_settings?.watermarkEnabled ? 'dash-toggle-on' : 'dash-toggle-off'}`}
+                          onClick={(e) => { e.stopPropagation(); updateGallerySetting('watermarkEnabled', !(editingGallery.delivery_settings?.watermarkEnabled)) }}>
+                          <div className="dash-toggle-knob" />
+                        </div>
+                      </div>
+                      {editingGallery.delivery_settings?.watermarkEnabled && (
+                        <div style={{ marginTop: 14 }}>
+                          <div style={{ fontSize: 12, color: textMuted, marginBottom: 8 }}>טקסט הווטרמרק (ברירת מחדל: שם העסק)</div>
+                          <input
+                            type="text"
+                            value={String(editingGallery.delivery_settings?.watermarkText ?? '')}
+                            onChange={(e) => updateGallerySetting('watermarkText', e.target.value)}
+                            placeholder="© השם שלך"
+                            style={{
+                              width: '100%', padding: '10px 14px', borderRadius: 10,
+                              background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                              color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
+                            }}
+                          />
+                          <div style={{ fontSize: 12, color: textMuted, marginTop: 14, marginBottom: 8 }}>מיקום</div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {([
+                              { id: 'bottom-right', label: '↘' },
+                              { id: 'bottom-left',  label: '↙' },
+                              { id: 'top-right',    label: '↗' },
+                              { id: 'top-left',     label: '↖' },
+                              { id: 'center',       label: '＋' },
+                            ] as const).map(p => {
+                              const active = (editingGallery.delivery_settings?.watermarkPosition || 'bottom-right') === p.id
+                              return (
+                                <button key={p.id} onClick={() => updateGallerySetting('watermarkPosition', p.id)} style={{
+                                  width: 40, height: 40, borderRadius: 10,
+                                  background: active ? `rgba(99,102,241,.18)` : 'transparent',
+                                  border: `1px solid ${active ? accent : border}`,
+                                  color: active ? accentLight : textSecondary,
+                                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 18,
+                                  transition: 'all .15s',
+                                }}>{p.label}</button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
