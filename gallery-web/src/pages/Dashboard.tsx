@@ -335,7 +335,7 @@ export function Dashboard() {
     const [imagesRes, sectionsRes] = await Promise.all([
       supabase
         .from('images')
-        .select('id, filename, storage_path, thumbnail_path, is_top_pick, sort_order')
+        .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order')
         .eq('gallery_id', g.id)
         .order('sort_order', { ascending: true }),
       supabase
