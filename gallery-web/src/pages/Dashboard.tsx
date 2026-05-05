@@ -162,6 +162,11 @@ export function Dashboard() {
   const [imageMenuOpenId, setImageMenuOpenId] = useState<string | null>(null)
   const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
   const [photoSort, setPhotoSort] = useState<'order' | 'name' | 'newest'>('order')
+  // Drag-to-reorder state. Only meaningful when photoSort === 'order'.
+  // dragOverId is the tile the cursor is currently above (drop target);
+  // we render a leading-edge bar on it to show where the drop will land.
+  const [draggedImageId, setDraggedImageId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -643,6 +648,43 @@ export function Dashboard() {
     const a = document.createElement('a')
     a.href = url; a.download = img.filename || 'photo.jpg'
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
+  }
+
+  // Drag-reorder helper. Operates on the *visible* list (i.e. the active
+  // section's images) and sends a batch of sort_order updates. Renumbers
+  // every visible image with a 1000-step gap so subsequent reorders within
+  // the same set don't collide. Drag is only enabled when sorted by manual
+  // order — see the grid render below.
+  async function reorderImage(draggedId: string, targetId: string) {
+    if (draggedId === targetId) return
+    // Build the visible list in the same order the grid currently shows it.
+    const visible = (activeSectionId
+      ? galleryImages.filter(i => i.section_id === activeSectionId)
+      : galleryImages
+    ).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    const fromIdx = visible.findIndex(i => i.id === draggedId)
+    const toIdx = visible.findIndex(i => i.id === targetId)
+    if (fromIdx === -1 || toIdx === -1) return
+
+    // Splice the dragged item out and re-insert before the target.
+    const next = visible.slice()
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+
+    // Apply optimistically — recompute sort_order for everything in the
+    // visible list, leave images in other sections untouched.
+    const idToOrder = new Map<string, number>()
+    next.forEach((img, idx) => { idToOrder.set(img.id, idx * 1000) })
+    setGalleryImages(prev => prev.map(i =>
+      idToOrder.has(i.id) ? { ...i, sort_order: idToOrder.get(i.id)! } : i
+    ))
+
+    // Persist — parallel updates. For very large sections this could be
+    // optimised into a single RPC, but for typical galleries (<= a few
+    // hundred images) parallel REST updates land in <1s.
+    await Promise.all(next.map((img, idx) =>
+      supabase.from('images').update({ sort_order: idx * 1000 }).eq('id', img.id)
+    ))
   }
 
   /* ---------- Loading state ---------- */
@@ -1818,9 +1860,43 @@ export function Dashboard() {
                           // mode — once you're selecting, the click target is
                           // the whole tile and per-tile actions disappear.
                           const showHoverOverlay = isHovered && !selectMode
+                          // Drag is only meaningful when sorting manually.
+                          // Disabling it in name/newest views keeps the
+                          // visual order in sync with what's persisted.
+                          const dragEnabled = photoSort === 'order' && !selectMode
+                          const isDragging = draggedImageId === img.id
+                          const isDropTarget = dragOverId === img.id && draggedImageId && draggedImageId !== img.id
                           return (
                             <div
                               key={img.id}
+                              draggable={dragEnabled}
+                              onDragStart={(e) => {
+                                if (!dragEnabled) return
+                                setDraggedImageId(img.id)
+                                e.dataTransfer.effectAllowed = 'move'
+                                // Setting data is required on Firefox to make
+                                // the drag actually start.
+                                try { e.dataTransfer.setData('text/plain', img.id) } catch { /* ignore */ }
+                              }}
+                              onDragOver={(e) => {
+                                if (!dragEnabled || !draggedImageId || draggedImageId === img.id) return
+                                e.preventDefault()
+                                e.dataTransfer.dropEffect = 'move'
+                                if (dragOverId !== img.id) setDragOverId(img.id)
+                              }}
+                              onDragLeave={() => {
+                                if (dragOverId === img.id) setDragOverId(null)
+                              }}
+                              onDrop={(e) => {
+                                if (!dragEnabled || !draggedImageId) return
+                                e.preventDefault()
+                                e.stopPropagation()
+                                const src = draggedImageId
+                                setDraggedImageId(null)
+                                setDragOverId(null)
+                                if (src && src !== img.id) reorderImage(src, img.id)
+                              }}
+                              onDragEnd={() => { setDraggedImageId(null); setDragOverId(null) }}
                               onMouseEnter={() => setHoveredImageId(img.id)}
                               onMouseLeave={() => { setHoveredImageId(null); }}
                               onClick={(e) => {
@@ -1843,12 +1919,27 @@ export function Dashboard() {
                               }}
                               style={{
                                 position: 'relative', aspectRatio: '1', overflow: 'hidden',
-                                background: bgSubtle, cursor: 'pointer',
-                                outline: isSelected ? `2px solid ${textPrimary}` : 'none',
-                                outlineOffset: isSelected ? -2 : 0,
-                                transition: 'transform .25s cubic-bezier(.2,.7,.2,1)',
+                                background: bgSubtle,
+                                cursor: dragEnabled ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
+                                outline: isSelected
+                                  ? `2px solid ${textPrimary}`
+                                  : (isDropTarget ? `2px solid ${textPrimary}` : 'none'),
+                                outlineOffset: isSelected || isDropTarget ? -2 : 0,
+                                opacity: isDragging ? 0.4 : 1,
+                                transition: 'transform .25s cubic-bezier(.2,.7,.2,1), opacity .15s',
                               }}
                             >
+                              {/* Leading-edge bar — appears on the drop-target
+                                  tile to show where the dragged image will land.
+                                  Drawn on insetInlineStart (right side in RTL). */}
+                              {isDropTarget && (
+                                <div style={{
+                                  position: 'absolute', top: 0, bottom: 0,
+                                  insetInlineEnd: -2, width: 3,
+                                  background: textPrimary, zIndex: 4,
+                                  pointerEvents: 'none',
+                                }} />
+                              )}
                               <img
                                 src={imgUrl(img.thumbnail_path || img.storage_path)}
                                 alt="" loading="lazy"
