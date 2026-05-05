@@ -93,6 +93,7 @@ export function Dashboard() {
   const [tokenBalance, setTokenBalance] = useState<number>(0)
   const [showBuyTokens, setShowBuyTokens] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [gallerySearch, setGallerySearch] = useState('')
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
   const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome'>('photos')
@@ -447,6 +448,24 @@ export function Dashboard() {
     } finally {
       setShareSending(false)
     }
+  }
+
+  async function duplicateGallery(g: Gallery) {
+    if (!businessId) return
+    const newName = window.prompt('שם הגלריה החדשה:', `${g.name} - עותק`)
+    if (!newName?.trim()) return
+    // Pull the full source gallery to copy delivery_settings.
+    const { data: full } = await supabase.from('galleries').select('delivery_settings, face_index_enabled').eq('id', g.id).maybeSingle()
+    const { error } = await supabase.from('galleries').insert({
+      business_id: businessId,
+      local_id: `dup_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      name: newName.trim(),
+      status: 'draft',
+      face_index_enabled: full?.face_index_enabled ?? false,
+      delivery_settings: full?.delivery_settings ?? null,
+    })
+    if (error) { alert('שגיאה בשכפול: ' + error.message); return }
+    fetchGalleries()
   }
 
   function copyGalleryLink(galleryId: string, e: React.MouseEvent) {
@@ -986,10 +1005,43 @@ export function Dashboard() {
           </div>
         ) : (
           /* ======= Gallery grid ======= */
+          <>
+          <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ position: 'relative', flex: 1, maxWidth: 360 }}>
+              <svg style={{
+                position: 'absolute', insetInlineStart: 14, top: '50%', transform: 'translateY(-50%)',
+                opacity: 0.5,
+              }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+              </svg>
+              <input
+                type="text"
+                value={gallerySearch}
+                onChange={e => setGallerySearch(e.target.value)}
+                placeholder="חפש גלריה לפי שם..."
+                style={{
+                  width: '100%', padding: '10px 14px', paddingInlineStart: 38,
+                  borderRadius: 12,
+                  background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                  color: textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none',
+                  transition: 'border-color .15s',
+                }}
+                onFocus={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.5)' }}
+                onBlur={e => { e.currentTarget.style.borderColor = border }}
+              />
+            </div>
+            {gallerySearch && (
+              <span style={{ fontSize: 12, color: textMuted }}>
+                {galleries.filter(g => g.name.toLowerCase().includes(gallerySearch.toLowerCase())).length} מתוך {galleries.length}
+              </span>
+            )}
+          </div>
           <div style={{
             display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20,
           }}>
-            {galleries.map((g, idx) => {
+            {galleries
+              .filter(g => !gallerySearch || g.name.toLowerCase().includes(gallerySearch.toLowerCase()))
+              .map((g, idx) => {
               const isHovered = hoveredCard === g.id
               return (
                 <div
@@ -1122,12 +1174,33 @@ export function Dashboard() {
                           <polyline points="22,6 12,13 2,6"/>
                         </svg>
                       </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); duplicateGallery(g) }}
+                        title="שכפל הגדרות לגלריה חדשה"
+                        style={{
+                          padding: '10px 14px', borderRadius: 10,
+                          background: 'transparent',
+                          border: `1px solid ${border}`,
+                          color: textSecondary,
+                          fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                          transition: 'all .2s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.04)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                      </button>
                     </div>
                   )}
                 </div>
               )
             })}
           </div>
+          </>
         )}
 
         {/* ======= Gallery Editor Modal ======= */}
