@@ -5,11 +5,12 @@
 body {
   background: #0a0a0f;
   color: #fff;
-  /* Unified type stack: Heebo for Hebrew (high-quality, Inter-compatible),
-     Inter for Latin. Both load from the <head>. The browser falls through
-     to Inter for any glyph Heebo doesn't carry, so mixed-script labels
-     stay visually consistent. */
-  font-family: 'Heebo', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* Editorial type stack — Pic-Time-inspired "Quiet Magazine" aesthetic.
+     Inter Tight is our Gotham Narrow substitute: geometric, slightly
+     condensed, sharp uppercase tracking. Heebo handles Hebrew and stays
+     visually compatible. The browser falls through to Inter for any glyph
+     Inter Tight doesn't carry, so mixed-script labels remain consistent. */
+  font-family: 'Inter Tight', 'Heebo', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-feature-settings: 'kern', 'liga', 'calt';
   letter-spacing: -0.005em;
   min-height: 100vh;
