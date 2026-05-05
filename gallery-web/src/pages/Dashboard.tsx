@@ -41,7 +41,9 @@ const border = '#D0D0D0'              // hairline 1px borders
 const borderHover = '#141413'
 const textPrimary = '#141413'         // headings + UI text
 const textSecondary = '#333333'       // body copy
-const textMuted = '#BCBCBC'           // captions, secondary metadata
+const textMuted = '#767470'           // captions, secondary metadata. Darkened
+                                       // from #BCBCBC (1.6:1) to pass WCAG-AA
+                                       // 4.5:1 contrast on the cream canvas.
 const glass = '#FAF9F5'
 // Status dot for "published". Subtle sage so it reads as semantic, not branding.
 const statusLive = '#7B8F6E'
