@@ -167,6 +167,13 @@ export function Dashboard() {
   const [galleryCode, setGalleryCode] = useState('')
   const [trackDownloads, setTrackDownloads] = useState(false)
   const [feedLayout, setFeedLayout] = useState<'grid' | 'masonry' | 'carousel'>('grid')
+  // Face recognition (זיהוי פנים) — opt-in feature with token cost. The
+  // confirm dialog explains the cost before turning on; once on, a privacy
+  // mode picker appears so the photographer chooses whether everyone sees
+  // everything (open) or each guest only sees their own selfie matches (private).
+  const [faceRecognition, setFaceRecognition] = useState(false)
+  const [facePrivacyMode, setFacePrivacyMode] = useState<'open' | 'private'>('open')
+  const [showFaceConfirm, setShowFaceConfirm] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -312,7 +319,10 @@ export function Dashboard() {
       business_id: businessId,
       status: 'draft',
       image_count: 0,
+      face_index_enabled: faceRecognition,
       delivery_settings: {
+        faceIndexEnabled: faceRecognition,
+        facePrivacyMode,
         accessType: 'public',
         password: null,
         downloadsEnabled: true,
@@ -360,6 +370,8 @@ export function Dashboard() {
     setGalleryCode('')
     setTrackDownloads(false)
     setFeedLayout('grid')
+    setFaceRecognition(false)
+    setFacePrivacyMode('open')
     fetchGalleries()
   }
 
@@ -2669,6 +2681,97 @@ export function Dashboard() {
             {/* ── Divider ── */}
             <div style={{ height: 1, background: border, margin: '4px 0 24px' }} />
 
+            {/* Face recognition toggle — separate from the privacy stack
+                because turning it ON requires confirming the token cost first.
+                Once enabled, a sub-picker for "open vs private" appears below. */}
+            <div style={{ marginBottom: 18 }}>
+              <div
+                onClick={() => {
+                  if (faceRecognition) {
+                    setFaceRecognition(false)
+                    setFacePrivacyMode('open')
+                  } else {
+                    setShowFaceConfirm(true)
+                  }
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  cursor: 'pointer', userSelect: 'none', gap: 12,
+                }}
+              >
+                <div>
+                  <span style={{
+                    fontSize: 13, color: textPrimary, fontWeight: 500, display: 'block',
+                    marginBottom: 4,
+                  }}>
+                    זיהוי פנים
+                  </span>
+                  <span style={{ fontSize: 12, color: textMuted, lineHeight: 1.5 }}>
+                    אורחים מצלמים סלפי ומקבלים את התמונות שלהם בלבד
+                  </span>
+                </div>
+                <div style={{
+                  width: 44, height: 24, borderRadius: 24, padding: 2,
+                  background: faceRecognition ? textPrimary : border,
+                  transition: 'background .2s', flexShrink: 0,
+                  cursor: 'pointer', position: 'relative',
+                }}>
+                  <div style={{
+                    width: 20, height: 20, borderRadius: 10,
+                    background: '#fff',
+                    transition: 'transform .2s',
+                    transform: faceRecognition ? 'translateX(-20px)' : 'translateX(0)',
+                    boxShadow: '0 1px 3px rgba(0,0,0,.18)',
+                  }} />
+                </div>
+              </div>
+
+              {/* Privacy mode sub-picker — appears only after face-rec is on */}
+              {faceRecognition && (
+                <div style={{
+                  marginTop: 14, padding: 14,
+                  background: bgSubtle, border: `1px solid ${border}`,
+                }}>
+                  <div style={{
+                    fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                    color: textMuted, textTransform: 'uppercase', marginBottom: 12,
+                  }}>
+                    מצב פרטיות
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    {([
+                      { id: 'open' as const,    label: 'פתוח',  desc: 'כולם רואים את כל התמונות' },
+                      { id: 'private' as const, label: 'פרטי',  desc: 'כל אורח רואה רק את התמונות שלו' },
+                    ]).map(m => {
+                      const selected = facePrivacyMode === m.id
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setFacePrivacyMode(m.id)}
+                          style={{
+                            background: selected ? '#fff' : 'transparent',
+                            border: `1px solid ${selected ? textPrimary : border}`,
+                            borderRadius: 2, padding: '12px 14px', cursor: 'pointer',
+                            fontFamily: 'inherit', textAlign: 'right' as const,
+                            transition: 'border-color .15s, background .15s',
+                          }}
+                        >
+                          <div style={{
+                            fontSize: 13, fontWeight: selected ? 600 : 500,
+                            color: textPrimary, marginBottom: 4,
+                          }}>{m.label}</div>
+                          <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4 }}>
+                            {m.desc}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Toggle row helper — used for the three privacy switches below.
                 Charcoal "on" state matches the editorial palette; no green. */}
             {([
@@ -2764,6 +2867,83 @@ export function Dashboard() {
               </button>
             </div>
           </div>
+
+          {/* Face recognition confirm dialog — explains the token cost
+              and opt-in nature before flipping the switch on. Stops modal
+              click-through so dismissing only the inner dialog returns the
+              user to the create-gallery form. */}
+          {showFaceConfirm && (
+            <div
+              onClick={(e) => { e.stopPropagation(); setShowFaceConfirm(false) }}
+              style={{
+                position: 'fixed', inset: 0, zIndex: 1100,
+                background: 'rgba(20,20,19,.55)', backdropFilter: 'blur(6px)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                animation: 'overlayIn .2s ease both',
+              }}>
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: '#fff', width: 'calc(100vw - 40px)', maxWidth: 460,
+                  padding: '36px 40px 32px',
+                  border: `1px solid ${border}`,
+                  animation: 'modalIn .25s ease both',
+                }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+                  color: textMuted, textTransform: 'uppercase', marginBottom: 14,
+                }}>
+                  Heads up
+                </div>
+                <h3 style={{
+                  fontSize: 22, fontWeight: 500, margin: '0 0 14px',
+                  color: textPrimary, letterSpacing: '-0.015em', lineHeight: 1.15,
+                }}>
+                  זיהוי פנים — איך זה עובד
+                </h3>
+                <p style={{
+                  color: textSecondary, fontSize: 14, lineHeight: 1.65, margin: '0 0 14px',
+                }}>
+                  כל תמונה שתעלה לגלריה זו תאונדקס במנוע זיהוי פנים. אורחים יצלמו סלפי וימצאו את התמונות שלהם תוך שניות.
+                </p>
+                <p style={{
+                  color: textSecondary, fontSize: 14, lineHeight: 1.65, margin: '0 0 24px',
+                }}>
+                  <strong style={{ color: textPrimary, fontWeight: 600 }}>עלות:</strong>{' '}
+                  זיהוי פנים צורך טוקן נוסף לכל תמונה (סה"כ <strong style={{ color: textPrimary }}>2 טוקנים</strong> לתמונה במקום 1). יתרת הטוקנים שלך כרגע: <strong style={{ color: textPrimary }}>{tokenBalance.toLocaleString('he-IL')}</strong>.
+                </p>
+                <div style={{
+                  padding: '12px 14px', background: bgSubtle,
+                  border: `1px solid ${border}`, marginBottom: 24,
+                  fontSize: 12, color: textSecondary, lineHeight: 1.55,
+                }}>
+                  אפשר להפעיל ולהשבית בכל רגע — מתחייבים רק על תמונות שמועלות אחרי ההפעלה.
+                </div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setShowFaceConfirm(false)}
+                    style={{
+                      background: 'transparent', color: textPrimary,
+                      border: `1px solid ${border}`,
+                      borderRadius: 2, padding: '11px 22px', fontSize: 11, cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500,
+                    }}
+                  >Cancel</button>
+                  <button
+                    onClick={() => { setFaceRecognition(true); setShowFaceConfirm(false) }}
+                    style={{
+                      background: textPrimary, color: '#fff',
+                      border: `1px solid ${textPrimary}`,
+                      borderRadius: 2, padding: '11px 26px', fontSize: 11, cursor: 'pointer',
+                      fontFamily: 'inherit', fontWeight: 500,
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                    }}
+                  >Enable</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         )
       })()}
