@@ -89,6 +89,11 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
 export function Dashboard() {
   const { user, loading } = useAuth()
   const [galleries, setGalleries] = useState<Gallery[]>([])
+  // Cover-image fallback map — gallery_id → first image URL. Filled in by a
+  // useEffect after galleries load. The desktop uploader doesn't set
+  // delivery_settings.coverImageUrl, so without this every desktop-uploaded
+  // gallery would show a grey placeholder.
+  const [coverFallback, setCoverFallback] = useState<Record<string, string>>({})
   const [loadingGalleries, setLoadingGalleries] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [newName, setNewName] = useState('')
@@ -133,6 +138,47 @@ export function Dashboard() {
     if (!user) return
     initBusiness()
   }, [user])
+
+  // Cover-image fallback. Run after galleries load. For each gallery whose
+  // delivery_settings.coverImageUrl is unset, fetch the first image's
+  // thumbnail and stash it in the coverFallback map. The desktop app
+  // doesn't set coverImageUrl on upload, so without this every
+  // desktop-uploaded gallery shows a grey placeholder.
+  useEffect(() => {
+    let cancelled = false
+    const targets = galleries.filter(g =>
+      !((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl)
+      && (g.image_count ?? 0) > 0
+      && !coverFallback[g.id]
+    )
+    if (targets.length === 0) return
+    void (async () => {
+      const results = await Promise.all(targets.map(async g => {
+        const { data: img, error } = await supabase
+          .from('images')
+          .select('thumbnail_path, storage_path, web_preview_path')
+          .eq('gallery_id', g.id)
+          .order('sort_order', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (error) {
+          console.warn('[cover-fallback] fetch failed for', g.id, error)
+          return null
+        }
+        if (!img) return null
+        const path = img.thumbnail_path || img.storage_path || img.web_preview_path
+        if (!path) return null
+        return { id: g.id, url: `https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/gallery-images/${path}` }
+      }))
+      if (cancelled) return
+      const next: Record<string, string> = {}
+      for (const r of results) if (r) next[r.id] = r.url
+      if (Object.keys(next).length > 0) {
+        setCoverFallback(prev => ({ ...prev, ...next }))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [galleries])
 
   // Lazy-load activity summary when the tab opens. Re-fetches when switching
   // galleries, but caches per-gallery within the editor session.
@@ -212,38 +258,7 @@ export function Dashboard() {
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
-
-    // Cover-image fallback. The desktop uploader doesn't auto-set
-    // delivery_settings.coverImageUrl, so for galleries that have images
-    // but no explicit cover, fall back to the gallery's first image's
-    // thumbnail. Without this, every desktop-uploaded gallery shows a
-    // grey placeholder card on the dashboard.
-    const list = data ?? []
-    const galleriesNeedingCover = list.filter(g =>
-      !((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl)
-      && (g.image_count ?? 0) > 0
-    )
-    if (galleriesNeedingCover.length > 0) {
-      const covers = await Promise.all(galleriesNeedingCover.map(async g => {
-        const { data: img } = await supabase.from('images')
-          .select('thumbnail_path, storage_path, web_preview_path')
-          .eq('gallery_id', g.id)
-          .order('sort_order', { ascending: true })
-          .limit(1)
-          .maybeSingle()
-        if (!img) return { id: g.id, url: null }
-        const path = img.thumbnail_path || img.storage_path || img.web_preview_path
-        return { id: g.id, url: path ? imgUrl(path) : null }
-      }))
-      const coverById = new Map(covers.map(c => [c.id, c.url]))
-      for (const g of list) {
-        const url = coverById.get(g.id)
-        if (url && !((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl)) {
-          g.delivery_settings = { ...(g.delivery_settings ?? {}), coverImageUrl: url }
-        }
-      }
-    }
-    setGalleries(list)
+    setGalleries(data ?? [])
     setLoadingGalleries(false)
   }
 
@@ -1057,7 +1072,8 @@ export function Dashboard() {
             {galleries.map((g, idx) => {
               const isHovered = hoveredCard === g.id
               const isLive = g.status === 'live' || g.status === 'published'
-              const cover = ((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl as string | undefined) || null
+              const explicitCover = ((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl as string | undefined) || null
+              const cover = explicitCover || coverFallback[g.id] || null
               return (
                 <div
                   key={g.id}
