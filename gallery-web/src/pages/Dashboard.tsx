@@ -2104,46 +2104,81 @@ export function Dashboard() {
 
                 {/* ── Activities Tab ── */}
                 {editTab === 'activities' && (
-                  <div style={{ padding: '0 4px' }}>
+                  <div>
+                    {/* Eyebrow + display heading — same rhythm as the rest of
+                        the editor's tabs (e.g. the Photos tab heading). */}
+                    <div style={{
+                      fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+                      color: textMuted, textTransform: 'uppercase',
+                      marginBottom: 10,
+                    }}>
+                      Activity
+                    </div>
+                    <h3 style={{
+                      fontSize: 22, fontWeight: 500, margin: '0 0 28px',
+                      letterSpacing: '-0.015em', color: textPrimary,
+                    }}>
+                      פעילות בגלריה
+                    </h3>
+
                     {activityLoading && !activitySummary ? (
-                      <div style={{ textAlign: 'center', padding: '60px 0', color: textMuted }}>
-                        <div style={{
-                          width: 28, height: 28, margin: '0 auto 16px',
-                          border: `3px solid ${border}`, borderTopColor: accent,
-                          borderRadius: '50%', animation: 'spin 0.8s linear infinite',
-                        }} />
-                        טוען נתוני פעילות...
+                      <div style={{
+                        textAlign: 'center', padding: '60px 0',
+                        color: textMuted, fontSize: 11, fontWeight: 500,
+                        letterSpacing: '0.18em', textTransform: 'uppercase',
+                      }}>
+                        Loading
                       </div>
                     ) : !activitySummary || (activitySummary.downloads_total === 0 && activitySummary.favorites_total === 0 && activitySummary.emails_total === 0) ? (
-                      <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-                        <div style={{ marginBottom: 18, opacity: 0.5, color: textMuted, display: 'flex', justifyContent: 'center' }}>
-                          <Icon name="activity" size={42} strokeWidth={1.5} />
-                        </div>
-                        <h3 style={{ fontSize: 18, fontWeight: 700, color: textPrimary, margin: '0 0 8px' }}>
+                      <div style={{
+                        textAlign: 'center', padding: '80px 24px',
+                        background: bgSubtle, border: `1px dashed ${border}`,
+                      }}>
+                        <Icon name="activity" size={36} strokeWidth={1.2} style={{ opacity: 0.4 }} />
+                        <p style={{
+                          marginTop: 16, color: textSecondary, fontSize: 14,
+                          fontWeight: 500,
+                        }}>
                           עדיין אין פעילות
-                        </h3>
-                        <p style={{ color: textSecondary, fontSize: 14, lineHeight: 1.6, margin: 0, maxWidth: 380, marginInline: 'auto' }}>
-                          אחרי שתשתף את הקישור עם הלקוח ותחילו ההורדות, תראה כאן הכל — הורדות, מועדפים, ושיתופים.
+                        </p>
+                        <p style={{
+                          marginTop: 6, color: textMuted, fontSize: 11,
+                          fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
+                        }}>
+                          Share gallery · activity will appear here
                         </p>
                       </div>
                     ) : (
                       <>
-                        {/* Stat cards */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 28 }}>
-                          {[
-                            { label: 'הורדות', value: activitySummary.downloads_total, color: '#16a274', icon: '⬇️' },
-                            { label: 'מועדפים', value: activitySummary.favorites_total, color: '#fca5a5', icon: '♥' },
-                            { label: 'שיתופי מייל', value: activitySummary.emails_total, color: '#86efac', icon: '✉️' },
-                          ].map(s => (
+                        {/* Stat tiles — single bordered grid with vertical
+                            hairline dividers, mirrors the dashboard's stats row. */}
+                        <div style={{
+                          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                          gap: 0, marginBottom: 36,
+                          border: `1px solid ${border}`, background: bgSubtle,
+                        }}>
+                          {([
+                            { label: 'Downloads', value: activitySummary.downloads_total, icon: 'download' as IconName },
+                            { label: 'Favorites', value: activitySummary.favorites_total, icon: 'heart'    as IconName },
+                            { label: 'Emails',    value: activitySummary.emails_total,    icon: 'mail'     as IconName },
+                          ]).map((s, i) => (
                             <div key={s.label} style={{
-                              padding: '20px 22px', borderRadius: 16,
-                              background: card, border: `1px solid ${border}`,
+                              padding: '24px 24px',
+                              borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
                             }}>
-                              <div style={{ fontSize: 11, color: textMuted, marginBottom: 8, letterSpacing: '.04em', display: 'flex', gap: 6, alignItems: 'center' }}>
-                                <span>{s.icon}</span>
+                              <div style={{
+                                display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12,
+                                fontSize: 10, color: textMuted,
+                                fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
+                              }}>
+                                <Icon name={s.icon} size={12} strokeWidth={1.6} />
                                 <span>{s.label}</span>
                               </div>
-                              <div style={{ fontSize: 28, fontWeight: 800, color: s.color, letterSpacing: '-0.02em' }}>
+                              <div style={{
+                                fontSize: 28, fontWeight: 400,
+                                letterSpacing: '-0.025em', color: textPrimary, lineHeight: 1,
+                                fontFeatureSettings: '"tnum" 1, "lnum" 1',
+                              }}>
                                 {s.value.toLocaleString('he-IL')}
                               </div>
                             </div>
@@ -2152,35 +2187,44 @@ export function Dashboard() {
 
                         {/* Recent downloads */}
                         {activitySummary.recent_downloads.length > 0 && (
-                          <section style={{ marginBottom: 28 }}>
-                            <h4 style={{ fontSize: 13, fontWeight: 700, color: textPrimary, margin: '0 0 12px', letterSpacing: '.02em' }}>
-                              הורדות אחרונות
-                            </h4>
-                            <div style={{ background: card, border: `1px solid ${border}`, borderRadius: 12, overflow: 'hidden' }}>
+                          <section style={{ marginBottom: 32 }}>
+                            <div style={{
+                              fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                              color: textMuted, textTransform: 'uppercase',
+                              marginBottom: 12,
+                            }}>
+                              Recent Downloads
+                            </div>
+                            <div style={{ borderTop: `1px solid ${border}` }}>
                               {activitySummary.recent_downloads.slice(0, 10).map(d => {
                                 const img = galleryImages.find(g => g.id === d.image_id)
                                 return (
                                   <div key={d.id} style={{
                                     display: 'flex', alignItems: 'center', gap: 12,
-                                    padding: '10px 16px', borderBottom: `1px solid ${border}`,
-                                    fontSize: 12,
+                                    padding: '12px 4px', borderBottom: `1px solid ${border}`,
+                                    fontSize: 13, color: textPrimary,
                                   }}>
-                                    <span style={{ color: textMuted, minWidth: 100 }}>
-                                      {new Date(d.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                    <span style={{ flex: 1, color: textPrimary, direction: 'ltr', textAlign: 'right' }}>
+                                    <span style={{
+                                      flex: 1, direction: 'ltr', textAlign: 'right' as const,
+                                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                    }}>
                                       {img?.filename ?? '(תמונה נמחקה)'}
                                     </span>
                                     <span style={{
-                                      padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
-                                      background: d.resolution === 'original' ? 'rgba(34,197,94,.14)' : 'rgba(45,196,121,.14)',
-                                      color: d.resolution === 'original' ? '#4ade80' : '#16a274',
+                                      fontSize: 10, fontWeight: 500,
+                                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                                      color: textMuted,
                                     }}>
-                                      {d.resolution === 'original' ? 'מקור' : 'web'}
+                                      {d.resolution === 'original' ? 'Original' : 'Web'}
+                                      {d.download_kind === 'batch' ? ' · Batch' : ''}
                                     </span>
-                                    {d.download_kind === 'batch' && (
-                                      <span style={{ fontSize: 10, color: textMuted }}>📦</span>
-                                    )}
+                                    <span style={{
+                                      color: textMuted, fontSize: 12,
+                                      fontFeatureSettings: '"tnum" 1, "lnum" 1',
+                                      minWidth: 110, textAlign: 'left' as const,
+                                    }}>
+                                      {new Date(d.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </span>
                                   </div>
                                 )
                               })}
@@ -2190,31 +2234,48 @@ export function Dashboard() {
 
                         {/* Recent favorites */}
                         {activitySummary.recent_favorites.length > 0 && (
-                          <section style={{ marginBottom: 28 }}>
-                            <h4 style={{ fontSize: 13, fontWeight: 700, color: textPrimary, margin: '0 0 12px', letterSpacing: '.02em' }}>
-                              מועדפים אחרונים
-                            </h4>
-                            <div style={{ background: card, border: `1px solid ${border}`, borderRadius: 12, overflow: 'hidden' }}>
+                          <section style={{ marginBottom: 32 }}>
+                            <div style={{
+                              fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                              color: textMuted, textTransform: 'uppercase',
+                              marginBottom: 12,
+                            }}>
+                              Recent Favorites
+                            </div>
+                            <div style={{ borderTop: `1px solid ${border}` }}>
                               {activitySummary.recent_favorites.slice(0, 10).map(f => {
                                 const img = galleryImages.find(g => g.id === f.image_id)
                                 return (
                                   <div key={f.id} style={{
-                                    padding: '10px 16px', borderBottom: `1px solid ${border}`,
-                                    fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4,
+                                    padding: '12px 4px', borderBottom: `1px solid ${border}`,
+                                    fontSize: 13, color: textPrimary,
+                                    display: 'flex', flexDirection: 'column', gap: 4,
                                   }}>
-                                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                                      <span style={{ color: textMuted, minWidth: 100 }}>
-                                        {new Date(f.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                      </span>
-                                      <span style={{ flex: 1, color: textPrimary, direction: 'ltr', textAlign: 'right' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                      <span style={{
+                                        flex: 1, direction: 'ltr', textAlign: 'right' as const,
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                      }}>
                                         {img?.filename ?? '(תמונה נמחקה)'}
                                       </span>
                                       {f.guest_name && (
-                                        <span style={{ fontSize: 11, color: textSecondary }}>— {f.guest_name}</span>
+                                        <span style={{ fontSize: 12, color: textSecondary }}>
+                                          {f.guest_name}
+                                        </span>
                                       )}
+                                      <span style={{
+                                        color: textMuted, fontSize: 12,
+                                        fontFeatureSettings: '"tnum" 1, "lnum" 1',
+                                        minWidth: 110, textAlign: 'left' as const,
+                                      }}>
+                                        {new Date(f.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      </span>
                                     </div>
                                     {f.note && (
-                                      <div style={{ fontSize: 11, color: textSecondary, fontStyle: 'italic', paddingRight: 112 }}>
+                                      <div style={{
+                                        fontSize: 12, color: textSecondary,
+                                        fontStyle: 'italic', lineHeight: 1.5,
+                                      }}>
                                         "{f.note}"
                                       </div>
                                     )}
@@ -2228,28 +2289,39 @@ export function Dashboard() {
                         {/* Recent email shares */}
                         {activitySummary.recent_emails.length > 0 && (
                           <section style={{ marginBottom: 12 }}>
-                            <h4 style={{ fontSize: 13, fontWeight: 700, color: textPrimary, margin: '0 0 12px', letterSpacing: '.02em' }}>
-                              שיתופי מייל אחרונים
-                            </h4>
-                            <div style={{ background: card, border: `1px solid ${border}`, borderRadius: 12, overflow: 'hidden' }}>
+                            <div style={{
+                              fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                              color: textMuted, textTransform: 'uppercase',
+                              marginBottom: 12,
+                            }}>
+                              Recent Emails
+                            </div>
+                            <div style={{ borderTop: `1px solid ${border}` }}>
                               {activitySummary.recent_emails.slice(0, 10).map(e => (
                                 <div key={e.id} style={{
                                   display: 'flex', alignItems: 'center', gap: 12,
-                                  padding: '10px 16px', borderBottom: `1px solid ${border}`,
-                                  fontSize: 12,
+                                  padding: '12px 4px', borderBottom: `1px solid ${border}`,
+                                  fontSize: 13, color: textPrimary,
                                 }}>
-                                  <span style={{ color: textMuted, minWidth: 100 }}>
-                                    {new Date(e.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                  <span style={{ flex: 1, color: textPrimary, direction: 'ltr', textAlign: 'right' }}>
+                                  <span style={{
+                                    flex: 1, direction: 'ltr', textAlign: 'right' as const,
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  }}>
                                     {e.recipient_email}
                                   </span>
                                   <span style={{
-                                    padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
-                                    background: e.status === 'sent' ? 'rgba(34,197,94,.14)' : 'rgba(239,68,68,.14)',
-                                    color: e.status === 'sent' ? '#4ade80' : '#fca5a5',
+                                    fontSize: 10, fontWeight: 500,
+                                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                                    color: e.status === 'sent' ? statusLive : textMuted,
                                   }}>
-                                    {e.status === 'sent' ? 'נשלח' : 'נכשל'}
+                                    {e.status === 'sent' ? 'Sent' : 'Failed'}
+                                  </span>
+                                  <span style={{
+                                    color: textMuted, fontSize: 12,
+                                    fontFeatureSettings: '"tnum" 1, "lnum" 1',
+                                    minWidth: 110, textAlign: 'left' as const,
+                                  }}>
+                                    {new Date(e.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                   </span>
                                 </div>
                               ))}
