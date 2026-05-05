@@ -95,7 +95,10 @@ export function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
-  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome'>('photos')
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'stories' | 'welcome'>('photos')
+  const [stories, setStories] = useState<Array<{ id: string; storage_path: string; style: string; created_at: string }>>([])
+  const [storyUploading, setStoryUploading] = useState(false)
+  const storyFileInputRef = useRef<HTMLInputElement>(null)
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number }>>([])
   const [newSectionName, setNewSectionName] = useState('')
   const [activitySummary, setActivitySummary] = useState<{
@@ -289,6 +292,7 @@ export function Dashboard() {
     ])
     setGalleryImages(imagesRes.data ?? [])
     setSections(sectionsRes.data ?? [])
+    fetchStories(g.id)
   }
 
   async function addSection() {
@@ -313,6 +317,49 @@ export function Dashboard() {
     const { error } = await supabase.from('gallery_sections').update({ name: trimmed }).eq('id', id)
     if (error) { alert('שגיאה: ' + error.message); return }
     setSections(prev => prev.map(s => s.id === id ? { ...s, name: trimmed } : s))
+  }
+
+  async function fetchStories(galleryId: string) {
+    const { data } = await supabase
+      .from('stories')
+      .select('id, storage_path, style, created_at')
+      .eq('gallery_id', galleryId)
+      .order('created_at', { ascending: false })
+    setStories(data ?? [])
+  }
+
+  async function handleStoryUpload(files: FileList | null) {
+    if (!files || !editingGallery || !businessSlug) return
+    setStoryUploading(true)
+    try {
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith('video/')) continue
+        const ext = file.name.split('.').pop() || 'mp4'
+        const path = `${businessSlug}/${editingGallery.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const { error: upErr } = await supabase.storage
+          .from('gallery-stories')
+          .upload(path, file, { contentType: file.type, upsert: true })
+        if (upErr) {
+          alert('שגיאה בהעלאה: ' + upErr.message)
+          continue
+        }
+        await supabase.from('stories').insert({
+          gallery_id: editingGallery.id,
+          storage_path: path,
+          style: 'video',
+        })
+      }
+      await fetchStories(editingGallery.id)
+    } finally {
+      setStoryUploading(false)
+    }
+  }
+
+  async function deleteStory(id: string) {
+    if (!confirm('למחוק את הסטורי?')) return
+    const { error } = await supabase.from('stories').delete().eq('id', id)
+    if (error) { alert('שגיאה: ' + error.message); return }
+    setStories(prev => prev.filter(s => s.id !== id))
   }
 
   async function deleteSection(id: string) {
@@ -1182,6 +1229,7 @@ export function Dashboard() {
                 {([
                   { id: 'photos' as const, label: '📷 תמונות', },
                   { id: 'sections' as const, label: '📂 קטעים', },
+                  { id: 'stories' as const, label: '📹 סטוריז', },
                   { id: 'activities' as const, label: '📊 פעילות', },
                   { id: 'settings' as const, label: '⚙️ הגדרות', },
                   { id: 'welcome' as const, label: '🎬 מסך וואלקם', },
@@ -1450,6 +1498,71 @@ export function Dashboard() {
                             >
                               🗑 מחק
                             </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Stories Tab ── */}
+                {editTab === 'stories' && (
+                  <div style={{ padding: '0 4px' }}>
+                    <p style={{ fontSize: 13, color: textSecondary, marginBottom: 22, lineHeight: 1.6 }}>
+                      העלאת סרטונים קצרים שמופיעים כסטוריז אנכיים בראש הגלריה. מעולה לטיזרים מהאירוע.
+                    </p>
+
+                    {/* Upload */}
+                    <input ref={storyFileInputRef} type="file" multiple accept="video/*" style={{ display: 'none' }}
+                      onChange={e => handleStoryUpload(e.target.files)} />
+                    <div
+                      onClick={() => !storyUploading && storyFileInputRef.current?.click()}
+                      style={{
+                        marginBottom: 22, padding: '28px 20px', borderRadius: 16,
+                        background: card, border: `1.5px dashed ${border}`,
+                        textAlign: 'center', cursor: storyUploading ? 'wait' : 'pointer',
+                        transition: 'all .15s',
+                      }}
+                    >
+                      {storyUploading ? (
+                        <div style={{ color: accentLight, fontSize: 14, fontWeight: 600 }}>מעלה סטוריז...</div>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: 36, marginBottom: 10, opacity: 0.55 }}>📹</div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: textPrimary, marginBottom: 4 }}>גררו סרטונים לכאן</div>
+                          <div style={{ fontSize: 12, color: textMuted }}>או לחצו לבחירה · MP4, MOV, WebM</div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Stories list */}
+                    {stories.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '40px 20px', color: textMuted, fontSize: 13 }}>
+                        עדיין אין סטוריז בגלריה.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+                        {stories.map(s => (
+                          <div key={s.id} style={{
+                            position: 'relative', aspectRatio: '9 / 16', borderRadius: 12,
+                            overflow: 'hidden', background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                          }}>
+                            <video
+                              src={`https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/gallery-stories/${s.storage_path}`}
+                              muted playsInline preload="metadata"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            />
+                            <button
+                              onClick={() => deleteStory(s.id)}
+                              title="מחק"
+                              style={{
+                                position: 'absolute', top: 6, left: 6,
+                                width: 28, height: 28, borderRadius: '50%',
+                                background: 'rgba(0,0,0,.65)', border: '1px solid rgba(239,68,68,.4)',
+                                color: '#fca5a5', cursor: 'pointer', fontSize: 14, lineHeight: 1,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}
+                            >🗑</button>
                           </div>
                         ))}
                       </div>
