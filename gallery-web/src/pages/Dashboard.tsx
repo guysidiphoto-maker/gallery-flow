@@ -162,6 +162,11 @@ export function Dashboard() {
   const [imageMenuOpenId, setImageMenuOpenId] = useState<string | null>(null)
   const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
   const [photoSort, setPhotoSort] = useState<'order' | 'name' | 'newest'>('order')
+  // Design tab — Pixieset's pattern: 5 horizontal sub-tabs at the top of
+  // the right pane. Cover holds the welcome screen + cover image picker;
+  // Typography/Color/Grid/Nav write to delivery_settings JSONB so they
+  // ship without a schema migration.
+  const [designSubTab, setDesignSubTab] = useState<'cover' | 'type' | 'color' | 'grid' | 'nav'>('cover')
   const [uploading, setUploading] = useState(false)
   const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -2608,86 +2613,348 @@ export function Dashboard() {
                   )
                 })()}
 
-                {/* ── Welcome Screen Tab ── */}
-                {editTab === 'welcome' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                    <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: textPrimary }}>מסך וואלקם</h3>
-                    <p style={{ fontSize: 13, color: textMuted, margin: 0 }}>בחרו את הסגנון שיראו האורחים כשנכנסים לגלריה</p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+                {/* ── Design Tab — Pixieset 5-pane sub-nav ── */}
+                {editTab === 'welcome' && (() => {
+                  const ds = (editingGallery.delivery_settings ?? {}) as Record<string, unknown>
+                  const inputBase = {
+                    width: '100%', padding: '12px 14px', borderRadius: 2,
+                    border: `1px solid ${border}`,
+                    background: '#fff', color: textPrimary, fontSize: 14,
+                    fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const,
+                    transition: 'border-color .15s', direction: 'rtl' as const,
+                  }
+                  const labelStyle = {
+                    fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                    color: textMuted, textTransform: 'uppercase' as const,
+                    display: 'block' as const, marginBottom: 8,
+                  }
+                  // PickerTile factory used by every sub-tab. Selected state =
+                  // cream-on-white surface with a 1px charcoal border, matching
+                  // the pattern used in Settings + New Gallery.
+                  const tileStyle = (selected: boolean) => ({
+                    background: selected ? '#fff' : 'transparent',
+                    border: `1px solid ${selected ? textPrimary : border}`,
+                    borderRadius: 2, padding: '16px 12px', cursor: 'pointer',
+                    fontFamily: 'inherit', textAlign: 'right' as const,
+                    transition: 'border-color .15s, background .15s',
+                    display: 'flex' as const, flexDirection: 'column' as const,
+                    alignItems: 'center' as const, gap: 8,
+                  })
+                  return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                    {/* Page eyebrow + title */}
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{
+                        fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+                        color: textMuted, textTransform: 'uppercase', marginBottom: 10,
+                      }}>Design</div>
+                      <h3 style={{
+                        fontSize: 22, fontWeight: 500, margin: 0,
+                        letterSpacing: '-0.015em', color: textPrimary,
+                      }}>עיצוב הגלריה</h3>
+                    </div>
+
+                    {/* Sub-tab bar — horizontal, hairline-bottom, active gets
+                        2px charcoal underline. Mirrors Pixieset's Design page. */}
+                    <div style={{
+                      display: 'flex', gap: 0, borderBottom: `1px solid ${border}`,
+                      marginBottom: 28, overflowX: 'auto',
+                    }}>
                       {([
-                        { id: 'mosaic' as const, label: 'מוזאיקה', desc: 'תמונות גוללות ברקע', emoji: '🖼' },
-                        { id: 'cinematic' as const, label: 'קולנועי', desc: 'תמונת רקע עם אפקט זום', emoji: '🎬' },
-                        { id: 'minimal' as const, label: 'מינימלי', desc: 'רקע שחור, טיפוגרפיה בלבד', emoji: '✨' },
-                      ]).map(s => {
-                        const active = (editingGallery.delivery_settings?.welcomeStyle || 'mosaic') === s.id
+                        { id: 'cover' as const, label: 'Cover' },
+                        { id: 'type'  as const, label: 'Typography' },
+                        { id: 'color' as const, label: 'Color' },
+                        { id: 'grid'  as const, label: 'Grid' },
+                        { id: 'nav'   as const, label: 'Navigation' },
+                      ]).map(t => {
+                        const active = designSubTab === t.id
                         return (
-                          <button key={s.id} onClick={() => updateGallerySetting('welcomeStyle', s.id)} style={{
-                            padding: '24px 16px', borderRadius: 16, border: `2px solid ${active ? accent : 'rgba(0,0,0,.04)'}`,
-                            background: active ? `rgba(45,196,121,.08)` : glass, cursor: 'pointer',
-                            textAlign: 'center', fontFamily: 'inherit', transition: 'all .2s',
-                            boxShadow: active ? `0 0 20px ${accentGlow}` : 'none',
-                          }}>
-                            <div style={{ fontSize: 32, marginBottom: 8 }}>{s.emoji}</div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: active ? accentLight : textPrimary, marginBottom: 4 }}>{s.label}</div>
-                            <div style={{ fontSize: 11, color: textMuted }}>{s.desc}</div>
+                          <button key={t.id} onClick={() => setDesignSubTab(t.id)}
+                            style={{
+                              padding: '14px 22px',
+                              background: 'transparent', border: 'none', cursor: 'pointer',
+                              fontFamily: 'inherit',
+                              fontSize: 11, fontWeight: 500,
+                              letterSpacing: '0.22em', textTransform: 'uppercase',
+                              color: active ? textPrimary : textMuted,
+                              borderBottom: active ? `2px solid ${textPrimary}` : '2px solid transparent',
+                              marginBottom: -1,
+                              transition: 'color .15s, border-color .15s',
+                              flexShrink: 0,
+                            }}>
+                            {t.label}
                           </button>
                         )
                       })}
                     </div>
 
-                    {/* Cover image for cinematic */}
-                    {(editingGallery.delivery_settings?.welcomeStyle || 'mosaic') === 'cinematic' && galleryImages.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>בחרו תמונת רקע</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 6 }}>
-                          {galleryImages.slice(0, 20).map(img => {
-                            const isCover = editingGallery.delivery_settings?.coverImageUrl === imgUrl(img.storage_path)
-                            return (
-                              <div key={img.id}
-                                onClick={() => updateGallerySetting('coverImageUrl', imgUrl(img.storage_path))}
-                                style={{
-                                  aspectRatio: '4/3', borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
-                                  border: `2px solid ${isCover ? accent : 'transparent'}`,
-                                  opacity: isCover ? 1 : 0.6, transition: 'all .15s',
-                                }}>
-                                <img src={imgUrl(img.thumbnail_path || img.storage_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    {/* ── Cover — welcome style + cover image + title + client name ── */}
+                    {designSubTab === 'cover' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+                        <div>
+                          <div style={{ ...labelStyle }}>סגנון מסך פתיחה</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                            {([
+                              { id: 'mosaic' as const,    label: 'מוזאיקה', desc: 'תמונות גוללות ברקע',           icon: 'sections' as IconName },
+                              { id: 'cinematic' as const, label: 'קולנועי', desc: 'תמונת רקע עם אפקט זום',     icon: 'photo'    as IconName },
+                              { id: 'minimal' as const,   label: 'מינימלי', desc: 'רקע נקי, טיפוגרפיה בלבד',   icon: 'gallery'  as IconName },
+                            ]).map(s => {
+                              const selected = ((ds.welcomeStyle as string) || 'mosaic') === s.id
+                              return (
+                                <button key={s.id} onClick={() => updateGallerySetting('welcomeStyle', s.id)} style={tileStyle(selected)}>
+                                  <Icon name={s.icon} size={22} strokeWidth={selected ? 1.85 : 1.4} />
+                                  <div style={{ fontSize: 13, fontWeight: selected ? 600 : 500, color: textPrimary }}>{s.label}</div>
+                                  <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4, textAlign: 'center' }}>{s.desc}</div>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Cover image picker — always visible (any welcome
+                            style can use a cover, not just cinematic). */}
+                        {galleryImages.length > 0 && (
+                          <div>
+                            <div style={{
+                              ...labelStyle, marginBottom: 12,
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            }}>
+                              <span>תמונת שער</span>
+                              {ds.coverImageUrl && (
+                                <button onClick={() => updateGallerySetting('coverImageUrl', null)} style={{
+                                  background: 'transparent', border: 'none', cursor: 'pointer',
+                                  color: textMuted, fontFamily: 'inherit',
+                                  fontSize: 9, fontWeight: 500, letterSpacing: '0.18em',
+                                  textTransform: 'uppercase', padding: 0,
+                                }}>נקה</button>
+                              )}
+                            </div>
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+                              gap: 4,
+                            }}>
+                              {galleryImages.slice(0, 24).map(img => {
+                                const url = imgUrl(img.storage_path)
+                                const isCover = ds.coverImageUrl === url
+                                return (
+                                  <button key={img.id}
+                                    onClick={() => updateGallerySetting('coverImageUrl', url)}
+                                    aria-label={isCover ? 'תמונת שער נוכחית' : 'הגדר כתמונת שער'}
+                                    style={{
+                                      padding: 0, border: 'none', background: 'transparent',
+                                      aspectRatio: '4 / 3', overflow: 'hidden',
+                                      cursor: 'pointer',
+                                      outline: isCover ? `2px solid ${textPrimary}` : 'none',
+                                      outlineOffset: isCover ? -2 : 0,
+                                      opacity: isCover ? 1 : 0.92,
+                                      transition: 'outline-offset .15s, opacity .15s',
+                                    }}>
+                                    <img src={imgUrl(img.thumbnail_path || img.storage_path)}
+                                      alt="" loading="lazy"
+                                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        <label style={{ display: 'block' }}>
+                          <span style={{ ...labelStyle }}>כותרת הגלריה</span>
+                          <input
+                            type="text"
+                            value={(ds.galleryTitle as string) || editingGallery.name}
+                            onChange={e => updateGallerySetting('galleryTitle', e.target.value)}
+                            style={inputBase}
+                            onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
+                            onBlur={e => { e.currentTarget.style.borderColor = border }}
+                          />
+                        </label>
+                        <label style={{ display: 'block' }}>
+                          <span style={{ ...labelStyle }}>שם לקוח / אירוע</span>
+                          <input
+                            type="text"
+                            value={(ds.clientName as string) || ''}
+                            onChange={e => updateGallerySetting('clientName', e.target.value)}
+                            placeholder="לדוגמה: יוסי ומיכל"
+                            style={inputBase}
+                            onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
+                            onBlur={e => { e.currentTarget.style.borderColor = border }}
+                          />
+                        </label>
+                      </div>
+                    )}
+
+                    {/* ── Typography — heading + body font ── */}
+                    {designSubTab === 'type' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+                        {([
+                          { key: 'headingFont', label: 'פונט כותרות', defaultV: 'Inter Tight' },
+                          { key: 'bodyFont',    label: 'פונט גוף',    defaultV: 'Noto Sans Hebrew' },
+                        ] as const).map(f => {
+                          const fonts = [
+                            'Inter Tight',
+                            'Noto Sans Hebrew',
+                            'Heebo',
+                            'Noto Serif',
+                            'Cormorant Garamond',
+                            'Playfair Display',
+                          ]
+                          const current = (ds[f.key] as string) || f.defaultV
+                          return (
+                            <div key={f.key}>
+                              <div style={{ ...labelStyle }}>{f.label}</div>
+                              <select
+                                value={current}
+                                onChange={e => updateGallerySetting(f.key, e.target.value)}
+                                style={{ ...inputBase, cursor: 'pointer' }}
+                                onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
+                                onBlur={e => { e.currentTarget.style.borderColor = border }}
+                              >
+                                {fonts.map(name => (
+                                  <option key={name} value={name}>{name}</option>
+                                ))}
+                              </select>
+                              {/* Preview line */}
+                              <div style={{
+                                marginTop: 12, padding: '20px 18px',
+                                background: bgSubtle, border: `1px solid ${border}`,
+                                fontFamily: `'${current}', sans-serif`,
+                                fontSize: f.key === 'headingFont' ? 24 : 14,
+                                fontWeight: f.key === 'headingFont' ? 500 : 400,
+                                color: textPrimary,
+                                letterSpacing: f.key === 'headingFont' ? '-0.015em' : '0',
+                                lineHeight: f.key === 'headingFont' ? 1.15 : 1.5,
+                              }}>
+                                {f.key === 'headingFont' ? 'הגלריה של יוסי ומיכל' : 'תיאור קצר של האירוע מופיע כאן בגוף הטקסט.'}
                               </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* ── Color — palette picker ── */}
+                    {designSubTab === 'color' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                        <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.5 }}>
+                          הצבע הראשי משפיע על כפתורים, מסגרות ולוגו בגלריה הציבורית.
+                        </div>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          {([
+                            { id: 'charcoal', label: 'פחם',     color: '#141413' },
+                            { id: 'sage',     label: 'מרווה',   color: '#7B8F6E' },
+                            { id: 'rose',     label: 'ורוד',     color: '#C18A8A' },
+                            { id: 'amber',    label: 'ענברי',   color: '#A67C52' },
+                            { id: 'teal',     label: 'טורקיז',  color: '#5E8A8A' },
+                            { id: 'slate',    label: 'אפור',    color: '#64748b' },
+                          ] as const).map(c => {
+                            const active = ((ds.themeColor as string) || 'charcoal') === c.id
+                            return (
+                              <button key={c.id} onClick={() => updateGallerySetting('themeColor', c.id)}
+                                style={{
+                                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                                  padding: '10px 14px',
+                                  border: `1px solid ${active ? textPrimary : border}`,
+                                  background: active ? '#fff' : 'transparent',
+                                  borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
+                                  transition: 'border-color .15s, background .15s',
+                                }}>
+                                <div style={{
+                                  width: 32, height: 32, borderRadius: '50%',
+                                  background: c.color,
+                                }} />
+                                <span style={{
+                                  fontSize: 10, fontWeight: 500, color: textPrimary,
+                                  letterSpacing: '0.04em',
+                                }}>{c.label}</span>
+                              </button>
                             )
                           })}
                         </div>
                       </div>
                     )}
 
-                    {/* Gallery title */}
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: textSecondary, display: 'block', marginBottom: 6 }}>כותרת גלריה</label>
-                      <input
-                        value={(editingGallery.delivery_settings?.galleryTitle as string) || editingGallery.name}
-                        onChange={e => updateGallerySetting('galleryTitle', e.target.value)}
-                        style={{
-                          width: '100%', padding: '10px 14px', borderRadius: 10,
-                          background: glass, border: `1px solid rgba(0,0,0,.05)`,
-                          color: '#fff', fontSize: 14, fontFamily: 'inherit', outline: 'none',
-                          direction: 'rtl',
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: textSecondary, display: 'block', marginBottom: 6 }}>שם לקוח</label>
-                      <input
-                        value={(editingGallery.delivery_settings?.clientName as string) || ''}
-                        onChange={e => updateGallerySetting('clientName', e.target.value)}
-                        placeholder="שם הלקוח או שם האירוע"
-                        style={{
-                          width: '100%', padding: '10px 14px', borderRadius: 10,
-                          background: glass, border: `1px solid rgba(0,0,0,.05)`,
-                          color: '#fff', fontSize: 14, fontFamily: 'inherit', outline: 'none',
-                          direction: 'rtl',
-                        }}
-                      />
-                    </div>
+                    {/* ── Grid — direction + thumb size + spacing ── */}
+                    {designSubTab === 'grid' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+                        {([
+                          {
+                            key: 'gridDirection', defaultV: 'vertical',
+                            eyebrow: 'כיוון תמונות',
+                            opts: [
+                              { id: 'vertical',   label: 'אנכי' },
+                              { id: 'horizontal', label: 'אופקי' },
+                            ],
+                          },
+                          {
+                            key: 'thumbnailSize', defaultV: 'regular',
+                            eyebrow: 'גודל תמונה ממוזערת',
+                            opts: [
+                              { id: 'regular', label: 'רגיל' },
+                              { id: 'large',   label: 'גדול' },
+                            ],
+                          },
+                          {
+                            key: 'gridSpacing', defaultV: 'regular',
+                            eyebrow: 'מרווח גריד',
+                            opts: [
+                              { id: 'regular', label: 'רגיל' },
+                              { id: 'large',   label: 'מורווח' },
+                            ],
+                          },
+                        ] as const).map(g => (
+                          <div key={g.key}>
+                            <div style={{ ...labelStyle }}>{g.eyebrow}</div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              {g.opts.map(o => {
+                                const active = ((ds[g.key] as string) || g.defaultV) === o.id
+                                return (
+                                  <button key={o.id} onClick={() => updateGallerySetting(g.key, o.id)}
+                                    style={{
+                                      flex: 1, padding: '14px 16px',
+                                      border: `1px solid ${active ? textPrimary : border}`,
+                                      background: active ? '#fff' : 'transparent',
+                                      borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
+                                      fontSize: 13, fontWeight: active ? 600 : 500, color: textPrimary,
+                                      transition: 'border-color .15s, background .15s',
+                                    }}>{o.label}</button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ── Navigation — top vs side ── */}
+                    {designSubTab === 'nav' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+                        <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.5 }}>
+                          איך הניווט מופיע בגלריה הציבורית.
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                          {([
+                            { id: 'top',  label: 'ניווט עליון', desc: 'שורה אופקית בראש הגלריה' },
+                            { id: 'side', label: 'ניווט צדדי', desc: 'סרגל קבוע בצד המסך' },
+                          ] as const).map(n => {
+                            const active = ((ds.navStyle as string) || 'top') === n.id
+                            return (
+                              <button key={n.id} onClick={() => updateGallerySetting('navStyle', n.id)}
+                                style={tileStyle(active)}>
+                                <Icon name={n.id === 'top' ? 'menu' : 'sections'} size={22} strokeWidth={active ? 1.85 : 1.4} />
+                                <div style={{ fontSize: 13, fontWeight: active ? 600 : 500, color: textPrimary }}>{n.label}</div>
+                                <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4, textAlign: 'center' }}>{n.desc}</div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
+                  )
+                })()}
                 </div>
               </div>
             </div>
