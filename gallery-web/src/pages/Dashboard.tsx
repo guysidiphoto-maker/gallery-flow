@@ -154,9 +154,13 @@ export function Dashboard() {
     if (targets.length === 0) return
     void (async () => {
       const results = await Promise.all(targets.map(async g => {
+        // The images table only has thumbnail_path + web_preview_path. The
+        // dashboard's gallery editor reads `storage_path:web_preview_path`
+        // as an alias; if we ask for the unaliased column the query 400s
+        // with "column images.storage_path does not exist".
         const { data: img, error } = await supabase
           .from('images')
-          .select('thumbnail_path, storage_path, web_preview_path')
+          .select('thumbnail_path, web_preview_path')
           .eq('gallery_id', g.id)
           .order('sort_order', { ascending: true })
           .limit(1)
@@ -166,7 +170,7 @@ export function Dashboard() {
           return null
         }
         if (!img) return null
-        const path = img.thumbnail_path || img.storage_path || img.web_preview_path
+        const path = img.thumbnail_path || img.web_preview_path
         if (!path) return null
         return { id: g.id, url: `https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/gallery-images/${path}` }
       }))
