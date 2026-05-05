@@ -2910,14 +2910,14 @@ export function Dashboard() {
                   color: textSecondary, fontSize: 14, lineHeight: 1.65, margin: '0 0 24px',
                 }}>
                   <strong style={{ color: textPrimary, fontWeight: 600 }}>עלות:</strong>{' '}
-                  זיהוי פנים צורך טוקן נוסף לכל תמונה (סה"כ <strong style={{ color: textPrimary }}>2 טוקנים</strong> לתמונה במקום 1). יתרת הטוקנים שלך כרגע: <strong style={{ color: textPrimary }}>{tokenBalance.toLocaleString('he-IL')}</strong>.
+                  ללא תוספת טוקנים — נשאר <strong style={{ color: textPrimary }}>1 טוקן לתמונה</strong>. יתרת הטוקנים שלך כרגע: <strong style={{ color: textPrimary }}>{tokenBalance.toLocaleString('he-IL')}</strong>.
                 </p>
                 <div style={{
                   padding: '12px 14px', background: bgSubtle,
                   border: `1px solid ${border}`, marginBottom: 24,
                   fontSize: 12, color: textSecondary, lineHeight: 1.55,
                 }}>
-                  אפשר להפעיל ולהשבית בכל רגע — מתחייבים רק על תמונות שמועלות אחרי ההפעלה.
+                  ההעלאה תהיה איטית מעט יותר כי כל תמונה עוברת אינדוקס. אפשר להפעיל ולהשבית בכל רגע.
                 </div>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                   <button
