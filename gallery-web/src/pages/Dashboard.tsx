@@ -23,6 +23,7 @@ interface GalleryImage {
   thumbnail_path: string | null
   is_top_pick: boolean
   sort_order: number
+  section_id?: string | null
 }
 
 // Editorial-minimal theme. Pic-Time-inspired "quiet magazine" aesthetic:
@@ -136,6 +137,13 @@ export function Dashboard() {
   const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome'>('photos')
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number }>>([])
   const [newSectionName, setNewSectionName] = useState('')
+  const [newSectionDesc, setNewSectionDesc] = useState('')
+  // Sidebar Set behavior: active filter (null = "All photos"), inline-rename
+  // target, and the "+ Add Set" modal toggle. Mirrors Pixieset's pattern.
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
+  const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null)
+  const [sectionMenuOpenId, setSectionMenuOpenId] = useState<string | null>(null)
+  const [showAddSetModal, setShowAddSetModal] = useState(false)
   const [activitySummary, setActivitySummary] = useState<{
     downloads_total: number
     favorites_total: number
@@ -361,7 +369,7 @@ export function Dashboard() {
     const [imagesRes, sectionsRes] = await Promise.all([
       supabase
         .from('images')
-        .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order')
+        .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order, section_id')
         .eq('gallery_id', g.id)
         .order('sort_order', { ascending: true }),
       supabase
@@ -388,6 +396,9 @@ export function Dashboard() {
     if (error) { alert('שגיאה: ' + error.message); return }
     if (data) setSections(prev => [...prev, data])
     setNewSectionName('')
+    setNewSectionDesc('')
+    setShowAddSetModal(false)
+    if (data) setActiveSectionId(data.id)
   }
 
   async function renameSection(id: string, name: string) {
@@ -1411,40 +1422,141 @@ export function Dashboard() {
                     })}
                   </div>
 
-                  {/* Sections eyebrow + list (only meaningful in photos tab,
-                      but always visible so the layout is stable) */}
+                  {/* Sets eyebrow + list — Pixieset pattern. Shows only for
+                      the Photos tab; the other tabs hide it to keep the
+                      sidebar focused on their content. */}
+                  {editTab === 'photos' && (
                   <div style={{ padding: '20px 18px 12px' }}>
                     <div style={{
                       fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
                       color: textMuted, textTransform: 'uppercase',
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      marginBottom: 10,
+                      marginBottom: 10, paddingInline: 4,
                     }}>
                       <span>Photos</span>
+                      <button onClick={() => setShowAddSetModal(true)} style={{
+                        background: 'transparent', border: 'none', cursor: 'pointer',
+                        color: textPrimary, padding: 0, display: 'inline-flex',
+                        alignItems: 'center', gap: 4, fontFamily: 'inherit',
+                        fontSize: 9, fontWeight: 500, letterSpacing: '0.18em',
+                        textTransform: 'uppercase',
+                      }}>
+                        <Icon name="plus" size={11} strokeWidth={2} />
+                        <span>Add Set</span>
+                      </button>
                     </div>
-                    <button onClick={() => setEditTab('sections')} style={{
+
+                    {/* "All photos" — pseudo-section that ignores section_id. */}
+                    <button onClick={() => setActiveSectionId(null)} style={{
                       width: '100%', textAlign: 'right' as const,
                       padding: '10px 12px', borderRadius: 2,
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                      fontFamily: 'inherit', fontSize: 13, fontWeight: 500,
+                      background: activeSectionId === null ? bgSubtle : 'transparent',
+                      border: 'none', cursor: 'pointer',
+                      fontFamily: 'inherit', fontSize: 13,
+                      fontWeight: activeSectionId === null ? 600 : 500,
                       color: textPrimary,
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      transition: 'background .15s',
                     }}>
                       <span>כל התמונות</span>
                       <span style={{ color: textMuted, fontSize: 12, fontWeight: 400 }}>
                         {galleryImages.length}
                       </span>
                     </button>
-                    {sections.map(s => (
-                      <div key={s.id} style={{
-                        padding: '10px 12px', borderRadius: 2,
-                        fontSize: 13, color: textSecondary,
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      }}>
-                        <span>{s.name}</span>
-                      </div>
-                    ))}
+
+                    {/* Sets — drag handle, name (or rename input), count, "..." menu */}
+                    {sections.map(s => {
+                      const isActive = activeSectionId === s.id
+                      const count = (galleryImages as GalleryImage[]).filter(im => im.section_id === s.id).length
+                      const isRenaming = renamingSectionId === s.id
+                      const isMenuOpen = sectionMenuOpenId === s.id
+                      return (
+                        <div key={s.id} style={{
+                          position: 'relative',
+                          background: isActive ? bgSubtle : 'transparent',
+                          transition: 'background .15s',
+                        }}>
+                          <button onClick={() => { setActiveSectionId(s.id); setSectionMenuOpenId(null) }} style={{
+                            width: '100%', textAlign: 'right' as const,
+                            padding: '10px 12px', borderRadius: 2,
+                            background: 'transparent', border: 'none', cursor: 'pointer',
+                            fontFamily: 'inherit', fontSize: 13,
+                            fontWeight: isActive ? 600 : 500,
+                            color: textPrimary,
+                            display: 'flex', alignItems: 'center', gap: 8,
+                          }}>
+                            <span style={{
+                              opacity: 0.4, color: textMuted,
+                              cursor: 'grab', display: 'inline-flex',
+                              fontSize: 12, lineHeight: 1,
+                            }} aria-label="Drag to reorder">≡</span>
+                            {isRenaming ? (
+                              <input
+                                autoFocus
+                                defaultValue={s.name}
+                                onBlur={(e) => {
+                                  const v = e.target.value.trim()
+                                  if (v && v !== s.name) renameSection(s.id, v)
+                                  setRenamingSectionId(null)
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                                  if (e.key === 'Escape') setRenamingSectionId(null)
+                                }}
+                                style={{
+                                  flex: 1, minWidth: 0,
+                                  border: 'none', background: 'transparent',
+                                  fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+                                  color: textPrimary, outline: 'none', padding: 0,
+                                }}
+                              />
+                            ) : (
+                              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {s.name}
+                              </span>
+                            )}
+                            <span style={{ color: textMuted, fontSize: 12, fontWeight: 400 }}>
+                              {count}
+                            </span>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => { e.stopPropagation(); setSectionMenuOpenId(isMenuOpen ? null : s.id) }}
+                              style={{
+                                color: textMuted, padding: 4, cursor: 'pointer',
+                                display: 'inline-flex', borderRadius: 2,
+                              }}
+                              aria-label="עוד"
+                            >
+                              <Icon name="menu" size={14} strokeWidth={1.85} />
+                            </span>
+                          </button>
+                          {isMenuOpen && (
+                            <div style={{
+                              position: 'absolute', top: '100%', insetInlineStart: 8,
+                              background: cardSolid, border: `1px solid ${border}`,
+                              boxShadow: '0 8px 24px rgba(0,0,0,.08)', zIndex: 5,
+                              minWidth: 140, padding: 4,
+                            }}>
+                              <button onClick={() => { setRenamingSectionId(s.id); setSectionMenuOpenId(null) }} style={{
+                                width: '100%', textAlign: 'right' as const,
+                                padding: '8px 10px', borderRadius: 2,
+                                background: 'transparent', border: 'none', cursor: 'pointer',
+                                fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                              }}>שינוי שם</button>
+                              <button onClick={() => { deleteSection(s.id); setSectionMenuOpenId(null) }} style={{
+                                width: '100%', textAlign: 'right' as const,
+                                padding: '8px 10px', borderRadius: 2,
+                                background: 'transparent', border: 'none', cursor: 'pointer',
+                                fontFamily: 'inherit', fontSize: 12, color: '#dc2626',
+                              }}>מחיקה</button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
+                  )}
                 </aside>
 
                 {/* ── Main content pane ──────────────────────────── */}
@@ -1464,18 +1576,26 @@ export function Dashboard() {
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       marginBottom: 24,
                     }}>
-                      <h3 style={{
-                        fontSize: 22, fontWeight: 500, margin: 0,
-                        letterSpacing: '-0.015em', color: textPrimary,
-                      }}>
-                        כל התמונות
-                        <span style={{
-                          marginInlineStart: 12, color: textMuted,
-                          fontSize: 14, fontWeight: 400,
-                        }}>
-                          {galleryImages.length}
-                        </span>
-                      </h3>
+                      {(() => {
+                        const activeSec = activeSectionId ? sections.find(s => s.id === activeSectionId) : null
+                        const visibleImages = activeSectionId
+                          ? (galleryImages as GalleryImage[]).filter(im => im.section_id === activeSectionId)
+                          : galleryImages
+                        return (
+                          <h3 style={{
+                            fontSize: 22, fontWeight: 500, margin: 0,
+                            letterSpacing: '-0.015em', color: textPrimary,
+                          }}>
+                            {activeSec ? activeSec.name : 'כל התמונות'}
+                            <span style={{
+                              marginInlineStart: 12, color: textMuted,
+                              fontSize: 14, fontWeight: 400,
+                            }}>
+                              {visibleImages.length}
+                            </span>
+                          </h3>
+                        )
+                      })()}
                       <input ref={fileInputRef} type="file" multiple accept="image/*"
                         style={{ display: 'none' }}
                         onChange={e => handleFileUpload(e.target.files)} />
@@ -1569,14 +1689,19 @@ export function Dashboard() {
                     )}
 
                     {/* Image grid — tight Pixieset-style packing, no card
-                        wrappers, square cells, hover overlay reveals star + checkbox. */}
-                    {galleryImages.length > 0 && (
+                        wrappers, square cells, hover overlay reveals star + checkbox.
+                        Filtered by activeSectionId when a set is selected. */}
+                    {(() => {
+                      const visibleImages = activeSectionId
+                        ? (galleryImages as GalleryImage[]).filter(im => im.section_id === activeSectionId)
+                        : galleryImages
+                      return visibleImages.length > 0 && (
                       <div style={{
                         display: 'grid',
                         gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
                         gap: 4,
                       }}>
-                        {galleryImages.map(img => {
+                        {visibleImages.map(img => {
                           const isSelected = selectedImageIds.has(img.id)
                           return (
                             <div
@@ -1638,7 +1763,8 @@ export function Dashboard() {
                           )
                         })}
                       </div>
-                    )}
+                      )
+                    })()}
                     {galleryImages.length === 0 && !uploading && (
                       <div style={{
                         textAlign: 'center', padding: '80px 24px',
@@ -2199,6 +2325,116 @@ export function Dashboard() {
                 </div>
               </div>
             </div>
+
+            {/* ── New Photo Set modal — Pixieset-style: name + optional
+                description, opens via the "+ Add Set" button in the sidebar. */}
+            {showAddSetModal && (
+              <div
+                onClick={() => setShowAddSetModal(false)}
+                style={{
+                  position: 'fixed', inset: 0, zIndex: 1100,
+                  background: 'rgba(20,20,19,.55)', backdropFilter: 'blur(6px)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  animation: 'overlayIn .2s ease both',
+                }}>
+                <div
+                  onClick={e => e.stopPropagation()}
+                  style={{
+                    background: '#fff',
+                    width: 'calc(100vw - 40px)', maxWidth: 480,
+                    padding: '40px 40px 32px',
+                    border: `1px solid ${border}`,
+                    animation: 'modalIn .25s ease both',
+                  }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    marginBottom: 28,
+                  }}>
+                    <h3 style={{
+                      fontSize: 12, fontWeight: 500, margin: 0, color: textPrimary,
+                      letterSpacing: '0.22em', textTransform: 'uppercase',
+                    }}>New Photo Set</h3>
+                    <button onClick={() => setShowAddSetModal(false)} aria-label="Close" style={{
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: textSecondary, padding: 4, display: 'flex',
+                    }}>
+                      <Icon name="close" size={16} strokeWidth={1.85} />
+                    </button>
+                  </div>
+
+                  <label style={{ display: 'block', marginBottom: 24 }}>
+                    <span style={{
+                      display: 'block', marginBottom: 8,
+                      fontSize: 13, fontWeight: 500, color: textPrimary,
+                    }}>Photo Set Name</span>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={newSectionName}
+                      onChange={(e) => setNewSectionName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && newSectionName.trim()) addSection() }}
+                      placeholder="לדוגמה: טקס, קבלת פנים, הכנות"
+                      style={{
+                        width: '100%', padding: '12px 14px',
+                        border: `1px solid ${border}`, borderRadius: 2,
+                        background: '#fff', color: textPrimary,
+                        fontSize: 14, fontFamily: 'inherit',
+                        outline: 'none', boxSizing: 'border-box',
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ display: 'block', marginBottom: 28 }}>
+                    <span style={{
+                      display: 'block', marginBottom: 8,
+                      fontSize: 13, fontWeight: 500, color: textPrimary,
+                    }}>Description</span>
+                    <textarea
+                      value={newSectionDesc}
+                      onChange={(e) => setNewSectionDesc(e.target.value.slice(0, 500))}
+                      placeholder="אופציונלי"
+                      rows={4}
+                      style={{
+                        width: '100%', padding: '12px 14px',
+                        border: `1px solid ${border}`, borderRadius: 2,
+                        background: '#fff', color: textPrimary,
+                        fontSize: 14, fontFamily: 'inherit', resize: 'vertical',
+                        outline: 'none', boxSizing: 'border-box',
+                      }}
+                    />
+                    <div style={{
+                      marginTop: 6, fontSize: 11, color: textMuted,
+                      letterSpacing: '0.04em',
+                    }}>{newSectionDesc.length} / 500</div>
+                  </label>
+
+                  <p style={{
+                    fontSize: 12, color: textSecondary, marginBottom: 24, lineHeight: 1.5,
+                  }}>
+                    התיאור מוצג ללקוחות שלך כשהם רואים את הקטע הזה — מצוין לסטוריטלינג.
+                  </p>
+
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button onClick={() => setShowAddSetModal(false)} style={{
+                      padding: '10px 22px', borderRadius: 2,
+                      background: 'transparent', border: `1px solid ${border}`,
+                      color: textPrimary, cursor: 'pointer',
+                      fontFamily: 'inherit', fontSize: 11, fontWeight: 500,
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                    }}>Cancel</button>
+                    <button onClick={addSection} disabled={!newSectionName.trim()} style={{
+                      padding: '10px 28px', borderRadius: 2,
+                      background: newSectionName.trim() ? textPrimary : border,
+                      border: `1px solid ${newSectionName.trim() ? textPrimary : border}`,
+                      color: '#fff',
+                      cursor: newSectionName.trim() ? 'pointer' : 'not-allowed',
+                      fontFamily: 'inherit', fontSize: 11, fontWeight: 500,
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                    }}>Save</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           )
         })()}
