@@ -171,6 +171,33 @@ async function sendViaResend(opts: {
   }
 }
 
+// Per-business rate limit. A compromised photographer JWT can otherwise
+// drive Resend sends to attacker-chosen addresses without bound — and
+// Resend will eventually rate-limit our whole account, blast-radius'ing
+// every customer. 20/hour is well above legitimate photographer use
+// (sharing a single client gallery a few times a day) but well below the
+// volumes a spammer would want.
+const RATE_LIMIT_PER_HOUR = 20
+
+async function isOverRateLimit(
+  sb: SupabaseClient,
+  businessId: string,
+): Promise<boolean> {
+  const oneHourAgo = new Date(Date.now() - 3600_000).toISOString()
+  const { data: galleryIds } = await sb
+    .from('galleries')
+    .select('id')
+    .eq('business_id', businessId)
+  const ids = (galleryIds ?? []).map((g: { id: string }) => g.id)
+  if (ids.length === 0) return false
+  const { count } = await sb
+    .from('gallery_email_log')
+    .select('id', { count: 'exact', head: true })
+    .in('gallery_id', ids)
+    .gte('created_at', oneHourAgo)
+  return (count ?? 0) >= RATE_LIMIT_PER_HOUR
+}
+
 async function logEmail(
   sb: SupabaseClient,
   galleryId: string,
@@ -231,6 +258,13 @@ serve(async (req) => {
 
   if (gallery.status !== 'live') {
     return json({ ok: false, error: 'gallery_not_published' }, 409)
+  }
+
+  if (await isOverRateLimit(sb, business.id)) {
+    return json(
+      { ok: false, error: 'rate_limit_exceeded', limit_per_hour: RATE_LIMIT_PER_HOUR },
+      429,
+    )
   }
 
   const galleryUrl = `${PUBLIC_VIEWER_BASE}/gallery/${gallery.id}`
