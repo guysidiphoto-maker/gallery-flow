@@ -25,19 +25,22 @@ interface GalleryImage {
   sort_order: number
 }
 
-const accent = '#6366f1'
-const accentLight = '#818cf8'
-const accentGlow = 'rgba(99,102,241,.25)'
-const bg = '#07070d'
-const bgSubtle = '#0a0a14'
-const card = 'rgba(17,17,28,.65)'
-const cardSolid = '#111118'
-const border = '#1e1e2a'
-const borderHover = '#2d2d44'
-const textPrimary = '#f1f1f4'
-const textSecondary = '#8b8fa3'
-const textMuted = '#5c5f73'
-const glass = 'rgba(255,255,255,.03)'
+// Light editorial theme — Pixieset-inspired. Sage green CTA, near-black
+// type, generous whitespace, no glow / no gradients except where strictly
+// needed (logo mark, primary button hover).
+const accent = '#2DC479'        // sage green CTA + status dots
+const accentLight = '#3DD68B'   // hover state
+const accentGlow = 'rgba(45,196,121,.20)'
+const bg = '#ffffff'            // page background
+const bgSubtle = '#f7f8fa'      // input backgrounds, hover surfaces
+const card = '#ffffff'
+const cardSolid = '#ffffff'
+const border = '#e6e8ec'        // hairline 1px borders
+const borderHover = '#cdd1d8'
+const textPrimary = '#0f172a'   // near-black, used for headings
+const textSecondary = '#475569' // body copy
+const textMuted = '#94a3b8'     // hints, secondary metadata
+const glass = '#fafbfc'
 
 /* ---- reusable keyframes injected once ---- */
 const styleId = 'dashboard-keyframes'
@@ -49,8 +52,8 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
     @keyframes modalIn  { from { opacity:0; transform:scale(.96) translateY(10px); } to { opacity:1; transform:scale(1) translateY(0); } }
     @keyframes shimmer  { from { background-position: -400px 0; } to { background-position: 400px 0; } }
     .dash-toggle { min-width:52px !important; width:52px !important; height:30px !important; border-radius:30px !important; border:none !important; cursor:pointer; padding:3px !important; flex-shrink:0; display:flex !important; align-items:center !important; transition:background .2s; }
-    .dash-toggle-off { background:rgba(255,255,255,.12) !important; }
-    .dash-toggle-on  { background:#6366f1 !important; }
+    .dash-toggle-off { background:rgba(0,0,0,.08) !important; }
+    .dash-toggle-on  { background:#2DC479 !important; }
     .dash-toggle-knob { width:24px !important; height:24px !important; border-radius:50% !important; background:#fff !important; box-shadow:0 1px 6px rgba(0,0,0,.35); transition:transform .25s cubic-bezier(.4,.2,.2,1); }
     .dash-toggle-on .dash-toggle-knob { transform:translateX(22px); }
     @keyframes pulse    { 0%,100% { opacity:.4; } 50% { opacity:1; } }
@@ -202,7 +205,7 @@ export function Dashboard() {
     }
     const { data, error } = await supabase
       .from('galleries')
-      .select('id, name, image_count, published_at, status, download_count, favorite_count')
+      .select('id, name, image_count, published_at, status, download_count, favorite_count, delivery_settings')
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
@@ -519,7 +522,7 @@ export function Dashboard() {
   if (!user) {
     return (
       <div style={{
-        background: `radial-gradient(ellipse at 50% 0%, rgba(99,102,241,.08) 0%, ${bg} 60%)`,
+        background: `radial-gradient(ellipse at 50% 0%, rgba(45,196,121,.08) 0%, ${bg} 60%)`,
         minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontFamily: 'inherit', direction: 'rtl',
       }}>
@@ -600,10 +603,10 @@ export function Dashboard() {
         className={`dash-sidebar ${sidebarOpen ? 'dash-sidebar--open' : ''}`}
         style={{
           width: 240, flexShrink: 0,
-          background: 'rgba(10,10,18,.85)',
+          background: bg,
           borderInlineStart: `1px solid ${border}`,
           display: 'flex', flexDirection: 'column',
-          padding: '24px 18px',
+          padding: '28px 20px',
           position: 'sticky', top: 0, height: '100vh',
           zIndex: 200,
         }}
@@ -617,7 +620,7 @@ export function Dashboard() {
             display: 'none', alignItems: 'center', justifyContent: 'center',
             position: 'absolute', top: 14, left: 14,
             width: 32, height: 32, borderRadius: 8,
-            background: 'rgba(255,255,255,.04)',
+            background: 'rgba(0,0,0,.03)',
             border: `1px solid ${border}`,
             color: textPrimary, cursor: 'pointer', padding: 0,
           }}
@@ -658,9 +661,9 @@ export function Dashboard() {
             <button key={item.label} style={{
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '10px 12px', borderRadius: 10,
-              background: item.active ? `rgba(99,102,241,.14)` : 'transparent',
-              border: `1px solid ${item.active ? 'rgba(99,102,241,.25)' : 'transparent'}`,
-              color: item.active ? '#a5b4fc' : (item.disabled ? textMuted : textSecondary),
+              background: item.active ? `rgba(45,196,121,.14)` : 'transparent',
+              border: `1px solid ${item.active ? 'rgba(45,196,121,.25)' : 'transparent'}`,
+              color: item.active ? '#16a274' : (item.disabled ? textMuted : textSecondary),
               fontSize: 13, fontWeight: item.active ? 600 : 500,
               cursor: item.disabled ? 'not-allowed' : 'pointer',
               fontFamily: 'inherit', textAlign: 'right' as const,
@@ -673,7 +676,7 @@ export function Dashboard() {
                 <span style={{
                   marginInlineStart: 'auto', fontSize: 9, fontWeight: 700,
                   padding: '2px 6px', borderRadius: 5,
-                  background: 'rgba(255,255,255,.05)', color: textMuted,
+                  background: 'rgba(0,0,0,.03)', color: textMuted,
                   letterSpacing: '0.04em',
                 }}>בקרוב</span>
               )}
@@ -687,8 +690,8 @@ export function Dashboard() {
           style={{
             background: tokenBalance < 50
               ? `linear-gradient(135deg, rgba(239,68,68,.18), rgba(220,38,38,.06))`
-              : `linear-gradient(135deg, rgba(99,102,241,.18), rgba(129,140,248,.06))`,
-            border: `1px solid ${tokenBalance < 50 ? 'rgba(239,68,68,.35)' : 'rgba(99,102,241,.30)'}`,
+              : `linear-gradient(135deg, rgba(45,196,121,.18), rgba(61,214,139,.06))`,
+            border: `1px solid ${tokenBalance < 50 ? 'rgba(239,68,68,.35)' : 'rgba(45,196,121,.30)'}`,
             borderRadius: 14, padding: '14px 16px',
             cursor: 'pointer', fontFamily: 'inherit',
             color: textPrimary, textAlign: 'right' as const,
@@ -701,12 +704,12 @@ export function Dashboard() {
           <div style={{ fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 600, letterSpacing: '.04em' }}>
             יתרת טוקנים
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc', marginBottom: 8, letterSpacing: '-0.02em' }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: tokenBalance < 50 ? '#fca5a5' : '#16a274', marginBottom: 8, letterSpacing: '-0.02em' }}>
             {tokenBalance.toLocaleString('he-IL')}
           </div>
           <div style={{
             fontSize: 11, fontWeight: 600,
-            color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc',
+            color: tokenBalance < 50 ? '#fca5a5' : '#16a274',
             display: 'flex', alignItems: 'center', gap: 4,
           }}>
             {tokenBalance < 50 ? '⚠️ קנה עוד' : '+ קנה טוקנים'}
@@ -741,75 +744,54 @@ export function Dashboard() {
 
       {/* ======= Right column ======= */}
       <div style={{ flex: 1, minWidth: 0 }}>
-      {/* ======= Top bar — page title + mobile hamburger ======= */}
-      <header style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px 20px',
-        background: 'rgba(10,10,18,.6)',
-        backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-        borderBottom: `1px solid ${border}`,
-        position: 'sticky', top: 0, zIndex: 100,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {/* Hamburger — mobile only via CSS */}
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="dash-hamburger"
-            aria-label="Open menu"
-            style={{
-              display: 'none', alignItems: 'center', justifyContent: 'center',
-              width: 38, height: 38, borderRadius: 10,
-              background: 'rgba(255,255,255,.04)',
-              border: `1px solid ${border}`,
-              color: textPrimary, cursor: 'pointer', padding: 0,
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="3" y1="6" x2="21" y2="6"/>
-              <line x1="3" y1="12" x2="21" y2="12"/>
-              <line x1="3" y1="18" x2="21" y2="18"/>
-            </svg>
-          </button>
-          <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
-            הגלריות שלי
-          </h1>
-        </div>
-      </header>
+      {/* Mobile-only hamburger floating top-right */}
+      <button
+        onClick={() => setSidebarOpen(true)}
+        className="dash-hamburger"
+        aria-label="Open menu"
+        style={{
+          display: 'none', alignItems: 'center', justifyContent: 'center',
+          position: 'fixed', top: 16, insetInlineStart: 16, zIndex: 50,
+          width: 40, height: 40, borderRadius: 10,
+          background: '#fff',
+          border: `1px solid ${border}`,
+          color: textPrimary, cursor: 'pointer', padding: 0,
+          boxShadow: '0 2px 8px rgba(15,23,42,.08)',
+        }}
+      >
+        <Icon name="menu" size={18} strokeWidth={2} />
+      </button>
 
       {/* ======= Main content ======= */}
-      <main style={{ maxWidth: 1060, margin: '0 auto', padding: '48px 28px 80px' }}>
+      <main style={{ maxWidth: 1180, margin: '0 auto', padding: '56px 40px 96px' }}>
 
-        {/* Page heading + CTA */}
+        {/* Page heading + CTA — Pixieset rhythm: editorial title left, primary
+            CTA right, minimal subtitle. */}
         <div style={{
-          display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-          marginBottom: 36, animation: 'fadeInUp .4s ease both',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 28, animation: 'fadeInUp .4s ease both',
+          gap: 20, flexWrap: 'wrap',
         }}>
-          <div>
-            <h1 style={{
-              fontSize: 32, fontWeight: 800, margin: 0,
-              letterSpacing: '-0.03em', lineHeight: 1.2,
-            }}>
-              הגלריות שלי
-            </h1>
-            <p style={{ color: textSecondary, fontSize: 15, margin: '8px 0 0', letterSpacing: '0.01em' }}>
-              נהלו ושתפו את הגלריות שלכם
-            </p>
-          </div>
+          <h1 style={{
+            fontSize: 38, fontWeight: 800, margin: 0,
+            letterSpacing: '-0.035em', lineHeight: 1.1, color: textPrimary,
+          }}>
+            הגלריות שלי
+          </h1>
           <button
             onClick={() => setShowModal(true)}
             style={{
-              background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
-              color: '#fff', border: 'none', borderRadius: 12,
-              padding: '12px 28px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-              fontFamily: 'inherit', transition: 'transform .15s, box-shadow .15s',
-              boxShadow: `0 4px 20px ${accentGlow}`,
+              background: accent,
+              color: '#fff', border: 'none', borderRadius: 8,
+              padding: '11px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              fontFamily: 'inherit', transition: 'background .15s',
               letterSpacing: '0.01em',
-              display: 'flex', alignItems: 'center', gap: 8,
+              display: 'inline-flex', alignItems: 'center', gap: 8,
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 8px 28px ${accentGlow}`; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 4px 20px ${accentGlow}`; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = accentLight }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = accent }}
           >
-            <span style={{ fontSize: 18, lineHeight: 1 }}>+</span>
+            <Icon name="plus" size={15} strokeWidth={2.4} />
             גלריה חדשה
           </button>
         </div>
@@ -883,16 +865,16 @@ export function Dashboard() {
               maxWidth: 720, margin: '0 auto 32px',
               padding: '48px 32px',
               borderRadius: 28,
-              background: `linear-gradient(135deg, rgba(99,102,241,.12), rgba(167,139,250,.06))`,
-              border: `1px solid rgba(99,102,241,.18)`,
-              boxShadow: '0 18px 60px rgba(99,102,241,.10)',
+              background: `linear-gradient(135deg, rgba(45,196,121,.12), rgba(167,139,250,.06))`,
+              border: `1px solid rgba(45,196,121,.18)`,
+              boxShadow: '0 18px 60px rgba(45,196,121,.10)',
               position: 'relative', overflow: 'hidden',
             }}>
               {/* Decorative glow */}
               <div style={{
                 position: 'absolute', top: -80, right: -80,
                 width: 240, height: 240, borderRadius: '50%',
-                background: 'radial-gradient(circle, rgba(99,102,241,.18), transparent 70%)',
+                background: 'radial-gradient(circle, rgba(45,196,121,.18), transparent 70%)',
                 pointerEvents: 'none',
               }} />
               <div style={{
@@ -918,7 +900,7 @@ export function Dashboard() {
                 גלריות מהירות, פרטיות ויפות לאירועים. עם זיהוי פנים אופציונלי שמאפשר לאורחים למצוא את עצמם בסלפי.
               </p>
               <p style={{
-                color: '#a5b4fc', fontSize: 13, marginBottom: 32, fontWeight: 600,
+                color: '#16a274', fontSize: 13, marginBottom: 32, fontWeight: 600,
               }}>
                 ✨ קיבלת 100 טוקנים חינם להתחלה — מספיק לעלות 100 תמונות
               </p>
@@ -935,7 +917,7 @@ export function Dashboard() {
                     boxShadow: `0 6px 24px ${accentGlow}`,
                     display: 'flex', alignItems: 'center', gap: 8,
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(99,102,241,.4)` }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(45,196,121,.4)` }}
                   onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = `0 6px 24px ${accentGlow}` }}
                 >
                   <Icon name="plus" size={18} strokeWidth={2.2} />
@@ -953,7 +935,7 @@ export function Dashboard() {
                     transition: 'all .15s',
                     display: 'flex', alignItems: 'center', gap: 8,
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.5)'; e.currentTarget.style.background = 'rgba(99,102,241,.06)' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(45,196,121,.5)'; e.currentTarget.style.background = 'rgba(45,196,121,.06)' }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.background = 'transparent' }}
                 >
                   <Icon name="arrow-out" size={18} strokeWidth={2} />
@@ -979,9 +961,9 @@ export function Dashboard() {
                 }}>
                   <div style={{
                     width: 38, height: 38, borderRadius: 11, marginBottom: 14,
-                    background: 'rgba(99,102,241,.12)',
-                    border: '1px solid rgba(99,102,241,.25)',
-                    color: '#a5b4fc',
+                    background: 'rgba(45,196,121,.12)',
+                    border: '1px solid rgba(45,196,121,.25)',
+                    color: '#16a274',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
                     <Icon name={f.icon} size={18} strokeWidth={1.85} />
@@ -999,143 +981,133 @@ export function Dashboard() {
         ) : (
           /* ======= Gallery grid ======= */
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20,
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 32,
           }}>
             {galleries.map((g, idx) => {
               const isHovered = hoveredCard === g.id
+              const isLive = g.status === 'live' || g.status === 'published'
+              const cover = ((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl as string | undefined) || null
               return (
                 <div
                   key={g.id}
                   style={{
-                    background: isHovered
-                      ? `linear-gradient(135deg, rgba(99,102,241,.06), rgba(17,17,28,.7))`
-                      : card,
-                    backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-                    borderRadius: 18, padding: 28,
-                    border: `1px solid ${isHovered ? 'rgba(99,102,241,.35)' : border}`,
-                    transition: 'all .3s cubic-bezier(.4,0,.2,1)',
-                    transform: isHovered ? 'translateY(-4px)' : 'translateY(0)',
-                    boxShadow: isHovered ? `0 12px 40px rgba(99,102,241,.12)` : '0 2px 8px rgba(0,0,0,.1)',
+                    background: card,
+                    borderRadius: 4,
                     cursor: 'pointer',
                     animation: `fadeInUp .4s ease both`,
-                    animationDelay: `${idx * 0.05}s`,
-                    position: 'relative' as const,
-                    overflow: 'hidden',
+                    animationDelay: `${idx * 0.04}s`,
+                    transition: 'transform .25s ease',
+                    transform: isHovered ? 'translateY(-3px)' : 'translateY(0)',
                   }}
                   onClick={() => openGalleryEditor(g)}
                   onMouseEnter={() => setHoveredCard(g.id)}
                   onMouseLeave={() => setHoveredCard(null)}
                 >
-                  {/* Top glow line on hover */}
+                  {/* Cover image — hero */}
                   <div style={{
-                    position: 'absolute', top: 0, right: 0, left: 0, height: 2,
-                    background: isHovered ? `linear-gradient(90deg, transparent, ${accent}, transparent)` : 'transparent',
-                    transition: 'background .3s',
-                  }} />
+                    aspectRatio: '4 / 3', borderRadius: 4, overflow: 'hidden',
+                    background: cover ? '#f1f5f9' : `linear-gradient(135deg, #f1f5f9, #e2e8f0)`,
+                    position: 'relative',
+                    boxShadow: isHovered ? '0 14px 36px rgba(15,23,42,.12)' : '0 2px 8px rgba(15,23,42,.06)',
+                    transition: 'box-shadow .25s ease',
+                  }}>
+                    {cover && (
+                      <img
+                        src={cover}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                    )}
+                    {!cover && (
+                      <div style={{
+                        position: 'absolute', inset: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#cbd5e1',
+                      }}>
+                        <Icon name="photo" size={42} strokeWidth={1.4} />
+                      </div>
+                    )}
+                    {/* Hover action row — only on live galleries */}
+                    {isLive && isHovered && (
+                      <div style={{
+                        position: 'absolute', bottom: 12, insetInlineStart: 12,
+                        display: 'flex', gap: 6,
+                      }}>
+                        <button
+                          onClick={(e) => copyGalleryLink(g.id, e)}
+                          title="העתק קישור"
+                          style={{
+                            width: 34, height: 34, borderRadius: 8,
+                            background: 'rgba(255,255,255,.94)', border: 'none',
+                            color: textPrimary, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            backdropFilter: 'blur(8px)',
+                            boxShadow: '0 2px 6px rgba(15,23,42,.15)',
+                          }}
+                        >
+                          <Icon name={copiedGalleryId === g.id ? 'check' : 'copy'} size={15} strokeWidth={2} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openEmailShare(g) }}
+                          title="שלח במייל ללקוח"
+                          style={{
+                            width: 34, height: 34, borderRadius: 8,
+                            background: 'rgba(255,255,255,.94)', border: 'none',
+                            color: textPrimary, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            backdropFilter: 'blur(8px)',
+                            boxShadow: '0 2px 6px rgba(15,23,42,.15)',
+                          }}
+                        >
+                          <Icon name="mail" size={15} strokeWidth={2} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
+                  {/* Card body */}
+                  <div style={{ padding: '14px 2px 0' }}>
                     <h3 style={{
-                      fontSize: 18, fontWeight: 700, margin: 0,
-                      letterSpacing: '-0.01em', lineHeight: 1.3,
+                      fontSize: 17, fontWeight: 700, margin: '0 0 8px',
+                      letterSpacing: '-0.015em', lineHeight: 1.25, color: textPrimary,
                     }}>
                       {g.name}
                     </h3>
-                    <span style={{
-                      fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 20,
-                      background: (g.status === 'live' || g.status === 'published') ? 'rgba(34,197,94,.12)' : 'rgba(250,204,21,.10)',
-                      color: (g.status === 'live' || g.status === 'published') ? '#4ade80' : '#fde047',
-                      letterSpacing: '0.02em', whiteSpace: 'nowrap' as const,
-                      border: `1px solid ${(g.status === 'live' || g.status === 'published') ? 'rgba(34,197,94,.2)' : 'rgba(250,204,21,.15)'}`,
-                    }}>
-                      {(g.status === 'live' || g.status === 'published') ? 'פורסם' : 'טיוטה'}
-                    </span>
-                  </div>
-
-                  <div style={{
-                    display: 'flex', gap: 18, fontSize: 13, color: textSecondary, flexWrap: 'wrap',
-                    borderTop: `1px solid ${isHovered ? 'rgba(99,102,241,.15)' : border}`,
-                    paddingTop: 16, transition: 'border-color .3s',
-                  }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Icon name="photo" size={13} strokeWidth={1.85} style={{ opacity: 0.6 }} />
-                      {g.image_count ?? 0}
-                    </span>
-                    {(g.status === 'live' || g.status === 'published') && (g.download_count ?? 0) > 0 && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#a5b4fc' }} title="הורדות">
-                        <Icon name="download" size={13} strokeWidth={1.85} />
-                        {(g.download_count ?? 0).toLocaleString('he-IL')}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, color: textSecondary }}>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                      }}>
+                        <span style={{
+                          width: 8, height: 8, borderRadius: '50%',
+                          background: isLive ? accent : '#cbd5e1',
+                        }} />
+                        {(g.image_count ?? 0).toLocaleString('he-IL')} תמונות
                       </span>
-                    )}
-                    {(g.status === 'live' || g.status === 'published') && (g.favorite_count ?? 0) > 0 && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#fca5a5' }} title="מועדפים">
-                        <Icon name="heart" size={13} strokeWidth={2} style={{ fill: '#fca5a5' }} />
-                        {(g.favorite_count ?? 0).toLocaleString('he-IL')}
-                      </span>
-                    )}
-                    {g.published_at && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginInlineStart: 'auto' }}>
-                        <Icon name="calendar" size={13} strokeWidth={1.85} style={{ opacity: 0.6 }} />
-                        {new Date(g.published_at).toLocaleDateString('he-IL')}
-                      </span>
-                    )}
-                  </div>
-
-                  {(g.status === 'live' || g.status === 'published') && (
-                    <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                      <button
-                        onClick={(e) => copyGalleryLink(g.id, e)}
-                        style={{
-                          flex: 1,
-                          padding: '10px 14px', borderRadius: 10,
-                          background: copiedGalleryId === g.id
-                            ? 'rgba(34,197,94,.14)'
-                            : 'rgba(99,102,241,.10)',
-                          border: `1px solid ${copiedGalleryId === g.id ? 'rgba(34,197,94,.3)' : 'rgba(99,102,241,.25)'}`,
-                          color: copiedGalleryId === g.id ? '#4ade80' : '#a5b4fc',
-                          fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                          transition: 'all .2s',
-                        }}
-                      >
-                        {copiedGalleryId === g.id ? (
-                          <>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                              <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            הקישור הועתק
-                          </>
-                        ) : (
-                          <>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                            </svg>
-                            העתק קישור
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); openEmailShare(g) }}
-                        title="שלח במייל ללקוח"
-                        style={{
-                          padding: '10px 14px', borderRadius: 10,
-                          background: 'rgba(99,102,241,.10)',
-                          border: '1px solid rgba(99,102,241,.25)',
-                          color: '#a5b4fc',
-                          fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                          transition: 'all .2s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,.18)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,.10)' }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                          <polyline points="22,6 12,13 2,6"/>
-                        </svg>
-                      </button>
+                      {g.published_at && (
+                        <>
+                          <span style={{ color: textMuted }}>·</span>
+                          <span>{new Date(g.published_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        </>
+                      )}
                     </div>
-                  )}
+                    {/* Engagement strip — only when there's signal */}
+                    {isLive && ((g.download_count ?? 0) > 0 || (g.favorite_count ?? 0) > 0) && (
+                      <div style={{ display: 'flex', gap: 14, fontSize: 12, color: textMuted, marginTop: 8 }}>
+                        {(g.download_count ?? 0) > 0 && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <Icon name="download" size={12} strokeWidth={1.85} />
+                            {(g.download_count ?? 0).toLocaleString('he-IL')}
+                          </span>
+                        )}
+                        {(g.favorite_count ?? 0) > 0 && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <Icon name="heart" size={12} strokeWidth={1.85} />
+                            {(g.favorite_count ?? 0).toLocaleString('he-IL')}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )
             })}
@@ -1201,7 +1173,7 @@ export function Dashboard() {
                   <button key={t.id} onClick={() => setEditTab(t.id)} style={{
                     padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
                     fontSize: 13, fontWeight: editTab === t.id ? 600 : 500, fontFamily: 'inherit',
-                    background: editTab === t.id ? `rgba(99,102,241,.18)` : 'transparent',
+                    background: editTab === t.id ? `rgba(45,196,121,.18)` : 'transparent',
                     color: editTab === t.id ? accentLight : textSecondary,
                     display: 'flex', alignItems: 'center', gap: 8,
                     transition: 'all .15s',
@@ -1223,13 +1195,13 @@ export function Dashboard() {
                       <div style={{
                         position: 'sticky', top: 0, zIndex: 10,
                         marginBottom: 16, padding: '12px 18px', borderRadius: 14,
-                        background: 'rgba(99,102,241,.14)',
-                        border: `1px solid rgba(99,102,241,.35)`,
+                        background: 'rgba(45,196,121,.14)',
+                        border: `1px solid rgba(45,196,121,.35)`,
                         backdropFilter: 'blur(10px)',
                         display: 'flex', alignItems: 'center', gap: 12,
                         animation: 'fadeIn .2s ease',
                       }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: '#a5b4fc' }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: '#16a274' }}>
                           {selectedImageIds.size} {selectedImageIds.size === 1 ? 'תמונה נבחרה' : 'תמונות נבחרו'}
                         </span>
                         <button onClick={selectAllImages} style={{
@@ -1267,10 +1239,10 @@ export function Dashboard() {
                     <div
                       onClick={() => fileInputRef.current?.click()}
                       onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = accent }}
-                      onDragLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)' }}
-                      onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; handleFileUpload(e.dataTransfer.files) }}
+                      onDragLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,.06)' }}
+                      onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'rgba(0,0,0,.06)'; handleFileUpload(e.dataTransfer.files) }}
                       style={{
-                        border: '2px dashed rgba(255,255,255,.1)', borderRadius: 16,
+                        border: '2px dashed rgba(0,0,0,.06)', borderRadius: 16,
                         padding: '48px 28px', textAlign: 'center', cursor: 'pointer',
                         background: glass, transition: 'border-color .2s, background .2s',
                         marginBottom: 28,
@@ -1291,7 +1263,7 @@ export function Dashboard() {
                               {uploadBatch.current}
                             </div>
                           )}
-                          <div style={{ width: '100%', height: 4, borderRadius: 4, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
+                          <div style={{ width: '100%', height: 4, borderRadius: 4, background: 'rgba(0,0,0,.04)', overflow: 'hidden' }}>
                             <div style={{
                               width: `${Math.round((uploadBatch.completed / Math.max(1, uploadBatch.total)) * 100)}%`,
                               height: '100%',
@@ -1331,7 +1303,7 @@ export function Dashboard() {
                               }}
                               style={{
                                 position: 'relative', aspectRatio: '1', overflow: 'hidden',
-                                background: 'rgba(255,255,255,.03)',
+                                background: 'rgba(0,0,0,.02)',
                                 cursor: 'pointer',
                                 outline: isSelected ? `3px solid ${accent}` : 'none',
                                 outlineOffset: isSelected ? -3 : 0,
@@ -1351,7 +1323,7 @@ export function Dashboard() {
                               {img.is_top_pick && (
                                 <div style={{
                                   position: 'absolute', top: 4, right: 4,
-                                  background: 'rgba(99,102,241,.85)', color: '#fff',
+                                  background: 'rgba(45,196,121,.85)', color: '#fff',
                                   fontSize: 8, padding: '2px 6px', borderRadius: 4, fontWeight: 700,
                                 }}>★</div>
                               )}
@@ -1405,7 +1377,7 @@ export function Dashboard() {
                         placeholder="שם קטע חדש (למשל: יום 1)"
                         style={{
                           flex: 1, padding: '10px 14px', borderRadius: 10,
-                          background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                          background: 'rgba(0,0,0,.03)', border: `1px solid ${border}`,
                           color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
                         }}
                       />
@@ -1416,7 +1388,7 @@ export function Dashboard() {
                           padding: '10px 20px', borderRadius: 10,
                           background: newSectionName.trim()
                             ? `linear-gradient(135deg, ${accent}, ${accentLight})`
-                            : 'rgba(99,102,241,.4)',
+                            : 'rgba(45,196,121,.4)',
                           border: 'none', color: '#fff', fontSize: 13, fontWeight: 600,
                           cursor: newSectionName.trim() ? 'pointer' : 'not-allowed',
                           fontFamily: 'inherit', transition: 'all .15s',
@@ -1506,7 +1478,7 @@ export function Dashboard() {
                         {/* Stat cards */}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 28 }}>
                           {[
-                            { label: 'הורדות', value: activitySummary.downloads_total, color: '#a5b4fc', icon: '⬇️' },
+                            { label: 'הורדות', value: activitySummary.downloads_total, color: '#16a274', icon: '⬇️' },
                             { label: 'מועדפים', value: activitySummary.favorites_total, color: '#fca5a5', icon: '♥' },
                             { label: 'שיתופי מייל', value: activitySummary.emails_total, color: '#86efac', icon: '✉️' },
                           ].map(s => (
@@ -1548,8 +1520,8 @@ export function Dashboard() {
                                     </span>
                                     <span style={{
                                       padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
-                                      background: d.resolution === 'original' ? 'rgba(34,197,94,.14)' : 'rgba(99,102,241,.14)',
-                                      color: d.resolution === 'original' ? '#4ade80' : '#a5b4fc',
+                                      background: d.resolution === 'original' ? 'rgba(34,197,94,.14)' : 'rgba(45,196,121,.14)',
+                                      color: d.resolution === 'original' ? '#4ade80' : '#16a274',
                                     }}>
                                       {d.resolution === 'original' ? 'מקור' : 'web'}
                                     </span>
@@ -1642,14 +1614,14 @@ export function Dashboard() {
                     <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: textPrimary }}>הגדרות גלריה</h3>
 
                     {/* Downloads */}
-                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(0,0,0,.03)` }}>
                       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>📥 הורדות</div>
                       {[
                         { key: 'downloadsEnabled', label: 'אפשר הורדת תמונות', desc: 'אורחים יוכלו להוריד תמונות בודדות' },
                         { key: 'bulkDownloadEnabled', label: 'הורדה מרוכזת', desc: 'אפשר הורדת כל התמונות בבת אחת' },
                         { key: 'trackDownloads', label: 'מעקב הורדות', desc: 'עקוב מי הוריד ומתי' },
                       ].map(opt => (
-                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
+                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,.02)' }}>
                           <div>
                             <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
                             <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
@@ -1663,13 +1635,13 @@ export function Dashboard() {
                     </div>
 
                     {/* Privacy */}
-                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(0,0,0,.03)` }}>
                       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>פרטיות</div>
                       {[
                         { key: 'clientHidePhotosEnabled', label: 'אפשר לאורחים להסתיר תמונות', desc: 'כל אורח יכול להסתיר תמונות שלו מאחרים' },
                         { key: 'clientSelectionEnabled', label: 'בחירת תמונות', desc: 'אפשר ללקוח לבחור תמונות מועדפות' },
                       ].map(opt => (
-                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
+                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,.02)' }}>
                           <div>
                             <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
                             <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
@@ -1683,12 +1655,12 @@ export function Dashboard() {
                     </div>
 
                     {/* Face Recognition */}
-                    <div style={{ padding: 20, borderRadius: 14, background: 'linear-gradient(135deg, rgba(99,102,241,.06), rgba(139,92,246,.04))', border: `1px solid rgba(99,102,241,.15)` }}>
+                    <div style={{ padding: 20, borderRadius: 14, background: 'linear-gradient(135deg, rgba(45,196,121,.06), rgba(139,92,246,.04))', border: `1px solid rgba(45,196,121,.15)` }}>
                       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>זיהוי פנים AI</div>
                       {[
                         { key: 'faceIndexEnabled', label: 'הפעל זיהוי פנים', desc: 'אורחים יוכלו למצוא את עצמם בסלפי' },
                       ].map(opt => (
-                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
+                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,.02)' }}>
                           <div>
                             <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
                             <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
@@ -1714,8 +1686,8 @@ export function Dashboard() {
                             ] as const).map(m => (
                               <button key={m.id} onClick={() => updateGallerySetting('facePrivacyMode', m.id)} style={{
                                 flex: 1, padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
-                                border: `2px solid ${(editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? accent : 'rgba(255,255,255,.06)'}`,
-                                background: (editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? 'rgba(99,102,241,.08)' : glass,
+                                border: `2px solid ${(editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? accent : 'rgba(0,0,0,.04)'}`,
+                                background: (editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? 'rgba(45,196,121,.08)' : glass,
                                 fontFamily: 'inherit', textAlign: 'right' as const,
                               }}>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: (editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? accentLight : textPrimary, marginBottom: 2 }}>{m.label}</div>
@@ -1728,7 +1700,7 @@ export function Dashboard() {
                     </div>
 
                     {/* Layout */}
-                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(0,0,0,.03)` }}>
                       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>תצוגה</div>
                       <div style={{ fontSize: 12, color: textMuted, marginBottom: 10 }}>סגנון פיד</div>
                       <div style={{ display: 'flex', gap: 8 }}>
@@ -1736,7 +1708,7 @@ export function Dashboard() {
                           <button key={l} onClick={() => updateGallerySetting('feedLayout', l)} style={{
                             padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
                             fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                            background: (editingGallery.delivery_settings?.feedLayout || 'grid') === l ? `rgba(99,102,241,.2)` : glass,
+                            background: (editingGallery.delivery_settings?.feedLayout || 'grid') === l ? `rgba(45,196,121,.2)` : glass,
                             color: (editingGallery.delivery_settings?.feedLayout || 'grid') === l ? accentLight : textSecondary,
                             transition: 'all .15s',
                           }}>{l === 'grid' ? 'רשת' : l === 'masonry' ? 'מוזאיקה' : 'קרוסלה'}</button>
@@ -1745,12 +1717,12 @@ export function Dashboard() {
                     </div>
 
                     {/* Theme color */}
-                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(0,0,0,.03)` }}>
                       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>צבע ראשי</div>
                       <div style={{ fontSize: 12, color: textMuted, marginBottom: 10 }}>הצבע שמופיע בכפתורים, מסגרות ולוגו של הגלריה</div>
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                         {([
-                          { id: 'indigo', label: 'אינדיגו', color: '#6366f1' },
+                          { id: 'indigo', label: 'אינדיגו', color: '#2DC479' },
                           { id: 'rose',   label: 'ורוד',   color: '#f43f5e' },
                           { id: 'amber',  label: 'זהב',    color: '#f59e0b' },
                           { id: 'teal',   label: 'טורקיז', color: '#14b8a6' },
@@ -1761,8 +1733,8 @@ export function Dashboard() {
                             <button key={c.id} onClick={() => updateGallerySetting('themeColor', c.id)} style={{
                               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
                               padding: '8px 14px', borderRadius: 12,
-                              background: active ? `rgba(255,255,255,.04)` : 'transparent',
-                              border: `2px solid ${active ? c.color : 'rgba(255,255,255,.05)'}`,
+                              background: active ? `rgba(0,0,0,.03)` : 'transparent',
+                              border: `2px solid ${active ? c.color : 'rgba(0,0,0,.03)'}`,
                               cursor: 'pointer', fontFamily: 'inherit',
                               transition: 'all .15s',
                             }}>
@@ -1784,9 +1756,9 @@ export function Dashboard() {
                     </div>
 
                     {/* Watermark */}
-                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(0,0,0,.03)` }}>
                       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>ווטרמרק</div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,.02)' }}>
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 500 }}>הצג ווטרמרק על תצוגות web</div>
                           <div style={{ fontSize: 11, color: textMuted }}>שם העסק יופיע בפינה — מקור ההורדה תמיד נקי</div>
@@ -1806,7 +1778,7 @@ export function Dashboard() {
                             placeholder="© השם שלך"
                             style={{
                               width: '100%', padding: '10px 14px', borderRadius: 10,
-                              background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                              background: 'rgba(0,0,0,.03)', border: `1px solid ${border}`,
                               color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
                             }}
                           />
@@ -1823,7 +1795,7 @@ export function Dashboard() {
                               return (
                                 <button key={p.id} onClick={() => updateGallerySetting('watermarkPosition', p.id)} style={{
                                   width: 40, height: 40, borderRadius: 10,
-                                  background: active ? `rgba(99,102,241,.18)` : 'transparent',
+                                  background: active ? `rgba(45,196,121,.18)` : 'transparent',
                                   border: `1px solid ${active ? accent : border}`,
                                   color: active ? accentLight : textSecondary,
                                   cursor: 'pointer', fontFamily: 'inherit', fontSize: 18,
@@ -1852,8 +1824,8 @@ export function Dashboard() {
                         const active = (editingGallery.delivery_settings?.welcomeStyle || 'mosaic') === s.id
                         return (
                           <button key={s.id} onClick={() => updateGallerySetting('welcomeStyle', s.id)} style={{
-                            padding: '24px 16px', borderRadius: 16, border: `2px solid ${active ? accent : 'rgba(255,255,255,.06)'}`,
-                            background: active ? `rgba(99,102,241,.08)` : glass, cursor: 'pointer',
+                            padding: '24px 16px', borderRadius: 16, border: `2px solid ${active ? accent : 'rgba(0,0,0,.04)'}`,
+                            background: active ? `rgba(45,196,121,.08)` : glass, cursor: 'pointer',
                             textAlign: 'center', fontFamily: 'inherit', transition: 'all .2s',
                             boxShadow: active ? `0 0 20px ${accentGlow}` : 'none',
                           }}>
@@ -1896,7 +1868,7 @@ export function Dashboard() {
                         onChange={e => updateGallerySetting('galleryTitle', e.target.value)}
                         style={{
                           width: '100%', padding: '10px 14px', borderRadius: 10,
-                          background: glass, border: `1px solid rgba(255,255,255,.08)`,
+                          background: glass, border: `1px solid rgba(0,0,0,.05)`,
                           color: '#fff', fontSize: 14, fontFamily: 'inherit', outline: 'none',
                           direction: 'rtl',
                         }}
@@ -1910,7 +1882,7 @@ export function Dashboard() {
                         placeholder="שם הלקוח או שם האירוע"
                         style={{
                           width: '100%', padding: '10px 14px', borderRadius: 10,
-                          background: glass, border: `1px solid rgba(255,255,255,.08)`,
+                          background: glass, border: `1px solid rgba(0,0,0,.05)`,
                           color: '#fff', fontSize: 14, fontFamily: 'inherit', outline: 'none',
                           direction: 'rtl',
                         }}
@@ -1942,7 +1914,7 @@ export function Dashboard() {
               </div>
               <span style={{
                 padding: '6px 14px', borderRadius: 20,
-                background: 'rgba(99,102,241,.08)', border: '1px solid rgba(99,102,241,.15)',
+                background: 'rgba(45,196,121,.08)', border: '1px solid rgba(45,196,121,.15)',
                 fontSize: 11, color: accentLight, fontWeight: 600,
               }}>בקרוב</span>
             </div>
@@ -1956,7 +1928,7 @@ export function Dashboard() {
               ].map((d, i) => (
                 <div key={i} style={{
                   padding: '14px 16px', borderRadius: 12,
-                  background: 'rgba(255,255,255,.02)', border: `1px solid rgba(255,255,255,.04)`,
+                  background: 'rgba(255,255,255,.02)', border: `1px solid rgba(0,0,0,.03)`,
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 }}>
                   <div>
@@ -1965,7 +1937,7 @@ export function Dashboard() {
                   </div>
                   <div style={{
                     fontSize: 16, fontWeight: 800, color: accentLight,
-                    background: 'rgba(99,102,241,.1)', padding: '4px 10px', borderRadius: 8,
+                    background: 'rgba(45,196,121,.1)', padding: '4px 10px', borderRadius: 8,
                   }}>{d.count}</div>
                 </div>
               ))}
@@ -1993,16 +1965,16 @@ export function Dashboard() {
               maxHeight: '90vh', overflowY: 'auto' as const,
               border: `1px solid ${border}`, direction: 'rtl',
               animation: 'modalIn .3s ease both',
-              boxShadow: `0 24px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03) inset`,
+              boxShadow: `0 24px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.02) inset`,
             }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal icon */}
             <div style={{
               width: 52, height: 52, borderRadius: 16, marginBottom: 20,
-              background: `linear-gradient(135deg, rgba(99,102,241,.15), rgba(167,139,250,.1))`,
+              background: `linear-gradient(135deg, rgba(45,196,121,.15), rgba(167,139,250,.1))`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              border: `1px solid rgba(99,102,241,.2)`,
+              border: `1px solid rgba(45,196,121,.2)`,
             }}>
               <span style={{ fontSize: 24 }}>🖼️</span>
             </div>
@@ -2091,7 +2063,7 @@ export function Dashboard() {
                       type="button"
                       onClick={() => setWelcomeStyle(opt.value)}
                       style={{
-                        background: selected ? `rgba(99,102,241,.12)` : glass,
+                        background: selected ? `rgba(45,196,121,.12)` : glass,
                         border: `1.5px solid ${selected ? accent : border}`,
                         borderRadius: 14, padding: '16px 8px', cursor: 'pointer',
                         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
@@ -2135,7 +2107,7 @@ export function Dashboard() {
                       type="button"
                       onClick={() => setFeedLayout(opt.value)}
                       style={{
-                        background: selected ? `rgba(99,102,241,.12)` : glass,
+                        background: selected ? `rgba(45,196,121,.12)` : glass,
                         border: `1.5px solid ${selected ? accent : border}`,
                         borderRadius: 14, padding: '16px 8px', cursor: 'pointer',
                         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
@@ -2297,7 +2269,7 @@ export function Dashboard() {
                 style={{
                   flex: 1,
                   background: creating || !newName.trim()
-                    ? `rgba(99,102,241,.3)`
+                    ? `rgba(45,196,121,.3)`
                     : `linear-gradient(135deg, ${accent}, ${accentLight})`,
                   color: '#fff', border: 'none', borderRadius: 12,
                   padding: '14px 0', fontSize: 15, fontWeight: 700, cursor: creating || !newName.trim() ? 'not-allowed' : 'pointer',
@@ -2391,7 +2363,7 @@ export function Dashboard() {
                     placeholder="client@example.com"
                     style={{
                       width: '100%', padding: '11px 14px', borderRadius: 10,
-                      background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                      background: 'rgba(0,0,0,.03)', border: `1px solid ${border}`,
                       color: textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none',
                       direction: 'ltr', textAlign: 'left',
                     }}
@@ -2407,7 +2379,7 @@ export function Dashboard() {
                     onChange={e => setShareSubject(e.target.value)}
                     style={{
                       width: '100%', padding: '11px 14px', borderRadius: 10,
-                      background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                      background: 'rgba(0,0,0,.03)', border: `1px solid ${border}`,
                       color: textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none',
                     }}
                   />
@@ -2423,7 +2395,7 @@ export function Dashboard() {
                     placeholder="תודה רבה על האירוע! תהנו מהתמונות..."
                     style={{
                       width: '100%', padding: '11px 14px', borderRadius: 10,
-                      background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                      background: 'rgba(0,0,0,.03)', border: `1px solid ${border}`,
                       color: textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none',
                       resize: 'vertical', minHeight: 80,
                     }}
@@ -2449,7 +2421,7 @@ export function Dashboard() {
                     style={{
                       flex: 1, padding: '12px 0', borderRadius: 12,
                       background: shareSending || !shareEmail
-                        ? 'rgba(99,102,241,.4)'
+                        ? 'rgba(45,196,121,.4)'
                         : `linear-gradient(135deg, ${accent}, ${accentLight})`,
                       color: '#fff', border: 'none', fontSize: 14, fontWeight: 700,
                       cursor: shareSending || !shareEmail ? 'not-allowed' : 'pointer',
@@ -2497,7 +2469,7 @@ export function Dashboard() {
               }}>×</button>
             </div>
             <p style={{ fontSize: 14, color: textSecondary, margin: '0 0 24px', lineHeight: 1.5 }}>
-              טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
+              טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#16a274' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
@@ -2512,14 +2484,14 @@ export function Dashboard() {
                   style={{
                     position: 'relative',
                     background: pkg.highlight
-                      ? `linear-gradient(135deg, rgba(99,102,241,.12), rgba(129,140,248,.06))`
+                      ? `linear-gradient(135deg, rgba(45,196,121,.12), rgba(61,214,139,.06))`
                       : card,
-                    border: `1px solid ${pkg.highlight ? 'rgba(99,102,241,.4)' : border}`,
+                    border: `1px solid ${pkg.highlight ? 'rgba(45,196,121,.4)' : border}`,
                     borderRadius: 18, padding: 24, textAlign: 'right' as const,
                     cursor: 'pointer', transition: 'all .2s',
                     color: textPrimary, fontFamily: 'inherit',
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(99,102,241,.18)` }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(45,196,121,.18)` }}
                   onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}
                 >
                   {pkg.highlight && (
@@ -2537,7 +2509,7 @@ export function Dashboard() {
                     {pkg.tokens.toLocaleString('he-IL')}
                   </div>
                   <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>טוקנים בחודש</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: '#a5b4fc' }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#16a274' }}>
                     ₪{pkg.pricePerMonthIls}
                     <span style={{ fontSize: 12, fontWeight: 500, color: textMuted }}> / חודש</span>
                   </div>
