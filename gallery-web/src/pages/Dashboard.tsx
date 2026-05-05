@@ -2099,11 +2099,35 @@ export function Dashboard() {
       </main>
 
       {/* ======= Create gallery modal ======= */}
-      {showModal && (
+      {showModal && (() => {
+        const inputBase = {
+          width: '100%', padding: '12px 14px', borderRadius: 2,
+          border: `1px solid ${border}`,
+          background: '#fff', color: textPrimary, fontSize: 14,
+          fontFamily: 'inherit',
+          outline: 'none', boxSizing: 'border-box' as const,
+          transition: 'border-color .15s',
+        }
+        const labelStyle = {
+          fontSize: 13, color: textPrimary, display: 'block' as const, marginBottom: 8,
+          fontWeight: 500,
+        }
+        // Picker tile — uppercase eyebrow on selected, hairline-bordered, cream
+        // background, no green/glow. Mirrors the editorial CTA language.
+        const pickerTile = (selected: boolean) => ({
+          background: selected ? bgSubtle : '#fff',
+          border: `1px solid ${selected ? textPrimary : border}`,
+          borderRadius: 2, padding: '18px 8px', cursor: 'pointer',
+          display: 'flex' as const, flexDirection: 'column' as const,
+          alignItems: 'center' as const, gap: 10,
+          transition: 'border-color .15s, background .15s',
+          fontFamily: 'inherit',
+        })
+        return (
         <div
           style={{
             position: 'fixed', inset: 0,
-            background: 'rgba(0,0,0,.75)',
+            background: 'rgba(20,20,19,.55)',
             backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             zIndex: 1000, animation: 'overlayIn .2s ease both',
@@ -2112,82 +2136,66 @@ export function Dashboard() {
         >
           <div
             style={{
-              background: `linear-gradient(180deg, #141420 0%, ${cardSolid} 100%)`,
-              borderRadius: 22, padding: '40px 36px 36px', width: '90%', maxWidth: 520,
+              background: bg,
+              borderRadius: 4, padding: '40px 44px 36px', width: '90%', maxWidth: 560,
               maxHeight: '90vh', overflowY: 'auto' as const,
               border: `1px solid ${border}`, direction: 'rtl',
               animation: 'modalIn .3s ease both',
-              boxShadow: `0 24px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.02) inset`,
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal icon */}
+            {/* Eyebrow + close + heading — replaces the gradient block */}
             <div style={{
-              width: 52, height: 52, borderRadius: 16, marginBottom: 20,
-              background: `linear-gradient(135deg, rgba(45,196,121,.15), rgba(167,139,250,.1))`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              border: `1px solid rgba(45,196,121,.2)`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: 18,
             }}>
-              <span style={{ fontSize: 24 }}>🖼️</span>
+              <div style={{
+                fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+                color: textMuted, textTransform: 'uppercase',
+              }}>
+                New Gallery
+              </div>
+              <button onClick={() => setShowModal(false)} aria-label="סגירה" style={{
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                color: textSecondary, padding: 4, display: 'flex',
+              }}>
+                <Icon name="close" size={16} strokeWidth={1.85} />
+              </button>
             </div>
 
             <h2 style={{
-              fontSize: 22, fontWeight: 800, marginTop: 0, marginBottom: 8,
-              color: textPrimary, letterSpacing: '-0.02em',
+              fontSize: 28, fontWeight: 500, margin: '0 0 10px',
+              color: textPrimary, letterSpacing: '-0.02em', lineHeight: 1.1,
             }}>
               יצירת גלריה חדשה
             </h2>
-            <p style={{ color: textMuted, fontSize: 14, margin: '0 0 28px', lineHeight: 1.5 }}>
+            <p style={{ color: textSecondary, fontSize: 14, margin: '0 0 32px', lineHeight: 1.55 }}>
               מלאו את הפרטים כדי להתחיל
             </p>
 
-            <label style={{ display: 'block', marginBottom: 20 }}>
-              <span style={{
-                fontSize: 13, color: textSecondary, display: 'block', marginBottom: 8,
-                fontWeight: 500, letterSpacing: '0.02em',
-              }}>
-                שם הגלריה
-              </span>
+            <label style={{ display: 'block', marginBottom: 22 }}>
+              <span style={labelStyle}>שם הגלריה</span>
               <input
                 type="text"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="לדוגמה: החתונה של יוסי ומיכל"
                 autoFocus
-                style={{
-                  width: '100%', padding: '14px 16px', borderRadius: 12,
-                  border: `1px solid ${border}`,
-                  background: bg, color: textPrimary, fontSize: 15,
-                  fontFamily: 'inherit',
-                  outline: 'none', boxSizing: 'border-box',
-                  transition: 'border-color .2s, box-shadow .2s',
-                }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.boxShadow = `0 0 0 3px ${accentGlow}`; }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = border; e.currentTarget.style.boxShadow = 'none'; }}
+                style={inputBase}
+                onFocus={(e) => { e.currentTarget.style.borderColor = textPrimary }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = border }}
               />
             </label>
 
             <label style={{ display: 'block', marginBottom: 28 }}>
-              <span style={{
-                fontSize: 13, color: textSecondary, display: 'block', marginBottom: 8,
-                fontWeight: 500, letterSpacing: '0.02em',
-              }}>
-                תאריך אירוע
-              </span>
+              <span style={labelStyle}>תאריך אירוע</span>
               <input
                 type="date"
                 value={newDate}
                 onChange={(e) => setNewDate(e.target.value)}
-                style={{
-                  width: '100%', padding: '14px 16px', borderRadius: 12,
-                  border: `1px solid ${border}`,
-                  background: bg, color: textPrimary, fontSize: 15,
-                  fontFamily: 'inherit',
-                  outline: 'none', boxSizing: 'border-box',
-                  transition: 'border-color .2s, box-shadow .2s',
-                }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.boxShadow = `0 0 0 3px ${accentGlow}`; }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = border; e.currentTarget.style.boxShadow = 'none'; }}
+                style={inputBase}
+                onFocus={(e) => { e.currentTarget.style.borderColor = textPrimary }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = border }}
               />
             </label>
 
@@ -2196,17 +2204,17 @@ export function Dashboard() {
 
             {/* ── Welcome Screen Style ── */}
             <div style={{ marginBottom: 24 }}>
-              <span style={{
-                fontSize: 13, color: textSecondary, display: 'block', marginBottom: 10,
-                fontWeight: 500, letterSpacing: '0.02em',
+              <div style={{
+                fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                color: textMuted, textTransform: 'uppercase', marginBottom: 12,
               }}>
                 סגנון מסך פתיחה
-              </span>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 {([
-                  { value: 'mosaic' as const, label: 'פסיפס', icon: '◫' },
-                  { value: 'cinematic' as const, label: 'קולנועי', icon: '▮' },
-                  { value: 'minimal' as const, label: 'מינימלי', icon: '◻' },
+                  { value: 'mosaic' as const,    label: 'פסיפס',    icon: 'sections' as IconName },
+                  { value: 'cinematic' as const, label: 'קולנועי', icon: 'photo'    as IconName },
+                  { value: 'minimal' as const,   label: 'מינימלי', icon: 'gallery'  as IconName },
                 ] as const).map((opt) => {
                   const selected = welcomeStyle === opt.value
                   return (
@@ -2214,21 +2222,13 @@ export function Dashboard() {
                       key={opt.value}
                       type="button"
                       onClick={() => setWelcomeStyle(opt.value)}
-                      style={{
-                        background: selected ? `rgba(45,196,121,.12)` : glass,
-                        border: `1.5px solid ${selected ? accent : border}`,
-                        borderRadius: 14, padding: '16px 8px', cursor: 'pointer',
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                        transition: 'all .2s',
-                        boxShadow: selected ? `0 0 0 3px ${accentGlow}` : 'none',
-                      }}
+                      style={pickerTile(selected)}
                     >
-                      <span style={{ fontSize: 24, color: selected ? accentLight : textMuted, lineHeight: 1 }}>
-                        {opt.icon}
-                      </span>
+                      <Icon name={opt.icon} size={20} strokeWidth={selected ? 1.85 : 1.4} />
                       <span style={{
-                        fontSize: 12, fontWeight: 600, color: selected ? textPrimary : textSecondary,
-                        letterSpacing: '0.01em', fontFamily: 'inherit',
+                        fontSize: 12,
+                        fontWeight: selected ? 600 : 500,
+                        color: textPrimary, fontFamily: 'inherit',
                       }}>
                         {opt.label}
                       </span>
@@ -2240,17 +2240,17 @@ export function Dashboard() {
 
             {/* ── Feed Layout ── */}
             <div style={{ marginBottom: 24 }}>
-              <span style={{
-                fontSize: 13, color: textSecondary, display: 'block', marginBottom: 10,
-                fontWeight: 500, letterSpacing: '0.02em',
+              <div style={{
+                fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                color: textMuted, textTransform: 'uppercase', marginBottom: 12,
               }}>
                 תצוגת פיד
-              </span>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 {([
-                  { value: 'grid' as const, label: 'רשת', icon: '▦' },
-                  { value: 'masonry' as const, label: 'אבן', icon: '▥' },
-                  { value: 'carousel' as const, label: 'קרוסלה', icon: '▷' },
+                  { value: 'grid' as const,     label: 'רשת',     icon: 'gallery'  as IconName },
+                  { value: 'masonry' as const,  label: 'אבן',     icon: 'sections' as IconName },
+                  { value: 'carousel' as const, label: 'קרוסלה', icon: 'arrow-out' as IconName },
                 ] as const).map((opt) => {
                   const selected = feedLayout === opt.value
                   return (
@@ -2258,21 +2258,13 @@ export function Dashboard() {
                       key={opt.value}
                       type="button"
                       onClick={() => setFeedLayout(opt.value)}
-                      style={{
-                        background: selected ? `rgba(45,196,121,.12)` : glass,
-                        border: `1.5px solid ${selected ? accent : border}`,
-                        borderRadius: 14, padding: '16px 8px', cursor: 'pointer',
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                        transition: 'all .2s',
-                        boxShadow: selected ? `0 0 0 3px ${accentGlow}` : 'none',
-                      }}
+                      style={pickerTile(selected)}
                     >
-                      <span style={{ fontSize: 24, color: selected ? accentLight : textMuted, lineHeight: 1 }}>
-                        {opt.icon}
-                      </span>
+                      <Icon name={opt.icon} size={20} strokeWidth={selected ? 1.85 : 1.4} />
                       <span style={{
-                        fontSize: 12, fontWeight: 600, color: selected ? textPrimary : textSecondary,
-                        letterSpacing: '0.01em', fontFamily: 'inherit',
+                        fontSize: 12,
+                        fontWeight: selected ? 600 : 500,
+                        color: textPrimary, fontFamily: 'inherit',
                       }}>
                         {opt.label}
                       </span>
@@ -2285,178 +2277,104 @@ export function Dashboard() {
             {/* ── Divider ── */}
             <div style={{ height: 1, background: border, margin: '4px 0 24px' }} />
 
-            {/* ── Client Privacy: Hide Photos Toggle ── */}
-            <div style={{ marginBottom: 20 }}>
-              <div
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  cursor: 'pointer', userSelect: 'none',
-                }}
-                onClick={() => setClientHidePhotosEnabled(!clientHidePhotosEnabled)}
-              >
-                <div>
-                  <span style={{
-                    fontSize: 14, color: textPrimary, fontWeight: 600, display: 'block',
-                    marginBottom: 4, letterSpacing: '0.01em',
-                  }}>
-                    הסתרת תמונות
-                  </span>
-                  <span style={{ fontSize: 12, color: textMuted, lineHeight: 1.5 }}>
-                    אפשרו לאורחים להסתיר תמונות מאורחים אחרים
-                  </span>
-                </div>
-                <div style={{
-                  width: 44, height: 24, borderRadius: 12, padding: 2,
-                  background: clientHidePhotosEnabled ? accent : border,
-                  transition: 'background .2s', flexShrink: 0, marginRight: 12,
-                  cursor: 'pointer', position: 'relative',
-                }}>
-                  <div style={{
-                    width: 20, height: 20, borderRadius: 10,
-                    background: '#fff',
-                    transition: 'transform .2s',
-                    transform: clientHidePhotosEnabled ? 'translateX(-20px)' : 'translateX(0)',
-                    boxShadow: '0 1px 3px rgba(0,0,0,.3)',
-                  }} />
-                </div>
-              </div>
-            </div>
-
-            {/* ── Gallery Code Toggle + Input ── */}
-            <div style={{ marginBottom: 20 }}>
-              <div
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  cursor: 'pointer', userSelect: 'none',
-                }}
-                onClick={() => setRequireGalleryCode(!requireGalleryCode)}
-              >
-                <div>
-                  <span style={{
-                    fontSize: 14, color: textPrimary, fontWeight: 600, display: 'block',
-                    marginBottom: 4, letterSpacing: '0.01em',
-                  }}>
-                    קוד גישה לגלריה
-                  </span>
-                  <span style={{ fontSize: 12, color: textMuted, lineHeight: 1.5 }}>
-                    דרשו קוד כניסה לצפייה בגלריה
-                  </span>
-                </div>
-                <div style={{
-                  width: 44, height: 24, borderRadius: 12, padding: 2,
-                  background: requireGalleryCode ? accent : border,
-                  transition: 'background .2s', flexShrink: 0, marginRight: 12,
-                  cursor: 'pointer', position: 'relative',
-                }}>
-                  <div style={{
-                    width: 20, height: 20, borderRadius: 10,
-                    background: '#fff',
-                    transition: 'transform .2s',
-                    transform: requireGalleryCode ? 'translateX(-20px)' : 'translateX(0)',
-                    boxShadow: '0 1px 3px rgba(0,0,0,.3)',
-                  }} />
-                </div>
-              </div>
-              {requireGalleryCode && (
-                <input
-                  type="text"
-                  value={galleryCode}
-                  onChange={(e) => setGalleryCode(e.target.value)}
-                  placeholder="הזינו קוד גישה"
+            {/* Toggle row helper — used for the three privacy switches below.
+                Charcoal "on" state matches the editorial palette; no green. */}
+            {([
+              { key: 'hide',  on: clientHidePhotosEnabled, set: setClientHidePhotosEnabled,
+                title: 'הסתרת תמונות',  desc: 'אפשרו לאורחים להסתיר תמונות מאורחים אחרים' },
+              { key: 'code',  on: requireGalleryCode, set: setRequireGalleryCode,
+                title: 'קוד גישה לגלריה', desc: 'דרשו קוד כניסה לצפייה בגלריה' },
+              { key: 'track', on: trackDownloads, set: setTrackDownloads,
+                title: 'מעקב הורדות',     desc: 'עקבו אחרי הורדות לפי אימייל' },
+            ] as const).map((row, i, arr) => (
+              <div key={row.key} style={{ marginBottom: i === arr.length - 1 ? 0 : 18 }}>
+                <div
+                  onClick={() => row.set(!row.on)}
                   style={{
-                    width: '100%', padding: '12px 16px', borderRadius: 12, marginTop: 12,
-                    border: `1px solid ${border}`,
-                    background: bg, color: textPrimary, fontSize: 14,
-                    fontFamily: 'inherit',
-                    outline: 'none', boxSizing: 'border-box',
-                    transition: 'border-color .2s, box-shadow .2s',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    cursor: 'pointer', userSelect: 'none', gap: 12,
                   }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.boxShadow = `0 0 0 3px ${accentGlow}`; }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = border; e.currentTarget.style.boxShadow = 'none'; }}
-                />
-              )}
-            </div>
-
-            {/* ── Download Tracking Toggle ── */}
-            <div style={{ marginBottom: 28 }}>
-              <div
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  cursor: 'pointer', userSelect: 'none',
-                }}
-                onClick={() => setTrackDownloads(!trackDownloads)}
-              >
-                <div>
-                  <span style={{
-                    fontSize: 14, color: textPrimary, fontWeight: 600, display: 'block',
-                    marginBottom: 4, letterSpacing: '0.01em',
-                  }}>
-                    מעקב הורדות
-                  </span>
-                  <span style={{ fontSize: 12, color: textMuted, lineHeight: 1.5 }}>
-                    עקבו אחרי הורדות לפי אימייל
-                  </span>
-                </div>
-                <div style={{
-                  width: 44, height: 24, borderRadius: 12, padding: 2,
-                  background: trackDownloads ? accent : border,
-                  transition: 'background .2s', flexShrink: 0, marginRight: 12,
-                  cursor: 'pointer', position: 'relative',
-                }}>
+                >
+                  <div>
+                    <span style={{
+                      fontSize: 13, color: textPrimary, fontWeight: 500, display: 'block',
+                      marginBottom: 4,
+                    }}>
+                      {row.title}
+                    </span>
+                    <span style={{ fontSize: 12, color: textMuted, lineHeight: 1.5 }}>
+                      {row.desc}
+                    </span>
+                  </div>
                   <div style={{
-                    width: 20, height: 20, borderRadius: 10,
-                    background: '#fff',
-                    transition: 'transform .2s',
-                    transform: trackDownloads ? 'translateX(-20px)' : 'translateX(0)',
-                    boxShadow: '0 1px 3px rgba(0,0,0,.3)',
-                  }} />
+                    width: 44, height: 24, borderRadius: 24, padding: 2,
+                    background: row.on ? textPrimary : border,
+                    transition: 'background .2s', flexShrink: 0,
+                    cursor: 'pointer', position: 'relative',
+                  }}>
+                    <div style={{
+                      width: 20, height: 20, borderRadius: 10,
+                      background: '#fff',
+                      transition: 'transform .2s',
+                      transform: row.on ? 'translateX(-20px)' : 'translateX(0)',
+                      boxShadow: '0 1px 3px rgba(0,0,0,.18)',
+                    }} />
+                  </div>
                 </div>
+                {row.key === 'code' && row.on && (
+                  <input
+                    type="text"
+                    value={galleryCode}
+                    onChange={(e) => setGalleryCode(e.target.value)}
+                    placeholder="הזינו קוד גישה"
+                    style={{ ...inputBase, marginTop: 10 }}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = textPrimary }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = border }}
+                  />
+                )}
               </div>
-            </div>
+            ))}
 
-            <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 32, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowModal(false)}
+                style={{
+                  background: 'transparent', color: textPrimary,
+                  border: `1px solid ${border}`,
+                  borderRadius: 2, padding: '12px 24px', fontSize: 11, cursor: 'pointer',
+                  fontFamily: 'inherit', transition: 'border-color .15s',
+                  letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = textPrimary }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = border }}
+              >
+                Cancel
+              </button>
               <button
                 onClick={createGallery}
                 disabled={creating || !newName.trim()}
                 style={{
-                  flex: 1,
-                  background: creating || !newName.trim()
-                    ? `rgba(45,196,121,.3)`
-                    : `linear-gradient(135deg, ${accent}, ${accentLight})`,
-                  color: '#fff', border: 'none', borderRadius: 12,
-                  padding: '14px 0', fontSize: 15, fontWeight: 700, cursor: creating || !newName.trim() ? 'not-allowed' : 'pointer',
+                  background: !newName.trim() || creating ? border : textPrimary,
+                  color: '#fff', border: `1px solid ${!newName.trim() || creating ? border : textPrimary}`,
+                  borderRadius: 2, padding: '12px 32px', fontSize: 11, fontWeight: 500,
+                  cursor: creating || !newName.trim() ? 'not-allowed' : 'pointer',
                   fontFamily: 'inherit',
-                  opacity: creating || !newName.trim() ? 0.6 : 1,
-                  transition: 'all .2s',
-                  boxShadow: creating || !newName.trim() ? 'none' : `0 4px 16px ${accentGlow}`,
-                  letterSpacing: '0.01em',
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
                 }}
               >
                 {creating ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,.3)', borderTopColor: '#fff', animation: 'spin .6s linear infinite' }} />
-                    יוצר...
-                  </span>
-                ) : 'צור גלריה'}
-              </button>
-              <button
-                onClick={() => setShowModal(false)}
-                style={{
-                  flex: 1, background: 'transparent', color: textSecondary,
-                  border: `1px solid ${border}`,
-                  borderRadius: 12, padding: '14px 0', fontSize: 15, cursor: 'pointer',
-                  fontFamily: 'inherit', transition: 'all .2s',
-                  letterSpacing: '0.01em', fontWeight: 500,
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = borderHover; e.currentTarget.style.color = textPrimary; }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = border; e.currentTarget.style.color = textSecondary; }}
-              >
-                ביטול
+                  <>
+                    <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', border: '1.5px solid rgba(255,255,255,.4)', borderTopColor: '#fff', animation: 'spin .6s linear infinite' }} />
+                    Creating
+                  </>
+                ) : 'Create Gallery'}
               </button>
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ───────────── Email Share Modal ───────────── */}
       {shareGallery && (
