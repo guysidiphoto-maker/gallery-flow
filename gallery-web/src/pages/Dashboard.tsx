@@ -2334,143 +2334,203 @@ export function Dashboard() {
                 )}
 
                 {/* ── Settings Tab ── */}
-                {editTab === 'settings' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                    <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: textPrimary }}>הגדרות גלריה</h3>
+                {editTab === 'settings' && (() => {
+                  // Editorial Settings — local helpers shared across the
+                  // toggle rows + picker tiles to keep markup compact.
+                  const ds = (editingGallery.delivery_settings ?? {}) as Record<string, unknown>
+                  const Toggle = ({ on, onClick }: { on: boolean; onClick: (e: React.MouseEvent) => void }) => (
+                    <div
+                      role="switch" aria-checked={on}
+                      onClick={onClick}
+                      style={{
+                        width: 44, height: 24, borderRadius: 24, padding: 2,
+                        background: on ? textPrimary : border,
+                        transition: 'background .2s', flexShrink: 0,
+                        cursor: 'pointer', position: 'relative',
+                      }}>
+                      <div style={{
+                        width: 20, height: 20, borderRadius: 10, background: '#fff',
+                        transition: 'transform .2s',
+                        transform: on ? 'translateX(-20px)' : 'translateX(0)',
+                        boxShadow: '0 1px 3px rgba(0,0,0,.18)',
+                      }} />
+                    </div>
+                  )
+                  const ToggleRow = ({ label, desc, on, onChange, last }: {
+                    label: string; desc: string; on: boolean; onChange: () => void; last?: boolean
+                  }) => (
+                    <div onClick={(e) => { e.stopPropagation(); onChange() }}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '14px 0', cursor: 'pointer', userSelect: 'none', gap: 16,
+                        borderBottom: last ? 'none' : `1px solid ${border}`,
+                      }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 4 }}>{label}</div>
+                        <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.5 }}>{desc}</div>
+                      </div>
+                      <Toggle on={on} onClick={(e) => { e.stopPropagation(); onChange() }} />
+                    </div>
+                  )
+                  const Section = ({ eyebrow, children }: { eyebrow: string; children: React.ReactNode }) => (
+                    <section style={{
+                      padding: '24px 24px 16px',
+                      background: bgSubtle,
+                      border: `1px solid ${border}`,
+                    }}>
+                      <div style={{
+                        fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                        color: textMuted, textTransform: 'uppercase', marginBottom: 12,
+                      }}>{eyebrow}</div>
+                      {children}
+                    </section>
+                  )
+                  const PickerTile = ({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) => (
+                    <button onClick={onClick} style={{
+                      flex: 1, padding: '14px 16px', cursor: 'pointer',
+                      border: `1px solid ${active ? textPrimary : border}`,
+                      background: active ? '#fff' : 'transparent',
+                      borderRadius: 2, fontFamily: 'inherit', textAlign: 'right' as const,
+                      transition: 'border-color .15s, background .15s',
+                    }}>{children}</button>
+                  )
+                  return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* Page eyebrow + title */}
+                    <div>
+                      <div style={{
+                        fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+                        color: textMuted, textTransform: 'uppercase', marginBottom: 10,
+                      }}>Settings</div>
+                      <h3 style={{
+                        fontSize: 22, fontWeight: 500, margin: 0,
+                        letterSpacing: '-0.015em', color: textPrimary,
+                      }}>הגדרות גלריה</h3>
+                    </div>
 
                     {/* Downloads */}
-                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(0,0,0,.03)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>📥 הורדות</div>
-                      {[
-                        { key: 'downloadsEnabled', label: 'אפשר הורדת תמונות', desc: 'אורחים יוכלו להוריד תמונות בודדות' },
-                        { key: 'bulkDownloadEnabled', label: 'הורדה מרוכזת', desc: 'אפשר הורדת כל התמונות בבת אחת' },
-                        { key: 'trackDownloads', label: 'מעקב הורדות', desc: 'עקוב מי הוריד ומתי' },
-                      ].map(opt => (
-                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,.02)' }}>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
-                            <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
-                          </div>
-                          <div className={`dash-toggle ${editingGallery.delivery_settings?.[opt.key] ? 'dash-toggle-on' : 'dash-toggle-off'}`}
-                            onClick={(e) => { e.stopPropagation(); updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key])) }}>
-                            <div className="dash-toggle-knob" />
-                          </div>
-                        </div>
+                    <Section eyebrow="הורדות">
+                      {([
+                        { key: 'downloadsEnabled',    label: 'אפשר הורדת תמונות', desc: 'אורחים יוכלו להוריד תמונות בודדות' },
+                        { key: 'bulkDownloadEnabled', label: 'הורדה מרוכזת',     desc: 'אפשר הורדת כל התמונות בבת אחת' },
+                        { key: 'trackDownloads',      label: 'מעקב הורדות',      desc: 'עקוב מי הוריד ומתי' },
+                      ] as const).map((opt, i, arr) => (
+                        <ToggleRow key={opt.key}
+                          label={opt.label} desc={opt.desc}
+                          on={Boolean(ds[opt.key])}
+                          onChange={() => updateGallerySetting(opt.key, !ds[opt.key])}
+                          last={i === arr.length - 1}
+                        />
                       ))}
-                    </div>
+                    </Section>
 
                     {/* Privacy */}
-                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(0,0,0,.03)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>פרטיות</div>
-                      {[
+                    <Section eyebrow="פרטיות">
+                      {([
                         { key: 'clientHidePhotosEnabled', label: 'אפשר לאורחים להסתיר תמונות', desc: 'כל אורח יכול להסתיר תמונות שלו מאחרים' },
-                        { key: 'clientSelectionEnabled', label: 'בחירת תמונות', desc: 'אפשר ללקוח לבחור תמונות מועדפות' },
-                      ].map(opt => (
-                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,.02)' }}>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
-                            <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
-                          </div>
-                          <div className={`dash-toggle ${editingGallery.delivery_settings?.[opt.key] ? 'dash-toggle-on' : 'dash-toggle-off'}`}
-                            onClick={(e) => { e.stopPropagation(); updateGallerySetting(opt.key, !(editingGallery.delivery_settings?.[opt.key])) }}>
-                            <div className="dash-toggle-knob" />
-                          </div>
-                        </div>
+                        { key: 'clientSelectionEnabled',  label: 'בחירת תמונות',                desc: 'אפשר ללקוח לבחור תמונות מועדפות' },
+                      ] as const).map((opt, i, arr) => (
+                        <ToggleRow key={opt.key}
+                          label={opt.label} desc={opt.desc}
+                          on={Boolean(ds[opt.key])}
+                          onChange={() => updateGallerySetting(opt.key, !ds[opt.key])}
+                          last={i === arr.length - 1}
+                        />
                       ))}
-                    </div>
+                    </Section>
 
                     {/* Face Recognition */}
-                    <div style={{ padding: 20, borderRadius: 14, background: 'linear-gradient(135deg, rgba(45,196,121,.06), rgba(139,92,246,.04))', border: `1px solid rgba(45,196,121,.15)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>זיהוי פנים AI</div>
-                      {[
-                        { key: 'faceIndexEnabled', label: 'הפעל זיהוי פנים', desc: 'אורחים יוכלו למצוא את עצמם בסלפי' },
-                      ].map(opt => (
-                        <div key={opt.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,.02)' }}>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
-                            <div style={{ fontSize: 11, color: textMuted }}>{opt.desc}</div>
-                          </div>
-                          <div className={`dash-toggle ${editingGallery.delivery_settings?.[opt.key] ? 'dash-toggle-on' : 'dash-toggle-off'}`}
-                            onClick={async (e) => {
-                              e.stopPropagation()
-                              const newVal = !(editingGallery.delivery_settings?.[opt.key])
-                              await updateGallerySetting(opt.key, newVal)
-                              await supabase.from('galleries').update({ face_index_enabled: newVal }).eq('id', editingGallery.id)
-                            }}>
-                            <div className="dash-toggle-knob" />
-                          </div>
-                        </div>
-                      ))}
-                      {Boolean(editingGallery.delivery_settings?.faceIndexEnabled) && (
-                        <div style={{ marginTop: 12 }}>
-                          <div style={{ fontSize: 12, color: textMuted, marginBottom: 8 }}>מצב פרטיות</div>
+                    <Section eyebrow="זיהוי פנים">
+                      <ToggleRow
+                        label="הפעל זיהוי פנים"
+                        desc="אורחים יוכלו למצוא את עצמם בסלפי. עלות: ללא תוספת טוקנים."
+                        on={Boolean(ds.faceIndexEnabled)}
+                        onChange={async () => {
+                          const newVal = !ds.faceIndexEnabled
+                          await updateGallerySetting('faceIndexEnabled', newVal)
+                          await supabase.from('galleries').update({ face_index_enabled: newVal }).eq('id', editingGallery.id)
+                        }}
+                        last
+                      />
+                      {Boolean(ds.faceIndexEnabled) && (
+                        <div style={{ marginTop: 12, paddingTop: 16, borderTop: `1px solid ${border}` }}>
+                          <div style={{
+                            fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                            color: textMuted, textTransform: 'uppercase', marginBottom: 12,
+                          }}>מצב פרטיות</div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             {([
-                              { id: 'open', label: 'פתוח', desc: 'כולם רואים את כל התמונות + אופציה לחיפוש' },
-                              { id: 'private', label: 'פרטי', desc: 'כל אורח רואה רק את התמונות שלו' },
-                            ] as const).map(m => (
-                              <button key={m.id} onClick={() => updateGallerySetting('facePrivacyMode', m.id)} style={{
-                                flex: 1, padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
-                                border: `2px solid ${(editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? accent : 'rgba(0,0,0,.04)'}`,
-                                background: (editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? 'rgba(45,196,121,.08)' : glass,
-                                fontFamily: 'inherit', textAlign: 'right' as const,
-                              }}>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: (editingGallery.delivery_settings?.facePrivacyMode || 'open') === m.id ? accentLight : textPrimary, marginBottom: 2 }}>{m.label}</div>
-                                <div style={{ fontSize: 10, color: textMuted }}>{m.desc}</div>
-                              </button>
-                            ))}
+                              { id: 'open',    label: 'פתוח',  desc: 'כולם רואים את כל התמונות' },
+                              { id: 'private', label: 'פרטי',  desc: 'כל אורח רואה רק את התמונות שלו' },
+                            ] as const).map(m => {
+                              const active = ((ds.facePrivacyMode as string) || 'open') === m.id
+                              return (
+                                <PickerTile key={m.id} active={active} onClick={() => updateGallerySetting('facePrivacyMode', m.id)}>
+                                  <div style={{ fontSize: 13, fontWeight: active ? 600 : 500, color: textPrimary, marginBottom: 4 }}>{m.label}</div>
+                                  <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4 }}>{m.desc}</div>
+                                </PickerTile>
+                              )
+                            })}
                           </div>
                         </div>
                       )}
-                    </div>
+                    </Section>
 
                     {/* Layout */}
-                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(0,0,0,.03)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>תצוגה</div>
-                      <div style={{ fontSize: 12, color: textMuted, marginBottom: 10 }}>סגנון פיד</div>
+                    <Section eyebrow="תצוגה">
+                      <div style={{ fontSize: 13, color: textPrimary, fontWeight: 500, marginBottom: 12 }}>סגנון פיד</div>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        {(['grid', 'masonry', 'carousel'] as const).map(l => (
-                          <button key={l} onClick={() => updateGallerySetting('feedLayout', l)} style={{
-                            padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                            fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                            background: (editingGallery.delivery_settings?.feedLayout || 'grid') === l ? `rgba(45,196,121,.2)` : glass,
-                            color: (editingGallery.delivery_settings?.feedLayout || 'grid') === l ? accentLight : textSecondary,
-                            transition: 'all .15s',
-                          }}>{l === 'grid' ? 'רשת' : l === 'masonry' ? 'מוזאיקה' : 'קרוסלה'}</button>
-                        ))}
+                        {([
+                          { id: 'grid',     label: 'רשת' },
+                          { id: 'masonry',  label: 'מוזאיקה' },
+                          { id: 'carousel', label: 'קרוסלה' },
+                        ] as const).map(l => {
+                          const active = ((ds.feedLayout as string) || 'grid') === l.id
+                          return (
+                            <button key={l.id} onClick={() => updateGallerySetting('feedLayout', l.id)} style={{
+                              flex: 1, padding: '12px 16px',
+                              border: `1px solid ${active ? textPrimary : border}`,
+                              background: active ? '#fff' : 'transparent',
+                              borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
+                              fontSize: 13, fontWeight: active ? 600 : 500, color: textPrimary,
+                              transition: 'border-color .15s, background .15s',
+                            }}>{l.label}</button>
+                          )
+                        })}
                       </div>
-                    </div>
+                    </Section>
 
                     {/* Theme color */}
-                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(0,0,0,.03)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>צבע ראשי</div>
-                      <div style={{ fontSize: 12, color: textMuted, marginBottom: 10 }}>הצבע שמופיע בכפתורים, מסגרות ולוגו של הגלריה</div>
+                    <Section eyebrow="צבע ראשי">
+                      <div style={{ fontSize: 12, color: textMuted, marginBottom: 14, lineHeight: 1.5 }}>
+                        הצבע שמופיע בכפתורים ומסגרות בגלריה הציבורית
+                      </div>
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                         {([
-                          { id: 'indigo', label: 'אינדיגו', color: '#2DC479' },
-                          { id: 'rose',   label: 'ורוד',   color: '#f43f5e' },
-                          { id: 'amber',  label: 'זהב',    color: '#f59e0b' },
-                          { id: 'teal',   label: 'טורקיז', color: '#14b8a6' },
-                          { id: 'slate',  label: 'אפור',   color: '#64748b' },
+                          { id: 'charcoal', label: 'פחם',     color: '#141413' },
+                          { id: 'sage',     label: 'מרווה',   color: '#7B8F6E' },
+                          { id: 'rose',     label: 'ורוד',     color: '#C18A8A' },
+                          { id: 'amber',    label: 'ענברי',   color: '#A67C52' },
+                          { id: 'teal',     label: 'טורקיז',  color: '#5E8A8A' },
+                          { id: 'slate',    label: 'אפור',    color: '#64748b' },
                         ] as const).map(c => {
-                          const active = (editingGallery.delivery_settings?.themeColor || 'indigo') === c.id
+                          const active = ((ds.themeColor as string) || 'charcoal') === c.id
                           return (
                             <button key={c.id} onClick={() => updateGallerySetting('themeColor', c.id)} style={{
-                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                              padding: '8px 14px', borderRadius: 12,
-                              background: active ? `rgba(0,0,0,.03)` : 'transparent',
-                              border: `2px solid ${active ? c.color : 'rgba(0,0,0,.03)'}`,
-                              cursor: 'pointer', fontFamily: 'inherit',
-                              transition: 'all .15s',
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                              padding: '10px 14px',
+                              border: `1px solid ${active ? textPrimary : border}`,
+                              background: active ? '#fff' : 'transparent',
+                              borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
+                              transition: 'border-color .15s, background .15s',
                             }}>
                               <div style={{
-                                width: 28, height: 28, borderRadius: 8,
+                                width: 28, height: 28, borderRadius: '50%',
                                 background: c.color,
-                                boxShadow: active ? `0 4px 16px ${c.color}66` : 'none',
                               }} />
                               <span style={{
-                                fontSize: 11, fontWeight: 600,
-                                color: active ? c.color : textMuted,
+                                fontSize: 10, fontWeight: 500, color: textPrimary,
+                                letterSpacing: '0.04em',
                               }}>
                                 {c.label}
                               </span>
@@ -2478,36 +2538,46 @@ export function Dashboard() {
                           )
                         })}
                       </div>
-                    </div>
+                    </Section>
 
                     {/* Watermark */}
-                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(0,0,0,.03)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>ווטרמרק</div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,.02)' }}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 500 }}>הצג ווטרמרק על תצוגות web</div>
-                          <div style={{ fontSize: 11, color: textMuted }}>שם העסק יופיע בפינה — מקור ההורדה תמיד נקי</div>
-                        </div>
-                        <div className={`dash-toggle ${editingGallery.delivery_settings?.watermarkEnabled ? 'dash-toggle-on' : 'dash-toggle-off'}`}
-                          onClick={(e) => { e.stopPropagation(); updateGallerySetting('watermarkEnabled', !(editingGallery.delivery_settings?.watermarkEnabled)) }}>
-                          <div className="dash-toggle-knob" />
-                        </div>
-                      </div>
-                      {Boolean(editingGallery.delivery_settings?.watermarkEnabled) && (
-                        <div style={{ marginTop: 14 }}>
-                          <div style={{ fontSize: 12, color: textMuted, marginBottom: 8 }}>טקסט הווטרמרק (ברירת מחדל: שם העסק)</div>
-                          <input
-                            type="text"
-                            value={String(editingGallery.delivery_settings?.watermarkText ?? '')}
-                            onChange={(e) => updateGallerySetting('watermarkText', e.target.value)}
-                            placeholder="© השם שלך"
-                            style={{
-                              width: '100%', padding: '10px 14px', borderRadius: 10,
-                              background: 'rgba(0,0,0,.03)', border: `1px solid ${border}`,
-                              color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
-                            }}
-                          />
-                          <div style={{ fontSize: 12, color: textMuted, marginTop: 14, marginBottom: 8 }}>מיקום</div>
+                    <Section eyebrow="ווטרמרק">
+                      <ToggleRow
+                        label="הצג ווטרמרק על תצוגות web"
+                        desc="שם העסק יופיע בפינה — מקור ההורדה תמיד נקי"
+                        on={Boolean(ds.watermarkEnabled)}
+                        onChange={() => updateGallerySetting('watermarkEnabled', !ds.watermarkEnabled)}
+                        last
+                      />
+                      {Boolean(ds.watermarkEnabled) && (
+                        <div style={{ marginTop: 12, paddingTop: 16, borderTop: `1px solid ${border}` }}>
+                          <label style={{ display: 'block' }}>
+                            <span style={{
+                              fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                              color: textMuted, textTransform: 'uppercase',
+                              display: 'block', marginBottom: 8,
+                            }}>טקסט</span>
+                            <input
+                              type="text"
+                              value={String(ds.watermarkText ?? '')}
+                              onChange={(e) => updateGallerySetting('watermarkText', e.target.value)}
+                              placeholder="© השם שלך"
+                              style={{
+                                width: '100%', padding: '12px 14px', borderRadius: 2,
+                                background: '#fff', border: `1px solid ${border}`,
+                                color: textPrimary, fontSize: 14, fontFamily: 'inherit',
+                                outline: 'none', boxSizing: 'border-box',
+                                transition: 'border-color .15s',
+                              }}
+                              onFocus={(e) => { e.currentTarget.style.borderColor = textPrimary }}
+                              onBlur={(e) => { e.currentTarget.style.borderColor = border }}
+                            />
+                          </label>
+                          <div style={{
+                            fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                            color: textMuted, textTransform: 'uppercase',
+                            marginTop: 18, marginBottom: 10,
+                          }}>מיקום</div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             {([
                               { id: 'bottom-right', label: '↘' },
@@ -2516,24 +2586,27 @@ export function Dashboard() {
                               { id: 'top-left',     label: '↖' },
                               { id: 'center',       label: '＋' },
                             ] as const).map(p => {
-                              const active = (editingGallery.delivery_settings?.watermarkPosition || 'bottom-right') === p.id
+                              const active = ((ds.watermarkPosition as string) || 'bottom-right') === p.id
                               return (
-                                <button key={p.id} onClick={() => updateGallerySetting('watermarkPosition', p.id)} style={{
-                                  width: 40, height: 40, borderRadius: 10,
-                                  background: active ? `rgba(45,196,121,.18)` : 'transparent',
-                                  border: `1px solid ${active ? accent : border}`,
-                                  color: active ? accentLight : textSecondary,
-                                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 18,
-                                  transition: 'all .15s',
-                                }}>{p.label}</button>
+                                <button key={p.id} onClick={() => updateGallerySetting('watermarkPosition', p.id)}
+                                  aria-label={p.id}
+                                  style={{
+                                    width: 44, height: 44, borderRadius: 2,
+                                    background: active ? '#fff' : 'transparent',
+                                    border: `1px solid ${active ? textPrimary : border}`,
+                                    color: textPrimary,
+                                    cursor: 'pointer', fontFamily: 'inherit', fontSize: 18,
+                                    transition: 'border-color .15s, background .15s',
+                                  }}>{p.label}</button>
                               )
                             })}
                           </div>
                         </div>
                       )}
-                    </div>
+                    </Section>
                   </div>
-                )}
+                  )
+                })()}
 
                 {/* ── Welcome Screen Tab ── */}
                 {editTab === 'welcome' && (
