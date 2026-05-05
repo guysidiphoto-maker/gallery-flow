@@ -463,6 +463,10 @@ async function actionSearch(req: Request): Promise<Response> {
   const form = await req.formData()
   const galleryId = form.get('galleryId')
   const selfie = form.get('selfie')
+  const unlockTokenRaw = form.get('token')
+  const unlockToken = typeof unlockTokenRaw === 'string' && unlockTokenRaw.length > 0
+    ? unlockTokenRaw
+    : null
   if (typeof galleryId !== 'string') throw new Error('galleryId required')
   if (!(selfie instanceof File)) throw new Error('selfie file required')
   if (selfie.size > SEARCH_MAX_SELFIE_BYTES) {
@@ -478,6 +482,18 @@ async function actionSearch(req: Request): Promise<Response> {
     .maybeSingle()
   if (!gallery) return json({ error: 'Gallery not found' }, 404)
   if (gallery.status !== 'live') return json({ error: 'Gallery not live' }, 404)
+
+  // Server-side gate enforcement. gallery_token_is_valid passes through any
+  // gallery that has not opted into the signed gate (legacy behaviour) and
+  // requires a valid unlock token for galleries that have. Without this, the
+  // selfie endpoint is a back door around the password gate.
+  const { data: gateOk } = await sb.rpc('gallery_token_is_valid', {
+    p_gallery_id: gallery.id,
+    p_token: unlockToken,
+  })
+  if (!gateOk) {
+    return json({ error: 'unauthorized' }, 401)
+  }
   // Allow partial-search while indexing is still running — as long as at
   // least one image has been indexed, searching against the collection is
   // meaningful and matches what the gallery viewer advertises. Without this

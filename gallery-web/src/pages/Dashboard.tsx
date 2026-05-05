@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase } from '../supabase'
+import { uploadMany } from '../lib/uploadPipeline'
+import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 
 interface Gallery {
   id: string
@@ -9,6 +11,8 @@ interface Gallery {
   published_at: string | null
   status: string
   delivery_settings?: Record<string, unknown>
+  download_count?: number
+  favorite_count?: number
 }
 
 interface GalleryImage {
@@ -50,6 +54,27 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
     .dash-toggle-on .dash-toggle-knob { transform:translateX(22px); }
     @keyframes pulse    { 0%,100% { opacity:.4; } 50% { opacity:1; } }
     @keyframes overlayIn { from { opacity:0; } to { opacity:1; } }
+
+    /* Sidebar mobile transformation. Above 900px the sidebar is a permanent
+       sticky 240px column. Below 900px it becomes an off-canvas drawer that
+       slides in from the right (RTL); the hamburger button in the topbar
+       toggles it; a backdrop dims the rest. */
+    @media (max-width: 900px) {
+      .dash-sidebar {
+        position: fixed !important;
+        right: 0 !important;
+        top: 0 !important;
+        height: 100vh !important;
+        transform: translateX(100%);
+        transition: transform .25s cubic-bezier(.4,0,.2,1);
+        box-shadow: -8px 0 32px rgba(0,0,0,.4);
+      }
+      .dash-sidebar.dash-sidebar--open {
+        transform: translateX(0);
+      }
+      .dash-sidebar-backdrop { display: block !important; }
+      .dash-hamburger { display: flex !important; }
+    }
   `
   document.head.appendChild(style)
 }
@@ -64,12 +89,29 @@ export function Dashboard() {
   const [creating, setCreating] = useState(false)
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [businessId, setBusinessId] = useState<string | null>(null)
+  const [businessSlug, setBusinessSlug] = useState<string | null>(null)
+  const [tokenBalance, setTokenBalance] = useState<number>(0)
+  const [showBuyTokens, setShowBuyTokens] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
-  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'welcome'>('photos')
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome'>('photos')
+  const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number }>>([])
+  const [newSectionName, setNewSectionName] = useState('')
+  const [activitySummary, setActivitySummary] = useState<{
+    downloads_total: number
+    favorites_total: number
+    emails_total: number
+    recent_downloads: Array<{ id: string; image_id: string | null; resolution: string; download_kind: string; created_at: string }>
+    recent_favorites: Array<{ id: string; image_id: string; guest_name: string | null; note: string | null; created_at: string }>
+    recent_emails: Array<{ id: string; recipient_email: string; subject: string | null; status: string; created_at: string }>
+  } | null>(null)
+  const [activityLoading, setActivityLoading] = useState(false)
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set())
+  const [selectMode, setSelectMode] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // New delivery settings state
@@ -85,16 +127,35 @@ export function Dashboard() {
     initBusiness()
   }, [user])
 
+  // Lazy-load activity summary when the tab opens. Re-fetches when switching
+  // galleries, but caches per-gallery within the editor session.
+  useEffect(() => {
+    if (editTab !== 'activities' || !editingGallery) return
+    setActivityLoading(true)
+    supabase
+      .rpc('gallery_activity_summary', { p_gallery_id: editingGallery.id })
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('[activities] fetch failed', error)
+          setActivitySummary(null)
+        } else if (data) {
+          setActivitySummary(data as typeof activitySummary)
+        }
+        setActivityLoading(false)
+      })
+  }, [editTab, editingGallery?.id])
+
   async function initBusiness() {
     // Look up existing business for this user
     const { data: biz } = await supabase
       .from('businesses')
-      .select('id')
+      .select('id, slug')
       .eq('user_id', user!.id)
       .maybeSingle()
 
     if (biz) {
       setBusinessId(biz.id)
+      setBusinessSlug(biz.slug)
     } else {
       // Auto-create a business record for new users
       const displayName = user!.user_metadata?.full_name || user!.user_metadata?.name || user!.email || 'Studio'
@@ -102,15 +163,22 @@ export function Dashboard() {
       const { data: newBiz, error } = await supabase
         .from('businesses')
         .insert({ user_id: user!.id, business_name: displayName, slug })
-        .select('id')
+        .select('id, slug')
         .single()
       if (error) {
         console.error('Failed to create business:', error)
       } else if (newBiz) {
         setBusinessId(newBiz.id)
+        setBusinessSlug(newBiz.slug)
       }
     }
     fetchGalleries()
+    fetchTokenBalance()
+  }
+
+  async function fetchTokenBalance() {
+    const balance = await getMyTokenBalance()
+    setTokenBalance(balance)
   }
 
   async function fetchGalleries() {
@@ -133,7 +201,7 @@ export function Dashboard() {
     }
     const { data, error } = await supabase
       .from('galleries')
-      .select('id, name, image_count, published_at, status')
+      .select('id, name, image_count, published_at, status, download_count, favorite_count')
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
@@ -207,48 +275,110 @@ export function Dashboard() {
   async function openGalleryEditor(g: Gallery) {
     setEditingGallery(g)
     setEditTab('photos')
-    const { data } = await supabase
-      .from('images')
-      .select('id, filename, storage_path, thumbnail_path, is_top_pick, sort_order')
-      .eq('gallery_id', g.id)
-      .order('sort_order', { ascending: true })
-    setGalleryImages(data ?? [])
+    const [imagesRes, sectionsRes] = await Promise.all([
+      supabase
+        .from('images')
+        .select('id, filename, storage_path, thumbnail_path, is_top_pick, sort_order')
+        .eq('gallery_id', g.id)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('gallery_sections')
+        .select('id, name, sort_order')
+        .eq('gallery_id', g.id)
+        .order('sort_order', { ascending: true }),
+    ])
+    setGalleryImages(imagesRes.data ?? [])
+    setSections(sectionsRes.data ?? [])
+  }
+
+  async function addSection() {
+    if (!editingGallery || !newSectionName.trim()) return
+    const { data, error } = await supabase
+      .from('gallery_sections')
+      .insert({
+        gallery_id: editingGallery.id,
+        name: newSectionName.trim(),
+        sort_order: sections.length,
+      })
+      .select('id, name, sort_order')
+      .single()
+    if (error) { alert('שגיאה: ' + error.message); return }
+    if (data) setSections(prev => [...prev, data])
+    setNewSectionName('')
+  }
+
+  async function renameSection(id: string, name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    const { error } = await supabase.from('gallery_sections').update({ name: trimmed }).eq('id', id)
+    if (error) { alert('שגיאה: ' + error.message); return }
+    setSections(prev => prev.map(s => s.id === id ? { ...s, name: trimmed } : s))
+  }
+
+  async function deleteSection(id: string) {
+    if (!confirm('למחוק את הקטע? התמונות שבתוכו יישארו בגלריה.')) return
+    // First unset section_id on images so they don't disappear from the gallery
+    await supabase.from('images').update({ section_id: null }).eq('section_id', id)
+    const { error } = await supabase.from('gallery_sections').delete().eq('id', id)
+    if (error) { alert('שגיאה: ' + error.message); return }
+    setSections(prev => prev.filter(s => s.id !== id))
   }
 
   async function handleFileUpload(files: FileList | null) {
-    if (!files || !editingGallery || !businessId) return
-    setUploading(true)
-    const total = files.length
-    let done = 0
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop() || 'jpg'
-      const path = `${editingGallery.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: uploadErr } = await supabase.storage
-        .from('gallery-images')
-        .upload(path, file, { contentType: file.type })
-      if (!uploadErr) {
-        await supabase.from('images').insert({
-          gallery_id: editingGallery.id,
-          filename: file.name,
-          storage_path: path,
-          is_top_pick: false,
-          sort_order: galleryImages.length + done,
-        })
-      }
-      done++
-      setUploadProgress(Math.round((done / total) * 100))
+    if (!files || !editingGallery || !businessId || !businessSlug) return
+    if (tokenBalance < files.length) {
+      const wanted = files.length
+      const have = tokenBalance
+      alert(`אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}. רכוש חבילה כדי להמשיך.`)
+      setShowBuyTokens(true)
+      return
     }
-    // Update image count
-    await supabase.from('galleries').update({ image_count: galleryImages.length + done }).eq('id', editingGallery.id)
-    // Refresh
+    setUploading(true)
+    setUploadBatch({ completed: 0, total: files.length, failed: 0 })
+    const result = await uploadMany(
+      Array.from(files),
+      {
+        galleryId: editingGallery.id,
+        businessSlug,
+        sortOrder: galleryImages.length,
+      },
+      (b) => setUploadBatch(b),
+      3,
+    )
+    if (result.failed.length > 0) {
+      const insufficient = result.failed.find(f => f.error.includes('insufficient_tokens'))
+      if (insufficient) {
+        alert('הטוקנים נגמרו באמצע ההעלאה. רכוש חבילה כדי להמשיך עם השאר.')
+        setShowBuyTokens(true)
+      } else {
+        alert(`${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.`)
+      }
+    }
+    // Refresh balance + image list
+    fetchTokenBalance()
     const { data } = await supabase
       .from('images')
-      .select('id, filename, storage_path, thumbnail_path, is_top_pick, sort_order')
+      .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order')
       .eq('gallery_id', editingGallery.id)
       .order('sort_order', { ascending: true })
     setGalleryImages(data ?? [])
     setUploading(false)
-    setUploadProgress(0)
+    setUploadBatch(null)
+
+    // Re-trigger face indexing if the gallery is already live AND has face
+    // recognition on. The rekognition function is idempotent — it skips
+    // already-indexed images and only processes the new ones, so calling it
+    // after every batch is safe and cheap. Without this, photos added
+    // post-publish are silently invisible to FaceFinder.
+    const needsReindex =
+      editingGallery.status === 'live' &&
+      (editingGallery.delivery_settings as { faceIndexEnabled?: boolean } | null)?.faceIndexEnabled === true
+    if (needsReindex && result.ok.length > 0) {
+      void supabase.functions.invoke('rekognition', {
+        body: { action: 'index_gallery', galleryId: editingGallery.id },
+      }).catch(err => console.warn('[face-index reindex]', err))
+    }
+
     fetchGalleries()
   }
 
@@ -263,10 +393,109 @@ export function Dashboard() {
     if (!editingGallery) return
     await supabase.from('galleries').update({ status: 'live', published_at: new Date().toISOString() }).eq('id', editingGallery.id)
     setEditingGallery({ ...editingGallery, status: 'live', published_at: new Date().toISOString() })
+
+    // Kick off face indexing if the photographer enabled it. Without this,
+    // FaceFinder is a dead button on web-published galleries — the desktop
+    // app calls this same edge action automatically; we matched the behaviour.
+    // Best-effort: failure here doesn't fail the publish, and the action is
+    // safely re-runnable on the next publish or from the desktop.
+    const settings = editingGallery.delivery_settings as { faceIndexEnabled?: boolean } | null
+    if (settings?.faceIndexEnabled) {
+      void supabase.functions.invoke('rekognition', {
+        body: { action: 'index_gallery', galleryId: editingGallery.id },
+      }).catch(err => console.warn('[face-index]', err))
+    }
+
     fetchGalleries()
   }
 
+  const [copiedGalleryId, setCopiedGalleryId] = useState<string | null>(null)
+  const [shareGallery, setShareGallery] = useState<Gallery | null>(null)
+  const [shareEmail, setShareEmail] = useState('')
+  const [shareSubject, setShareSubject] = useState('')
+  const [shareMessage, setShareMessage] = useState('')
+  const [shareSending, setShareSending] = useState(false)
+  const [shareSent, setShareSent] = useState(false)
+
+  function openEmailShare(g: Gallery) {
+    setShareGallery(g)
+    setShareSubject(`התמונות שלך מ-${g.name} מוכנות`)
+    setShareMessage('')
+    setShareEmail('')
+    setShareSent(false)
+  }
+
+  async function sendShareEmail() {
+    if (!shareGallery || !shareEmail) return
+    setShareSending(true)
+    try {
+      const { sendGalleryShareEmail } = await import('../lib/shareGallery')
+      const res = await sendGalleryShareEmail({
+        galleryId: shareGallery.id,
+        recipientEmail: shareEmail,
+        subject: shareSubject || undefined,
+        message: shareMessage || undefined,
+      })
+      if (res.ok) {
+        setShareSent(true)
+        setTimeout(() => { setShareGallery(null); setShareSent(false) }, 1800)
+      } else {
+        alert('שגיאה בשליחה: ' + (res.error || 'לא ידוע'))
+      }
+    } catch (err) {
+      alert('שגיאה: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setShareSending(false)
+    }
+  }
+
+  function copyGalleryLink(galleryId: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    const url = `${window.location.origin}/gallery/${galleryId}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedGalleryId(galleryId)
+      setTimeout(() => setCopiedGalleryId(prev => prev === galleryId ? null : prev), 1800)
+    })
+  }
+
   const imgUrl = (path: string) => `https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/gallery-images/${path}`
+
+  // ─── Bulk actions (selectMode) ───────────────────────────────────────────
+  function exitSelectMode() {
+    setSelectMode(false)
+    setSelectedImageIds(new Set())
+  }
+  async function bulkDeleteSelected() {
+    if (!editingGallery || selectedImageIds.size === 0) return
+    const count = selectedImageIds.size
+    if (!confirm(`למחוק ${count} תמונות? פעולה זו לא ניתנת לביטול.`)) return
+    const ids = Array.from(selectedImageIds)
+    const { error } = await supabase.from('images').delete().in('id', ids)
+    if (error) {
+      alert('שגיאה במחיקה: ' + error.message)
+      return
+    }
+    setGalleryImages(prev => prev.filter(i => !selectedImageIds.has(i.id)))
+    await supabase.from('galleries')
+      .update({ image_count: Math.max(0, galleryImages.length - ids.length) })
+      .eq('id', editingGallery.id)
+    fetchGalleries()
+    exitSelectMode()
+  }
+  async function bulkToggleTopPick(makeTopPick: boolean) {
+    if (!editingGallery || selectedImageIds.size === 0) return
+    const ids = Array.from(selectedImageIds)
+    const { error } = await supabase.from('images').update({ is_top_pick: makeTopPick }).in('id', ids)
+    if (error) {
+      alert('שגיאה: ' + error.message)
+      return
+    }
+    setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, is_top_pick: makeTopPick } : i))
+    exitSelectMode()
+  }
+  function selectAllImages() {
+    setSelectedImageIds(new Set(galleryImages.map(i => i.id)))
+  }
 
   /* ---------- Loading state ---------- */
   if (loading) {
@@ -350,53 +579,197 @@ export function Dashboard() {
     <div style={{
       background: bg, minHeight: '100vh', fontFamily: 'Inter, sans-serif',
       direction: 'rtl', color: textPrimary,
+      display: 'flex',
     }}>
-      {/* ======= Top bar ======= */}
+      {/* ======= Sidebar ======= */}
+      {/* Mobile backdrop — visible only when the drawer is open under 900px */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 199,
+            background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(4px)',
+            display: 'none',
+          }}
+          className="dash-sidebar-backdrop"
+        />
+      )}
+
+      <aside
+        className={`dash-sidebar ${sidebarOpen ? 'dash-sidebar--open' : ''}`}
+        style={{
+          width: 240, flexShrink: 0,
+          background: 'rgba(10,10,18,.85)',
+          borderInlineStart: `1px solid ${border}`,
+          display: 'flex', flexDirection: 'column',
+          padding: '24px 18px',
+          position: 'sticky', top: 0, height: '100vh',
+          zIndex: 200,
+        }}
+      >
+        {/* Mobile close X — visible only via .dash-hamburger media query */}
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="dash-hamburger"
+          aria-label="Close menu"
+          style={{
+            display: 'none', alignItems: 'center', justifyContent: 'center',
+            position: 'absolute', top: 14, left: 14,
+            width: 32, height: 32, borderRadius: 8,
+            background: 'rgba(255,255,255,.04)',
+            border: `1px solid ${border}`,
+            color: textPrimary, cursor: 'pointer', padding: 0,
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+
+        {/* Logo */}
+        <a href="/" style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '0 6px 24px',
+          textDecoration: 'none', color: textPrimary,
+          fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em',
+        }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 32, height: 32, borderRadius: 9,
+            background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
+            boxShadow: `0 6px 16px ${accentGlow}`,
+            fontSize: 16,
+          }}>📸</span>
+          Pixflow
+        </a>
+
+        {/* Nav */}
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+          {[
+            { icon: '📷', label: 'הגלריות שלי', active: true },
+            { icon: '🎨', label: 'מיתוג', active: false, disabled: true },
+            { icon: '👥', label: 'לקוחות', active: false, disabled: true },
+            { icon: '❓', label: 'עזרה', active: false },
+          ].map(item => (
+            <button key={item.label} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 12px', borderRadius: 10,
+              background: item.active ? `rgba(99,102,241,.14)` : 'transparent',
+              border: `1px solid ${item.active ? 'rgba(99,102,241,.25)' : 'transparent'}`,
+              color: item.active ? '#a5b4fc' : (item.disabled ? textMuted : textSecondary),
+              fontSize: 13, fontWeight: item.active ? 600 : 500,
+              cursor: item.disabled ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit', textAlign: 'right' as const,
+              opacity: item.disabled ? 0.55 : 1,
+              transition: 'all .15s',
+            }}>
+              <span style={{ fontSize: 16, opacity: 0.85 }}>{item.icon}</span>
+              <span>{item.label}</span>
+              {item.disabled && (
+                <span style={{
+                  marginInlineStart: 'auto', fontSize: 9, fontWeight: 700,
+                  padding: '2px 6px', borderRadius: 5,
+                  background: 'rgba(255,255,255,.05)', color: textMuted,
+                  letterSpacing: '0.04em',
+                }}>בקרוב</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Token balance card */}
+        <button
+          onClick={() => setShowBuyTokens(true)}
+          style={{
+            background: tokenBalance < 50
+              ? `linear-gradient(135deg, rgba(239,68,68,.18), rgba(220,38,38,.06))`
+              : `linear-gradient(135deg, rgba(99,102,241,.18), rgba(129,140,248,.06))`,
+            border: `1px solid ${tokenBalance < 50 ? 'rgba(239,68,68,.35)' : 'rgba(99,102,241,.30)'}`,
+            borderRadius: 14, padding: '14px 16px',
+            cursor: 'pointer', fontFamily: 'inherit',
+            color: textPrimary, textAlign: 'right' as const,
+            transition: 'all .2s',
+            marginBottom: 14,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)' }}
+          onMouseLeave={e => { e.currentTarget.style.transform = '' }}
+        >
+          <div style={{ fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 600, letterSpacing: '.04em' }}>
+            יתרת טוקנים
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc', marginBottom: 8, letterSpacing: '-0.02em' }}>
+            {tokenBalance.toLocaleString('he-IL')}
+          </div>
+          <div style={{
+            fontSize: 11, fontWeight: 600,
+            color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc',
+            display: 'flex', alignItems: 'center', gap: 4,
+          }}>
+            {tokenBalance < 50 ? '⚠️ קנה עוד' : '+ קנה טוקנים'}
+          </div>
+        </button>
+
+        {/* Profile + logout */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '12px 8px', borderTop: `1px solid ${border}`,
+          marginInline: -6, paddingInline: 14,
+        }}>
+          {avatar && (
+            <img src={avatar} alt="" style={{
+              width: 32, height: 32, borderRadius: '50%',
+              border: `1.5px solid ${border}`,
+            }} />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 12, fontWeight: 600, color: textPrimary,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{displayName}</div>
+            <button onClick={signOut} style={{
+              background: 'none', border: 'none', padding: 0, marginTop: 2,
+              fontSize: 10, color: '#fca5a5', fontFamily: 'inherit',
+              cursor: 'pointer', letterSpacing: '.04em',
+            }}>התנתקות ↩</button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ======= Right column ======= */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* ======= Top bar — page title + mobile hamburger ======= */}
       <header style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px 32px',
-        background: 'rgba(10,10,18,.85)',
+        padding: '14px 20px',
+        background: 'rgba(10,10,18,.6)',
         backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
         borderBottom: `1px solid ${border}`,
         position: 'sticky', top: 0, zIndex: 100,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          {avatar && (
-            <img src={avatar} alt="" style={{
-              width: 38, height: 38, borderRadius: '50%',
-              border: `2px solid ${border}`,
-              transition: 'border-color .2s',
-            }} />
-          )}
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '0.01em' }}>{displayName}</div>
-            <div style={{ fontSize: 11, color: textMuted, marginTop: 1 }}>צלם</div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <a href="/" style={{
-            color: textSecondary, textDecoration: 'none', fontSize: 14,
-            fontWeight: 600, letterSpacing: '-0.01em',
-            transition: 'color .2s',
-          }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = textPrimary)}
-            onMouseLeave={(e) => (e.currentTarget.style.color = textSecondary)}
-          >
-            Pixflow
-          </a>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Hamburger — mobile only via CSS */}
           <button
-            onClick={signOut}
+            onClick={() => setSidebarOpen(true)}
+            className="dash-hamburger"
+            aria-label="Open menu"
             style={{
-              background: 'transparent', border: `1px solid ${border}`, borderRadius: 10,
-              color: textSecondary, padding: '8px 18px', fontSize: 13, cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif', transition: 'all .2s',
-              letterSpacing: '0.01em',
+              display: 'none', alignItems: 'center', justifyContent: 'center',
+              width: 38, height: 38, borderRadius: 10,
+              background: 'rgba(255,255,255,.04)',
+              border: `1px solid ${border}`,
+              color: textPrimary, cursor: 'pointer', padding: 0,
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = borderHover; e.currentTarget.style.color = textPrimary; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = border; e.currentTarget.style.color = textSecondary; }}
           >
-            התנתקות
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
           </button>
+          <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+            הגלריות שלי
+          </h1>
         </div>
       </header>
 
@@ -496,46 +869,120 @@ export function Dashboard() {
             ))}
           </div>
         ) : galleries.length === 0 ? (
-          /* ======= Empty state ======= */
+          /* ======= Empty state — first-time photographer onboarding ======= */
           <div style={{
-            textAlign: 'center', padding: '100px 24px',
+            textAlign: 'center', padding: '60px 24px 100px',
             animation: 'fadeInUp .5s ease both',
+            position: 'relative',
           }}>
+            {/* Welcome hero card */}
             <div style={{
-              width: 120, height: 120, borderRadius: 32, margin: '0 auto 28px',
-              background: `linear-gradient(135deg, rgba(99,102,241,.12), rgba(167,139,250,.08))`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              border: `1px solid rgba(99,102,241,.15)`,
+              maxWidth: 720, margin: '0 auto 32px',
+              padding: '48px 32px',
+              borderRadius: 28,
+              background: `linear-gradient(135deg, rgba(99,102,241,.12), rgba(167,139,250,.06))`,
+              border: `1px solid rgba(99,102,241,.18)`,
+              boxShadow: '0 18px 60px rgba(99,102,241,.10)',
+              position: 'relative', overflow: 'hidden',
             }}>
-              <span style={{ fontSize: 52, filter: 'grayscale(0.2)' }}>🖼️</span>
+              {/* Decorative glow */}
+              <div style={{
+                position: 'absolute', top: -80, right: -80,
+                width: 240, height: 240, borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(99,102,241,.18), transparent 70%)',
+                pointerEvents: 'none',
+              }} />
+              <div style={{
+                width: 88, height: 88, borderRadius: 24, margin: '0 auto 24px',
+                background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: `0 12px 32px ${accentGlow}`,
+                position: 'relative',
+              }}>
+                <span style={{ fontSize: 44 }}>📸</span>
+              </div>
+              <h2 style={{
+                fontSize: 32, fontWeight: 800, marginBottom: 14, color: textPrimary,
+                letterSpacing: '-0.025em', position: 'relative',
+              }}>
+                ברוך הבא ל-Pixflow
+              </h2>
+              <p style={{
+                color: textSecondary, fontSize: 17, marginBottom: 14, lineHeight: 1.65,
+                maxWidth: 520, marginInline: 'auto',
+              }}>
+                גלריות מהירות, פרטיות ויפות לאירועים. עם זיהוי פנים אופציונלי שמאפשר לאורחים למצוא את עצמם בסלפי.
+              </p>
+              <p style={{
+                color: '#a5b4fc', fontSize: 13, marginBottom: 32, fontWeight: 600,
+              }}>
+                ✨ קיבלת 100 טוקנים חינם להתחלה — מספיק לעלות 100 תמונות
+              </p>
+              <div style={{
+                display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap',
+              }}>
+                <button
+                  onClick={() => setShowModal(true)}
+                  style={{
+                    background: `linear-gradient(135deg, ${accent}, ${accentLight})`, color: '#fff',
+                    border: 'none', borderRadius: 14, padding: '16px 32px', fontSize: 15,
+                    fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                    transition: 'transform .15s, box-shadow .15s',
+                    boxShadow: `0 6px 24px ${accentGlow}`,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(99,102,241,.4)` }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = `0 6px 24px ${accentGlow}` }}
+                >
+                  <span style={{ fontSize: 18 }}>🎯</span>
+                  צור גלריה ראשונה
+                </button>
+                <a
+                  href="/demo"
+                  target="_blank"
+                  rel="noopener"
+                  style={{
+                    textDecoration: 'none',
+                    background: 'transparent', color: textPrimary,
+                    border: `1px solid ${border}`, borderRadius: 14, padding: '16px 28px', fontSize: 15,
+                    fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                    transition: 'all .15s',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.5)'; e.currentTarget.style.background = 'rgba(99,102,241,.06)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.background = 'transparent' }}
+                >
+                  <span style={{ fontSize: 18 }}>🚀</span>
+                  נסה את הדמו
+                </a>
+              </div>
             </div>
-            <h2 style={{
-              fontSize: 26, fontWeight: 700, marginBottom: 12, color: textPrimary,
-              letterSpacing: '-0.02em',
+
+            {/* Three feature highlights below */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: 16, maxWidth: 720, margin: '0 auto',
             }}>
-              אין גלריות עדיין
-            </h2>
-            <p style={{
-              color: textSecondary, fontSize: 16, marginBottom: 36, lineHeight: 1.7,
-              maxWidth: 380, marginInline: 'auto',
-            }}>
-              צרו את הגלריה הראשונה שלכם ושתפו תמונות עם הלקוחות
-            </p>
-            <button
-              onClick={() => setShowModal(true)}
-              style={{
-                background: `linear-gradient(135deg, ${accent}, ${accentLight})`, color: '#fff',
-                border: 'none', borderRadius: 16, padding: '18px 48px', fontSize: 17,
-                fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-                transition: 'transform .15s, box-shadow .15s',
-                boxShadow: `0 6px 28px ${accentGlow}`,
-                letterSpacing: '0.01em',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 10px 36px rgba(99,102,241,.35)`; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 6px 28px ${accentGlow}`; }}
-            >
-              צור גלריה חדשה
-            </button>
+              {[
+                { icon: '⚡', title: 'מהיר במיוחד', desc: 'תצוגות web + thumb לכל תמונה — גלריות נטענות פי 50 מ-S3 רגיל' },
+                { icon: '🔒', title: 'פרטי ובטוח', desc: 'הגנת סיסמה אמיתית בצד השרת — לא רק מסך שעוקפים בדפדפן' },
+                { icon: '🎨', title: 'זיהוי פנים', desc: 'אורחים מצלמים סלפי ומקבלים את התמונות שלהם בלבד' },
+              ].map(f => (
+                <div key={f.title} style={{
+                  padding: '22px 20px', borderRadius: 16,
+                  background: card, border: `1px solid ${border}`,
+                  textAlign: 'right' as const,
+                }}>
+                  <div style={{ fontSize: 28, marginBottom: 10 }}>{f.icon}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: textPrimary, marginBottom: 6 }}>
+                    {f.title}
+                  </div>
+                  <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.55 }}>
+                    {f.desc}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           /* ======= Gallery grid ======= */
@@ -583,31 +1030,100 @@ export function Dashboard() {
                     </h3>
                     <span style={{
                       fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 20,
-                      background: g.status === 'published' ? 'rgba(34,197,94,.12)' : 'rgba(250,204,21,.10)',
-                      color: g.status === 'published' ? '#4ade80' : '#fde047',
+                      background: (g.status === 'live' || g.status === 'published') ? 'rgba(34,197,94,.12)' : 'rgba(250,204,21,.10)',
+                      color: (g.status === 'live' || g.status === 'published') ? '#4ade80' : '#fde047',
                       letterSpacing: '0.02em', whiteSpace: 'nowrap' as const,
-                      border: `1px solid ${g.status === 'published' ? 'rgba(34,197,94,.2)' : 'rgba(250,204,21,.15)'}`,
+                      border: `1px solid ${(g.status === 'live' || g.status === 'published') ? 'rgba(34,197,94,.2)' : 'rgba(250,204,21,.15)'}`,
                     }}>
-                      {g.status === 'published' ? 'פורסם' : 'טיוטה'}
+                      {(g.status === 'live' || g.status === 'published') ? 'פורסם' : 'טיוטה'}
                     </span>
                   </div>
 
                   <div style={{
-                    display: 'flex', gap: 24, fontSize: 13, color: textSecondary,
+                    display: 'flex', gap: 18, fontSize: 13, color: textSecondary, flexWrap: 'wrap',
                     borderTop: `1px solid ${isHovered ? 'rgba(99,102,241,.15)' : border}`,
                     paddingTop: 16, transition: 'border-color .3s',
                   }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ opacity: 0.6 }}>📷</span>
-                      {g.image_count ?? 0} תמונות
+                      {g.image_count ?? 0}
                     </span>
+                    {(g.status === 'live' || g.status === 'published') && (g.download_count ?? 0) > 0 && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#a5b4fc' }} title="הורדות">
+                        <span style={{ opacity: 0.6 }}>⬇️</span>
+                        {(g.download_count ?? 0).toLocaleString('he-IL')}
+                      </span>
+                    )}
+                    {(g.status === 'live' || g.status === 'published') && (g.favorite_count ?? 0) > 0 && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#fca5a5' }} title="מועדפים">
+                        <span>♥</span>
+                        {(g.favorite_count ?? 0).toLocaleString('he-IL')}
+                      </span>
+                    )}
                     {g.published_at && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginInlineStart: 'auto' }}>
                         <span style={{ opacity: 0.6 }}>📅</span>
                         {new Date(g.published_at).toLocaleDateString('he-IL')}
                       </span>
                     )}
                   </div>
+
+                  {(g.status === 'live' || g.status === 'published') && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                      <button
+                        onClick={(e) => copyGalleryLink(g.id, e)}
+                        style={{
+                          flex: 1,
+                          padding: '10px 14px', borderRadius: 10,
+                          background: copiedGalleryId === g.id
+                            ? 'rgba(34,197,94,.14)'
+                            : 'rgba(99,102,241,.10)',
+                          border: `1px solid ${copiedGalleryId === g.id ? 'rgba(34,197,94,.3)' : 'rgba(99,102,241,.25)'}`,
+                          color: copiedGalleryId === g.id ? '#4ade80' : '#a5b4fc',
+                          fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                          transition: 'all .2s',
+                        }}
+                      >
+                        {copiedGalleryId === g.id ? (
+                          <>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                              <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            הקישור הועתק
+                          </>
+                        ) : (
+                          <>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                            </svg>
+                            העתק קישור
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openEmailShare(g) }}
+                        title="שלח במייל ללקוח"
+                        style={{
+                          padding: '10px 14px', borderRadius: 10,
+                          background: 'rgba(99,102,241,.10)',
+                          border: '1px solid rgba(99,102,241,.25)',
+                          color: '#a5b4fc',
+                          fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                          transition: 'all .2s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,.18)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,.10)' }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                          <polyline points="22,6 12,13 2,6"/>
+                        </svg>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -665,6 +1181,8 @@ export function Dashboard() {
               }}>
                 {([
                   { id: 'photos' as const, label: '📷 תמונות', },
+                  { id: 'sections' as const, label: '📂 קטעים', },
+                  { id: 'activities' as const, label: '📊 פעילות', },
                   { id: 'settings' as const, label: '⚙️ הגדרות', },
                   { id: 'welcome' as const, label: '🎬 מסך וואלקם', },
                 ]).map(t => (
@@ -684,6 +1202,49 @@ export function Dashboard() {
                 {/* ── Photos Tab ── */}
                 {editTab === 'photos' && (
                   <div>
+                    {/* Bulk action toolbar */}
+                    {selectMode && (
+                      <div style={{
+                        position: 'sticky', top: 0, zIndex: 10,
+                        marginBottom: 16, padding: '12px 18px', borderRadius: 14,
+                        background: 'rgba(99,102,241,.14)',
+                        border: `1px solid rgba(99,102,241,.35)`,
+                        backdropFilter: 'blur(10px)',
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        animation: 'fadeIn .2s ease',
+                      }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: '#a5b4fc' }}>
+                          {selectedImageIds.size} {selectedImageIds.size === 1 ? 'תמונה נבחרה' : 'תמונות נבחרו'}
+                        </span>
+                        <button onClick={selectAllImages} style={{
+                          marginInlineStart: 'auto',
+                          background: 'transparent', border: `1px solid ${border}`, borderRadius: 8,
+                          color: textSecondary, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif',
+                        }}>בחר הכל</button>
+                        <button onClick={() => bulkToggleTopPick(true)} style={{
+                          background: 'rgba(250,204,21,.12)', border: '1px solid rgba(250,204,21,.3)',
+                          borderRadius: 8, color: '#fde047', padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif', display: 'flex', alignItems: 'center', gap: 4,
+                        }}>★ סמן כמועדף</button>
+                        <button onClick={() => bulkToggleTopPick(false)} style={{
+                          background: 'transparent', border: `1px solid ${border}`,
+                          borderRadius: 8, color: textSecondary, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif',
+                        }}>בטל סימון</button>
+                        <button onClick={bulkDeleteSelected} style={{
+                          background: 'rgba(239,68,68,.14)', border: '1px solid rgba(239,68,68,.35)',
+                          borderRadius: 8, color: '#fca5a5', padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif', fontWeight: 600,
+                        }}>🗑 מחק</button>
+                        <button onClick={exitSelectMode} style={{
+                          background: 'transparent', border: 'none',
+                          color: textMuted, padding: '6px 8px', fontSize: 14, cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif',
+                        }}>×</button>
+                      </div>
+                    )}
+
                     {/* Upload area */}
                     <input ref={fileInputRef} type="file" multiple accept="image/*" style={{ display: 'none' }}
                       onChange={e => handleFileUpload(e.target.files)} />
@@ -699,11 +1260,28 @@ export function Dashboard() {
                         marginBottom: 28,
                       }}
                     >
-                      {uploading ? (
+                      {uploading && uploadBatch ? (
                         <div>
-                          <div style={{ fontSize: 14, color: accentLight, fontWeight: 600, marginBottom: 8 }}>מעלה תמונות... {uploadProgress}%</div>
+                          <div style={{ fontSize: 14, color: accentLight, fontWeight: 600, marginBottom: 4 }}>
+                            מעלה תמונות {uploadBatch.completed} / {uploadBatch.total}
+                            {uploadBatch.failed > 0 && (
+                              <span style={{ color: '#fca5a5', marginRight: 8, fontSize: 12 }}>
+                                ({uploadBatch.failed} נכשלו)
+                              </span>
+                            )}
+                          </div>
+                          {uploadBatch.current && (
+                            <div style={{ fontSize: 11, color: textMuted, marginBottom: 8, direction: 'ltr', textAlign: 'right' }}>
+                              {uploadBatch.current}
+                            </div>
+                          )}
                           <div style={{ width: '100%', height: 4, borderRadius: 4, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
-                            <div style={{ width: `${uploadProgress}%`, height: '100%', background: `linear-gradient(90deg, ${accent}, ${accentLight})`, borderRadius: 4, transition: 'width .3s' }} />
+                            <div style={{
+                              width: `${Math.round((uploadBatch.completed / Math.max(1, uploadBatch.total)) * 100)}%`,
+                              height: '100%',
+                              background: `linear-gradient(90deg, ${accent}, ${accentLight})`,
+                              borderRadius: 4, transition: 'width .3s',
+                            }} />
                           </div>
                         </div>
                       ) : (
@@ -721,28 +1299,317 @@ export function Dashboard() {
                         display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6,
                         borderRadius: 12, overflow: 'hidden',
                       }}>
-                        {galleryImages.map(img => (
-                          <div key={img.id} style={{ position: 'relative', aspectRatio: '1', overflow: 'hidden', background: 'rgba(255,255,255,.03)' }}>
-                            <img
-                              src={imgUrl(img.thumbnail_path || img.storage_path)}
-                              alt="" loading="lazy"
-                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                            />
-                            {img.is_top_pick && (
-                              <div style={{
-                                position: 'absolute', top: 4, right: 4,
-                                background: 'rgba(99,102,241,.85)', color: '#fff',
-                                fontSize: 8, padding: '2px 6px', borderRadius: 4, fontWeight: 700,
-                              }}>★</div>
-                            )}
-                          </div>
-                        ))}
+                        {galleryImages.map(img => {
+                          const isSelected = selectedImageIds.has(img.id)
+                          return (
+                            <div
+                              key={img.id}
+                              onClick={() => {
+                                if (!selectMode) { setSelectMode(true); setSelectedImageIds(new Set([img.id])); return }
+                                setSelectedImageIds(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(img.id)) next.delete(img.id); else next.add(img.id)
+                                  if (next.size === 0) setSelectMode(false)
+                                  return next
+                                })
+                              }}
+                              style={{
+                                position: 'relative', aspectRatio: '1', overflow: 'hidden',
+                                background: 'rgba(255,255,255,.03)',
+                                cursor: 'pointer',
+                                outline: isSelected ? `3px solid ${accent}` : 'none',
+                                outlineOffset: isSelected ? -3 : 0,
+                                transform: isSelected ? 'scale(0.96)' : 'scale(1)',
+                                transition: 'transform .15s ease, outline-offset .15s',
+                              }}
+                            >
+                              <img
+                                src={imgUrl(img.thumbnail_path || img.storage_path)}
+                                alt="" loading="lazy"
+                                style={{
+                                  width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                                  filter: isSelected ? 'brightness(0.7)' : 'none',
+                                  transition: 'filter .15s',
+                                }}
+                              />
+                              {img.is_top_pick && (
+                                <div style={{
+                                  position: 'absolute', top: 4, right: 4,
+                                  background: 'rgba(99,102,241,.85)', color: '#fff',
+                                  fontSize: 8, padding: '2px 6px', borderRadius: 4, fontWeight: 700,
+                                }}>★</div>
+                              )}
+                              {selectMode && (
+                                <div style={{
+                                  position: 'absolute', top: 6, left: 6,
+                                  width: 22, height: 22, borderRadius: '50%',
+                                  background: isSelected ? accent : 'rgba(0,0,0,.6)',
+                                  border: `2px solid ${isSelected ? accent : 'rgba(255,255,255,.7)'}`,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  transition: 'all .15s',
+                                }}>
+                                  {isSelected && (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5">
+                                      <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                     {galleryImages.length === 0 && !uploading && (
                       <p style={{ textAlign: 'center', color: textMuted, fontSize: 14, padding: '40px 0' }}>
                         אין עדיין תמונות בגלריה הזו. העלו תמונות למעלה.
                       </p>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Sections Tab ── */}
+                {editTab === 'sections' && (
+                  <div style={{ padding: '0 4px' }}>
+                    <p style={{ fontSize: 13, color: textSecondary, marginBottom: 22, lineHeight: 1.6 }}>
+                      ארגן את הגלריה לקטעים — "יום 1", "טקס", "רחבה" — והאורחים יוכלו לדפדף ביניהם בקלות.
+                    </p>
+
+                    {/* Add new section */}
+                    <div style={{
+                      display: 'flex', gap: 10, marginBottom: 22,
+                      padding: '14px 16px', borderRadius: 14,
+                      background: card, border: `1px solid ${border}`,
+                    }}>
+                      <input
+                        type="text"
+                        value={newSectionName}
+                        onChange={e => setNewSectionName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') addSection() }}
+                        placeholder="שם קטע חדש (למשל: יום 1)"
+                        style={{
+                          flex: 1, padding: '10px 14px', borderRadius: 10,
+                          background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                          color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
+                        }}
+                      />
+                      <button
+                        onClick={addSection}
+                        disabled={!newSectionName.trim()}
+                        style={{
+                          padding: '10px 20px', borderRadius: 10,
+                          background: newSectionName.trim()
+                            ? `linear-gradient(135deg, ${accent}, ${accentLight})`
+                            : 'rgba(99,102,241,.4)',
+                          border: 'none', color: '#fff', fontSize: 13, fontWeight: 600,
+                          cursor: newSectionName.trim() ? 'pointer' : 'not-allowed',
+                          fontFamily: 'inherit', transition: 'all .15s',
+                        }}
+                      >
+                        הוסף
+                      </button>
+                    </div>
+
+                    {/* Sections list */}
+                    {sections.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '40px 20px', color: textMuted }}>
+                        <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.5 }}>📂</div>
+                        <div style={{ fontSize: 14 }}>עדיין אין קטעים. הוסף את הקטע הראשון למעלה.</div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {sections.map(s => (
+                          <div key={s.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            padding: '12px 16px', borderRadius: 12,
+                            background: card, border: `1px solid ${border}`,
+                            transition: 'border-color .15s',
+                          }}>
+                            <span style={{ fontSize: 16, opacity: 0.55 }}>📂</span>
+                            <input
+                              type="text"
+                              defaultValue={s.name}
+                              onBlur={e => { if (e.target.value.trim() && e.target.value.trim() !== s.name) renameSection(s.id, e.target.value) }}
+                              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                              style={{
+                                flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                                color: textPrimary, fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
+                                padding: '4px 0',
+                              }}
+                            />
+                            <button
+                              onClick={() => deleteSection(s.id)}
+                              title="מחק"
+                              style={{
+                                background: 'transparent', border: `1px solid ${border}`, borderRadius: 8,
+                                color: '#fca5a5', padding: '6px 10px', fontSize: 12, cursor: 'pointer',
+                                fontFamily: 'inherit', transition: 'all .15s',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,.35)' }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = border }}
+                            >
+                              🗑 מחק
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Activities Tab ── */}
+                {editTab === 'activities' && (
+                  <div style={{ padding: '0 4px' }}>
+                    {activityLoading && !activitySummary ? (
+                      <div style={{ textAlign: 'center', padding: '60px 0', color: textMuted }}>
+                        <div style={{
+                          width: 28, height: 28, margin: '0 auto 16px',
+                          border: `3px solid ${border}`, borderTopColor: accent,
+                          borderRadius: '50%', animation: 'spin 0.8s linear infinite',
+                        }} />
+                        טוען נתוני פעילות...
+                      </div>
+                    ) : !activitySummary || (activitySummary.downloads_total === 0 && activitySummary.favorites_total === 0 && activitySummary.emails_total === 0) ? (
+                      <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                        <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>📊</div>
+                        <h3 style={{ fontSize: 18, fontWeight: 700, color: textPrimary, margin: '0 0 8px' }}>
+                          עדיין אין פעילות
+                        </h3>
+                        <p style={{ color: textSecondary, fontSize: 14, lineHeight: 1.6, margin: 0, maxWidth: 380, marginInline: 'auto' }}>
+                          אחרי שתשתף את הקישור עם הלקוח ותחילו ההורדות, תראה כאן הכל — הורדות, מועדפים, ושיתופים.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Stat cards */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 28 }}>
+                          {[
+                            { label: 'הורדות', value: activitySummary.downloads_total, color: '#a5b4fc', icon: '⬇️' },
+                            { label: 'מועדפים', value: activitySummary.favorites_total, color: '#fca5a5', icon: '♥' },
+                            { label: 'שיתופי מייל', value: activitySummary.emails_total, color: '#86efac', icon: '✉️' },
+                          ].map(s => (
+                            <div key={s.label} style={{
+                              padding: '20px 22px', borderRadius: 16,
+                              background: card, border: `1px solid ${border}`,
+                            }}>
+                              <div style={{ fontSize: 11, color: textMuted, marginBottom: 8, letterSpacing: '.04em', display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <span>{s.icon}</span>
+                                <span>{s.label}</span>
+                              </div>
+                              <div style={{ fontSize: 28, fontWeight: 800, color: s.color, letterSpacing: '-0.02em' }}>
+                                {s.value.toLocaleString('he-IL')}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Recent downloads */}
+                        {activitySummary.recent_downloads.length > 0 && (
+                          <section style={{ marginBottom: 28 }}>
+                            <h4 style={{ fontSize: 13, fontWeight: 700, color: textPrimary, margin: '0 0 12px', letterSpacing: '.02em' }}>
+                              הורדות אחרונות
+                            </h4>
+                            <div style={{ background: card, border: `1px solid ${border}`, borderRadius: 12, overflow: 'hidden' }}>
+                              {activitySummary.recent_downloads.slice(0, 10).map(d => {
+                                const img = galleryImages.find(g => g.id === d.image_id)
+                                return (
+                                  <div key={d.id} style={{
+                                    display: 'flex', alignItems: 'center', gap: 12,
+                                    padding: '10px 16px', borderBottom: `1px solid ${border}`,
+                                    fontSize: 12,
+                                  }}>
+                                    <span style={{ color: textMuted, minWidth: 100 }}>
+                                      {new Date(d.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                    <span style={{ flex: 1, color: textPrimary, direction: 'ltr', textAlign: 'right' }}>
+                                      {img?.filename ?? '(תמונה נמחקה)'}
+                                    </span>
+                                    <span style={{
+                                      padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
+                                      background: d.resolution === 'original' ? 'rgba(34,197,94,.14)' : 'rgba(99,102,241,.14)',
+                                      color: d.resolution === 'original' ? '#4ade80' : '#a5b4fc',
+                                    }}>
+                                      {d.resolution === 'original' ? 'מקור' : 'web'}
+                                    </span>
+                                    {d.download_kind === 'batch' && (
+                                      <span style={{ fontSize: 10, color: textMuted }}>📦</span>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </section>
+                        )}
+
+                        {/* Recent favorites */}
+                        {activitySummary.recent_favorites.length > 0 && (
+                          <section style={{ marginBottom: 28 }}>
+                            <h4 style={{ fontSize: 13, fontWeight: 700, color: textPrimary, margin: '0 0 12px', letterSpacing: '.02em' }}>
+                              מועדפים אחרונים
+                            </h4>
+                            <div style={{ background: card, border: `1px solid ${border}`, borderRadius: 12, overflow: 'hidden' }}>
+                              {activitySummary.recent_favorites.slice(0, 10).map(f => {
+                                const img = galleryImages.find(g => g.id === f.image_id)
+                                return (
+                                  <div key={f.id} style={{
+                                    padding: '10px 16px', borderBottom: `1px solid ${border}`,
+                                    fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4,
+                                  }}>
+                                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                                      <span style={{ color: textMuted, minWidth: 100 }}>
+                                        {new Date(f.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                      <span style={{ flex: 1, color: textPrimary, direction: 'ltr', textAlign: 'right' }}>
+                                        {img?.filename ?? '(תמונה נמחקה)'}
+                                      </span>
+                                      {f.guest_name && (
+                                        <span style={{ fontSize: 11, color: textSecondary }}>— {f.guest_name}</span>
+                                      )}
+                                    </div>
+                                    {f.note && (
+                                      <div style={{ fontSize: 11, color: textSecondary, fontStyle: 'italic', paddingRight: 112 }}>
+                                        "{f.note}"
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </section>
+                        )}
+
+                        {/* Recent email shares */}
+                        {activitySummary.recent_emails.length > 0 && (
+                          <section style={{ marginBottom: 12 }}>
+                            <h4 style={{ fontSize: 13, fontWeight: 700, color: textPrimary, margin: '0 0 12px', letterSpacing: '.02em' }}>
+                              שיתופי מייל אחרונים
+                            </h4>
+                            <div style={{ background: card, border: `1px solid ${border}`, borderRadius: 12, overflow: 'hidden' }}>
+                              {activitySummary.recent_emails.slice(0, 10).map(e => (
+                                <div key={e.id} style={{
+                                  display: 'flex', alignItems: 'center', gap: 12,
+                                  padding: '10px 16px', borderBottom: `1px solid ${border}`,
+                                  fontSize: 12,
+                                }}>
+                                  <span style={{ color: textMuted, minWidth: 100 }}>
+                                    {new Date(e.created_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                  <span style={{ flex: 1, color: textPrimary, direction: 'ltr', textAlign: 'right' }}>
+                                    {e.recipient_email}
+                                  </span>
+                                  <span style={{
+                                    padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
+                                    background: e.status === 'sent' ? 'rgba(34,197,94,.14)' : 'rgba(239,68,68,.14)',
+                                    color: e.status === 'sent' ? '#4ade80' : '#fca5a5',
+                                  }}>
+                                    {e.status === 'sent' ? 'נשלח' : 'נכשל'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -815,7 +1682,7 @@ export function Dashboard() {
                           </div>
                         </div>
                       ))}
-                      {editingGallery.delivery_settings?.faceIndexEnabled && (
+                      {Boolean(editingGallery.delivery_settings?.faceIndexEnabled) && (
                         <div style={{ marginTop: 12 }}>
                           <div style={{ fontSize: 12, color: textMuted, marginBottom: 8 }}>מצב פרטיות</div>
                           <div style={{ display: 'flex', gap: 8 }}>
@@ -853,6 +1720,98 @@ export function Dashboard() {
                           }}>{l === 'grid' ? 'רשת' : l === 'masonry' ? 'מוזאיקה' : 'קרוסלה'}</button>
                         ))}
                       </div>
+                    </div>
+
+                    {/* Theme color */}
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🌈 צבע ראשי</div>
+                      <div style={{ fontSize: 12, color: textMuted, marginBottom: 10 }}>הצבע שמופיע בכפתורים, מסגרות ולוגו של הגלריה</div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        {([
+                          { id: 'indigo', label: 'אינדיגו', color: '#6366f1' },
+                          { id: 'rose',   label: 'ורוד',   color: '#f43f5e' },
+                          { id: 'amber',  label: 'זהב',    color: '#f59e0b' },
+                          { id: 'teal',   label: 'טורקיז', color: '#14b8a6' },
+                          { id: 'slate',  label: 'אפור',   color: '#64748b' },
+                        ] as const).map(c => {
+                          const active = (editingGallery.delivery_settings?.themeColor || 'indigo') === c.id
+                          return (
+                            <button key={c.id} onClick={() => updateGallerySetting('themeColor', c.id)} style={{
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                              padding: '8px 14px', borderRadius: 12,
+                              background: active ? `rgba(255,255,255,.04)` : 'transparent',
+                              border: `2px solid ${active ? c.color : 'rgba(255,255,255,.05)'}`,
+                              cursor: 'pointer', fontFamily: 'inherit',
+                              transition: 'all .15s',
+                            }}>
+                              <div style={{
+                                width: 28, height: 28, borderRadius: 8,
+                                background: c.color,
+                                boxShadow: active ? `0 4px 16px ${c.color}66` : 'none',
+                              }} />
+                              <span style={{
+                                fontSize: 11, fontWeight: 600,
+                                color: active ? c.color : textMuted,
+                              }}>
+                                {c.label}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Watermark */}
+                    <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>💧 ווטרמרק</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500 }}>הצג ווטרמרק על תצוגות web</div>
+                          <div style={{ fontSize: 11, color: textMuted }}>שם העסק יופיע בפינה — מקור ההורדה תמיד נקי</div>
+                        </div>
+                        <div className={`dash-toggle ${editingGallery.delivery_settings?.watermarkEnabled ? 'dash-toggle-on' : 'dash-toggle-off'}`}
+                          onClick={(e) => { e.stopPropagation(); updateGallerySetting('watermarkEnabled', !(editingGallery.delivery_settings?.watermarkEnabled)) }}>
+                          <div className="dash-toggle-knob" />
+                        </div>
+                      </div>
+                      {Boolean(editingGallery.delivery_settings?.watermarkEnabled) && (
+                        <div style={{ marginTop: 14 }}>
+                          <div style={{ fontSize: 12, color: textMuted, marginBottom: 8 }}>טקסט הווטרמרק (ברירת מחדל: שם העסק)</div>
+                          <input
+                            type="text"
+                            value={String(editingGallery.delivery_settings?.watermarkText ?? '')}
+                            onChange={(e) => updateGallerySetting('watermarkText', e.target.value)}
+                            placeholder="© השם שלך"
+                            style={{
+                              width: '100%', padding: '10px 14px', borderRadius: 10,
+                              background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                              color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
+                            }}
+                          />
+                          <div style={{ fontSize: 12, color: textMuted, marginTop: 14, marginBottom: 8 }}>מיקום</div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {([
+                              { id: 'bottom-right', label: '↘' },
+                              { id: 'bottom-left',  label: '↙' },
+                              { id: 'top-right',    label: '↗' },
+                              { id: 'top-left',     label: '↖' },
+                              { id: 'center',       label: '＋' },
+                            ] as const).map(p => {
+                              const active = (editingGallery.delivery_settings?.watermarkPosition || 'bottom-right') === p.id
+                              return (
+                                <button key={p.id} onClick={() => updateGallerySetting('watermarkPosition', p.id)} style={{
+                                  width: 40, height: 40, borderRadius: 10,
+                                  background: active ? `rgba(99,102,241,.18)` : 'transparent',
+                                  border: `1px solid ${active ? accent : border}`,
+                                  color: active ? accentLight : textSecondary,
+                                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 18,
+                                  transition: 'all .15s',
+                                }}>{p.label}</button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1352,6 +2311,226 @@ export function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* ───────────── Email Share Modal ───────────── */}
+      {shareGallery && (
+        <div
+          onClick={() => !shareSending && setShareGallery(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 2100,
+            background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(10px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, animation: 'overlayIn .2s ease both',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: bg, width: '100%', maxWidth: 520,
+              borderRadius: 22, padding: 32,
+              border: `1px solid ${border}`,
+              animation: 'modalIn .3s ease both',
+              boxShadow: '0 30px 100px rgba(0,0,0,.6)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+                שלח קישור במייל
+              </h2>
+              <button onClick={() => setShareGallery(null)} disabled={shareSending} style={{
+                background: 'transparent', border: 'none', color: textMuted, fontSize: 20,
+                cursor: shareSending ? 'not-allowed' : 'pointer', lineHeight: 1, padding: 4,
+                opacity: shareSending ? 0.5 : 1,
+              }}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: textSecondary, margin: '0 0 22px', lineHeight: 1.5 }}>
+              שולח לכתובת המייל קישור לגלריה <strong>{shareGallery.name}</strong>. הלקוח יקבל מייל ממותג עם הקישור הציבורי.
+            </p>
+
+            {shareSent ? (
+              <div style={{
+                padding: '32px 20px', textAlign: 'center',
+                background: 'rgba(34,197,94,.08)', border: '1px solid rgba(34,197,94,.25)',
+                borderRadius: 14, color: '#4ade80',
+              }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>✓</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>המייל נשלח</div>
+              </div>
+            ) : (
+              <>
+                <label style={{ display: 'block', marginBottom: 14 }}>
+                  <span style={{ display: 'block', fontSize: 12, color: textMuted, marginBottom: 6, fontWeight: 600 }}>
+                    כתובת מייל של הלקוח
+                  </span>
+                  <input
+                    type="email"
+                    value={shareEmail}
+                    onChange={e => setShareEmail(e.target.value)}
+                    placeholder="client@example.com"
+                    style={{
+                      width: '100%', padding: '11px 14px', borderRadius: 10,
+                      background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                      color: textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none',
+                      direction: 'ltr', textAlign: 'left',
+                    }}
+                  />
+                </label>
+                <label style={{ display: 'block', marginBottom: 14 }}>
+                  <span style={{ display: 'block', fontSize: 12, color: textMuted, marginBottom: 6, fontWeight: 600 }}>
+                    נושא
+                  </span>
+                  <input
+                    type="text"
+                    value={shareSubject}
+                    onChange={e => setShareSubject(e.target.value)}
+                    style={{
+                      width: '100%', padding: '11px 14px', borderRadius: 10,
+                      background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                      color: textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none',
+                    }}
+                  />
+                </label>
+                <label style={{ display: 'block', marginBottom: 24 }}>
+                  <span style={{ display: 'block', fontSize: 12, color: textMuted, marginBottom: 6, fontWeight: 600 }}>
+                    הודעה אישית (אופציונלי)
+                  </span>
+                  <textarea
+                    value={shareMessage}
+                    onChange={e => setShareMessage(e.target.value)}
+                    rows={3}
+                    placeholder="תודה רבה על האירוע! תהנו מהתמונות..."
+                    style={{
+                      width: '100%', padding: '11px 14px', borderRadius: 10,
+                      background: 'rgba(255,255,255,.04)', border: `1px solid ${border}`,
+                      color: textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none',
+                      resize: 'vertical', minHeight: 80,
+                    }}
+                  />
+                </label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    onClick={() => setShareGallery(null)}
+                    disabled={shareSending}
+                    style={{
+                      flex: 1, padding: '12px 0', borderRadius: 12,
+                      background: 'transparent', color: textSecondary,
+                      border: `1px solid ${border}`, fontSize: 14, fontWeight: 600,
+                      cursor: shareSending ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit', opacity: shareSending ? 0.5 : 1,
+                    }}
+                  >
+                    ביטול
+                  </button>
+                  <button
+                    onClick={sendShareEmail}
+                    disabled={shareSending || !shareEmail}
+                    style={{
+                      flex: 1, padding: '12px 0', borderRadius: 12,
+                      background: shareSending || !shareEmail
+                        ? 'rgba(99,102,241,.4)'
+                        : `linear-gradient(135deg, ${accent}, ${accentLight})`,
+                      color: '#fff', border: 'none', fontSize: 14, fontWeight: 700,
+                      cursor: shareSending || !shareEmail ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit',
+                      transition: 'all .15s',
+                    }}
+                  >
+                    {shareSending ? 'שולח...' : 'שלח'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ───────────── Buy Tokens Modal ───────────── */}
+      {showBuyTokens && (
+        <div
+          onClick={() => setShowBuyTokens(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 2000,
+            background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(10px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, animation: 'overlayIn .2s ease both',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: bg, width: '100%', maxWidth: 720,
+              borderRadius: 24, padding: 36,
+              border: `1px solid ${border}`,
+              animation: 'modalIn .3s ease both',
+              boxShadow: '0 30px 100px rgba(0,0,0,.6)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <h2 style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+                קנה טוקנים
+              </h2>
+              <button onClick={() => setShowBuyTokens(false)} style={{
+                background: 'transparent', border: 'none', color: textMuted, fontSize: 22,
+                cursor: 'pointer', lineHeight: 1, padding: 4,
+              }}>×</button>
+            </div>
+            <p style={{ fontSize: 14, color: textSecondary, margin: '0 0 24px', lineHeight: 1.5 }}>
+              טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              {TOKEN_PACKAGES.map(pkg => (
+                <button
+                  key={pkg.planId}
+                  onClick={async () => {
+                    const url = await startCheckout(pkg.planId)
+                    if (url) { window.location.href = url }
+                    else { alert('שגיאה בפתיחת תשלום. נסה שוב.') }
+                  }}
+                  style={{
+                    position: 'relative',
+                    background: pkg.highlight
+                      ? `linear-gradient(135deg, rgba(99,102,241,.12), rgba(129,140,248,.06))`
+                      : card,
+                    border: `1px solid ${pkg.highlight ? 'rgba(99,102,241,.4)' : border}`,
+                    borderRadius: 18, padding: 24, textAlign: 'right' as const,
+                    cursor: 'pointer', transition: 'all .2s',
+                    color: textPrimary, fontFamily: 'Inter, sans-serif',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(99,102,241,.18)` }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}
+                >
+                  {pkg.highlight && (
+                    <div style={{
+                      position: 'absolute', top: -10, right: 16,
+                      padding: '4px 12px', borderRadius: 10,
+                      background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
+                      fontSize: 11, fontWeight: 700, letterSpacing: '.04em',
+                    }}>
+                      {pkg.highlight}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{pkg.name}</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 4, letterSpacing: '-0.02em' }}>
+                    {pkg.tokens.toLocaleString('he-IL')}
+                  </div>
+                  <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>טוקנים בחודש</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#a5b4fc' }}>
+                    ₪{pkg.pricePerMonthIls}
+                    <span style={{ fontSize: 12, fontWeight: 500, color: textMuted }}> / חודש</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <p style={{ fontSize: 11, color: textMuted, margin: '20px 0 0', textAlign: 'center', lineHeight: 1.5 }}>
+              חיוב חודשי דרך LemonSqueezy. אפשר לבטל בכל זמן.<br />
+              טוקנים שלא בשימוש מצטברים, לא מתאפסים בסוף חודש.
+            </p>
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   )
 }

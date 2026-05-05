@@ -6,6 +6,14 @@ import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
 import { FaceSearchExperience } from './components/FaceSearchExperience'
 import { t, type Lang } from './i18n'
+import {
+  getMeta as gcGetMeta,
+  getImages as gcGetImages,
+  getStories as gcGetStories,
+  getHidden as gcGetHidden,
+  setHidden as gcSetHidden,
+} from './lib/galleryClient'
+import { logDownload, logBatchDownload, toggleFavorite as apiToggleFavorite } from './lib/activityLog'
 
 // ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
 
@@ -57,7 +65,7 @@ function useColumnCount(layoutMode: string): number {
   return cols
 }
 
-function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide }: {
+function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide, favoritedIds, onToggleFavorite, watermark }: {
   images: GalleryImage[]
   thumbUrl: (img: GalleryImage) => string
   layoutMode: string
@@ -71,6 +79,9 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
   clientMode?: boolean
   hiddenIds?: Set<string>
   onToggleHide?: (id: string) => void
+  favoritedIds?: Set<string>
+  onToggleFavorite?: (id: string) => void
+  watermark?: { text: string; position: string } | null
 }) {
   const cols = useColumnCount(layoutMode)
   const imgRefs = useRef<Map<string, HTMLImageElement>>(new Map())
@@ -232,6 +243,56 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
                   </button>
+                )}
+                {/* Heart / favorite — always visible when favorited; hover-revealed when not */}
+                {!selectMode && onToggleFavorite && (
+                  <button
+                    className="grid-item__fav"
+                    aria-label={favoritedIds?.has(img.id) ? 'Remove favorite' : 'Add favorite'}
+                    onClick={e => { e.stopPropagation(); onToggleFavorite(img.id) }}
+                    style={{
+                      position: 'absolute', top: 10, right: 10,
+                      width: 34, height: 34, borderRadius: '50%',
+                      border: '1px solid rgba(255,255,255,.12)',
+                      background: 'rgba(0,0,0,.45)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: favoritedIds?.has(img.id) ? 1 : 0,
+                      transition: 'all .18s cubic-bezier(.16,1,.3,1)',
+                      boxShadow: favoritedIds?.has(img.id) ? '0 2px 12px rgba(239,68,68,.3)' : '0 2px 8px rgba(0,0,0,.25)',
+                    }}
+                    onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.85)' }}
+                    onMouseUp={e => { e.currentTarget.style.transform = '' }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = '' }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24"
+                      fill={favoritedIds?.has(img.id) ? '#ef4444' : 'none'}
+                      stroke={favoritedIds?.has(img.id) ? '#ef4444' : '#fff'}
+                      strokeWidth="2">
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    </svg>
+                  </button>
+                )}
+                {/* Watermark overlay — purely presentational; the original
+                    download is unaffected. Only renders for previews. */}
+                {watermark?.text && (
+                  <div
+                    aria-hidden
+                    style={{
+                      position: 'absolute', pointerEvents: 'none',
+                      ...(watermark.position === 'bottom-left'  ? { bottom: 8, left: 8 }
+                        : watermark.position === 'top-right'    ? { top: 8, right: 8 }
+                        : watermark.position === 'top-left'     ? { top: 8, left: 8 }
+                        : watermark.position === 'center'       ? { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+                        : { bottom: 8, right: 8 }),
+                      color: 'rgba(255,255,255,.75)',
+                      fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
+                      textShadow: '0 1px 4px rgba(0,0,0,.6)',
+                      maxWidth: '60%',
+                      overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {watermark.text}
+                  </div>
                 )}
               </div>
             )
@@ -838,6 +899,7 @@ export function App() {
   const [clientCodeInput, setClientCodeInput] = useState('')
   const [clientCodeError, setClientCodeError] = useState(false)
   const [hiddenImageIds, setHiddenImageIds] = useState<Set<string>>(new Set())
+  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set())
   // Stories are collapsed by default. The viewer surfaces them via a toggle
   // button in the section-nav toolbar so the gallery doesn't open with a big
   // stories block above the photos.
@@ -944,14 +1006,35 @@ export function App() {
   // Load hidden images for this gallery
   useEffect(() => {
     if (!gallery) return
-    supabase
-      .from('gallery_hidden_images')
-      .select('image_id')
-      .eq('gallery_id', gallery.id)
-      .then(({ data }) => {
-        if (data) setHiddenImageIds(new Set(data.map(r => r.image_id)))
-      })
+    if (!unlocked) return  // gated galleries: wait for the unlock token
+    gcGetHidden(gallery.id).then(ids => {
+      setHiddenImageIds(new Set(ids))
+    })
+  }, [gallery?.id, unlocked])
+
+  // Hydrate guest favorites from localStorage. RLS doesn't allow anon to
+  // read gallery_favorites (the photographer's analytics signal is owner-
+  // only); the guest-side source of truth is local. The DB row is fired
+  // on each toggle for the photographer's Activities tab.
+  useEffect(() => {
+    if (!gallery) return
+    try {
+      const raw = localStorage.getItem(`gf_favs_${gallery.id}`)
+      if (raw) setFavoritedIds(new Set(JSON.parse(raw) as string[]))
+    } catch { /* ignore corrupt entries */ }
   }, [gallery?.id])
+
+  const toggleImageFavorite = useCallback((imageId: string) => {
+    if (!gallery) return
+    setFavoritedIds(prev => {
+      const next = new Set(prev)
+      const wasFav = next.has(imageId)
+      if (wasFav) next.delete(imageId); else next.add(imageId)
+      try { localStorage.setItem(`gf_favs_${gallery.id}`, JSON.stringify(Array.from(next))) } catch { /* full / disabled */ }
+      void apiToggleFavorite(gallery.id, imageId, !wasFav)
+      return next
+    })
+  }, [gallery])
 
   // On first load, if the URL has a hash (e.g. #section-abc), scroll to it
   // once the masonry has rendered.
@@ -968,54 +1051,48 @@ export function App() {
   }, [showWelcome, images.length])
 
   async function loadGallery(id: string) {
-    const { data: g, error: ge } = await supabase
-      .from('galleries')
-      .select('*')
-      .eq('id', id)
-      .in('status', ['live', 'published', 'draft'])
-      .single()
-
-    if (ge || !g) {
+    const meta = await gcGetMeta(id)
+    if (!meta) {
       setError('Gallery not found')
       return
     }
+    const g = meta as unknown as Gallery
+    const gateOn = (meta as { signed_gate_enabled?: boolean }).signed_gate_enabled === true
+    const hasPw  = (meta as { has_password?: boolean }).has_password === true
 
     if (isGalleryUnlocked(id)) {
       setUnlocked(true)
     }
 
-    // In private face-search mode, anon RLS blocks the bulk image fetch — the
-    // matched rows come back from the rekognition edge function instead. The
-    // server is the source of truth here; do NOT fall back to a public fetch.
+    // In private face-search mode, the bulk image fetch returns nothing — the
+    // matched rows come back from the rekognition edge function instead.
     const isPrivateFaceMode =
       ((g.delivery_settings as { facePrivacyMode?: string } | null)?.facePrivacyMode) === 'private'
 
-    // Fetch images + sections in parallel. We commit them together with the
-    // gallery in a single setState burst so the first render after the loader
-    // already has the data the welcome screen needs — no empty-grid flash.
-    //
-    // PostgREST caps a single query at 1000 rows; large galleries (Alma
-    // Lisbon ships >1100) need pagination or the tail rows silently drop —
-    // a pill says "Day 2 · 200" but only 88 actually render. We page in
-    // chunks of 1000 until a partial page comes back.
+    // For galleries that are signed-gate-enabled AND password-protected, we
+    // must wait for the user to unlock before fetching images / stories /
+    // hidden state — those RPCs require a token. The PasswordGate effect
+    // re-runs loadGallery? No: it just flips `unlocked`, and the dependent
+    // useEffects pick up the rest (hidden, etc). For images + stories we
+    // mirror that here: skip the heavy fetch when the gate hasn't been passed.
+    const mustWaitForUnlock = gateOn && hasPw && !isGalleryUnlocked(id)
+
     const fetchAllImages = async (): Promise<GalleryImage[]> => {
       const PAGE = 1000
       const out: GalleryImage[] = []
       for (let offset = 0; ; offset += PAGE) {
-        const { data, error } = await supabase
-          .from('images')
-          .select('id, filename, storage_path:web_preview_path, original_path, original_uploaded, thumbnail_path, is_top_pick, sort_order, section_id')
-          .eq('gallery_id', id)
-          .order('sort_order', { ascending: true })
-          .range(offset, offset + PAGE - 1)
-        if (error || !data) break
-        out.push(...(data as GalleryImage[]))
-        if (data.length < PAGE) break
+        const rows = await gcGetImages<GalleryImage>(id, { offset, limit: PAGE })
+        out.push(...rows)
+        if (rows.length < PAGE) break
       }
       return out
     }
     const [imgs, secsRes] = await Promise.all([
-      isPrivateFaceMode ? Promise.resolve([] as GalleryImage[]) : fetchAllImages(),
+      (isPrivateFaceMode || mustWaitForUnlock) ? Promise.resolve([] as GalleryImage[]) : fetchAllImages(),
+      // gallery_sections is intentionally left on the legacy public path —
+      // section names ("Day 1", "Day 2") are far less sensitive than image
+      // contents, and gating them here would force every PasswordGate render
+      // to wait on token issuance for what is essentially a label.
       supabase
         .from('gallery_sections')
         .select('id, name, sort_order')
@@ -1026,17 +1103,12 @@ export function App() {
     setSections(secsRes.data || [])
     setGallery(g)
 
-    // Stories load after — they appear behind a toggle in section-nav, so
-    // they don't affect the initial welcome screen render.
-    const { data: st } = await supabase
-      .from('stories')
-      .select('*')
-      .eq('gallery_id', id)
+    if (mustWaitForUnlock) return  // stories deferred to the unlock effect below
 
-    // Only include stories whose video files actually exist in storage
-    if (st && st.length > 0) {
+    const stories = await gcGetStories<Story>(id)
+    if (stories.length > 0) {
       const verified: Story[] = []
-      for (const story of st) {
+      for (const story of stories) {
         const url = storageUrl('gallery-stories', story.storage_path)
         try {
           const res = await fetch(url, { method: 'HEAD' })
@@ -1046,6 +1118,37 @@ export function App() {
       setStories(verified)
     }
   }
+
+  // After unlock, fetch the gated content (images + stories) for galleries
+  // that deferred them in loadGallery. No-op for galleries already loaded.
+  useEffect(() => {
+    if (!gallery || !unlocked || images.length > 0) return
+    const isPrivateFaceMode =
+      ((gallery.delivery_settings as { facePrivacyMode?: string } | null)?.facePrivacyMode) === 'private'
+    if (isPrivateFaceMode) return
+    ;(async () => {
+      const PAGE = 1000
+      const out: GalleryImage[] = []
+      for (let offset = 0; ; offset += PAGE) {
+        const rows = await gcGetImages<GalleryImage>(gallery.id, { offset, limit: PAGE })
+        out.push(...rows)
+        if (rows.length < PAGE) break
+      }
+      setImages(out)
+      const stories = await gcGetStories<Story>(gallery.id)
+      if (stories.length > 0) {
+        const verified: Story[] = []
+        for (const story of stories) {
+          const url = storageUrl('gallery-stories', story.storage_path)
+          try {
+            const res = await fetch(url, { method: 'HEAD' })
+            if (res.ok) verified.push(story)
+          } catch { /* skip */ }
+        }
+        setStories(verified)
+      }
+    })()
+  }, [gallery?.id, unlocked])
 
   const handleUnlock = useCallback(() => setUnlocked(true), [])
 
@@ -1070,14 +1173,12 @@ export function App() {
   const toggleHideImage = useCallback(async (imageId: string) => {
     if (!gallery) return
     const isHidden = hiddenImageIds.has(imageId)
-    if (isHidden) {
-      await supabase.from('gallery_hidden_images').delete()
-        .eq('gallery_id', gallery.id).eq('image_id', imageId)
-      setHiddenImageIds(prev => { const next = new Set(prev); next.delete(imageId); return next })
-    } else {
-      await supabase.from('gallery_hidden_images').insert({ gallery_id: gallery.id, image_id: imageId })
-      setHiddenImageIds(prev => new Set(prev).add(imageId))
-    }
+    await gcSetHidden(gallery.id, imageId, !isHidden)
+    setHiddenImageIds(prev => {
+      const next = new Set(prev)
+      if (isHidden) next.delete(imageId); else next.add(imageId)
+      return next
+    })
   }, [gallery, hiddenImageIds])
 
   // Visible images: guests see only non-hidden, clients see all. Face search
@@ -1151,16 +1252,31 @@ export function App() {
     : (raw as Record<string, unknown>).allowDownloads !== false
   const facePrivacyMode = ((raw as Record<string, unknown>).facePrivacyMode as 'open' | 'private') || 'open'
 
+  // Theme color — selected by the photographer in the Design tab.
+  const themeColorId = ((raw as Record<string, unknown>).themeColor as string) || 'indigo'
+  const themeColors: Record<string, string> = {
+    indigo: '#6366f1', rose: '#f43f5e', amber: '#f59e0b', teal: '#14b8a6', slate: '#64748b',
+  }
+  const themeAccent = themeColors[themeColorId] ?? themeColors.indigo
+
+  // Watermark settings — applied as a CSS overlay on web previews. Originals
+  // download untouched (the watermark is presentation-only, not baked in).
+  const watermarkEnabled = (raw as Record<string, unknown>).watermarkEnabled === true
+  const watermarkText = (((raw as Record<string, unknown>).watermarkText as string) || studioName || '').trim()
+  const watermarkPosition = ((raw as Record<string, unknown>).watermarkPosition as string) || 'bottom-right'
+
   // ── Password gate ──────────────────────────────────────────────────────
   // We no longer have the plaintext password on the client; the gate calls
   // verify_gallery_password() RPC. We rely on accessType alone to know
   // whether a gate is required.
   if (accessType === 'password' && !unlocked) {
+    const signedGateOn = (gallery as { signed_gate_enabled?: boolean }).signed_gate_enabled === true
     return (
       <PasswordGate
         galleryId={gallery.id}
         galleryName={galleryTitle}
         onUnlock={handleUnlock}
+        requireToken={signedGateOn}
       />
     )
   }
@@ -1445,6 +1561,10 @@ export function App() {
       showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
     }
     handleDownload(url, img.filename)
+    if (gallery) {
+      const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+      void logDownload(gallery.id, img.id, wantsHd ? 'original' : 'web', 'single')
+    }
   }
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
@@ -1489,10 +1609,13 @@ export function App() {
   }
 
   async function handleBatchDownload(imgs: GalleryImage[]) {
+    if (gallery && imgs.length > 0) {
+      const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+      void logBatchDownload(gallery.id, imgs.map(i => i.id), wantsHd ? 'original' : 'web')
+    }
     // Resolve URLs in parallel BEFORE the download loop. HEAD-check each
     // original so a stale original_uploaded flag doesn't downgrade the
-    // batch silently (same bug fixed in handleImageDownload). Parallel
-    // HEADs add ~few hundred ms total even for large selections.
+    // batch silently. Parallel HEADs add ~few hundred ms total.
     setDlProgress(`Checking ${imgs.length} files...`)
     const resolved = await Promise.all(imgs.map(resolveDownloadUrl))
     const downgradedCount = resolved.filter(r => r.downgraded).length
@@ -1613,8 +1736,21 @@ export function App() {
     || (heroFallbackImage ? webUrl(heroFallbackImage) : null)
   const hasCustomCover = !!coverUrl
 
+  // Convert the chosen theme accent (#rrggbb) to "r, g, b" so it can override
+  // the existing --accent CSS variable used everywhere in styles.css.
+  const themeAccentRgb = (() => {
+    const hex = themeAccent.replace('#', '')
+    const r = parseInt(hex.slice(0, 2), 16)
+    const g = parseInt(hex.slice(2, 4), 16)
+    const b = parseInt(hex.slice(4, 6), 16)
+    return `${r}, ${g}, ${b}`
+  })()
+
   return (
     <>
+      {/* Override the global accent CSS variable to match the photographer's
+          chosen theme color. Cascades into every existing rgb(var(--accent)) ref. */}
+      <style>{`:root { --accent: ${themeAccentRgb}; }`}</style>
       {/* Hero */}
       {/* Feed mode: mobile sticky header */}
       {isFeedMode && (
@@ -1915,6 +2051,9 @@ export function App() {
               clientMode={viewerRole === 'client'}
               hiddenIds={hiddenImageIds}
               onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
+              favoritedIds={favoritedIds}
+              onToggleFavorite={toggleImageFavorite}
+              watermark={watermarkEnabled && watermarkText ? { text: watermarkText, position: watermarkPosition } : null}
             />
           </section>
         )
@@ -1971,6 +2110,9 @@ export function App() {
               clientMode={viewerRole === 'client'}
               hiddenIds={hiddenImageIds}
               onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
+              favoritedIds={favoritedIds}
+              onToggleFavorite={toggleImageFavorite}
+              watermark={watermarkEnabled && watermarkText ? { text: watermarkText, position: watermarkPosition } : null}
             />
           </section>
         )
@@ -2002,6 +2144,8 @@ export function App() {
           onClose={() => { setViewerIndex(null); setViewerList(null) }}
           onNavigate={setViewerIndex}
           onDownload={handleDownload}
+          favoritedIds={favoritedIds}
+          onToggleFavorite={toggleImageFavorite}
         />
       )}
 

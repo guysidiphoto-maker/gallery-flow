@@ -781,50 +781,153 @@ export async function markGalleryLive(galleryId: string, publicUrl: string): Pro
 
 // ─── Delete Gallery from Cloud ──────────────────────────────────────────────
 
+export interface DeleteGalleryResult {
+  /** True only when AWS, storage, and DB all confirmed gone (or were already
+   *  gone). False means the gallery row was NOT deleted; the caller can
+   *  retry safely — every step is idempotent. */
+  ok: boolean
+  /** Per-step failures, surfaced to the UI so the user knows what didn't go.
+   *  Empty array on success. */
+  errors: string[]
+  /** Diagnostic counters. Useful in Sentry/logs. */
+  stats: {
+    awsDeleted: boolean
+    storageImagesPaths: number
+    storageImagesFailed: number
+    storageStoriesPaths: number
+    storageStoriesFailed: number
+    dbDeleted: boolean
+  }
+}
+
+// Storage.remove() will reject only on transport errors. Per-key failures are
+// reported by the absence of that key in `data`. Reconcile request vs. response
+// to surface partial failures the caller can retry.
+async function removeStorageBatch(
+  bucket: string,
+  paths: string[],
+): Promise<{ failed: string[]; transportError: string | null }> {
+  if (paths.length === 0) return { failed: [], transportError: null }
+  try {
+    const { data, error } = await supabase.storage.from(bucket).remove(paths)
+    if (error) return { failed: paths, transportError: error.message }
+    const removed = new Set((data ?? []).map(o => o.name))
+    const failed = paths.filter(p => !removed.has(p))
+    return { failed, transportError: null }
+  } catch (e) {
+    return { failed: paths, transportError: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export async function deleteGalleryFromCloud(
-  galleryDbIdOrLocalId: string
-): Promise<{ error: string | null }> {
+  galleryDbIdOrLocalId: string,
+): Promise<DeleteGalleryResult> {
   log('delete-gallery:start', galleryDbIdOrLocalId)
+  const stats: DeleteGalleryResult['stats'] = {
+    awsDeleted: false,
+    storageImagesPaths: 0,
+    storageImagesFailed: 0,
+    storageStoriesPaths: 0,
+    storageStoriesFailed: 0,
+    dbDeleted: false,
+  }
+  const errors: string[] = []
 
   // Resolve gallery DB id
   let galleryDbId = galleryDbIdOrLocalId
   const isUuid = /^[0-9a-f]{8}-/.test(galleryDbId)
   if (!isUuid) {
     const { data } = await supabase.from('galleries').select('id').eq('local_id', galleryDbId).single()
-    if (!data) return { error: null } // not published — nothing to delete
+    if (!data) {
+      // Not published — nothing to delete in cloud.
+      return { ok: true, errors, stats }
+    }
     galleryDbId = data.id
   }
 
-  // Delete the Rekognition collection first (best-effort, never fatal).
-  // We do this before the DB delete so we still know the gallery exists
-  // when the edge function checks ownership.
-  await deleteCollection(galleryDbId)
-
-  // 1. Get all images to delete from storage (paths stored in DB)
-  const { data: imgs } = await supabase.from('images').select('filename, storage_path:web_preview_path, original_path, thumbnail_path').eq('gallery_id', galleryDbId)
-
-  if (imgs && imgs.length > 0) {
-    // 2. Delete files from storage using DB-stored paths
-    const paths = imgs.flatMap(img => [
-      img.thumbnail_path,
-      img.storage_path,
-      img.original_path,
-    ].filter(Boolean))
-    await supabase.storage.from(BUCKET).remove(paths)
-    log('delete-gallery:storage', `${paths.length} files`)
+  // 1. AWS Rekognition collection. Best-effort — an orphan AWS collection is
+  //    recoverable from a script later, and we don't want a transient AWS
+  //    glitch to block the storage cleanup. Failures are surfaced in the
+  //    return value (Sentry hooks downstream).
+  try {
+    await deleteCollection(galleryDbId)
+    stats.awsDeleted = true
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    errors.push(`aws: ${msg}`)
   }
 
-  // 3. Delete stories from storage
-  const { data: stories } = await supabase.from('stories').select('storage_path').eq('gallery_id', galleryDbId)
-  if (stories && stories.length > 0) {
-    await supabase.storage.from(STORY_BUCKET).remove(stories.map(s => s.storage_path))
+  // 2. Enumerate every storage object FIRST so we have a complete manifest
+  //    before any deletes start. If listing itself fails we abort — better
+  //    to leave the gallery intact than to half-delete it.
+  const { data: imgs, error: imgsErr } = await supabase
+    .from('images')
+    .select('web_preview_path, original_path, thumbnail_path')
+    .eq('gallery_id', galleryDbId)
+  if (imgsErr) {
+    errors.push(`enumerate-images: ${imgsErr.message}`)
+    return { ok: false, errors, stats }
+  }
+  const { data: stories, error: storiesErr } = await supabase
+    .from('stories')
+    .select('storage_path')
+    .eq('gallery_id', galleryDbId)
+  if (storiesErr) {
+    errors.push(`enumerate-stories: ${storiesErr.message}`)
+    return { ok: false, errors, stats }
   }
 
-  // 4. Delete DB records (images + stories cascade with gallery)
-  await supabase.from('galleries').delete().eq('id', galleryDbId)
+  const imagePaths: string[] = (imgs ?? []).flatMap(i => [
+    i.thumbnail_path, i.web_preview_path, i.original_path,
+  ].filter((p): p is string => typeof p === 'string' && p.length > 0))
+  const storyPaths: string[] = (stories ?? [])
+    .map(s => s.storage_path)
+    .filter((p): p is string => typeof p === 'string' && p.length > 0)
+  stats.storageImagesPaths  = imagePaths.length
+  stats.storageStoriesPaths = storyPaths.length
+
+  // 3. Delete storage objects. Reconcile per-key — a partial failure aborts
+  //    DB deletion so the row stays a recoverable pointer to the orphans.
+  const imgRes = await removeStorageBatch(BUCKET, imagePaths)
+  stats.storageImagesFailed = imgRes.failed.length
+  if (imgRes.transportError) errors.push(`storage-images: ${imgRes.transportError}`)
+  if (imgRes.failed.length > 0 && !imgRes.transportError) {
+    errors.push(`storage-images: ${imgRes.failed.length} of ${imagePaths.length} not removed`)
+  }
+  log('delete-gallery:storage-images', `${imagePaths.length - imgRes.failed.length}/${imagePaths.length}`)
+
+  const stRes = await removeStorageBatch(STORY_BUCKET, storyPaths)
+  stats.storageStoriesFailed = stRes.failed.length
+  if (stRes.transportError) errors.push(`storage-stories: ${stRes.transportError}`)
+  if (stRes.failed.length > 0 && !stRes.transportError) {
+    errors.push(`storage-stories: ${stRes.failed.length} of ${storyPaths.length} not removed`)
+  }
+
+  // 4. DB delete only if storage was clean. AWS failure alone does not block:
+  //    AWS orphans are cheap to clean up (one API call) and the audit's
+  //    primary concern is storage / DB inconsistency.
+  const storageHadFailures = imgRes.failed.length > 0 || stRes.failed.length > 0
+  if (storageHadFailures) {
+    log('delete-gallery:abort-db', 'storage failures; row preserved for retry')
+    return { ok: false, errors, stats }
+  }
+
+  const { data: deleted, error: dbErr } = await supabase
+    .from('galleries').delete().eq('id', galleryDbId).select('id')
+  if (dbErr) {
+    errors.push(`db: ${dbErr.message}`)
+    return { ok: false, errors, stats }
+  }
+  // RLS denial returns no error and no rows — explicit row check catches it.
+  if (!deleted || deleted.length === 0) {
+    errors.push('db: no row deleted (RLS or already gone)')
+    // Treat as ok if we never had a row anyway; otherwise surface the gap.
+    return { ok: false, errors, stats }
+  }
+  stats.dbDeleted = true
   log('delete-gallery:done', galleryDbId)
 
-  return { error: null }
+  return { ok: errors.length === 0, errors, stats }
 }
 
 // ─── Delete Single Image from Cloud ─────────────────────────────────────────

@@ -21,6 +21,71 @@ const VARIANT_TO_PLAN: Record<string, string> = {
   '1520026': 'business',
 }
 
+/** Idempotently grant the plan's token allocation to the business. The ledger
+ *  is the audit trail; we use the LemonSqueezy event id as ref_id so a
+ *  retried webhook doesn't double-grant. */
+async function grantPlanTokens(
+  businessId: string,
+  planId: string,
+  eventId: string,
+  source: string,
+): Promise<void> {
+  if (!businessId || !planId || !eventId) return
+  const eventUuid = stableUuid(eventId)
+  // Skip if we've already credited this exact event.
+  const { data: existing } = await supabase
+    .from('token_ledger')
+    .select('id')
+    .eq('business_id', businessId)
+    .eq('ref_id', eventUuid)
+    .eq('reason', 'purchase')
+    .maybeSingle()
+  if (existing) {
+    console.log(`[webhook] Tokens already granted for event ${eventId}; skipping`)
+    return
+  }
+  const { data: plan } = await supabase
+    .from('plans')
+    .select('token_count')
+    .eq('id', planId)
+    .maybeSingle()
+  const count = plan?.token_count ?? 0
+  if (count <= 0) return
+  const { error } = await supabase.rpc('add_tokens', {
+    p_business_id: businessId,
+    p_count: count,
+    p_reason: 'purchase',
+    p_ref_id: eventUuid,
+    p_metadata: { source, lemonsqueezy_event_id: eventId, plan_id: planId },
+  })
+  if (error) {
+    console.error(`[webhook] add_tokens failed:`, error)
+    throw new Error('add_tokens failed')
+  }
+  console.log(`[webhook] Granted ${count} tokens to ${businessId} (event ${eventId})`)
+}
+
+/** Stable UUID derived from any LemonSqueezy event id. Used as token_ledger
+ *  ref_id so a retried webhook can't double-credit. Deterministic FNV-1a
+ *  128-bit hash — collisions across LemonSqueezy event ids are not a concern
+ *  in practice. */
+function stableUuid(input: string): string {
+  const s = `lemonsqueezy:${input}`
+  let h1 = 0x811c9dc5, h2 = 0xdeadbeef, h3 = 0xcafebabe, h4 = 0x13371337
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0
+    h2 = Math.imul(h2 ^ c, 0x01000193) >>> 0
+    h3 = Math.imul(h3 ^ c, 0x01000193) >>> 0
+    h4 = Math.imul(h4 ^ c, 0x01000193) >>> 0
+  }
+  const hex = h1.toString(16).padStart(8, '0')
+            + h2.toString(16).padStart(8, '0')
+            + h3.toString(16).padStart(8, '0')
+            + h4.toString(16).padStart(8, '0')
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`
+}
+
 serve(async (req) => {
   const signature = req.headers.get('x-signature')
   if (!signature) return new Response('Missing signature', { status: 400 })
@@ -67,6 +132,25 @@ serve(async (req) => {
           .in('status', ['active', 'trial'])
 
         console.log(`[webhook] Updated subscription for ${businessId}: ${planId} (${status})`)
+
+        // Initial token grant on subscription creation. The grant is keyed off
+        // the LemonSqueezy event id so a retried webhook is a no-op.
+        if (eventName === 'subscription_created' && status === 'active') {
+          await grantPlanTokens(businessId, planId, String(event.data?.id || ''),
+                                'subscription_created')
+        }
+        break
+      }
+
+      case 'subscription_payment_success':
+      case 'order_created': {
+        // Recurring monthly grant (subscription) OR one-time top-up purchase
+        // (order). Both events fire on every successful charge. Idempotency
+        // is handled inside grantPlanTokens via the ledger ref_id check.
+        if (!businessId) break
+        const orderId = String(event.data?.id || attrs.order_id || '')
+        if (!orderId) break
+        await grantPlanTokens(businessId, planId, orderId, eventName)
         break
       }
 
