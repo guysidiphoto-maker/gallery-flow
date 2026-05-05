@@ -62,6 +62,19 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
     @keyframes pulse    { 0%,100% { opacity:.4; } 50% { opacity:1; } }
     @keyframes overlayIn { from { opacity:0; } to { opacity:1; } }
 
+    /* Universal focus ring for keyboard nav. Required for WCAG-AA. We use
+       :focus-visible (not :focus) so mouse users don't see rings on click,
+       only keyboard users do. */
+    .dash button:focus-visible,
+    .dash a:focus-visible,
+    .dash input:focus-visible,
+    .dash textarea:focus-visible,
+    .dash select:focus-visible {
+      outline: 2px solid #141413;
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+
     /* Sidebar mobile transformation. Above 900px the sidebar is a permanent
        sticky 240px column. Below 900px it becomes an off-canvas drawer that
        slides in from the right (RTL); the hamburger button in the topbar
@@ -81,6 +94,19 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
       }
       .dash-sidebar-backdrop { display: block !important; }
       .dash-hamburger { display: flex !important; }
+    }
+
+    /* Honor the OS-level "reduce motion" preference. Required by WCAG and
+       prevents the cascade of fadeInUp/modalIn/shimmer entrances from
+       triggering vestibular-disorder symptoms. We zero animation duration
+       (not display:none) so the visual end-state is what users see. */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
     }
   `
   document.head.appendChild(style)
@@ -636,7 +662,7 @@ export function Dashboard() {
   ]
 
   return (
-    <div style={{
+    <div className="dash" style={{
       background: bg, minHeight: '100vh', fontFamily: 'inherit',
       direction: 'rtl', color: textPrimary,
       display: 'flex',
@@ -702,7 +728,15 @@ export function Dashboard() {
           }} />
         </a>
 
-        {/* Nav */}
+        {/* Nav — eyebrow above gives the sidebar a clear editorial section
+            label and improves scannability for first-time users. */}
+        <div style={{
+          fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+          color: textMuted, textTransform: 'uppercase',
+          padding: '0 12px 12px',
+        }}>
+          Workspace
+        </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
           {[
             { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true, disabled: false },
@@ -746,7 +780,16 @@ export function Dashboard() {
           ))}
         </nav>
 
-        {/* Token balance — editorial treatment, low warning amber if below 50 */}
+        {/* Account section — eyebrow + token balance card. Mirrors the
+            Workspace eyebrow above for visual rhythm; together they give
+            the sidebar two clear sections. */}
+        <div style={{
+          fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+          color: textMuted, textTransform: 'uppercase',
+          padding: '20px 12px 12px',
+        }}>
+          Account
+        </div>
         {(() => {
           const low = tokenBalance < 50
           return (
@@ -850,14 +893,17 @@ export function Dashboard() {
         }}>
           <div>
             <div style={{
-              fontSize: 11, fontWeight: 500, letterSpacing: '0.18em',
-              color: textMuted, textTransform: 'uppercase', marginBottom: 10,
+              fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+              color: textMuted, textTransform: 'uppercase', marginBottom: 14,
             }}>
               Workspace
             </div>
+            {/* Fluid display heading — scales smoothly between mobile and
+                desktop without breakpoint jumps. clamp(min, preferred, max). */}
             <h1 style={{
-              fontSize: 40, fontWeight: 500, margin: 0,
-              letterSpacing: '-0.02em', lineHeight: 1.05, color: textPrimary,
+              fontSize: 'clamp(28px, 4vw, 56px)',
+              fontWeight: 500, margin: 0,
+              letterSpacing: '-0.025em', lineHeight: 1.02, color: textPrimary,
             }}>
               הגלריות שלי
             </h1>
@@ -1085,10 +1131,13 @@ export function Dashboard() {
                     background: card,
                     borderRadius: 4,
                     cursor: 'pointer',
-                    animation: `fadeInUp .4s ease both`,
-                    animationDelay: `${idx * 0.04}s`,
-                    transition: 'transform .25s ease',
-                    transform: isHovered ? 'translateY(-3px)' : 'translateY(0)',
+                    // Editorial reveal: slower duration + 60ms cascade per
+                    // tile, with cubic-bezier(.2,.7,.2,1) for the gentle
+                    // "settle" easing favoured by magazine layouts.
+                    animation: 'fadeInUp .55s cubic-bezier(.2,.7,.2,1) both',
+                    animationDelay: `${Math.min(idx, 12) * 0.06}s`,
+                    transition: 'transform .35s cubic-bezier(.2,.7,.2,1)',
+                    transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
                   }}
                   onClick={() => openGalleryEditor(g)}
                   onMouseEnter={() => setHoveredCard(g.id)}
