@@ -1682,7 +1682,7 @@ export function Dashboard() {
                           </div>
                         </div>
                       ))}
-                      {editingGallery.delivery_settings?.faceIndexEnabled && (
+                      {Boolean(editingGallery.delivery_settings?.faceIndexEnabled) && (
                         <div style={{ marginTop: 12 }}>
                           <div style={{ fontSize: 12, color: textMuted, marginBottom: 8 }}>מצב פרטיות</div>
                           <div style={{ display: 'flex', gap: 8 }}>
@@ -1774,7 +1774,7 @@ export function Dashboard() {
                           <div className="dash-toggle-knob" />
                         </div>
                       </div>
-                      {editingGallery.delivery_settings?.watermarkEnabled && (
+                      {Boolean(editingGallery.delivery_settings?.watermarkEnabled) && (
                         <div style={{ marginTop: 14 }}>
                           <div style={{ fontSize: 12, color: textMuted, marginBottom: 8 }}>טקסט הווטרמרק (ברירת מחדל: שם העסק)</div>
                           <input
