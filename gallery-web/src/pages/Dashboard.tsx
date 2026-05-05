@@ -297,6 +297,21 @@ export function Dashboard() {
     setGalleryImages(data ?? [])
     setUploading(false)
     setUploadBatch(null)
+
+    // Re-trigger face indexing if the gallery is already live AND has face
+    // recognition on. The rekognition function is idempotent — it skips
+    // already-indexed images and only processes the new ones, so calling it
+    // after every batch is safe and cheap. Without this, photos added
+    // post-publish are silently invisible to FaceFinder.
+    const needsReindex =
+      editingGallery.status === 'live' &&
+      (editingGallery.delivery_settings as { faceIndexEnabled?: boolean } | null)?.faceIndexEnabled === true
+    if (needsReindex && result.ok.length > 0) {
+      void supabase.functions.invoke('rekognition', {
+        body: { action: 'index_gallery', galleryId: editingGallery.id },
+      }).catch(err => console.warn('[face-index reindex]', err))
+    }
+
     fetchGalleries()
   }
 

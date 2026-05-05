@@ -11,9 +11,13 @@ interface ViewerProps {
   onClose: () => void
   onNavigate: (index: number) => void
   onDownload: (url: string, filename: string) => void
+  /** Currently-favorited image ids (in localStorage). When provided alongside
+   *  onToggleFavorite, the viewer renders a Heart button next to download. */
+  favoritedIds?: Set<string>
+  onToggleFavorite?: (imageId: string) => void
 }
 
-export function Viewer({ images, index, webUrl, downloadUrl, allowDownloads, downloadLabel, onClose, onNavigate, onDownload }: ViewerProps) {
+export function Viewer({ images, index, webUrl, downloadUrl, allowDownloads, downloadLabel, onClose, onNavigate, onDownload, favoritedIds, onToggleFavorite }: ViewerProps) {
   const img = images[index]
   const total = images.length
   const currentSrc = webUrl(img)
@@ -101,6 +105,29 @@ export function Viewer({ images, index, webUrl, downloadUrl, allowDownloads, dow
 
         <div className="viewer__bottom">
           <span className="viewer__counter">{index + 1} / {total}</span>
+          {onToggleFavorite && (
+            <button
+              className="viewer__fav"
+              onClick={() => onToggleFavorite(img.id)}
+              aria-label={favoritedIds?.has(img.id) ? 'Remove favorite' : 'Add favorite'}
+              style={{
+                background: 'rgba(255,255,255,.06)',
+                border: `1px solid ${favoritedIds?.has(img.id) ? 'rgba(239,68,68,.5)' : 'rgba(255,255,255,.15)'}`,
+                color: favoritedIds?.has(img.id) ? '#ef4444' : '#fff',
+                borderRadius: 999, padding: '8px 14px',
+                display: 'flex', alignItems: 'center', gap: 6,
+                cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
+                transition: 'all .15s',
+                marginInlineEnd: 8,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24"
+                fill={favoritedIds?.has(img.id) ? '#ef4444' : 'none'}
+                stroke="currentColor" strokeWidth="2">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+              </svg>
+            </button>
+          )}
           {allowDownloads && (
             <button className="viewer__download" onClick={() => onDownload(downloadUrl(img), img.filename)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
