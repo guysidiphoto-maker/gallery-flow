@@ -8,11 +8,27 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+/** Constant-time hex compare. Plain `===` would leak the digest one byte at
+ *  a time over many guess-and-time webhook posts; XOR-or-accumulate over
+ *  the whole string keeps every comparison the same duration. The length
+ *  short-circuit is safe — sha256-hex is fixed-length so a wrong length
+ *  reveals nothing about the secret. */
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  const al = a.toLowerCase()
+  const bl = b.toLowerCase()
+  let diff = 0
+  for (let i = 0; i < al.length; i++) {
+    diff |= al.charCodeAt(i) ^ bl.charCodeAt(i)
+  }
+  return diff === 0
+}
+
 function verifySignature(body: string, signature: string): boolean {
   const hmac = createHmac('sha256', WEBHOOK_SECRET)
   hmac.update(body)
   const digest = hmac.digest('hex')
-  return digest === signature
+  return timingSafeEqualHex(digest, signature)
 }
 
 // Map LemonSqueezy variant IDs to plan IDs
@@ -31,7 +47,7 @@ async function grantPlanTokens(
   source: string,
 ): Promise<void> {
   if (!businessId || !planId || !eventId) return
-  const eventUuid = stableUuid(eventId)
+  const eventUuid = await stableUuid(eventId)
   // Skip if we've already credited this exact event.
   const { data: existing } = await supabase
     .from('token_ledger')
@@ -66,23 +82,16 @@ async function grantPlanTokens(
 }
 
 /** Stable UUID derived from any LemonSqueezy event id. Used as token_ledger
- *  ref_id so a retried webhook can't double-credit. Deterministic FNV-1a
- *  128-bit hash — collisions across LemonSqueezy event ids are not a concern
- *  in practice. */
-function stableUuid(input: string): string {
-  const s = `lemonsqueezy:${input}`
-  let h1 = 0x811c9dc5, h2 = 0xdeadbeef, h3 = 0xcafebabe, h4 = 0x13371337
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i)
-    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0
-    h2 = Math.imul(h2 ^ c, 0x01000193) >>> 0
-    h3 = Math.imul(h3 ^ c, 0x01000193) >>> 0
-    h4 = Math.imul(h4 ^ c, 0x01000193) >>> 0
-  }
-  const hex = h1.toString(16).padStart(8, '0')
-            + h2.toString(16).padStart(8, '0')
-            + h3.toString(16).padStart(8, '0')
-            + h4.toString(16).padStart(8, '0')
+ *  ref_id so a retried webhook can't double-credit. Uses SHA-256 (truncated
+ *  to 128 bits) for collision-resistance — the entire purchase-credit
+ *  invariant rides on uniqueness of this value across all LemonSqueezy
+ *  events forever, so a 32-bit-ish FNV variant is too weak. */
+async function stableUuid(input: string): Promise<string> {
+  const data = new TextEncoder().encode(`lemonsqueezy:${input}`)
+  const buf = await crypto.subtle.digest('SHA-256', data)
+  const bytes = new Uint8Array(buf)
+  let hex = ''
+  for (let i = 0; i < 16; i++) hex += bytes[i].toString(16).padStart(2, '0')
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`
 }
 

@@ -30,8 +30,17 @@ import { ImageResponse } from '@vercel/og'
 
 export const config = { runtime: 'edge' }
 
-const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZseWlxZmF3a3JqdnFjbWtwZnZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5ODg3NzksImV4cCI6MjA5MDU2NDc3OX0.ionfOl71NrBO-0iBVBAu6oiTUzkJuIu-drEkY1cmsFY'
+// Read Supabase credentials from edge env vars (set in Vercel project
+// settings as SUPABASE_URL + SUPABASE_ANON_KEY). Falls back to the
+// Vite-style names a contributor might be tempted to set instead.
+const SUPABASE_URL =
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  ''
+const SUPABASE_ANON_KEY =
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  ''
 
 const ACCENT = '#6366f1'
 const ACCENT_LIGHT = '#818cf8'
