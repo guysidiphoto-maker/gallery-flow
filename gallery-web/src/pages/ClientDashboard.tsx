@@ -28,7 +28,7 @@ const card        = '#FBFBF9' // raised surfaces
 const border      = '#D0D0D0' // hairline 1px
 const textPrimary = '#141413' // charcoal
 const textSecondary = '#333333'
-const textMuted   = '#BCBCBC'
+const textMuted   = '#767470'  // WCAG-AA accessible muted on cream
 const statusLive  = '#7B8F6E' // sage status dot
 
 function readStr(obj: Record<string, unknown> | null, key: string): string {
