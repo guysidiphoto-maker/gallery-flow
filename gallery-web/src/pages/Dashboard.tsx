@@ -1947,7 +1947,13 @@ export function Dashboard() {
                                 e.stopPropagation()
                               }}
                               style={{
-                                position: 'relative', aspectRatio: '1', overflow: 'hidden',
+                                position: 'relative', aspectRatio: '1',
+                                // overflow:hidden crops the cover image to a square via the
+                                // <img>'s object-fit, but it ALSO clips the per-tile menu
+                                // popup when it extends past the tile bounds. Switch to
+                                // visible while the menu is open so the popup can render
+                                // fully — no other content needs the clip.
+                                overflow: isMenuOpen ? 'visible' : 'hidden',
                                 background: bgSubtle,
                                 cursor: dragEnabled ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
                                 outline: isSelected
@@ -1955,6 +1961,9 @@ export function Dashboard() {
                                   : (isDropTarget ? `2px solid ${textPrimary}` : 'none'),
                                 outlineOffset: isSelected || isDropTarget ? -2 : 0,
                                 opacity: isDragging ? 0.4 : 1,
+                                // Lift the menu's tile above its neighbours so the popup
+                                // isn't covered by the next tile in the row.
+                                zIndex: isMenuOpen ? 10 : 'auto',
                                 transition: 'transform .25s cubic-bezier(.2,.7,.2,1), opacity .15s',
                               }}
                             >
@@ -2038,12 +2047,17 @@ export function Dashboard() {
                                 </div>
                               )}
 
-                              {/* Per-tile menu — appears below the trigger */}
+                              {/* Per-tile menu — appears below the trigger.
+                                  Anchor to the physical right edge of the tile so the
+                                  popup grows LEFTWARD into the grid interior. Without
+                                  this, in RTL the menu grows toward the screen edge and
+                                  clips on the rightmost tile (the bug photographers were
+                                  hitting on the cover slot). */}
                               {isMenuOpen && (
                                 <div
                                   onClick={(e) => e.stopPropagation()}
                                   style={{
-                                    position: 'absolute', top: 38, insetInlineEnd: 8,
+                                    position: 'absolute', top: 38, right: 8,
                                     background: cardSolid, border: `1px solid ${border}`,
                                     boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 5,
                                     minWidth: 180, padding: 4, direction: 'rtl' as const,
