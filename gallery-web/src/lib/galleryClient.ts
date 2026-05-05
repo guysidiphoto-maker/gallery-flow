@@ -104,7 +104,14 @@ export async function getImages<T = unknown>(
     p_limit: opts.limit ?? 1000,
   })
   if (error || !data) return []
-  return data as T[]
+  // The viewer's GalleryImage type aliases web_preview_path → storage_path.
+  // Direct .select('storage_path:web_preview_path') used to do that; the RPC
+  // returns the raw column name, so re-alias here. Without this the viewer
+  // tries to render thumb / web URLs from undefined paths and shows nothing.
+  return (data as Array<Record<string, unknown>>).map(row => ({
+    ...row,
+    storage_path: row.storage_path ?? row.web_preview_path,
+  })) as T[]
 }
 
 export async function getStories<T = unknown>(galleryId: string): Promise<T[]> {
