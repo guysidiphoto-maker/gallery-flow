@@ -751,11 +751,11 @@ export function ClientDashboard() {
               {/* View mode */}
               <div style={{ display: 'flex', border: `1px solid ${border}`, background: '#fff' }}>
                 {([
-                  { id: 'grid' as const, name: 'gallery' as IconName },
-                  { id: 'masonry' as const, name: 'sections' as IconName },
-                  { id: 'list' as const, name: 'menu' as IconName },
+                  { id: 'grid' as const,    name: 'gallery'  as IconName, label: 'תצוגת רשת' },
+                  { id: 'masonry' as const, name: 'sections' as IconName, label: 'תצוגת אבן' },
+                  { id: 'list' as const,    name: 'menu'     as IconName, label: 'תצוגת רשימה' },
                 ] as const).map((v, i) => (
-                  <button key={v.id} onClick={() => setGalleryViewMode(v.id)} aria-label={v.id} style={{
+                  <button key={v.id} onClick={() => setGalleryViewMode(v.id)} aria-label={v.label} aria-pressed={galleryViewMode === v.id} style={{
                     padding: '8px 10px', border: 'none', cursor: 'pointer',
                     borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
                     background: galleryViewMode === v.id ? textPrimary : 'transparent',

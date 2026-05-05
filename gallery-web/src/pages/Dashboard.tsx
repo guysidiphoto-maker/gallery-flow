@@ -1611,11 +1611,11 @@ export function Dashboard() {
                             color: textPrimary,
                             display: 'flex', alignItems: 'center', gap: 8,
                           }}>
-                            <span style={{
+                            <span aria-hidden="true" style={{
                               opacity: 0.4, color: textMuted,
-                              cursor: 'grab', display: 'inline-flex',
+                              display: 'inline-flex',
                               fontSize: 12, lineHeight: 1,
-                            }} aria-label="Drag to reorder">≡</span>
+                            }}>≡</span>
                             {isRenaming ? (
                               <input
                                 autoFocus
@@ -1648,9 +1648,16 @@ export function Dashboard() {
                               role="button"
                               tabIndex={0}
                               onClick={(e) => { e.stopPropagation(); setSectionMenuOpenId(isMenuOpen ? null : s.id) }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault(); e.stopPropagation()
+                                  setSectionMenuOpenId(isMenuOpen ? null : s.id)
+                                }
+                              }}
                               style={{
-                                color: textMuted, padding: 4, cursor: 'pointer',
-                                display: 'inline-flex', borderRadius: 2,
+                                color: textMuted, cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                width: 24, height: 24, borderRadius: 2,
                               }}
                               aria-label="עוד"
                             >
