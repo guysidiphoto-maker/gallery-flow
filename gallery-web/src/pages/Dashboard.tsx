@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { uploadMany } from '../lib/uploadPipeline'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
+import { useFocusTrap } from '../lib/useFocusTrap'
 
 interface Gallery {
   id: string
@@ -543,6 +544,15 @@ export function Dashboard() {
     setShareEmail('')
     setShareSent(false)
   }
+
+  // Focus traps — one per modal. Each is wired to escape-to-close so
+  // keyboard users can dismiss the modal exactly the way mouse users do.
+  const galleryEditorRef = useFocusTrap<HTMLDivElement>(!!editingGallery, () => setEditingGallery(null))
+  const addSetRef        = useFocusTrap<HTMLDivElement>(showAddSetModal, () => setShowAddSetModal(false))
+  const newGalleryRef    = useFocusTrap<HTMLDivElement>(showModal, () => setShowModal(false))
+  const faceConfirmRef   = useFocusTrap<HTMLDivElement>(showFaceConfirm, () => setShowFaceConfirm(false))
+  const shareModalRef    = useFocusTrap<HTMLDivElement>(!!shareGallery, () => { if (!shareSending) setShareGallery(null) })
+  const buyTokensRef     = useFocusTrap<HTMLDivElement>(showBuyTokens, () => setShowBuyTokens(false))
 
   async function sendShareEmail() {
     if (!shareGallery || !shareEmail) return
@@ -1354,6 +1364,7 @@ export function Dashboard() {
             animation: 'overlayIn .2s ease both',
           }} onClick={() => setEditingGallery(null)}>
             <div
+              ref={galleryEditorRef}
               role="dialog"
               aria-modal="true"
               aria-labelledby="gallery-editor-heading"
@@ -2979,6 +2990,7 @@ export function Dashboard() {
                   animation: 'overlayIn .2s ease both',
                 }}>
                 <div
+                  ref={addSetRef}
                   role="dialog"
                   aria-modal="true"
                   aria-labelledby="add-set-heading"
@@ -3171,6 +3183,7 @@ export function Dashboard() {
           onClick={() => setShowModal(false)}
         >
           <div
+            ref={newGalleryRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-gallery-heading"
@@ -3517,6 +3530,7 @@ export function Dashboard() {
                 animation: 'overlayIn .2s ease both',
               }}>
               <div
+                ref={faceConfirmRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="face-confirm-heading"
@@ -3598,6 +3612,7 @@ export function Dashboard() {
           }}
         >
           <div
+            ref={shareModalRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="email-share-heading"
@@ -3733,6 +3748,7 @@ export function Dashboard() {
           }}
         >
           <div
+            ref={buyTokensRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="buy-tokens-heading"
