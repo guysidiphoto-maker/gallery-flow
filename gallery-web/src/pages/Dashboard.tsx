@@ -3,6 +3,7 @@ import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase } from '../supabase'
 import { uploadMany } from '../lib/uploadPipeline'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
+import { Icon, type IconName } from '../components/Icon'
 
 interface Gallery {
   id: string
@@ -507,7 +508,7 @@ export function Dashboard() {
             border: `3px solid ${border}`, borderTopColor: accent,
             animation: 'spin 0.8s linear infinite',
           }} />
-          <div style={{ color: textSecondary, fontSize: 14, fontFamily: 'Inter, sans-serif', letterSpacing: '0.02em' }}>Loading...</div>
+          <div style={{ color: textSecondary, fontSize: 14, fontFamily: 'inherit', letterSpacing: '0.02em' }}>Loading...</div>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </div>
@@ -520,7 +521,7 @@ export function Dashboard() {
       <div style={{
         background: `radial-gradient(ellipse at 50% 0%, rgba(99,102,241,.08) 0%, ${bg} 60%)`,
         minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'Inter, sans-serif', direction: 'rtl',
+        fontFamily: 'inherit', direction: 'rtl',
       }}>
         <div style={{
           textAlign: 'center', maxWidth: 440, padding: 48,
@@ -546,7 +547,7 @@ export function Dashboard() {
               display: 'inline-flex', alignItems: 'center', gap: 12,
               background: '#fff', color: '#1a1a2e', border: 'none', borderRadius: 14,
               padding: '16px 36px', fontSize: 16, fontWeight: 600, cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif', transition: 'transform .15s, box-shadow .15s',
+              fontFamily: 'inherit', transition: 'transform .15s, box-shadow .15s',
               boxShadow: '0 4px 16px rgba(0,0,0,.3)',
             }}
             onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,.4)'; }}
@@ -577,7 +578,7 @@ export function Dashboard() {
 
   return (
     <div style={{
-      background: bg, minHeight: '100vh', fontFamily: 'Inter, sans-serif',
+      background: bg, minHeight: '100vh', fontFamily: 'inherit',
       direction: 'rtl', color: textPrimary,
       display: 'flex',
     }}>
@@ -636,21 +637,23 @@ export function Dashboard() {
         }}>
           <span style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 32, height: 32, borderRadius: 9,
+            width: 34, height: 34, borderRadius: 10,
             background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
-            boxShadow: `0 6px 16px ${accentGlow}`,
-            fontSize: 16,
-          }}>📸</span>
+            boxShadow: `0 8px 20px ${accentGlow}`,
+            color: '#fff',
+          }}>
+            <Icon name="logo" size={18} strokeWidth={2} />
+          </span>
           Pixflow
         </a>
 
         {/* Nav */}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
           {[
-            { icon: '📷', label: 'הגלריות שלי', active: true },
-            { icon: '🎨', label: 'מיתוג', active: false, disabled: true },
-            { icon: '👥', label: 'לקוחות', active: false, disabled: true },
-            { icon: '❓', label: 'עזרה', active: false },
+            { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true, disabled: false },
+            { icon: 'palette' as IconName,  label: 'מיתוג',       active: false, disabled: true },
+            { icon: 'clients' as IconName,  label: 'לקוחות',      active: false, disabled: true },
+            { icon: 'help' as IconName,     label: 'עזרה',        active: false, disabled: false },
           ].map(item => (
             <button key={item.label} style={{
               display: 'flex', alignItems: 'center', gap: 10,
@@ -664,7 +667,7 @@ export function Dashboard() {
               opacity: item.disabled ? 0.55 : 1,
               transition: 'all .15s',
             }}>
-              <span style={{ fontSize: 16, opacity: 0.85 }}>{item.icon}</span>
+              <Icon name={item.icon} size={17} strokeWidth={1.85} style={{ opacity: 0.9 }} />
               <span>{item.label}</span>
               {item.disabled && (
                 <span style={{
@@ -798,7 +801,7 @@ export function Dashboard() {
               background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
               color: '#fff', border: 'none', borderRadius: 12,
               padding: '12px 28px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif', transition: 'transform .15s, box-shadow .15s',
+              fontFamily: 'inherit', transition: 'transform .15s, box-shadow .15s',
               boxShadow: `0 4px 20px ${accentGlow}`,
               letterSpacing: '0.01em',
               display: 'flex', alignItems: 'center', gap: 8,
@@ -896,10 +899,11 @@ export function Dashboard() {
                 width: 88, height: 88, borderRadius: 24, margin: '0 auto 24px',
                 background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: `0 12px 32px ${accentGlow}`,
+                boxShadow: `0 16px 40px ${accentGlow}`,
                 position: 'relative',
+                color: '#fff',
               }}>
-                <span style={{ fontSize: 44 }}>📸</span>
+                <Icon name="logo" size={42} strokeWidth={1.85} />
               </div>
               <h2 style={{
                 fontSize: 32, fontWeight: 800, marginBottom: 14, color: textPrimary,
@@ -926,7 +930,7 @@ export function Dashboard() {
                   style={{
                     background: `linear-gradient(135deg, ${accent}, ${accentLight})`, color: '#fff',
                     border: 'none', borderRadius: 14, padding: '16px 32px', fontSize: 15,
-                    fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                    fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                     transition: 'transform .15s, box-shadow .15s',
                     boxShadow: `0 6px 24px ${accentGlow}`,
                     display: 'flex', alignItems: 'center', gap: 8,
@@ -934,7 +938,7 @@ export function Dashboard() {
                   onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(99,102,241,.4)` }}
                   onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = `0 6px 24px ${accentGlow}` }}
                 >
-                  <span style={{ fontSize: 18 }}>🎯</span>
+                  <Icon name="plus" size={18} strokeWidth={2.2} />
                   צור גלריה ראשונה
                 </button>
                 <a
@@ -945,14 +949,14 @@ export function Dashboard() {
                     textDecoration: 'none',
                     background: 'transparent', color: textPrimary,
                     border: `1px solid ${border}`, borderRadius: 14, padding: '16px 28px', fontSize: 15,
-                    fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                    fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
                     transition: 'all .15s',
                     display: 'flex', alignItems: 'center', gap: 8,
                   }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,.5)'; e.currentTarget.style.background = 'rgba(99,102,241,.06)' }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.background = 'transparent' }}
                 >
-                  <span style={{ fontSize: 18 }}>🚀</span>
+                  <Icon name="arrow-out" size={18} strokeWidth={2} />
                   נסה את הדמו
                 </a>
               </div>
@@ -964,20 +968,28 @@ export function Dashboard() {
               gap: 16, maxWidth: 720, margin: '0 auto',
             }}>
               {[
-                { icon: '⚡', title: 'מהיר במיוחד', desc: 'תצוגות web + thumb לכל תמונה — גלריות נטענות פי 50 מ-S3 רגיל' },
-                { icon: '🔒', title: 'פרטי ובטוח', desc: 'הגנת סיסמה אמיתית בצד השרת — לא רק מסך שעוקפים בדפדפן' },
-                { icon: '🎨', title: 'זיהוי פנים', desc: 'אורחים מצלמים סלפי ומקבלים את התמונות שלהם בלבד' },
+                { icon: 'bolt' as IconName,        title: 'מהיר במיוחד', desc: 'שלוש שכבות איכות לכל תמונה — גלריות נטענות מהר אצל הלקוח, לא משנה כמה תמונות' },
+                { icon: 'shield' as IconName,      title: 'פרטי ובטוח',   desc: 'הגנת סיסמה אמיתית בצד השרת — לא מסך שעוקפים בדפדפן' },
+                { icon: 'face-search' as IconName, title: 'זיהוי פנים',   desc: 'אורחים מצלמים סלפי ומקבלים את התמונות שלהם בלבד' },
               ].map(f => (
                 <div key={f.title} style={{
-                  padding: '22px 20px', borderRadius: 16,
+                  padding: '24px 22px', borderRadius: 18,
                   background: card, border: `1px solid ${border}`,
                   textAlign: 'right' as const,
                 }}>
-                  <div style={{ fontSize: 28, marginBottom: 10 }}>{f.icon}</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: textPrimary, marginBottom: 6 }}>
+                  <div style={{
+                    width: 38, height: 38, borderRadius: 11, marginBottom: 14,
+                    background: 'rgba(99,102,241,.12)',
+                    border: '1px solid rgba(99,102,241,.25)',
+                    color: '#a5b4fc',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Icon name={f.icon} size={18} strokeWidth={1.85} />
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: textPrimary, marginBottom: 6, letterSpacing: '-0.01em' }}>
                     {f.title}
                   </div>
-                  <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.55 }}>
+                  <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.6 }}>
                     {f.desc}
                   </div>
                 </div>
@@ -1045,24 +1057,24 @@ export function Dashboard() {
                     paddingTop: 16, transition: 'border-color .3s',
                   }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ opacity: 0.6 }}>📷</span>
+                      <Icon name="photo" size={13} strokeWidth={1.85} style={{ opacity: 0.6 }} />
                       {g.image_count ?? 0}
                     </span>
                     {(g.status === 'live' || g.status === 'published') && (g.download_count ?? 0) > 0 && (
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#a5b4fc' }} title="הורדות">
-                        <span style={{ opacity: 0.6 }}>⬇️</span>
+                        <Icon name="download" size={13} strokeWidth={1.85} />
                         {(g.download_count ?? 0).toLocaleString('he-IL')}
                       </span>
                     )}
                     {(g.status === 'live' || g.status === 'published') && (g.favorite_count ?? 0) > 0 && (
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#fca5a5' }} title="מועדפים">
-                        <span>♥</span>
+                        <Icon name="heart" size={13} strokeWidth={2} style={{ fill: '#fca5a5' }} />
                         {(g.favorite_count ?? 0).toLocaleString('he-IL')}
                       </span>
                     )}
                     {g.published_at && (
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginInlineStart: 'auto' }}>
-                        <span style={{ opacity: 0.6 }}>📅</span>
+                        <Icon name="calendar" size={13} strokeWidth={1.85} style={{ opacity: 0.6 }} />
                         {new Date(g.published_at).toLocaleDateString('he-IL')}
                       </span>
                     )}
@@ -1169,7 +1181,7 @@ export function Dashboard() {
                       background: `linear-gradient(135deg, ${accent}, ${accentLight})`, border: 'none',
                       color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
                       boxShadow: `0 4px 16px ${accentGlow}`,
-                    }}>🚀 פרסם גלריה</button>
+                    }}>פרסם גלריה</button>
                   )}
                 </div>
               </div>
@@ -1180,19 +1192,23 @@ export function Dashboard() {
                 background: bgSubtle,
               }}>
                 {([
-                  { id: 'photos' as const, label: '📷 תמונות', },
-                  { id: 'sections' as const, label: '📂 קטעים', },
-                  { id: 'activities' as const, label: '📊 פעילות', },
-                  { id: 'settings' as const, label: '⚙️ הגדרות', },
-                  { id: 'welcome' as const, label: '🎬 מסך וואלקם', },
+                  { id: 'photos' as const,     icon: 'photo'    as IconName, label: 'תמונות' },
+                  { id: 'sections' as const,   icon: 'sections' as IconName, label: 'קטעים' },
+                  { id: 'activities' as const, icon: 'activity' as IconName, label: 'פעילות' },
+                  { id: 'settings' as const,   icon: 'settings' as IconName, label: 'הגדרות' },
+                  { id: 'welcome' as const,    icon: 'bolt'     as IconName, label: 'מסך פתיחה' },
                 ]).map(t => (
                   <button key={t.id} onClick={() => setEditTab(t.id)} style={{
-                    padding: '8px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                    fontSize: 13, fontWeight: editTab === t.id ? 600 : 400, fontFamily: 'inherit',
-                    background: editTab === t.id ? `rgba(99,102,241,.2)` : 'transparent',
+                    padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                    fontSize: 13, fontWeight: editTab === t.id ? 600 : 500, fontFamily: 'inherit',
+                    background: editTab === t.id ? `rgba(99,102,241,.18)` : 'transparent',
                     color: editTab === t.id ? accentLight : textSecondary,
+                    display: 'flex', alignItems: 'center', gap: 8,
                     transition: 'all .15s',
-                  }}>{t.label}</button>
+                  }}>
+                    <Icon name={t.icon} size={15} strokeWidth={1.85} />
+                    <span>{t.label}</span>
+                  </button>
                 ))}
               </div>
 
@@ -1220,27 +1236,27 @@ export function Dashboard() {
                           marginInlineStart: 'auto',
                           background: 'transparent', border: `1px solid ${border}`, borderRadius: 8,
                           color: textSecondary, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-                          fontFamily: 'Inter, sans-serif',
+                          fontFamily: 'inherit',
                         }}>בחר הכל</button>
                         <button onClick={() => bulkToggleTopPick(true)} style={{
                           background: 'rgba(250,204,21,.12)', border: '1px solid rgba(250,204,21,.3)',
                           borderRadius: 8, color: '#fde047', padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-                          fontFamily: 'Inter, sans-serif', display: 'flex', alignItems: 'center', gap: 4,
+                          fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4,
                         }}>★ סמן כמועדף</button>
                         <button onClick={() => bulkToggleTopPick(false)} style={{
                           background: 'transparent', border: `1px solid ${border}`,
                           borderRadius: 8, color: textSecondary, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-                          fontFamily: 'Inter, sans-serif',
+                          fontFamily: 'inherit',
                         }}>בטל סימון</button>
                         <button onClick={bulkDeleteSelected} style={{
                           background: 'rgba(239,68,68,.14)', border: '1px solid rgba(239,68,68,.35)',
                           borderRadius: 8, color: '#fca5a5', padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-                          fontFamily: 'Inter, sans-serif', fontWeight: 600,
-                        }}>🗑 מחק</button>
+                          fontFamily: 'inherit', fontWeight: 600,
+                        }}>מחק</button>
                         <button onClick={exitSelectMode} style={{
                           background: 'transparent', border: 'none',
                           color: textMuted, padding: '6px 8px', fontSize: 14, cursor: 'pointer',
-                          fontFamily: 'Inter, sans-serif',
+                          fontFamily: 'inherit',
                         }}>×</button>
                       </div>
                     )}
@@ -1412,8 +1428,10 @@ export function Dashboard() {
 
                     {/* Sections list */}
                     {sections.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '40px 20px', color: textMuted }}>
-                        <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.5 }}>📂</div>
+                      <div style={{ textAlign: 'center', padding: '52px 20px', color: textMuted }}>
+                        <div style={{ marginBottom: 14, color: textMuted, opacity: 0.55, display: 'flex', justifyContent: 'center' }}>
+                          <Icon name="sections" size={36} strokeWidth={1.4} />
+                        </div>
                         <div style={{ fontSize: 14 }}>עדיין אין קטעים. הוסף את הקטע הראשון למעלה.</div>
                       </div>
                     ) : (
@@ -1425,7 +1443,9 @@ export function Dashboard() {
                             background: card, border: `1px solid ${border}`,
                             transition: 'border-color .15s',
                           }}>
-                            <span style={{ fontSize: 16, opacity: 0.55 }}>📂</span>
+                            <span style={{ color: textMuted, display: 'inline-flex' }}>
+                              <Icon name="sections" size={16} strokeWidth={1.85} />
+                            </span>
                             <input
                               type="text"
                               defaultValue={s.name}
@@ -1448,7 +1468,7 @@ export function Dashboard() {
                               onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,.35)' }}
                               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = border }}
                             >
-                              🗑 מחק
+                              מחק
                             </button>
                           </div>
                         ))}
@@ -1471,7 +1491,9 @@ export function Dashboard() {
                       </div>
                     ) : !activitySummary || (activitySummary.downloads_total === 0 && activitySummary.favorites_total === 0 && activitySummary.emails_total === 0) ? (
                       <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-                        <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>📊</div>
+                        <div style={{ marginBottom: 18, opacity: 0.5, color: textMuted, display: 'flex', justifyContent: 'center' }}>
+                          <Icon name="activity" size={42} strokeWidth={1.5} />
+                        </div>
                         <h3 style={{ fontSize: 18, fontWeight: 700, color: textPrimary, margin: '0 0 8px' }}>
                           עדיין אין פעילות
                         </h3>
@@ -1642,7 +1664,7 @@ export function Dashboard() {
 
                     {/* Privacy */}
                     <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🔒 פרטיות</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>פרטיות</div>
                       {[
                         { key: 'clientHidePhotosEnabled', label: 'אפשר לאורחים להסתיר תמונות', desc: 'כל אורח יכול להסתיר תמונות שלו מאחרים' },
                         { key: 'clientSelectionEnabled', label: 'בחירת תמונות', desc: 'אפשר ללקוח לבחור תמונות מועדפות' },
@@ -1662,7 +1684,7 @@ export function Dashboard() {
 
                     {/* Face Recognition */}
                     <div style={{ padding: 20, borderRadius: 14, background: 'linear-gradient(135deg, rgba(99,102,241,.06), rgba(139,92,246,.04))', border: `1px solid rgba(99,102,241,.15)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🤖 זיהוי פנים AI</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>זיהוי פנים AI</div>
                       {[
                         { key: 'faceIndexEnabled', label: 'הפעל זיהוי פנים', desc: 'אורחים יוכלו למצוא את עצמם בסלפי' },
                       ].map(opt => (
@@ -1707,7 +1729,7 @@ export function Dashboard() {
 
                     {/* Layout */}
                     <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🎨 תצוגה</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>תצוגה</div>
                       <div style={{ fontSize: 12, color: textMuted, marginBottom: 10 }}>סגנון פיד</div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         {(['grid', 'masonry', 'carousel'] as const).map(l => (
@@ -1724,7 +1746,7 @@ export function Dashboard() {
 
                     {/* Theme color */}
                     <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🌈 צבע ראשי</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>צבע ראשי</div>
                       <div style={{ fontSize: 12, color: textMuted, marginBottom: 10 }}>הצבע שמופיע בכפתורים, מסגרות ולוגו של הגלריה</div>
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                         {([
@@ -1763,7 +1785,7 @@ export function Dashboard() {
 
                     {/* Watermark */}
                     <div style={{ padding: 20, borderRadius: 14, background: glass, border: `1px solid rgba(255,255,255,.05)` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>💧 ווטרמרק</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>ווטרמרק</div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.03)' }}>
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 500 }}>הצג ווטרמרק על תצוגות web</div>
@@ -1912,7 +1934,7 @@ export function Dashboard() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div>
                 <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.01em' }}>
-                  📊 מעקב הורדות
+                  מעקב הורדות
                 </h3>
                 <p style={{ fontSize: 12, color: textMuted, margin: 0 }}>
                   צפו מי הוריד תמונות מהגלריות שלכם
@@ -2012,7 +2034,7 @@ export function Dashboard() {
                   width: '100%', padding: '14px 16px', borderRadius: 12,
                   border: `1px solid ${border}`,
                   background: bg, color: textPrimary, fontSize: 15,
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: 'inherit',
                   outline: 'none', boxSizing: 'border-box',
                   transition: 'border-color .2s, box-shadow .2s',
                 }}
@@ -2036,7 +2058,7 @@ export function Dashboard() {
                   width: '100%', padding: '14px 16px', borderRadius: 12,
                   border: `1px solid ${border}`,
                   background: bg, color: textPrimary, fontSize: 15,
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: 'inherit',
                   outline: 'none', boxSizing: 'border-box',
                   transition: 'border-color .2s, box-shadow .2s',
                 }}
@@ -2082,7 +2104,7 @@ export function Dashboard() {
                       </span>
                       <span style={{
                         fontSize: 12, fontWeight: 600, color: selected ? textPrimary : textSecondary,
-                        letterSpacing: '0.01em', fontFamily: 'Inter, sans-serif',
+                        letterSpacing: '0.01em', fontFamily: 'inherit',
                       }}>
                         {opt.label}
                       </span>
@@ -2126,7 +2148,7 @@ export function Dashboard() {
                       </span>
                       <span style={{
                         fontSize: 12, fontWeight: 600, color: selected ? textPrimary : textSecondary,
-                        letterSpacing: '0.01em', fontFamily: 'Inter, sans-serif',
+                        letterSpacing: '0.01em', fontFamily: 'inherit',
                       }}>
                         {opt.label}
                       </span>
@@ -2221,7 +2243,7 @@ export function Dashboard() {
                     width: '100%', padding: '12px 16px', borderRadius: 12, marginTop: 12,
                     border: `1px solid ${border}`,
                     background: bg, color: textPrimary, fontSize: 14,
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: 'inherit',
                     outline: 'none', boxSizing: 'border-box',
                     transition: 'border-color .2s, box-shadow .2s',
                   }}
@@ -2279,7 +2301,7 @@ export function Dashboard() {
                     : `linear-gradient(135deg, ${accent}, ${accentLight})`,
                   color: '#fff', border: 'none', borderRadius: 12,
                   padding: '14px 0', fontSize: 15, fontWeight: 700, cursor: creating || !newName.trim() ? 'not-allowed' : 'pointer',
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: 'inherit',
                   opacity: creating || !newName.trim() ? 0.6 : 1,
                   transition: 'all .2s',
                   boxShadow: creating || !newName.trim() ? 'none' : `0 4px 16px ${accentGlow}`,
@@ -2299,7 +2321,7 @@ export function Dashboard() {
                   flex: 1, background: 'transparent', color: textSecondary,
                   border: `1px solid ${border}`,
                   borderRadius: 12, padding: '14px 0', fontSize: 15, cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif', transition: 'all .2s',
+                  fontFamily: 'inherit', transition: 'all .2s',
                   letterSpacing: '0.01em', fontWeight: 500,
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = borderHover; e.currentTarget.style.color = textPrimary; }}
@@ -2495,7 +2517,7 @@ export function Dashboard() {
                     border: `1px solid ${pkg.highlight ? 'rgba(99,102,241,.4)' : border}`,
                     borderRadius: 18, padding: 24, textAlign: 'right' as const,
                     cursor: 'pointer', transition: 'all .2s',
-                    color: textPrimary, fontFamily: 'Inter, sans-serif',
+                    color: textPrimary, fontFamily: 'inherit',
                   }}
                   onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(99,102,241,.18)` }}
                   onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}
