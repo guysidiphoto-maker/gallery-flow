@@ -59,13 +59,16 @@ export async function toggleFavorite(
         guest_name: guestName ?? null,
       })
     } else {
+      // Without explicit guest_name scoping, .delete() would match every
+      // anonymous favorite for this image — i.e. one guest unfavoriting
+      // would wipe out everyone else's heart. Pin the filter explicitly
+      // to either the named guest or the null/anonymous bucket.
       const q = supabase
         .from('gallery_favorites')
         .delete()
         .eq('gallery_id', galleryId)
         .eq('image_id', imageId)
-      if (guestName) await q.eq('guest_name', guestName)
-      else await q
+      await (guestName ? q.eq('guest_name', guestName) : q.is('guest_name', null))
     }
   } catch (e) {
     console.warn('[activity] favorite toggle failed', e)
