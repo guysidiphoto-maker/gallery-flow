@@ -557,77 +557,140 @@ export function Dashboard() {
     <div style={{
       background: bg, minHeight: '100vh', fontFamily: 'Inter, sans-serif',
       direction: 'rtl', color: textPrimary,
+      display: 'flex',
     }}>
-      {/* ======= Top bar ======= */}
+      {/* ======= Sidebar ======= */}
+      <aside style={{
+        width: 240, flexShrink: 0,
+        background: 'rgba(10,10,18,.6)',
+        borderInlineStart: `1px solid ${border}`,
+        display: 'flex', flexDirection: 'column',
+        padding: '24px 18px',
+        position: 'sticky', top: 0, height: '100vh',
+      }}>
+        {/* Logo */}
+        <a href="/" style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '0 6px 24px',
+          textDecoration: 'none', color: textPrimary,
+          fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em',
+        }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 32, height: 32, borderRadius: 9,
+            background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
+            boxShadow: `0 6px 16px ${accentGlow}`,
+            fontSize: 16,
+          }}>📸</span>
+          Pixflow
+        </a>
+
+        {/* Nav */}
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+          {[
+            { icon: '📷', label: 'הגלריות שלי', active: true },
+            { icon: '🎨', label: 'מיתוג', active: false, disabled: true },
+            { icon: '👥', label: 'לקוחות', active: false, disabled: true },
+            { icon: '❓', label: 'עזרה', active: false },
+          ].map(item => (
+            <button key={item.label} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 12px', borderRadius: 10,
+              background: item.active ? `rgba(99,102,241,.14)` : 'transparent',
+              border: `1px solid ${item.active ? 'rgba(99,102,241,.25)' : 'transparent'}`,
+              color: item.active ? '#a5b4fc' : (item.disabled ? textMuted : textSecondary),
+              fontSize: 13, fontWeight: item.active ? 600 : 500,
+              cursor: item.disabled ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit', textAlign: 'right' as const,
+              opacity: item.disabled ? 0.55 : 1,
+              transition: 'all .15s',
+            }}>
+              <span style={{ fontSize: 16, opacity: 0.85 }}>{item.icon}</span>
+              <span>{item.label}</span>
+              {item.disabled && (
+                <span style={{
+                  marginInlineStart: 'auto', fontSize: 9, fontWeight: 700,
+                  padding: '2px 6px', borderRadius: 5,
+                  background: 'rgba(255,255,255,.05)', color: textMuted,
+                  letterSpacing: '0.04em',
+                }}>בקרוב</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Token balance card */}
+        <button
+          onClick={() => setShowBuyTokens(true)}
+          style={{
+            background: tokenBalance < 50
+              ? `linear-gradient(135deg, rgba(239,68,68,.18), rgba(220,38,38,.06))`
+              : `linear-gradient(135deg, rgba(99,102,241,.18), rgba(129,140,248,.06))`,
+            border: `1px solid ${tokenBalance < 50 ? 'rgba(239,68,68,.35)' : 'rgba(99,102,241,.30)'}`,
+            borderRadius: 14, padding: '14px 16px',
+            cursor: 'pointer', fontFamily: 'inherit',
+            color: textPrimary, textAlign: 'right' as const,
+            transition: 'all .2s',
+            marginBottom: 14,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)' }}
+          onMouseLeave={e => { e.currentTarget.style.transform = '' }}
+        >
+          <div style={{ fontSize: 11, color: textMuted, marginBottom: 6, fontWeight: 600, letterSpacing: '.04em' }}>
+            יתרת טוקנים
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc', marginBottom: 8, letterSpacing: '-0.02em' }}>
+            {tokenBalance.toLocaleString('he-IL')}
+          </div>
+          <div style={{
+            fontSize: 11, fontWeight: 600,
+            color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc',
+            display: 'flex', alignItems: 'center', gap: 4,
+          }}>
+            {tokenBalance < 50 ? '⚠️ קנה עוד' : '+ קנה טוקנים'}
+          </div>
+        </button>
+
+        {/* Profile + logout */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '12px 8px', borderTop: `1px solid ${border}`,
+          marginInline: -6, paddingInline: 14,
+        }}>
+          {avatar && (
+            <img src={avatar} alt="" style={{
+              width: 32, height: 32, borderRadius: '50%',
+              border: `1.5px solid ${border}`,
+            }} />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 12, fontWeight: 600, color: textPrimary,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{displayName}</div>
+            <button onClick={signOut} style={{
+              background: 'none', border: 'none', padding: 0, marginTop: 2,
+              fontSize: 10, color: '#fca5a5', fontFamily: 'inherit',
+              cursor: 'pointer', letterSpacing: '.04em',
+            }}>התנתקות ↩</button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ======= Right column ======= */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* ======= Top bar — page title only; profile + tokens live in sidebar ======= */}
       <header style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px 32px',
-        background: 'rgba(10,10,18,.85)',
+        padding: '18px 32px',
+        background: 'rgba(10,10,18,.6)',
         backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
         borderBottom: `1px solid ${border}`,
         position: 'sticky', top: 0, zIndex: 100,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          {avatar && (
-            <img src={avatar} alt="" style={{
-              width: 38, height: 38, borderRadius: '50%',
-              border: `2px solid ${border}`,
-              transition: 'border-color .2s',
-            }} />
-          )}
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '0.01em' }}>{displayName}</div>
-            <div style={{ fontSize: 11, color: textMuted, marginTop: 1 }}>צלם</div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <button
-            onClick={() => setShowBuyTokens(true)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '8px 14px', borderRadius: 10,
-              background: tokenBalance < 50
-                ? 'linear-gradient(135deg, rgba(239,68,68,.18), rgba(220,38,38,.10))'
-                : `linear-gradient(135deg, rgba(99,102,241,.18), rgba(129,140,248,.10))`,
-              border: `1px solid ${tokenBalance < 50 ? 'rgba(239,68,68,.35)' : 'rgba(99,102,241,.35)'}`,
-              color: tokenBalance < 50 ? '#fca5a5' : '#a5b4fc',
-              fontSize: 13, fontWeight: 700, cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif',
-              transition: 'all .2s',
-            }}
-            title="קנה טוקנים"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-              <circle cx="12" cy="12" r="9"/>
-              <path d="M12 7v10M9 9h4.5a2.5 2.5 0 0 1 0 5H9m0 0h5"/>
-            </svg>
-            <span>{tokenBalance.toLocaleString('he-IL')}</span>
-            <span style={{ opacity: .65, fontWeight: 500 }}>טוקנים</span>
-          </button>
-          <a href="/" style={{
-            color: textSecondary, textDecoration: 'none', fontSize: 14,
-            fontWeight: 600, letterSpacing: '-0.01em',
-            transition: 'color .2s',
-          }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = textPrimary)}
-            onMouseLeave={(e) => (e.currentTarget.style.color = textSecondary)}
-          >
-            Pixflow
-          </a>
-          <button
-            onClick={signOut}
-            style={{
-              background: 'transparent', border: `1px solid ${border}`, borderRadius: 10,
-              color: textSecondary, padding: '8px 18px', fontSize: 13, cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif', transition: 'all .2s',
-              letterSpacing: '0.01em',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = borderHover; e.currentTarget.style.color = textPrimary; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = border; e.currentTarget.style.color = textSecondary; }}
-          >
-            התנתקות
-          </button>
-        </div>
+        <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+          הגלריות שלי
+        </h1>
       </header>
 
       {/* ======= Main content ======= */}
@@ -2387,6 +2450,7 @@ export function Dashboard() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }
