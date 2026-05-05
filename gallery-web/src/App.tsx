@@ -320,7 +320,7 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
 
 // ─── Welcome Screen ─────────────────────────────────────────────────────────
 
-function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, welcomeMessage, textAnimation = 'blur', animationSpeed = 'normal', eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos, lang = 'he' }: {
+function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, welcomeMessage, textAnimation = 'blur', animationSpeed = 'normal', eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos, lang = 'he', headingFont, bodyFont }: {
   style?: 'mosaic' | 'cinematic' | 'minimal'
   galleryTitle: string
   galleryDescription?: string
@@ -341,6 +341,10 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
   facePrivacyMode: 'open' | 'private' | null
   onFindMyPhotos: () => void
   lang?: Lang
+  // Photographer-chosen fonts from the Design tab. Applied to the heading
+  // (h1) and supporting body text. Undefined = use the global stack.
+  headingFont?: string
+  bodyFont?: string
 }) {
   const wsTxt = t(lang)
   // Initial render must already have animations applied. Otherwise the first
@@ -407,6 +411,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
           letterSpacing: isMinimal ? '0.04em' : '-0.025em',
           textShadow: isCinematic ? '0 4px 60px rgba(0,0,0,.7)' : isMinimal ? 'none' : '0 2px 40px rgba(0,0,0,.5)',
           textTransform: isMinimal ? 'uppercase' : 'none',
+          fontFamily: headingFont ? `'${headingFont}', inherit` : undefined,
         }}>{galleryTitle}</h1>
       </div>
 
@@ -419,6 +424,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
             margin: isMinimal ? '16px 0 0' : '10px 0 0', fontWeight: 400,
             letterSpacing: isMinimal ? '0.15em' : '0.01em',
             textTransform: isMinimal ? 'uppercase' : 'none',
+            fontFamily: bodyFont ? `'${bodyFont}', inherit` : undefined,
           }}>{clientName}</p>
         </div>
       )}
@@ -1238,9 +1244,22 @@ export function App() {
   const isFeedSetting    = feedLayout === 'feed'
   const isMobileDevice   = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   const isFeedMode       = isFeedSetting && isMobileDevice
-  const layoutMode       = isFeedMode ? '1-col' : s(raw, 'layoutMode', '2-col')
-  const imageSpacing     = isFeedMode ? 'none' : s(raw, 'imageSpacing', 'small')
+  // Layout — read the legacy layoutMode/imageSpacing/cornerStyle keys, then
+  // honor the newer Design tab keys (thumbnailSize / gridSpacing) on top so
+  // photographer choices in the Design tab actually reach the public viewer.
+  // Backward compat: alma + lsports galleries don't have the new keys, so
+  // their existing layoutMode/imageSpacing values keep working unchanged.
+  const thumbnailSize    = ((raw as Record<string, unknown>).thumbnailSize as string) || null
+  const gridSpacing      = ((raw as Record<string, unknown>).gridSpacing as string) || null
+  const layoutModeFromThumb = thumbnailSize === 'large' ? '2-col' : (thumbnailSize === 'regular' ? '3-col' : null)
+  const spacingFromGap   = gridSpacing === 'large' ? 'medium' : (gridSpacing === 'regular' ? 'small' : null)
+  const layoutMode       = isFeedMode ? '1-col' : (layoutModeFromThumb ?? s(raw, 'layoutMode', '2-col'))
+  const imageSpacing     = isFeedMode ? 'none' : (spacingFromGap ?? s(raw, 'imageSpacing', 'small'))
   const cornerStyle      = isFeedMode ? 'sharp' : s(raw, 'cornerStyle', 'sharp')
+  // Typography — fonts the photographer picked in Design > Typography.
+  // Falls through to the dashboard's base stack if unset.
+  const headingFont      = (((raw as Record<string, unknown>).headingFont as string) || '').trim()
+  const bodyFont         = (((raw as Record<string, unknown>).bodyFont as string) || '').trim()
   const studioName       = s(raw, 'studioName', '')
   const studioWebsite    = (raw as Record<string, unknown>).studioWebsite as string || ''
   const showFooterCredit = s(raw, 'showFooterCredit', true)
@@ -1253,11 +1272,24 @@ export function App() {
   const facePrivacyMode = ((raw as Record<string, unknown>).facePrivacyMode as 'open' | 'private') || 'open'
 
   // Theme color — selected by the photographer in the Design tab.
-  const themeColorId = ((raw as Record<string, unknown>).themeColor as string) || 'indigo'
+  // Supports both the legacy palette (indigo/rose/amber/teal/slate, used by
+  // alma + lsports) and the new editorial palette (charcoal/sage/...). The
+  // legacy "indigo" is mapped to the editorial charcoal so older galleries
+  // adopt the new neutral by default rather than carrying the bright
+  // indigo into the cream design.
+  const themeColorId = ((raw as Record<string, unknown>).themeColor as string) || 'charcoal'
   const themeColors: Record<string, string> = {
-    indigo: '#6366f1', rose: '#f43f5e', amber: '#f59e0b', teal: '#14b8a6', slate: '#64748b',
+    // Editorial palette (matches the photographer-side Design tab)
+    charcoal: '#141413',
+    sage:     '#7B8F6E',
+    rose:     '#C18A8A',
+    amber:    '#A67C52',
+    teal:     '#5E8A8A',
+    slate:    '#64748b',
+    // Legacy aliases for galleries created before the editorial palette
+    indigo:   '#141413',  // was '#6366f1' — re-mapped to charcoal
   }
-  const themeAccent = themeColors[themeColorId] ?? themeColors.indigo
+  const themeAccent = themeColors[themeColorId] ?? themeColors.charcoal
 
   // Watermark settings — applied as a CSS overlay on web previews. Originals
   // download untouched (the watermark is presentation-only, not baked in).
@@ -1352,6 +1384,8 @@ export function App() {
           facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}
           onFindMyPhotos={() => setShowFaceSearch(true)}
           lang={lang}
+          headingFont={headingFont}
+          bodyFont={bodyFont}
         />
         {/* Face search experience — full-screen flow with camera, thinking, results */}
         {showFaceSearch && gallery && (
