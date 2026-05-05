@@ -1,4 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
+import {
+  type PortfolioSettings,
+  DEFAULT_SETTINGS,
+  loadPortfolioSettings,
+  savePortfolioSettings,
+  getFontFamily,
+} from './portfolioSettings'
+// Re-export so call sites that previously imported from PortfolioEditor
+// keep compiling — but they should migrate to ./portfolioSettings to
+// avoid pulling in the editor when only the settings are needed.
+export { type PortfolioSettings, DEFAULT_SETTINGS, loadPortfolioSettings, savePortfolioSettings }
 
 // Load Hebrew Google Fonts
 const HEBREW_FONTS_URL = 'https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=Rubik:wght@300;400;500;600;700;800&family=Assistant:wght@300;400;500;600;700;800&display=swap'
@@ -7,63 +18,6 @@ if (typeof document !== 'undefined' && !document.querySelector(`link[href="${HEB
   link.rel = 'stylesheet'
   link.href = HEBREW_FONTS_URL
   document.head.appendChild(link)
-}
-
-// ─── Portfolio settings ─────────────────────────────────────────────────────
-
-export interface PortfolioSettings {
-  // Branding
-  logoBase64: string
-  pageTitle: string
-  tagline: string
-  // Contact
-  phone: string
-  email: string
-  instagram: string
-  website: string
-  // Appearance
-  accentColor: string
-  bgStyle: 'dark' | 'midnight' | 'gradient' | 'deep-blue'
-  fontStyle: 'modern' | 'elegant' | 'bold' | 'heebo' | 'rubik' | 'assistant'
-  heroStyle: 'blur' | 'gradient-only' | 'cover'
-  heroCoverGalleryId: string  // which gallery cover to use as hero bg
-  // Layout
-  gridColumns: 2 | 3
-  showPhotoCounts: boolean
-  showStudioBadge: boolean
-  // Visibility
-  hiddenGalleryIds: string[]
-}
-
-export const DEFAULT_SETTINGS: PortfolioSettings = {
-  logoBase64: '',
-  pageTitle: '',
-  tagline: '',
-  phone: '',
-  email: '',
-  instagram: '',
-  website: '',
-  accentColor: '#6366f1',
-  bgStyle: 'dark',
-  fontStyle: 'modern',
-  heroStyle: 'blur',
-  heroCoverGalleryId: '',
-  gridColumns: 2,
-  showPhotoCounts: true,
-  showStudioBadge: true,
-  hiddenGalleryIds: [],
-}
-
-export function loadPortfolioSettings(clientId: string): PortfolioSettings {
-  try {
-    const raw = localStorage.getItem(`portfolio-settings-${clientId}`)
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
-  } catch { /* ignore */ }
-  return { ...DEFAULT_SETTINGS }
-}
-
-export function savePortfolioSettings(clientId: string, settings: PortfolioSettings) {
-  localStorage.setItem(`portfolio-settings-${clientId}`, JSON.stringify(settings))
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -110,9 +64,9 @@ const HERO_STYLES: { key: PortfolioSettings['heroStyle']; label: string; icon: s
   { key: 'gradient-only', label: 'גרדיאנט בלבד', icon: 'M4 4h16v16H4z' },
 ]
 
-export function getFontFamily(fontStyle: PortfolioSettings['fontStyle']): string {
-  return FONT_STYLES.find(f => f.key === fontStyle)?.family || 'inherit'
-}
+// Re-exported from ./portfolioSettings — keeping the export so callers
+// that previously imported from PortfolioEditor still link.
+export { getFontFamily }
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
