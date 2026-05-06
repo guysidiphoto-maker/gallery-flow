@@ -137,7 +137,7 @@ export function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
-  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome'>('photos')
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome' | 'stories'>('photos')
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number }>>([])
   const [newSectionName, setNewSectionName] = useState('')
   const [newSectionDesc, setNewSectionDesc] = useState('')
@@ -180,6 +180,16 @@ export function Dashboard() {
   const [uploading, setUploading] = useState(false)
   const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Stories tab — the editor lets owners upload MP4 clips per gallery and
+  // delete individual stories. Mirrors the photo grid pattern: list state,
+  // a hidden <input type=file> driven by a ref, and a per-row hover/menu state.
+  const [stories, setStories] = useState<Array<{ id: string; style: string | null; storage_path: string; duration: number | null; created_at?: string }>>([])
+  const [storyUploading, setStoryUploading] = useState(false)
+  const [storyUploadProgress, setStoryUploadProgress] = useState<{ pct: number; filename: string } | null>(null)
+  const [hoveredStoryId, setHoveredStoryId] = useState<string | null>(null)
+  const [storyMenuOpenId, setStoryMenuOpenId] = useState<string | null>(null)
+  const [confirmDeleteStoryId, setConfirmDeleteStoryId] = useState<string | null>(null)
+  const storyFileInputRef = useRef<HTMLInputElement>(null)
 
   // New delivery settings state
   const [welcomeStyle, setWelcomeStyle] = useState<'mosaic' | 'cinematic' | 'minimal'>('mosaic')
@@ -446,7 +456,8 @@ export function Dashboard() {
   async function openGalleryEditor(g: Gallery) {
     setEditingGallery(g)
     setEditTab('photos')
-    const [imagesRes, sectionsRes] = await Promise.all([
+    setStories([])
+    const [imagesRes, sectionsRes, storiesRes] = await Promise.all([
       supabase
         .from('images')
         .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order, section_id')
@@ -457,9 +468,19 @@ export function Dashboard() {
         .select('id, name, sort_order')
         .eq('gallery_id', g.id)
         .order('sort_order', { ascending: true }),
+      // Stories — fetched alongside images so switching to the Stories tab
+      // is instant. The owner-only editor reads the table directly because
+      // the dashboard runs as the photographer; the public viewer goes
+      // through gallery_get_stories with a token instead.
+      supabase
+        .from('stories')
+        .select('id, style, storage_path, duration, created_at')
+        .eq('gallery_id', g.id)
+        .order('created_at', { ascending: true }),
     ])
     setGalleryImages(imagesRes.data ?? [])
     setSections(sectionsRes.data ?? [])
+    setStories(storiesRes.data ?? [])
   }
 
   async function addSection() {
@@ -554,6 +575,150 @@ export function Dashboard() {
     }
 
     fetchGalleries()
+  }
+
+  // ─── Stories: upload + delete ───────────────────────────────────────────
+  // Owner-only operations. Storage path mirrors the desktop renderer's
+  // canonical layout (`{slug}/{galleryId}/story_{style}.mp4`) so existing
+  // public-read RLS + the gallery_get_stories RPC keep working without a
+  // schema change. We tag manual uploads with style='manual-<timestamp>' to
+  // avoid colliding with desktop-generated stories that share the same path.
+  const STORY_BUCKET = 'gallery-stories'
+  const STORY_MAX_BYTES = 100 * 1024 * 1024 // 100MB per upload
+
+  /** Probe video metadata client-side so we can persist `duration` (rounded
+   *  to whole seconds, matching the integer column). The <video> element is
+   *  the only widely-supported way to read duration from a Blob without
+   *  a server roundtrip. Falls back to null on unreadable files. */
+  function readVideoDurationSeconds(file: File): Promise<number | null> {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file)
+      const video = document.createElement('video')
+      video.preload = 'metadata'
+      video.muted = true
+      // Some browsers refuse to load metadata unless the element is in the
+      // DOM — keep it offscreen but attached.
+      video.style.position = 'fixed'
+      video.style.left = '-9999px'
+      video.style.top = '-9999px'
+      const cleanup = () => {
+        URL.revokeObjectURL(url)
+        video.remove()
+      }
+      video.onloadedmetadata = () => {
+        const dur = Number.isFinite(video.duration) && video.duration > 0
+          ? Math.round(video.duration)
+          : null
+        cleanup()
+        resolve(dur)
+      }
+      video.onerror = () => { cleanup(); resolve(null) }
+      // Hard timeout — never block the upload waiting for metadata.
+      setTimeout(() => { cleanup(); resolve(null) }, 5000)
+      video.src = url
+      document.body.appendChild(video)
+    })
+  }
+
+  async function handleStoryUpload(files: FileList | null) {
+    if (!files || files.length === 0 || !editingGallery || !businessSlug) return
+    const file = files[0]
+    if (file.type !== 'video/mp4' && !file.name.toLowerCase().endsWith('.mp4')) {
+      alert('יש להעלות קובץ MP4 בלבד.')
+      return
+    }
+    if (file.size > STORY_MAX_BYTES) {
+      alert(`הקובץ גדול מדי. המקסימום הוא ${Math.round(STORY_MAX_BYTES / 1024 / 1024)}MB.`)
+      return
+    }
+
+    setStoryUploading(true)
+    setStoryUploadProgress({ pct: 0, filename: file.name })
+
+    // Best-effort duration probe. Failure here doesn't block the upload —
+    // the column is nullable, and the public viewer falls back to a fixed
+    // duration when it's null.
+    const duration = await readVideoDurationSeconds(file)
+
+    // Encode the timestamp so two manual uploads in the same gallery don't
+    // overwrite each other. Desktop-generated paths use the style name
+    // verbatim ("story_minimal.mp4"); manual ones get a unique suffix.
+    const stamp = Date.now().toString(36)
+    const styleTag = `manual-${stamp}`
+    const storagePath = `${businessSlug}/${editingGallery.id}/story_${styleTag}.mp4`
+
+    setStoryUploadProgress({ pct: 30, filename: file.name })
+    const { error: uploadErr } = await supabase.storage
+      .from(STORY_BUCKET)
+      .upload(storagePath, file, { contentType: 'video/mp4', upsert: true })
+    if (uploadErr) {
+      setStoryUploading(false)
+      setStoryUploadProgress(null)
+      alert('שגיאה בהעלאה: ' + uploadErr.message)
+      return
+    }
+
+    setStoryUploadProgress({ pct: 80, filename: file.name })
+    const { data: inserted, error: insertErr } = await supabase
+      .from('stories')
+      .insert({
+        gallery_id: editingGallery.id,
+        style: 'manual',
+        storage_path: storagePath,
+        duration,
+      })
+      .select('id, style, storage_path, duration, created_at')
+      .single()
+
+    if (insertErr || !inserted) {
+      // Clean up the orphaned object so a retry doesn't pile up storage.
+      await supabase.storage.from(STORY_BUCKET).remove([storagePath])
+      setStoryUploading(false)
+      setStoryUploadProgress(null)
+      alert('שגיאה בשמירת הסטורי: ' + (insertErr?.message ?? 'unknown'))
+      return
+    }
+
+    setStories(prev => [...prev, inserted])
+    setStoryUploadProgress({ pct: 100, filename: file.name })
+    setStoryUploading(false)
+    // Tiny delay so guests see the 100% bar before it disappears.
+    setTimeout(() => setStoryUploadProgress(null), 600)
+    if (storyFileInputRef.current) storyFileInputRef.current.value = ''
+  }
+
+  async function handleStoryDelete(storyId: string) {
+    const story = stories.find(s => s.id === storyId)
+    if (!story) return
+
+    // Optimistic removal — matches the photo-delete pattern used elsewhere
+    // in the editor. We snapshot the previous state so we can roll back on
+    // failure rather than leaving the UI lying to the photographer.
+    const previous = stories
+    setStories(prev => prev.filter(s => s.id !== storyId))
+    setStoryMenuOpenId(null)
+    setConfirmDeleteStoryId(null)
+
+    // Delete the storage object first, then the row — same ordering as the
+    // gallery-delete pipeline in cloudUpload.ts. If the object remove fails
+    // we still try the row so the editor doesn't strand a ghost record.
+    if (story.storage_path) {
+      const { error: rmErr } = await supabase.storage
+        .from(STORY_BUCKET)
+        .remove([story.storage_path])
+      if (rmErr) console.warn('[story-delete] storage remove failed', rmErr)
+    }
+
+    const { error: dbErr } = await supabase
+      .from('stories')
+      .delete()
+      .eq('id', storyId)
+
+    if (dbErr) {
+      // Roll back the optimistic update so the photographer can retry.
+      setStories(previous)
+      alert('שגיאה במחיקה: ' + dbErr.message)
+    }
   }
 
   async function updateGallerySetting(key: string, value: unknown) {
@@ -1670,6 +1835,7 @@ export function Dashboard() {
                     {([
                       { id: 'photos' as const,     icon: 'photo'    as IconName, label: 'תמונות' },
                       { id: 'sections' as const,   icon: 'sections' as IconName, label: 'קטעים' },
+                      { id: 'stories' as const,    icon: 'stories'  as IconName, label: 'סטוריז' },
                       { id: 'welcome' as const,    icon: 'palette'  as IconName, label: 'עיצוב' },
                       { id: 'activities' as const, icon: 'activity' as IconName, label: 'פעילות' },
                       { id: 'settings' as const,   icon: 'settings' as IconName, label: 'הגדרות' },
@@ -2407,6 +2573,286 @@ export function Dashboard() {
                             </button>
                           </div>
                         ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Stories Tab ── */}
+                {editTab === 'stories' && (
+                  <div style={{ padding: '0 4px' }}>
+                    {/* Top strip — heading + Upload Story CTA. Same rhythm as
+                        the Photos tab so the editor feels uniform. */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      marginBottom: 24,
+                    }}>
+                      <h3 style={{
+                        fontSize: 22, fontWeight: 500, margin: 0,
+                        letterSpacing: '-0.015em', color: textPrimary,
+                      }}>
+                        סטורי
+                        <span style={{
+                          marginInlineStart: 12, color: textMuted,
+                          fontSize: 14, fontWeight: 400,
+                        }}>
+                          {stories.length}
+                        </span>
+                      </h3>
+                      <input
+                        ref={storyFileInputRef}
+                        type="file"
+                        accept="video/mp4"
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleStoryUpload(e.target.files)}
+                      />
+                      <button
+                        onClick={() => storyFileInputRef.current?.click()}
+                        disabled={storyUploading}
+                        style={{
+                          padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                          background: textPrimary, border: `1px solid ${textPrimary}`,
+                          color: '#fff', cursor: storyUploading ? 'wait' : 'pointer',
+                          fontFamily: 'inherit', opacity: storyUploading ? 0.6 : 1,
+                          letterSpacing: '0.18em', textTransform: 'uppercase',
+                          display: 'inline-flex', alignItems: 'center', gap: 8,
+                        }}
+                      >
+                        <Icon name="plus" size={13} strokeWidth={2} />
+                        העלאת סטורי
+                      </button>
+                    </div>
+
+                    {/* Helper copy — explains the supported formats + size limit
+                        so photographers don't waste a 2GB upload before the
+                        client-side validator rejects it. */}
+                    <p style={{
+                      fontSize: 13, color: textSecondary,
+                      marginBottom: 22, lineHeight: 1.6,
+                    }}>
+                      העלו סרטון MP4 שיוצג בנגן הסטורי המלא של הגלריה.
+                      גודל מקסימלי: 100MB.
+                    </p>
+
+                    {/* Upload progress strip — mirrors the Photos tab's
+                        single-row progress UI so the photographer recognizes
+                        the pattern. */}
+                    {storyUploading && storyUploadProgress && (
+                      <div style={{
+                        marginBottom: 20, padding: '14px 18px',
+                        background: bgSubtle, border: `1px solid ${border}`,
+                      }}>
+                        <div style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          fontSize: 12, color: textPrimary, marginBottom: 8,
+                          fontWeight: 500, letterSpacing: '0.04em',
+                        }}>
+                          <span style={{
+                            overflow: 'hidden', textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap', maxWidth: '70%',
+                          }}>
+                            מעלה: {storyUploadProgress.filename}
+                          </span>
+                          <span>{storyUploadProgress.pct}%</span>
+                        </div>
+                        <div style={{ width: '100%', height: 2, background: border, overflow: 'hidden' }}>
+                          <div style={{
+                            width: `${storyUploadProgress.pct}%`,
+                            height: '100%', background: textPrimary,
+                            transition: 'width .3s',
+                          }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Stories grid — Pixieset-style packed thumbnails. Each
+                        clip is a 9:16 video preview with a per-tile menu.
+                        Hover plays the video for a quick preview without
+                        opening the player; click opens the menu. */}
+                    {stories.length === 0 && !storyUploading ? (
+                      <div style={{
+                        textAlign: 'center', padding: '52px 20px',
+                        color: textMuted,
+                        border: `1px dashed ${border}`,
+                        background: bgSubtle,
+                      }}>
+                        <div style={{ marginBottom: 14, color: textMuted, opacity: 0.55, display: 'flex', justifyContent: 'center' }}>
+                          <Icon name="stories" size={36} strokeWidth={1.4} />
+                        </div>
+                        <div style={{ fontSize: 14 }}>
+                          עדיין אין סטוריז. הוסף את הראשון בלחיצה על "העלאת סטורי".
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                        gap: 12,
+                      }}>
+                        {stories.map(st => {
+                          const isHovered = hoveredStoryId === st.id
+                          const isMenuOpen = storyMenuOpenId === st.id
+                          const isConfirming = confirmDeleteStoryId === st.id
+                          const url = `https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/${STORY_BUCKET}/${st.storage_path}`
+                          return (
+                            <div
+                              key={st.id}
+                              onMouseEnter={() => setHoveredStoryId(st.id)}
+                              onMouseLeave={() => setHoveredStoryId(null)}
+                              style={{
+                                position: 'relative', aspectRatio: '9 / 16',
+                                background: bgSubtle, overflow: 'hidden',
+                                border: `1px solid ${border}`,
+                                borderRadius: 4,
+                              }}
+                            >
+                              <video
+                                src={url}
+                                muted
+                                playsInline
+                                preload="metadata"
+                                onMouseEnter={(e) => { void (e.target as HTMLVideoElement).play().catch(() => { /* autoplay blocked */ }) }}
+                                onMouseLeave={(e) => {
+                                  const v = e.target as HTMLVideoElement
+                                  v.pause(); v.currentTime = 0
+                                }}
+                                style={{
+                                  width: '100%', height: '100%',
+                                  objectFit: 'cover', display: 'block',
+                                }}
+                              />
+
+                              {/* Three-dot menu — shown on hover (mouse) or
+                                  always on touch devices. WCAG: focusable
+                                  button, aria-label in Hebrew. */}
+                              {(isHovered || isMenuOpen || isConfirming) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setStoryMenuOpenId(isMenuOpen ? null : st.id)
+                                  }}
+                                  aria-label="עוד"
+                                  aria-haspopup="menu"
+                                  aria-expanded={isMenuOpen}
+                                  style={{
+                                    position: 'absolute', top: 8, insetInlineEnd: 8,
+                                    width: 28, height: 28, borderRadius: '50%',
+                                    background: 'rgba(255,255,255,0.92)',
+                                    border: 'none', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    color: textPrimary, padding: 0,
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+                                  }}
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                                    <circle cx="5" cy="12" r="2" />
+                                    <circle cx="12" cy="12" r="2" />
+                                    <circle cx="19" cy="12" r="2" />
+                                  </svg>
+                                </button>
+                              )}
+
+                              {/* Menu — click "מחיקה" → swap to inline confirm. */}
+                              {isMenuOpen && !isConfirming && (
+                                <div style={{
+                                  position: 'absolute', top: 40, insetInlineEnd: 8,
+                                  background: cardSolid, border: `1px solid ${border}`,
+                                  boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 5,
+                                  minWidth: 140, padding: 4, borderRadius: 4,
+                                }}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setStoryMenuOpenId(null)
+                                      setConfirmDeleteStoryId(st.id)
+                                    }}
+                                    style={{
+                                      width: '100%', textAlign: 'right' as const,
+                                      padding: '8px 10px', borderRadius: 2,
+                                      background: 'transparent', border: 'none', cursor: 'pointer',
+                                      fontFamily: 'inherit', fontSize: 12, color: '#dc2626',
+                                    }}
+                                  >
+                                    מחיקה
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Inline confirm — Pixieset pattern: replaces
+                                  the menu with a confirm/cancel pair so the
+                                  photographer can't delete by accident. */}
+                              {isConfirming && (
+                                <div style={{
+                                  position: 'absolute', inset: 0,
+                                  background: 'rgba(20,20,19,0.86)',
+                                  display: 'flex', flexDirection: 'column',
+                                  alignItems: 'center', justifyContent: 'center',
+                                  gap: 10, padding: 12,
+                                  textAlign: 'center', color: '#fff',
+                                }}>
+                                  <div style={{ fontSize: 12, fontWeight: 500 }}>
+                                    למחוק את הסטורי?
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        void handleStoryDelete(st.id)
+                                      }}
+                                      style={{
+                                        padding: '6px 14px', borderRadius: 2,
+                                        background: '#dc2626', border: 'none',
+                                        color: '#fff', cursor: 'pointer',
+                                        fontFamily: 'inherit', fontSize: 11,
+                                        fontWeight: 500, letterSpacing: '0.1em',
+                                        textTransform: 'uppercase',
+                                      }}
+                                    >
+                                      מחק
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setConfirmDeleteStoryId(null)
+                                      }}
+                                      style={{
+                                        padding: '6px 14px', borderRadius: 2,
+                                        background: 'transparent',
+                                        border: '1px solid rgba(255,255,255,0.4)',
+                                        color: '#fff', cursor: 'pointer',
+                                        fontFamily: 'inherit', fontSize: 11,
+                                        fontWeight: 500, letterSpacing: '0.1em',
+                                        textTransform: 'uppercase',
+                                      }}
+                                    >
+                                      ביטול
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Bottom caption — style label + duration. */}
+                              <div style={{
+                                position: 'absolute', bottom: 0, insetInline: 0,
+                                padding: '20px 10px 8px',
+                                background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)',
+                                color: '#fff', fontSize: 10,
+                                letterSpacing: '0.14em', textTransform: 'uppercase',
+                                fontWeight: 500,
+                                display: 'flex', justifyContent: 'space-between',
+                                pointerEvents: 'none',
+                              }}>
+                                <span style={{
+                                  overflow: 'hidden', textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap', maxWidth: '70%',
+                                }}>
+                                  {st.style ?? 'manual'}
+                                </span>
+                                {st.duration ? <span>{st.duration}s</span> : null}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                   </div>
