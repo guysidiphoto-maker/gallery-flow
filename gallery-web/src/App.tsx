@@ -939,7 +939,13 @@ export function App() {
   // Download progress tracking
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null)
 
-  // Parse gallery from URL
+  // Parse gallery from URL. Three URL shapes feed the viewer:
+  //   1) /gallery/<uuid>                — bare id, dashboard's "Copy link"
+  //   2) /<businessSlug>/gallery/<uuid> — legacy id with slug
+  //   3) /<businessSlug>/<gallerySlug>  — clean two-segment path
+  // When the request arrived on a photographer's custom domain we get a
+  // FOURTH shape: /<gallerySlug> (one segment), with the business resolved
+  // from window.location.hostname instead of the URL.
   const galleryRef = useMemo(() => {
     const path = window.location.pathname.replace(/\/+$/, '')
     const legacy = path.match(/^\/[^/]+\/gallery\/([^/]+)$/)
@@ -948,6 +954,17 @@ export function App() {
     if (direct) return { type: 'id' as const, value: direct[1] }
     const clean = path.match(/^\/([^/]+)\/([^/]+)$/)
     if (clean) return { type: 'slug' as const, businessSlug: clean[1], gallerySlug: clean[2] }
+    // Single-segment path — only meaningful on a photographer's custom
+    // domain. Resolve the business via host below.
+    const host = window.location.hostname
+    const isCustomHost =
+      host && host !== 'pixflow-ai.com' && host !== 'www.pixflow-ai.com'
+        && !host.endsWith('.vercel.app')
+        && host !== 'localhost' && !host.startsWith('localhost:')
+    const single = path.match(/^\/([^/]+)$/)
+    if (isCustomHost && single) {
+      return { type: 'host-slug' as const, host, gallerySlug: single[1] }
+    }
     return null
   }, [])
 
@@ -955,6 +972,28 @@ export function App() {
     if (!galleryRef) { setError('No gallery ID in URL'); return }
     if (galleryRef.type === 'id') {
       loadGallery(galleryRef.value)
+    } else if (galleryRef.type === 'host-slug') {
+      // Custom-domain shape: hostname → business, then gallery slug under it.
+      ;(async () => {
+        try {
+          const { data: biz } = await supabase
+            .from('businesses')
+            .select('id')
+            .eq('custom_domain', galleryRef.host)
+            .eq('custom_domain_status', 'verified')
+            .maybeSingle()
+          if (!biz) { setError('Gallery not found'); return }
+          const { data: g } = await supabase.from('galleries').select('*')
+            .eq('business_id', biz.id).eq('slug', galleryRef.gallerySlug)
+            .in('status', ['live', 'published', 'draft']).single()
+          if (g) { loadGallery(g.id); return }
+          const { data: byName } = await supabase.from('galleries').select('*')
+            .eq('business_id', biz.id).in('status', ['live', 'published', 'draft'])
+            .ilike('name', galleryRef.gallerySlug.replace(/-/g, '%')).limit(1)
+          if (byName?.[0]) { loadGallery(byName[0].id); return }
+          setError('Gallery not found')
+        } catch { setError('Gallery not found') }
+      })()
     } else {
       (async () => {
         try {
