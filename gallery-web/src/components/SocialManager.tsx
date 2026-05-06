@@ -237,7 +237,16 @@ export function SocialManager({ galleries, allImages, topPicks, clientId, storag
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ direction: 'rtl', display: 'flex', height: 'calc(100vh - 140px)', minHeight: 0 }}>
+    // Dark surface deliberate. The internal palette (white-on-rgba) was
+    // designed against a near-black canvas; without this wrapper the
+    // controls render white-on-cream and disappear. The dark island also
+    // matches the "professional editing workstation" feel — Adobe-style
+    // tools sitting inside the otherwise cream dashboard.
+    <div style={{
+      direction: 'rtl', display: 'flex', height: 'calc(100vh - 140px)', minHeight: 0,
+      background: '#0a0a0f', color: 'rgba(255,255,255,.9)',
+      borderRadius: 14, overflow: 'hidden',
+    }}>
 
       {/* ── Main content ── */}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

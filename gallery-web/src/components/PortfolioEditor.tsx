@@ -122,7 +122,15 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
   ]
 
   return (
-    <div style={{ direction: 'rtl', maxWidth: 1100, margin: '0 auto', padding: '20px 24px' }}>
+    // Dark surface deliberate. Like SocialManager, the entire palette
+    // (white-on-rgba) was designed against a near-black canvas — without
+    // this wrap every label, eyebrow, and panel title disappears on the
+    // cream parent. The dark island also reads as a "site editor" tool,
+    // which matches what this component is.
+    <div style={{
+      direction: 'rtl', maxWidth: 1100, margin: '0 auto', padding: '20px 24px',
+      background: '#0a0a0f', color: 'rgba(255,255,255,.9)', borderRadius: 14,
+    }}>
       <style>{`
         @keyframes pe-fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pe-savedPulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }

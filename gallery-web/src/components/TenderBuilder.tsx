@@ -166,7 +166,15 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
   // ── Browse phase ────────────────────────────────────────────────────────
 
   return (
-    <div style={{ direction: 'rtl', padding: '32px 24px 24px', maxWidth: 1280, margin: '0 auto', paddingBottom: selectedCount > 0 ? 100 : 24, position: 'relative' }}>
+    // Dark surface deliberate — same reason as SocialManager + PortfolioEditor:
+    // 70 internal styles use white-on-translucent, designed for a near-black
+    // canvas. Without this wrap the hero, filters, gallery cards, and
+    // selection toolbar all disappear on the cream parent.
+    <div style={{
+      direction: 'rtl', padding: '32px 24px 24px', maxWidth: 1280, margin: '0 auto',
+      paddingBottom: selectedCount > 0 ? 100 : 24, position: 'relative',
+      background: '#0a0a0f', color: 'rgba(255,255,255,.9)', borderRadius: 14,
+    }}>
 
       {/* Background glow */}
       <div style={{
