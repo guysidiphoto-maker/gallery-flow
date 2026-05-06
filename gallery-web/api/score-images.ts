@@ -21,7 +21,11 @@ const supabase =
 
 const BATCH_SIZE = 8
 const MAX_BATCHES = 30 // hard cap → 240 images per call
-const SCORING_MODEL = 'claude-sonnet-4-6'
+// Haiku 4.5 is 5× cheaper than Sonnet 4.6 (input $1 vs $3, output $5 vs $15
+// per MTok) and plenty good for "score this image on 7 dimensions" — Sonnet's
+// extra reasoning is wasted on a structured-scoring task. Vision quality is
+// effectively identical for this size of grid (1024px web previews).
+const SCORING_MODEL = 'claude-haiku-4-5'
 const STORAGE_BUCKET = 'gallery-images'
 
 type SuggestedUsage =
@@ -155,10 +159,16 @@ async function scoreBatch(
 
   let llmText: string
   try {
+    // Prompt caching: the system prompt (~4500 tokens) is identical across
+    // every batch in this call. Marking it cache_control: ephemeral makes
+    // the second batch onward read it at 10% of the input price (5-min TTL).
+    // For 30 batches that saves ~22% of input tokens.
     const message = await anthropic.messages.create({
       model: SCORING_MODEL,
       max_tokens: 4000,
-      system: SYSTEM_PROMPT,
+      system: [
+        { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+      ],
       messages: [{ role: 'user', content }],
     })
     const block = message.content[0]

@@ -383,7 +383,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 12000,
-      system: buildSystemPrompt(brief),
+      // The brief-driven system prompt is large (~5k tokens). Cache it so
+      // a retry within 5 min reuses the cached prefix at 10% cost.
+      system: [
+        { type: 'text', text: buildSystemPrompt(brief), cache_control: { type: 'ephemeral' } },
+      ],
       messages: [
         {
           role: 'user',
