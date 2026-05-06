@@ -8,6 +8,7 @@ import { supabase, storageUrl } from '../supabase'
 const TenderBuilder    = lazy(() => import('../components/TenderBuilder').then(m => ({ default: m.TenderBuilder })))
 const SocialManager    = lazy(() => import('../components/SocialManager').then(m => ({ default: m.SocialManager })))
 const PortfolioEditor  = lazy(() => import('../components/PortfolioEditor').then(m => ({ default: m.PortfolioEditor })))
+const FeedStudio       = lazy(() => import('../components/FeedStudio').then(m => ({ default: m.FeedStudio })))
 import { loadPortfolioSettings } from '../components/portfolioSettings'
 import { Icon, type IconName } from '../components/Icon'
 
@@ -130,7 +131,7 @@ export function ClientDashboard() {
   const [stories, setStories] = useState<Map<string, StoryRow[]>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'content' | 'calendar' | 'galleries' | 'stories' | 'page' | 'tender'>('content')
+  const [tab, setTab] = useState<'feed-studio' | 'content' | 'calendar' | 'galleries' | 'stories' | 'page' | 'tender'>('feed-studio')
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(new Set())
   const [playingStory, setPlayingStory] = useState<string | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
@@ -350,6 +351,9 @@ export function ClientDashboard() {
   const selectedImages = allImages.filter(img => selectedPicks.has(img.id))
 
   const tabs: Array<{ id: typeof tab; label: string; icon: IconName }> = [
+    // Feed Studio is the new flagship — appears first so it's the photographer's
+    // first move when demoing piXflow's AI Visual OS to a paying client.
+    { id: 'feed-studio', label: '✨ Feed Studio', icon: 'gallery' },
     { id: 'content', label: 'Content Studio', icon: 'gallery' },
     { id: 'calendar', label: 'Content Calendar', icon: 'calendar' },
     { id: 'galleries', label: 'Galleries', icon: 'sections' },
@@ -426,6 +430,17 @@ export function ClientDashboard() {
       </header>
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 24px 96px' }}>
+
+        {/* ── Feed Studio Tab — the AI Visual OS surface ──────────────── */}
+        {tab === 'feed-studio' && (
+          <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>Loading Feed Studio…</div>}>
+            <FeedStudio
+              clientId={clientId}
+              topPicks={topPicks}
+              galleries={galleries}
+            />
+          </Suspense>
+        )}
 
         {/* ── Content Studio Tab ──────────────────────────────────────── */}
         {tab === 'content' && (
