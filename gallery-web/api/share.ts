@@ -58,6 +58,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).send(spaShell())
   }
 
+  // Resolve the host for canonical URLs. When the request comes in via a
+  // photographer's verified custom domain (photos.studio-alma.co.il), we
+  // emit links pointing back at THAT domain so social previews don't bounce
+  // guests through pixflow-ai.com. Falls back to the default for anything
+  // else (direct hits to the apex, preview URLs, etc).
+  const reqHost = (req.headers['x-forwarded-host'] as string | undefined) ||
+                  (req.headers['host'] as string | undefined) || ''
+  const isCustomHost = reqHost && reqHost !== 'pixflow-ai.com' && !reqHost.endsWith('.vercel.app')
+  const canonicalHost = isCustomHost ? reqHost : 'pixflow-ai.com'
+  const baseUrl = `https://${canonicalHost}`
+
   // Crawlers: emit og-tagged HTML.
   let title = 'Pixflow Gallery'
   let description = 'Find your photos with a selfie.'
@@ -82,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  const ogImage = `https://pixflow-ai.com/api/og?gallery=${encodeURIComponent(id)}`
+  const ogImage = `${baseUrl}/api/og?gallery=${encodeURIComponent(id)}`
   res.setHeader('Content-Type', 'text/html')
   res.setHeader('Cache-Control', 'public, s-maxage=3600')
   return res.status(200).send(`<!DOCTYPE html>
@@ -93,7 +104,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 <meta property="og:title" content="${escapeHtml(title)}" />
 <meta property="og:description" content="${escapeHtml(description)}" />
 <meta property="og:type" content="website" />
-<meta property="og:url" content="https://pixflow-ai.com${escapeHtml(canonicalPath)}" />
+<meta property="og:url" content="${baseUrl}${escapeHtml(canonicalPath)}" />
 <meta property="og:image" content="${escapeHtml(ogImage)}" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />

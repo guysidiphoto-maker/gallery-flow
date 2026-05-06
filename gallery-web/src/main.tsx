@@ -17,27 +17,47 @@ import { initSentry } from './sentry'
 
 initSentry()
 
+// A request that arrived via a photographer's custom domain
+// (e.g. photos.studio-alma.co.il) skips the businessSlug segment in URLs —
+// the hostname IS the business. So `/wedding-cohen` on that host means the
+// gallery `wedding-cohen` of that one studio, not a 1-segment fallback.
+function isCustomDomainHost(host: string): boolean {
+  if (!host) return false
+  if (host === 'pixflow-ai.com' || host === 'www.pixflow-ai.com') return false
+  if (host.endsWith('.vercel.app')) return false
+  if (host === 'localhost' || host.startsWith('localhost:') || host === '127.0.0.1') return false
+  return true
+}
+
 function Router() {
   const path = window.location.pathname
+  const onCustomDomain = isCustomDomainHost(window.location.hostname)
 
-  if (path === '/') return <LandingPageHe />
-  if (path === '/demo') return <DemoPage />
+  // App-shell routes that behave the same regardless of hostname —
+  // dashboard, demo, legal, edge feature pages.
   if (path === '/dashboard') return <Dashboard />
+  if (path === '/demo') return <DemoPage />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
-  // Questionnaire
   if (path.startsWith('/q/')) return <QuestionnairePage />
-  // Event lead capture (QR landing)
   if (path.startsWith('/event/')) return <EventCapturePage />
-  // Vendor portal
   if (path.startsWith('/vendor/') || /^\/[^/]+\/vendor\//.test(path)) return <VendorPortal />
-  // Client dashboard (authenticated)
   if (/\/client\/[^/]+\/dashboard/.test(path)) return <ClientDashboard />
-  // Client public page → Portfolio (auto-generated website)
   if (path.startsWith('/client/') || /^\/[^/]+\/client\//.test(path)) return <PortfolioPage />
   if (path.startsWith('/gallery') || /^\/[^/]+\/gallery\//.test(path)) return <App />
-  // Clean gallery URL: /{business-slug}/{gallery-slug}
-  if (/^\/[^/]+\/[^/]+\/?$/.test(path)) return <App />
+
+  if (onCustomDomain) {
+    // On a custom domain the root maps to the photographer's portfolio,
+    // and a single-segment path is a gallery slug under this studio.
+    // App.tsx and PortfolioPage read window.location.hostname themselves
+    // to resolve which business to show.
+    if (path === '/' || path === '') return <PortfolioPage />
+    if (/^\/[^/]+\/?$/.test(path)) return <App />
+  } else {
+    // Default host → marketing landing on root, two-segment path = gallery.
+    if (path === '/') return <LandingPageHe />
+    if (/^\/[^/]+\/[^/]+\/?$/.test(path)) return <App />
+  }
 
   // Fallback: redirect to landing
   window.location.replace('/')

@@ -768,25 +768,45 @@ export function Dashboard() {
     }
   }
 
-  // Stub: PR 3b will call a server-side DNS lookup. For the foundation PR we
-  // just re-fetch the businesses row so the UI reflects whatever state is
-  // already in the DB (in case the photographer has multiple tabs open).
+  // Calls the verify-custom-domain edge function. The function reads the TXT
+  // record at _pixflow-verify.<domain> via Cloudflare DoH and, on a match,
+  // attaches the domain to the Vercel project (so traffic starts flowing)
+  // and flips status to 'verified'. On mismatch we stay in 'pending_dns'
+  // since DNS propagation can take hours.
   async function recheckCustomDomain() {
     if (!businessId) return
-    const { data } = await supabase
-      .from('businesses')
-      .select('custom_domain, custom_domain_status, custom_domain_verification_token')
-      .eq('id', businessId)
-      .maybeSingle()
-    const row = data as {
-      custom_domain?: string | null
-      custom_domain_status?: 'unverified' | 'pending_dns' | 'verified' | 'error' | null
-      custom_domain_verification_token?: string | null
-    } | null
-    if (row) {
-      setCustomDomain(row.custom_domain ?? null)
-      setCustomDomainStatus((row.custom_domain_status as 'unverified' | 'pending_dns' | 'verified' | 'error') ?? 'unverified')
-      setCustomDomainToken(row.custom_domain_verification_token ?? null)
+    setDomainSaving(true)
+    setDomainError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) {
+        setDomainError(domainErrorToHebrew('not_authenticated'))
+        return
+      }
+      const { data, error } = await supabase.functions.invoke('verify-custom-domain', {
+        method: 'POST',
+        body: {},
+      })
+      if (error) {
+        setDomainError(domainErrorToHebrew('dns_lookup_failed'))
+      } else if (data?.ok && data?.status === 'verified') {
+        setCustomDomainStatus('verified')
+        // Vercel attachment may have failed (e.g. token not configured yet).
+        // Surface the warning so the photographer doesn't think traffic is
+        // routing when it isn't.
+        if (data?.vercel_warning) {
+          setDomainError(domainErrorToHebrew(data.vercel_warning))
+        }
+      } else {
+        // pending_dns / no_txt_record / txt_mismatch — keep current state,
+        // surface a soft message.
+        setDomainError(domainErrorToHebrew(data?.reason ?? 'pending_dns'))
+      }
+    } catch {
+      setDomainError(domainErrorToHebrew('dns_lookup_failed'))
+    } finally {
+      setDomainSaving(false)
     }
   }
 
@@ -825,7 +845,17 @@ export function Dashboard() {
       case 'empty_domain':      return 'יש להזין דומיין'
       case 'no_business':       return 'לא נמצא חשבון עסקי'
       case 'not_authenticated': return 'יש להתחבר מחדש'
-      default:                  return 'שגיאה לא צפויה — נסו שוב'
+      // Verification states from the verify-custom-domain edge fn
+      case 'no_txt_record':     return 'רשומת ה-TXT עדיין לא התפשטה. החזקת DNS לוקחת לפעמים עד 72 שעות.'
+      case 'txt_mismatch':      return 'נמצאה רשומת TXT אבל הערך שונה מהצפוי. בדקו שהעתקתם את הערך במלואו.'
+      case 'pending_dns':       return 'ממתין לרשומת DNS — נסו שוב בעוד מספר דקות.'
+      case 'dns_lookup_failed': return 'בדיקת DNS נכשלה. נסו שוב בעוד מספר דקות.'
+      case 'no_domain_claimed': return 'לא הוגדר דומיין — שמרו דומיין לפני האימות.'
+      // Vercel-side warnings (verification succeeded but routing not provisioned)
+      case 'vercel_not_configured': return 'הדומיין אומת אבל ההגדרה ב-Vercel עדיין לא הופעלה. צרו קשר לתמיכה.'
+      default:
+        if (code?.startsWith('vercel_')) return 'הדומיין אומת אבל ה-routing עדיין לא פעיל. נסו שוב או צרו קשר לתמיכה.'
+        return 'שגיאה לא צפויה — נסו שוב'
     }
   }
 
