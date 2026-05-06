@@ -161,14 +161,14 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
             </div>
             עורך האתר
           </h2>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,.35)', margin: 0 }}>עצב את דף הפורטפוליו שלך</p>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,.65)', margin: 0 }}>עצב את דף הפורטפוליו שלך</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={() => { navigator.clipboard.writeText(publicUrl); setCopied(true); setTimeout(() => setCopied(false), 1500) }} style={{
             padding: '9px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600,
             background: copied ? 'rgba(16,185,129,.1)' : 'rgba(255,255,255,.04)',
             border: `1px solid ${copied ? 'rgba(16,185,129,.2)' : 'rgba(255,255,255,.08)'}`,
-            color: copied ? '#34d399' : 'rgba(255,255,255,.55)',
+            color: copied ? '#34d399' : 'rgba(255,255,255,.8)',
             cursor: 'pointer', fontFamily: 'inherit',
             transition: 'all .25s cubic-bezier(.4,0,.2,1)',
             display: 'flex', alignItems: 'center', gap: 6,
@@ -184,7 +184,7 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
           <a href={publicUrl} target="_blank" rel="noopener" style={{
             padding: '9px 16px', borderRadius: 10, fontSize: 12, fontWeight: 600,
             background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)',
-            color: 'rgba(255,255,255,.55)', textDecoration: 'none',
+            color: 'rgba(255,255,255,.8)', textDecoration: 'none',
             display: 'flex', alignItems: 'center', gap: 5,
             transition: 'all .2s',
           }}>
@@ -419,7 +419,7 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
                   placeholder={clientName}
                   style={inputStyle}
                 />
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,.2)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,.45)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                   ברירת מחדל: שם הלקוח
                 </div>
@@ -479,7 +479,7 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
                   background: 'rgba(0,0,0,.2)',
                 }}>
                   <div style={{ width: 16, height: 16, borderRadius: 4, background: settings.accentColor, border: '1px solid rgba(255,255,255,.1)' }} />
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', fontFamily: 'monospace' }}>{settings.accentColor}</span>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,.6)', fontFamily: 'monospace' }}>{settings.accentColor}</span>
                 </div>
               </Panel>
 
@@ -526,7 +526,7 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
                       transition: 'all .2s cubic-bezier(.4,0,.2,1)',
                     }}>
                       <div style={{ fontSize: 22, marginBottom: 4, fontFamily: f.family, fontWeight: 700, lineHeight: 1.2 }}>{f.sample}</div>
-                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,.2)', marginBottom: 4, fontFamily: f.family, fontWeight: 400 }}>
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,.45)', marginBottom: 4, fontFamily: f.family, fontWeight: 400 }}>
                         {f.key.includes('heebo') || f.key.includes('rubik') || f.key.includes('assistant') ? 'שלום עולם' : 'Hello World'}
                       </div>
                       {f.label}
@@ -552,7 +552,7 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
                 {/* Hero cover picker */}
                 {settings.heroStyle !== 'gradient-only' && (
                   <div style={{ marginTop: 12 }}>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,.25)', marginBottom: 8, fontWeight: 500 }}>תמונת רקע</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,.6)', marginBottom: 8, fontWeight: 500 }}>תמונת רקע</div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {galleries.map(g => {
                         const cov = covers.get(g.id)
@@ -645,7 +645,7 @@ export function PortfolioEditor({ clientId, clientName, studioName, galleries, c
                         )}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</div>
-                          <div style={{ fontSize: 11, color: 'rgba(255,255,255,.3)', marginTop: 2 }}>{readS('eventType') || 'אחר'} · {g.image_count} תמונות</div>
+                          <div style={{ fontSize: 11, color: 'rgba(255,255,255,.6)', marginTop: 2 }}>{readS('eventType') || 'אחר'} · {g.image_count} תמונות</div>
                         </div>
                       </div>
                     )
@@ -692,7 +692,7 @@ function Panel({ title, children, icon, accent }: { title: string; children: Rea
       transition: 'border-color .2s',
     }}>
       <div style={{
-        fontSize: 12.5, fontWeight: 700, color: 'rgba(255,255,255,.55)',
+        fontSize: 12.5, fontWeight: 700, color: 'rgba(255,255,255,.8)',
         marginBottom: 14,
         display: 'flex', alignItems: 'center', gap: 8,
       }}>
@@ -727,7 +727,7 @@ function ToggleRow({ label, description, checked, accent, onToggle }: { label: s
     >
       <div>
         <div style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,.7)' }}>{label}</div>
-        {description && <div style={{ fontSize: 11, color: 'rgba(255,255,255,.25)', marginTop: 2 }}>{description}</div>}
+        {description && <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', marginTop: 2 }}>{description}</div>}
       </div>
       {/* Toggle switch */}
       <div style={{
@@ -757,7 +757,7 @@ function InputField({ label, value, placeholder, onChange, icon, accent }: { lab
   return (
     <div>
       <div style={{
-        fontSize: 11.5, fontWeight: 600, color: 'rgba(255,255,255,.4)',
+        fontSize: 11.5, fontWeight: 600, color: 'rgba(255,255,255,.7)',
         marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5,
       }}>
         {label}

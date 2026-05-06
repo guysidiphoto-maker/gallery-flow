@@ -256,19 +256,19 @@ export function SocialManager({ galleries, allImages, topPicks, clientId, storag
             <button onClick={() => setView('grid')} style={{
               padding: '5px 14px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
               background: view === 'grid' ? 'rgba(99,102,241,.2)' : 'transparent',
-              color: view === 'grid' ? '#c7d2fe' : 'rgba(255,255,255,.4)',
+              color: view === 'grid' ? '#c7d2fe' : 'rgba(255,255,255,.65)',
               border: 'none', cursor: 'pointer', fontFamily: 'inherit',
             }}>פיד</button>
             <button onClick={() => setView('calendar')} style={{
               padding: '5px 14px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
               background: view === 'calendar' ? 'rgba(99,102,241,.2)' : 'transparent',
-              color: view === 'calendar' ? '#c7d2fe' : 'rgba(255,255,255,.4)',
+              color: view === 'calendar' ? '#c7d2fe' : 'rgba(255,255,255,.65)',
               border: 'none', cursor: 'pointer', fontFamily: 'inherit',
             }}>לוח שנה</button>
           </div>
 
           {/* Stats */}
-          <div style={{ display: 'flex', gap: 12, fontSize: 11.5, color: 'rgba(255,255,255,.4)' }}>
+          <div style={{ display: 'flex', gap: 12, fontSize: 11.5, color: 'rgba(255,255,255,.65)' }}>
             <span><b style={{ color: 'rgba(255,255,255,.8)' }}>{posts.length}</b> פוסטים</span>
             <span><b style={{ color: '#a5b4fc' }}>{scheduledCount}</b> מתוזמנים</span>
             <span><b style={{ color: '#34d399' }}>{withCaptions}</b> עם תיאור</span>
@@ -285,7 +285,7 @@ export function SocialManager({ galleries, allImages, topPicks, clientId, storag
               <button key={t.key} onClick={() => setTone(t.key)} style={{
                 padding: '4px 10px', borderRadius: 6, fontSize: 10.5, fontWeight: 500,
                 background: tone === t.key ? 'rgba(255,255,255,.08)' : 'transparent',
-                color: tone === t.key ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.35)',
+                color: tone === t.key ? 'rgba(255,255,255,.9)' : 'rgba(255,255,255,.6)',
                 border: 'none', cursor: 'pointer', fontFamily: 'inherit',
               }}>{t.label}</button>
             ))}
@@ -404,7 +404,7 @@ export function SocialManager({ galleries, allImages, topPicks, clientId, storag
 
               {/* Add photos section */}
               <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.35)', marginBottom: 8 }}>הוסף תמונות מגלריות</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.7)', marginBottom: 8 }}>הוסף תמונות מגלריות</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {galleries.map(g => {
                     const galImages = allImages.filter(img => img.gallery_id === g.id && img.is_top_pick)
@@ -412,7 +412,7 @@ export function SocialManager({ galleries, allImages, topPicks, clientId, storag
                       <button key={g.id} onClick={() => addPhotos(galImages)} style={{
                         padding: '5px 12px', borderRadius: 50, fontSize: 11.5, fontWeight: 500,
                         background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)',
-                        color: 'rgba(255,255,255,.5)', cursor: 'pointer', fontFamily: 'inherit',
+                        color: 'rgba(255,255,255,.8)', cursor: 'pointer', fontFamily: 'inherit',
                       }}>
                         + {g.name} ({galImages.length})
                       </button>
@@ -427,13 +427,13 @@ export function SocialManager({ galleries, allImages, topPicks, clientId, storag
           {view === 'calendar' && (
             <div style={{ maxWidth: 900, margin: '0 auto' }}>
               {weeks.length === 0 ? (
-                <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,.3)', fontSize: 14 }}>
+                <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,.65)', fontSize: 14 }}>
                   אין פוסטים מתוזמנים. לחץ "תזמן אוטומטי" או הגדר תאריך לכל פוסט.
                 </div>
               ) : weeks.map(week => (
                 <div key={week.label} style={{ marginBottom: 24 }}>
                   <div style={{
-                    fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,.5)', marginBottom: 10,
+                    fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,.75)', marginBottom: 10,
                     display: 'flex', alignItems: 'center', gap: 8,
                   }}>
                     {week.label}
@@ -462,7 +462,7 @@ export function SocialManager({ galleries, allImages, topPicks, clientId, storag
                             <span style={{ fontSize: 10, color: p.scheduledTime ? 'rgba(255,255,255,.4)' : 'rgba(255,255,255,.2)' }}>{p.scheduledTime || '--:--'}</span>
                           </div>
                           {p.caption && (
-                            <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.35)', marginTop: 4, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.65)', marginTop: 4, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {p.caption.slice(0, 80)}
                             </div>
                           )}

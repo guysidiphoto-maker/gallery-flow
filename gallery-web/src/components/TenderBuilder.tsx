@@ -187,9 +187,9 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: '4px 12px', borderRadius: 50,
-          background: 'linear-gradient(90deg, rgba(99,102,241,.15), rgba(168,85,247,.15))',
-          border: '1px solid rgba(129,140,248,.2)',
-          fontSize: 11, fontWeight: 600, color: '#a5b4fc', letterSpacing: '.1em',
+          background: 'linear-gradient(90deg, rgba(99,102,241,.18), rgba(168,85,247,.18))',
+          border: '1px solid rgba(129,140,248,.35)',
+          fontSize: 11, fontWeight: 600, color: '#fff', letterSpacing: '.1em',
           marginBottom: 14,
         }}>
           <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#818cf8', boxShadow: '0 0 8px #818cf8' }} />
@@ -197,13 +197,12 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
         </div>
         <h1 style={{
           fontSize: 34, fontWeight: 800, margin: '0 0 8px',
-          background: 'linear-gradient(135deg, #fff 0%, #c7d2fe 100%)',
-          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          color: '#fff',
           letterSpacing: '-0.03em', lineHeight: 1.1,
         }}>
           מצאו את התמונות המושלמות
         </h1>
-        <p style={{ fontSize: 14, color: 'rgba(255,255,255,.45)', margin: 0, maxWidth: 500, marginInline: 'auto', lineHeight: 1.6 }}>
+        <p style={{ fontSize: 14, color: 'rgba(255,255,255,.75)', margin: 0, maxWidth: 500, marginInline: 'auto', lineHeight: 1.6 }}>
           סננו את הארכיון, בחרו את מה שעובד, וייצרו הצעה מרשימה
         </p>
       </div>
@@ -259,7 +258,7 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
         {/* Event type chips */}
         <div style={{ marginBottom: 16 }}>
           <div style={{
-            fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.4)',
+            fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,.8)',
             marginBottom: 10, letterSpacing: '.12em', textTransform: 'uppercase',
           }}>
             סוג אירוע
@@ -270,9 +269,9 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
               return (
                 <button key={et.key} onClick={() => toggleType(et.key)} style={{
                   padding: '7px 14px', borderRadius: 50, fontSize: 12.5, fontWeight: 500,
-                  background: active ? 'linear-gradient(135deg, rgba(99,102,241,.25), rgba(168,85,247,.2))' : 'rgba(255,255,255,.025)',
-                  color: active ? '#fff' : 'rgba(255,255,255,.55)',
-                  border: `1px solid ${active ? 'rgba(129,140,248,.4)' : 'rgba(255,255,255,.07)'}`,
+                  background: active ? 'linear-gradient(135deg, rgba(99,102,241,.25), rgba(168,85,247,.2))' : 'rgba(255,255,255,.06)',
+                  color: active ? '#fff' : 'rgba(255,255,255,.8)',
+                  border: `1px solid ${active ? 'rgba(129,140,248,.4)' : 'rgba(255,255,255,.14)'}`,
                   cursor: 'pointer', fontFamily: 'inherit', transition: 'all .18s',
                   boxShadow: active ? '0 4px 16px rgba(99,102,241,.2), inset 0 1px 0 rgba(255,255,255,.1)' : 'none',
                 }}>
@@ -286,7 +285,7 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
         {/* Size pill group */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <span style={{
-            fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.4)',
+            fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,.8)',
             letterSpacing: '.12em', textTransform: 'uppercase',
           }}>
             גודל
@@ -299,8 +298,8 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
             {SIZE_OPTIONS.map(s => (
               <button key={s.key} onClick={() => setSizeFilter(s.key)} style={{
                 padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500,
-                background: sizeFilter === s.key ? 'rgba(255,255,255,.09)' : 'transparent',
-                color: sizeFilter === s.key ? '#fff' : 'rgba(255,255,255,.4)',
+                background: sizeFilter === s.key ? 'rgba(255,255,255,.12)' : 'transparent',
+                color: sizeFilter === s.key ? '#fff' : 'rgba(255,255,255,.75)',
                 border: 'none', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s',
                 boxShadow: sizeFilter === s.key ? '0 1px 3px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08)' : 'none',
               }}>
@@ -345,7 +344,7 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
                     בחירה מצטברת
                   </div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.45)', marginTop: 1 }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', marginTop: 1 }}>
                     {selectedCount} תמונות מ-{breakdown.length} {breakdown.length === 1 ? 'גלריה' : 'גלריות'} · הבחירה נשמרת בין גלריות
                   </div>
                 </div>
@@ -410,12 +409,12 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
           <span style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1 }}>
             {filtered.length}
           </span>
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,.45)' }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,.7)' }}>
             {filtered.length === 1 ? 'גלריה' : 'גלריות'}
           </span>
         </div>
         {filtered.length > 0 && (
-          <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.35)' }}>
+          <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.6)' }}>
             ניתן לבחור תמונות מכמה גלריות — הבחירה נשמרת
           </span>
         )}
@@ -429,7 +428,7 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
           borderRadius: 16, border: '1px dashed rgba(255,255,255,.08)',
         }}>
           <div style={{ fontSize: 34, marginBottom: 8, opacity: .5 }}>🔍</div>
-          <div style={{ fontSize: 14, color: 'rgba(255,255,255,.4)', fontWeight: 500 }}>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,.75)', fontWeight: 500 }}>
             {galleries.length === 0 ? 'אין גלריות בארכיון' : 'לא נמצאו גלריות התואמות לחיפוש'}
           </div>
         </div>
@@ -593,7 +592,7 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
                       }}>
                         {allGalSelected ? 'בטל בחירה' : 'בחר הכל'}
                       </button>
-                      <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.4)', fontWeight: 500 }}>
+                      <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>
                         {galSelectedCount} / {galImages.length}
                       </span>
                     </div>
@@ -708,7 +707,7 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
                 <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>
                   {gal.name}
                 </div>
-                <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.35)', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.65)', whiteSpace: 'nowrap' }}>
                   {etInfo && <>{etInfo.icon} {etInfo.label} · </>}
                   {galImages.length} תמונות
                   {location && <> · {location}</>}
@@ -723,7 +722,7 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
               </div>
 
               {/* Gallery position indicator */}
-              <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.35)', fontVariantNumeric: 'tabular-nums' }}>
+              <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,.65)', fontVariantNumeric: 'tabular-nums' }}>
                 {currentIdx + 1} / {filtered.length}
               </span>
 
