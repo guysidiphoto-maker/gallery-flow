@@ -5,6 +5,7 @@ import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } f
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
 import { FaceSearchExperience } from './components/FaceSearchExperience'
+import { StoryPlayer } from './components/StoryPlayer'
 import { t, type Lang } from './i18n'
 import {
   getMeta as gcGetMeta,
@@ -906,6 +907,10 @@ export function App() {
   const [clientCodeError, setClientCodeError] = useState(false)
   const [hiddenImageIds, setHiddenImageIds] = useState<Set<string>>(new Set())
   const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set())
+  // Active story index for the full-screen StoryPlayer overlay. null = closed.
+  // Set when a guest taps a story thumbnail in the collapsible row below.
+  const [storyPlayerIndex, setStoryPlayerIndex] = useState<number | null>(null)
+
   // Stories are collapsed by default. The viewer surfaces them via a toggle
   // button in the section-nav toolbar so the gallery doesn't open with a big
   // stories block above the photos.
@@ -2015,11 +2020,14 @@ export function App() {
         />
       )}
 
-      {/* Stories — collapsible. Hidden by default; opened from the toolbar. */}
+      {/* Stories — collapsible. Hidden by default; opened from the toolbar.
+          Tapping a thumbnail launches the full-screen StoryPlayer overlay
+          (Instagram-style); the inline preview keeps autoplay-on-hover so
+          guests can sample the clip before committing to full screen. */}
       {showStoriesSection && storiesOpen && (
         <section id="gallery-stories" className="stories">
           <div className="stories__row">
-            {stories.map((st) => (
+            {stories.map((st, idx) => (
               <div key={st.id} className="story-card">
                 <video
                   className="story-card__preview"
@@ -2027,8 +2035,18 @@ export function App() {
                   muted
                   playsInline
                   preload="metadata"
+                  onClick={() => setStoryPlayerIndex(idx)}
                   onMouseEnter={(e) => (e.target as HTMLVideoElement).play()}
                   onMouseLeave={(e) => { const v = e.target as HTMLVideoElement; v.pause(); v.currentTime = 0 }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Play story ${st.style}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setStoryPlayerIndex(idx)
+                    }
+                  }}
                 />
                 <span className="story-card__name">{st.style}</span>
                 <button className="story-card__dl" onClick={() => handleDownload(storyUrl(st), `story_${st.style}.mp4`)}>
@@ -2038,6 +2056,17 @@ export function App() {
             ))}
           </div>
         </section>
+      )}
+
+      {/* Full-screen StoryPlayer overlay. Mounted only while a story is
+          active; closing returns to the gallery without losing scroll. */}
+      {storyPlayerIndex !== null && stories.length > 0 && (
+        <StoryPlayer
+          stories={stories}
+          initialIndex={storyPlayerIndex}
+          storyUrl={storyUrl}
+          onClose={() => setStoryPlayerIndex(null)}
+        />
       )}
 
       {sections.length > 0 && sections.map(sec => {
