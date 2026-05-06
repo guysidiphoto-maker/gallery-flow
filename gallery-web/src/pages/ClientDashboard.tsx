@@ -379,7 +379,7 @@ export function ClientDashboard() {
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
             {studioName && (
               <div style={{
-                fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
                 color: textMuted, textTransform: 'uppercase',
               }}>
                 {studioName}
@@ -448,7 +448,7 @@ export function ClientDashboard() {
                   borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
                 }}>
                   <div style={{
-                    fontSize: 10, color: textMuted, fontWeight: 500,
+                    fontSize: 11, color: textMuted, fontWeight: 500,
                     letterSpacing: '0.18em', textTransform: 'uppercase',
                     marginBottom: 14,
                   }}>{stat.label}</div>
@@ -469,7 +469,7 @@ export function ClientDashboard() {
               }}>
                 <div>
                   <div style={{
-                    fontSize: 10, fontWeight: 500, letterSpacing: '0.22em',
+                    fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
                     color: textMuted, textTransform: 'uppercase', marginBottom: 10,
                   }}>For Instagram</div>
                   <h2 style={{
@@ -589,7 +589,7 @@ export function ClientDashboard() {
                 background: bgSubtle, border: `1px solid ${border}`,
               }}>
                 <div style={{
-                  fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                  fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
                   color: textMuted, textTransform: 'uppercase', marginBottom: 14,
                 }}>Browse more</div>
                 <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
@@ -619,7 +619,7 @@ export function ClientDashboard() {
             {hasStories && (
               <div ref={reveal} style={{ marginBottom: 56 }}>
                 <div style={{
-                  fontSize: 10, fontWeight: 500, letterSpacing: '0.22em',
+                  fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
                   color: textMuted, textTransform: 'uppercase', marginBottom: 10,
                 }}>For Stories</div>
                 <h2 style={{
@@ -817,7 +817,7 @@ export function ClientDashboard() {
                   }}>
                     <div>
                       <div style={{
-                        fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                        fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
                         color: textMuted, textTransform: 'uppercase', marginBottom: 8,
                         display: 'flex', alignItems: 'center', gap: 8,
                       }}>
@@ -917,7 +917,7 @@ export function ClientDashboard() {
           <div>
             <div ref={reveal} style={{ marginBottom: 32 }}>
               <div style={{
-                fontSize: 10, fontWeight: 500, letterSpacing: '0.22em',
+                fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
                 color: textMuted, textTransform: 'uppercase', marginBottom: 10,
               }}>Reels</div>
               <h2 style={{
@@ -971,8 +971,8 @@ export function ClientDashboard() {
                           letterSpacing: '-0.01em',
                         }}>{g.name}</div>
                         <div style={{
-                          fontSize: 10, fontWeight: 500, letterSpacing: '0.18em',
-                          textTransform: 'uppercase', color: 'rgba(255,255,255,.7)', marginTop: 4,
+                          fontSize: 11, fontWeight: 500, letterSpacing: '0.18em',
+                          textTransform: 'uppercase', color: 'rgba(255,255,255,.9)', marginTop: 4,
                         }}>{galleryStories.length} {galleryStories.length === 1 ? 'story' : 'stories'}</div>
                       </div>
                     </div>

@@ -92,7 +92,7 @@ export function PostEditor({ post, onUpdate, onClose, onGenerateCaption, generat
 
         {/* Date + Time */}
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.35)', marginBottom: 6 }}>תאריך ושעה</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.7)', marginBottom: 6 }}>תאריך ושעה</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               type="date"
@@ -120,7 +120,7 @@ export function PostEditor({ post, onUpdate, onClose, onGenerateCaption, generat
         {/* Caption */}
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.35)' }}>תיאור לאינסטגרם</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.7)' }}>תיאור לאינסטגרם</span>
             <button
               onClick={() => onGenerateCaption(post)}
               disabled={generating}
@@ -146,14 +146,14 @@ export function PostEditor({ post, onUpdate, onClose, onGenerateCaption, generat
               lineHeight: 1.6, resize: 'vertical', outline: 'none', direction: 'rtl',
             }}
           />
-          <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.25)', marginTop: 4 }}>
+          <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.55)', marginTop: 4 }}>
             {post.caption.length} תווים
           </div>
         </div>
 
         {/* Gallery info */}
         <div style={{
-          padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'rgba(255,255,255,.35)',
+          padding: '8px 12px', borderRadius: 8, fontSize: 11, color: 'rgba(255,255,255,.65)',
           background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.04)',
         }}>
           {post.galleryName} · {post.eventType || 'אירוע'}
