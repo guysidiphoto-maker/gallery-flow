@@ -959,9 +959,7 @@ export function FaceSearchExperience({
               margin: '0 0 12px', direction: lang === 'he' ? 'rtl' : 'ltr', lineHeight: 1.7,
               maxWidth: 300, marginInline: 'auto',
             }}>
-              לא הצלחנו למצוא אותך לפי הסלפי.
-              <br />
-              אפשר לנסות שוב עם תאורה טובה יותר, או לעבור על כל הגלריה.
+              {ft.noMatchMsg}
             </p>
 
             {/* Tips */}
