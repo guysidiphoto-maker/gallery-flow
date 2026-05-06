@@ -97,14 +97,14 @@ export function PortfolioPage() {
       // covers
       const cm = new Map<string, string>()
       await Promise.all(data.map(async g => {
-        const { data: img } = await supabase.from('images').select('thumbnail_path, storage_path')
+        const { data: img } = await supabase.from('images').select('thumbnail_path, storage_path:web_preview_path')
           .eq('gallery_id', g.id).order('sort_order', { ascending: true }).limit(1).maybeSingle()
         if (img) cm.set(g.id, imgUrl(img.thumbnail_path || img.storage_path))
       }))
       setCovers(cm)
       // top picks
       const { data: picks } = await supabase.from('images')
-        .select('id, gallery_id, filename, storage_path, thumbnail_path')
+        .select('id, gallery_id, filename, storage_path:web_preview_path, thumbnail_path')
         .in('gallery_id', data.map(g => g.id)).eq('is_top_pick', true)
         .order('sort_order', { ascending: true }).limit(200)
       if (picks) setTopPicks(picks)

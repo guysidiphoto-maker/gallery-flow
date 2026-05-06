@@ -157,12 +157,12 @@ export function ClientPage() {
           const coverImageId = readString(g.delivery_settings as Record<string, unknown> | null, 'coverImageId')
           let img: { thumbnail_path: string | null; storage_path: string } | null = null
           if (coverImageId) {
-            const { data: d } = await supabase.from('images').select('thumbnail_path, storage_path')
+            const { data: d } = await supabase.from('images').select('thumbnail_path, storage_path:web_preview_path')
               .eq('gallery_id', g.id).eq('id', coverImageId).maybeSingle()
             if (d) img = d
           }
           if (!img) {
-            const { data: d } = await supabase.from('images').select('thumbnail_path, storage_path')
+            const { data: d } = await supabase.from('images').select('thumbnail_path, storage_path:web_preview_path')
               .eq('gallery_id', g.id).order('sort_order', { ascending: true }).limit(1).maybeSingle()
             if (d) img = d
           }
@@ -170,7 +170,7 @@ export function ClientPage() {
         })),
         // Top picks
         supabase.from('images')
-          .select('id, gallery_id, filename, storage_path, thumbnail_path')
+          .select('id, gallery_id, filename, storage_path:web_preview_path, thumbnail_path')
           .in('gallery_id', galleryIds)
           .eq('is_top_pick', true)
           .order('sort_order', { ascending: true })

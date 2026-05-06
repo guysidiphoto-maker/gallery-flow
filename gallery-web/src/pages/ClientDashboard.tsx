@@ -158,15 +158,19 @@ export function ClientDashboard() {
       if (typeof s.clientCode === 'string' && s.clientCode) setClientCode(s.clientCode)
       const ids = data.map(g => g.id)
 
+      // PostgREST alias: the actual column is `web_preview_path`, but the
+      // ImageRow type + every render call site refers to it as
+      // `storage_path`. Keep the wire query honest while preserving the
+      // existing type contract — same pattern used in Dashboard.tsx.
       const [coverRes, picksRes, allRes, storiesRes] = await Promise.all([
         Promise.all(data.map(async g => {
-          const { data: img } = await supabase.from('images').select('thumbnail_path, storage_path')
+          const { data: img } = await supabase.from('images').select('thumbnail_path, storage_path:web_preview_path')
             .eq('gallery_id', g.id).order('sort_order', { ascending: true }).limit(1).maybeSingle()
           return { id: g.id, url: img ? storageUrl('gallery-images', img.thumbnail_path || img.storage_path) : null }
         })),
-        supabase.from('images').select('id, gallery_id, filename, storage_path, thumbnail_path, is_top_pick')
+        supabase.from('images').select('id, gallery_id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick')
           .in('gallery_id', ids).eq('is_top_pick', true).order('sort_order', { ascending: true }).limit(120),
-        supabase.from('images').select('id, gallery_id, filename, storage_path, thumbnail_path, is_top_pick')
+        supabase.from('images').select('id, gallery_id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick')
           .in('gallery_id', ids).order('sort_order', { ascending: true }),
         supabase.from('stories').select('id, gallery_id, style, storage_path').in('gallery_id', ids),
       ])
