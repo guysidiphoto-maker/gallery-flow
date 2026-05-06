@@ -101,7 +101,7 @@ export function VendorPortal() {
       // Fetch images + galleries in parallel
       const [imgsRes, galsRes] = await Promise.all([
         supabase.from('images')
-          .select('id, gallery_id, filename, storage_path, thumbnail_path')
+          .select('id, gallery_id, filename, storage_path:web_preview_path, thumbnail_path')
           .in('id', imageIds)
           .order('sort_order', { ascending: true }),
         supabase.from('galleries')
