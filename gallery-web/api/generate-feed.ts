@@ -26,10 +26,18 @@ const supabase =
     : null
 
 interface PostPlan {
-  position: number    // 1..9
-  image_id: string    // one of the provided uuids
-  caption: string     // first-line IG caption, 8-14 Hebrew words
-  reasoning: string   // one Hebrew sentence — why this photo, this position, in this variant
+  position: number      // 1..9
+  image_index: number   // 1..N (the photo number in the prompt list); server maps to image_id
+  caption: string       // first-line IG caption, 8-14 Hebrew words
+  reasoning: string     // one Hebrew sentence — why this photo, this position, in this variant
+}
+
+// Internal shape after server-side mapping image_index → image_id.
+interface PostPlanResolved {
+  position: number
+  image_id: string
+  caption: string
+  reasoning: string
 }
 
 interface Variant {
@@ -58,14 +66,15 @@ VARIANT C — "continuity" — המשכיות מותג
 Brand-continuity plan. Establishes 3 recurring visual themes (people · atmosphere · detail) and repeats them across the grid in a pattern, so the brand language carries across future events. Most "templated" — easiest to continue next month.
 
 For EACH variant:
-- Pick 9 photos out of the 30 provided. Variants SHOULD mostly pick different photos — at least 4 of the 9 should differ between any two variants.
+- Pick 9 photos out of the N provided (referenced by their numeric INDEX, 1..N — see the user message for the list). Variants SHOULD mostly pick different photos — at least 4 of the 9 should differ between any two variants.
 - Assign each chosen photo to a position 1..9 (1 = top-left of the 3×3 grid, 9 = bottom-right; row-major).
 - Write a 1-line Hebrew caption per post — what shows below the photo on Instagram. 8–14 Hebrew words. Editorial, present-tense, sensorial. Like top Israeli production-company accounts. NO hashtags. NO emojis. NO generic phrases ("רגע מיוחד", "אירוע מושלם").
 - Write a one-sentence Hebrew reasoning per post — why this photo, in this position, in this variant.
 - Write a 2–3 sentence Hebrew rationale for the variant as a whole — why this strategy fits this brand.
 - Write a 4–6 word Hebrew tagline for the variant — magazine-cover energy.
 
-Output STRICT JSON only — no preamble, no markdown:
+Output STRICT JSON only — no preamble, no markdown.
+"image_index" is a NUMBER (1..N), referring to the photo number in the user-message list. Do NOT invent UUIDs or filenames; use the simple integer index only.
 {
   "variants": [
     {
@@ -74,8 +83,8 @@ Output STRICT JSON only — no preamble, no markdown:
       "tagline": "...",
       "rationale": "...",
       "posts": [
-        { "position": 1, "image_id": "<uuid from provided list>", "caption": "...", "reasoning": "..." },
-        ... (9 total, positions 1-9, image_ids must each be unique within the variant)
+        { "position": 1, "image_index": 7, "caption": "...", "reasoning": "..." },
+        ... (9 total, positions 1-9, image_index values must each be unique within the variant)
       ]
     },
     { "id": "symphony", ... },
@@ -101,17 +110,17 @@ function buildUserMessage(opts: {
   const photoLines = opts.photos
     .map(
       (p, i) =>
-        `${String(i + 1).padStart(2, '0')}. id=${p.image_id} · gallery="${p.gallery_name}" · file="${p.filename}"`,
+        `[${i + 1}] gallery="${p.gallery_name}" · file="${p.filename}"`,
     )
     .join('\n')
   return `Brand: ${opts.businessName} (Israeli production-company photographer)
 Client: ${opts.clientName}
 Event type: ${opts.eventType}
 
-The ${opts.photos.length} hand-picked top photos to work with:
+The ${opts.photos.length} hand-picked top photos to work with (referenced by their bracketed index):
 ${photoLines}
 
-Plan 3 distinct feed variants (rhythm / symphony / continuity). Output strict JSON only.`
+Plan 3 distinct feed variants (rhythm / symphony / continuity). For each post, set "image_index" to the bracketed integer above (1..${opts.photos.length}). Output strict JSON only.`
 }
 
 interface FeedRequestBody {
@@ -229,31 +238,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   }
 
-  const variants = parsed.variants ?? []
-  if (!Array.isArray(variants) || variants.length !== 3)
-    return res.status(502).json({ ok: false, error: 'llm_returned_wrong_variant_count', count: variants.length })
+  const variantsRaw = parsed.variants ?? []
+  if (!Array.isArray(variantsRaw) || variantsRaw.length !== 3)
+    return res.status(502).json({ ok: false, error: 'llm_returned_wrong_variant_count', count: variantsRaw.length })
 
-  // Validate every variant + every post.
-  const validImageIds = new Set(photos.map(p => p.image_id))
-  for (const v of variants) {
+  // Validate every variant + every post, and resolve image_index → image_id.
+  const indexToId = new Map<number, string>(photos.map((p, i) => [i + 1, p.image_id]))
+  const variants: Array<Omit<Variant, 'posts'> & { posts: PostPlanResolved[] }> = []
+  for (const v of variantsRaw) {
     if (!VARIANT_IDS.includes(v.id as typeof VARIANT_IDS[number]))
       return res.status(502).json({ ok: false, error: 'llm_invalid_variant_id', got: v.id })
     if (!Array.isArray(v.posts) || v.posts.length !== 9)
       return res.status(502).json({ ok: false, error: 'llm_variant_wrong_post_count', got: v.posts?.length })
     const seenPositions = new Set<number>()
-    const seenImages = new Set<string>()
+    const seenIndexes = new Set<number>()
+    const resolvedPosts: PostPlanResolved[] = []
     for (const p of v.posts) {
-      if (!validImageIds.has(p.image_id))
-        return res.status(502).json({ ok: false, error: 'llm_invalid_image_id', got: p.image_id })
+      // The model usually obeys; coerce just in case.
+      const idx = typeof p.image_index === 'number' ? p.image_index : Number(p.image_index)
+      if (!Number.isInteger(idx) || !indexToId.has(idx))
+        return res.status(502).json({ ok: false, error: 'llm_invalid_image_index', got: p.image_index })
       if (typeof p.position !== 'number' || p.position < 1 || p.position > 9)
         return res.status(502).json({ ok: false, error: 'llm_invalid_position', got: p.position })
       if (seenPositions.has(p.position))
         return res.status(502).json({ ok: false, error: 'llm_duplicate_position', got: p.position })
-      if (seenImages.has(p.image_id))
-        return res.status(502).json({ ok: false, error: 'llm_duplicate_image_in_variant', got: p.image_id })
+      if (seenIndexes.has(idx))
+        return res.status(502).json({ ok: false, error: 'llm_duplicate_image_in_variant', got: idx })
       seenPositions.add(p.position)
-      seenImages.add(p.image_id)
+      seenIndexes.add(idx)
+      resolvedPosts.push({
+        position: p.position,
+        image_id: indexToId.get(idx)!,
+        caption: String(p.caption ?? ''),
+        reasoning: String(p.reasoning ?? ''),
+      })
     }
+    variants.push({
+      id: v.id,
+      label: v.label,
+      tagline: v.tagline,
+      rationale: v.rationale,
+      posts: resolvedPosts,
+    })
   }
 
   // Persist all 3 variants in posts JSONB. Status=draft until photographer picks one.
