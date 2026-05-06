@@ -196,10 +196,57 @@ export function Dashboard() {
   const [facePrivacyMode, setFacePrivacyMode] = useState<'open' | 'private'>('open')
   const [showFaceConfirm, setShowFaceConfirm] = useState(false)
 
+  // ── Custom domain (account-level) ──────────────────────────────────────────
+  // The Domain section lives at the bottom of the per-gallery Settings tab
+  // for now (no studio-level settings page yet). State is account-scoped:
+  // `customDomainEnabled` mirrors the photographer's plan flag, the rest
+  // mirrors the businesses row. `domainSaving` covers RPC in-flight; the
+  // re-verify button is a stub until PR 3b wires the actual DNS check.
+  type CustomDomainStatus = 'unverified' | 'pending_dns' | 'verified' | 'error'
+  const [customDomainEnabled, setCustomDomainEnabled] = useState<boolean>(false)
+  const [customDomain, setCustomDomain] = useState<string | null>(null)
+  const [customDomainStatus, setCustomDomainStatus] = useState<CustomDomainStatus>('unverified')
+  const [customDomainToken, setCustomDomainToken] = useState<string | null>(null)
+  const [domainInput, setDomainInput] = useState<string>('')
+  const [domainSaving, setDomainSaving] = useState(false)
+  const [domainError, setDomainError] = useState<string | null>(null)
+  const [domainCopied, setDomainCopied] = useState(false)
+
   useEffect(() => {
     if (!user) return
     initBusiness()
   }, [user])
+
+  // Pull the photographer's plan flag + current domain claim once the
+  // business id is known. Both queries are scoped by RLS — the plan call
+  // returns the caller's own active subscription, and the businesses row
+  // is only readable by its owner. Errors are non-fatal: the UI will fall
+  // back to the upsell card if we can't tell whether the plan allows it.
+  useEffect(() => {
+    if (!businessId) return
+    let cancelled = false
+    void (async () => {
+      const planPromise = supabase.rpc('get_my_plan')
+      const bizPromise = supabase
+        .from('businesses')
+        .select('custom_domain, custom_domain_status, custom_domain_verification_token')
+        .eq('id', businessId)
+        .maybeSingle()
+      const [{ data: planRows }, { data: bizRow }] = await Promise.all([planPromise, bizPromise])
+      if (cancelled) return
+      const plan = Array.isArray(planRows) ? planRows[0] : planRows
+      setCustomDomainEnabled(Boolean((plan as { custom_domain_enabled?: boolean } | null)?.custom_domain_enabled))
+      const row = bizRow as {
+        custom_domain?: string | null
+        custom_domain_status?: CustomDomainStatus | null
+        custom_domain_verification_token?: string | null
+      } | null
+      setCustomDomain(row?.custom_domain ?? null)
+      setCustomDomainStatus((row?.custom_domain_status as CustomDomainStatus) ?? 'unverified')
+      setCustomDomainToken(row?.custom_domain_verification_token ?? null)
+    })()
+    return () => { cancelled = true }
+  }, [businessId])
 
   // Cover-image fallback. Run after galleries load. For each gallery whose
   // delivery_settings.coverImageUrl is unset, fetch the first image's
@@ -514,6 +561,107 @@ export function Dashboard() {
     const settings = { ...(editingGallery.delivery_settings || {}), [key]: value }
     await supabase.from('galleries').update({ delivery_settings: settings }).eq('id', editingGallery.id)
     setEditingGallery({ ...editingGallery, delivery_settings: settings })
+  }
+
+  // ── Custom domain helpers ──────────────────────────────────────────────────
+  // submitCustomDomain wires the input -> set_business_custom_domain RPC.
+  // The RPC validates everything (format, plan, uniqueness, reserved
+  // pixflow-ai.com) and returns either { ok: true, domain, verification_token,
+  // dns_record } or { ok: false, error }. We translate the error code to a
+  // Hebrew message so the photographer doesn't see a raw token.
+  async function submitCustomDomain() {
+    const candidate = domainInput.trim().toLowerCase()
+    if (!candidate) {
+      setDomainError('יש להזין דומיין')
+      return
+    }
+    setDomainSaving(true)
+    setDomainError(null)
+    try {
+      const { data, error } = await supabase.rpc('set_business_custom_domain', { p_domain: candidate })
+      if (error) {
+        setDomainError('שגיאה בשמירה — נסו שוב')
+        return
+      }
+      const result = data as {
+        ok: boolean
+        domain?: string
+        verification_token?: string
+        dns_record?: { type: string; name: string; value: string }
+        error?: string
+      } | null
+      if (!result?.ok) {
+        setDomainError(domainErrorToHebrew(result?.error))
+        return
+      }
+      setCustomDomain(result.domain ?? candidate)
+      setCustomDomainToken(result.verification_token ?? null)
+      setCustomDomainStatus('pending_dns')
+      setDomainInput('')
+    } finally {
+      setDomainSaving(false)
+    }
+  }
+
+  // Stub: PR 3b will call a server-side DNS lookup. For the foundation PR we
+  // just re-fetch the businesses row so the UI reflects whatever state is
+  // already in the DB (in case the photographer has multiple tabs open).
+  async function recheckCustomDomain() {
+    if (!businessId) return
+    const { data } = await supabase
+      .from('businesses')
+      .select('custom_domain, custom_domain_status, custom_domain_verification_token')
+      .eq('id', businessId)
+      .maybeSingle()
+    const row = data as {
+      custom_domain?: string | null
+      custom_domain_status?: 'unverified' | 'pending_dns' | 'verified' | 'error' | null
+      custom_domain_verification_token?: string | null
+    } | null
+    if (row) {
+      setCustomDomain(row.custom_domain ?? null)
+      setCustomDomainStatus((row.custom_domain_status as 'unverified' | 'pending_dns' | 'verified' | 'error') ?? 'unverified')
+      setCustomDomainToken(row.custom_domain_verification_token ?? null)
+    }
+  }
+
+  // Clears the photographer's custom domain. Direct UPDATE (not via RPC) is
+  // safe because the businesses_owner_update policy restricts the row to its
+  // owner. We null out everything so the unique index frees up the value.
+  async function removeCustomDomain() {
+    if (!businessId) return
+    setDomainSaving(true)
+    try {
+      await supabase
+        .from('businesses')
+        .update({
+          custom_domain: null,
+          custom_domain_status: 'unverified',
+          custom_domain_verification_token: null,
+          custom_domain_added_at: null,
+          custom_domain_verified_at: null,
+        })
+        .eq('id', businessId)
+      setCustomDomain(null)
+      setCustomDomainStatus('unverified')
+      setCustomDomainToken(null)
+      setDomainError(null)
+    } finally {
+      setDomainSaving(false)
+    }
+  }
+
+  function domainErrorToHebrew(code: string | undefined): string {
+    switch (code) {
+      case 'invalid_format':    return 'פורמט דומיין לא תקין — לדוגמה: photos.studio-shem.co.il'
+      case 'reserved_domain':   return 'לא ניתן להשתמש בדומיין זה'
+      case 'plan_not_eligible': return 'דומיין מותאם זמין רק בתכנית עסקית'
+      case 'domain_taken':      return 'דומיין זה כבר בשימוש'
+      case 'empty_domain':      return 'יש להזין דומיין'
+      case 'no_business':       return 'לא נמצא חשבון עסקי'
+      case 'not_authenticated': return 'יש להתחבר מחדש'
+      default:                  return 'שגיאה לא צפויה — נסו שוב'
+    }
   }
 
   async function publishGallery() {
@@ -2749,6 +2897,241 @@ export function Dashboard() {
                               )
                             })}
                           </div>
+                        </div>
+                      )}
+                    </Section>
+
+                    {/* ── Domain (account-level) ──────────────────────────
+                        Lives at the bottom of the gallery editor's Settings
+                        tab for now — the photographer doesn't have a
+                        dedicated Studio Settings page yet. Three states:
+                        upsell card (plan doesn't include it), input form
+                        (no domain set), DNS-pending card with copy + verify
+                        buttons, or verified card with a remove button. */}
+                    <Section eyebrow="דומיין מותאם">
+                      {!customDomainEnabled ? (
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                            תכנית עסקית בלבד
+                          </div>
+                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.6, marginBottom: 16 }}>
+                            חברו דומיין משלכם — למשל photos.studio-shem.co.il — ושלחו ללקוחות קישור ממותג במקום pixflow-ai.com.
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { window.location.href = '/#pricing' }}
+                            style={{
+                              padding: '10px 18px', borderRadius: 2,
+                              background: textPrimary, color: '#fff',
+                              border: `1px solid ${textPrimary}`,
+                              fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
+                              textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'inherit',
+                            }}
+                          >
+                            שדרוג לתכנית עסקית
+                          </button>
+                        </div>
+                      ) : customDomainStatus === 'verified' && customDomain ? (
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                            <span style={{
+                              display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                              background: statusLive,
+                            }} />
+                            <span style={{ fontSize: 13, fontWeight: 600, color: textPrimary }}>
+                              הדומיין מאומת ✓
+                            </span>
+                          </div>
+                          <a
+                            href={`https://${customDomain}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              display: 'inline-block', marginBottom: 16,
+                              fontSize: 14, color: textPrimary, textDecoration: 'underline',
+                              direction: 'ltr', unicodeBidi: 'embed',
+                            }}
+                          >
+                            {customDomain}
+                          </a>
+                          <div>
+                            <button
+                              type="button"
+                              onClick={removeCustomDomain}
+                              disabled={domainSaving}
+                              style={{
+                                padding: '10px 18px', borderRadius: 2,
+                                background: 'transparent', color: textPrimary,
+                                border: `1px solid ${border}`,
+                                fontSize: 12, fontWeight: 500, letterSpacing: '0.14em',
+                                textTransform: 'uppercase',
+                                cursor: domainSaving ? 'wait' : 'pointer', fontFamily: 'inherit',
+                                opacity: domainSaving ? 0.6 : 1,
+                              }}
+                            >
+                              {domainSaving ? 'מסיר...' : 'הסר דומיין'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : customDomainStatus === 'pending_dns' && customDomain && customDomainToken ? (
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                            המתנה לאימות DNS — עד 72 שעות
+                          </div>
+                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.6, marginBottom: 16 }}>
+                            הוסיפו את רשומת ה־TXT הבאה אצל ספק הדומיין שלכם. ברגע שה־DNS יתעדכן, נאמת את הבעלות אוטומטית.
+                          </div>
+
+                          {/* DNS record card */}
+                          <div style={{
+                            background: '#fff',
+                            border: `1px solid ${border}`,
+                            padding: '14px 16px',
+                            marginBottom: 16,
+                            display: 'grid',
+                            gridTemplateColumns: '88px 1fr',
+                            gap: '10px 14px',
+                            direction: 'ltr',
+                            unicodeBidi: 'embed',
+                          }}>
+                            <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', color: textMuted, textTransform: 'uppercase', textAlign: 'left' }}>Type</div>
+                            <div style={{ fontSize: 13, color: textPrimary, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>TXT</div>
+
+                            <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', color: textMuted, textTransform: 'uppercase', textAlign: 'left' }}>Name</div>
+                            <div style={{ fontSize: 13, color: textPrimary, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflowWrap: 'anywhere' }}>
+                              {`_pixflow-verify.${customDomain}`}
+                            </div>
+
+                            <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', color: textMuted, textTransform: 'uppercase', textAlign: 'left' }}>Value</div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <code style={{
+                                flex: 1,
+                                fontSize: 13, color: textPrimary,
+                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                                background: bgSubtle,
+                                padding: '6px 10px',
+                                border: `1px solid ${border}`,
+                                overflowWrap: 'anywhere',
+                              }}>
+                                {customDomainToken}
+                              </code>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(customDomainToken)
+                                    setDomainCopied(true)
+                                    setTimeout(() => setDomainCopied(false), 1500)
+                                  } catch {
+                                    // Ignore: clipboard may be blocked. The value
+                                    // is visible on screen so the photographer
+                                    // can still copy it manually.
+                                  }
+                                }}
+                                style={{
+                                  padding: '6px 12px', borderRadius: 2,
+                                  background: 'transparent', color: textPrimary,
+                                  border: `1px solid ${border}`,
+                                  fontSize: 11, fontWeight: 500, letterSpacing: '0.12em',
+                                  textTransform: 'uppercase',
+                                  cursor: 'pointer', fontFamily: 'inherit',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {domainCopied ? 'הועתק' : 'Copy'}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={recheckCustomDomain}
+                              disabled={domainSaving}
+                              style={{
+                                padding: '10px 18px', borderRadius: 2,
+                                background: textPrimary, color: '#fff',
+                                border: `1px solid ${textPrimary}`,
+                                fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
+                                textTransform: 'uppercase',
+                                cursor: domainSaving ? 'wait' : 'pointer', fontFamily: 'inherit',
+                                opacity: domainSaving ? 0.6 : 1,
+                              }}
+                            >
+                              בדוק שוב עכשיו
+                            </button>
+                            <button
+                              type="button"
+                              onClick={removeCustomDomain}
+                              disabled={domainSaving}
+                              style={{
+                                padding: '10px 18px', borderRadius: 2,
+                                background: 'transparent', color: textPrimary,
+                                border: `1px solid ${border}`,
+                                fontSize: 12, fontWeight: 500, letterSpacing: '0.14em',
+                                textTransform: 'uppercase',
+                                cursor: domainSaving ? 'wait' : 'pointer', fontFamily: 'inherit',
+                                opacity: domainSaving ? 0.6 : 1,
+                              }}
+                            >
+                              ביטול
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.6, marginBottom: 14 }}>
+                            חברו דומיין שבבעלותכם וגלריות יוצגו תחתיו במקום תחת pixflow-ai.com.
+                          </div>
+                          <label style={{ display: 'block', marginBottom: 12 }}>
+                            <span style={{
+                              fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                              color: textMuted, textTransform: 'uppercase',
+                              display: 'block', marginBottom: 8,
+                            }}>הדומיין המותאם שלך</span>
+                            <input
+                              type="text"
+                              value={domainInput}
+                              onChange={(e) => { setDomainInput(e.target.value); setDomainError(null) }}
+                              placeholder="photos.studio-shem.co.il"
+                              dir="ltr"
+                              autoCapitalize="none"
+                              autoCorrect="off"
+                              spellCheck={false}
+                              style={{
+                                width: '100%', padding: '12px 14px', borderRadius: 2,
+                                background: '#fff', border: `1px solid ${domainError ? '#A85B5B' : border}`,
+                                color: textPrimary, fontSize: 14, fontFamily: 'inherit',
+                                outline: 'none', boxSizing: 'border-box',
+                                transition: 'border-color .15s',
+                                textAlign: 'left',
+                              }}
+                              onFocus={(e) => { if (!domainError) e.currentTarget.style.borderColor = textPrimary }}
+                              onBlur={(e) => { if (!domainError) e.currentTarget.style.borderColor = border }}
+                            />
+                          </label>
+                          {domainError && (
+                            <div style={{ fontSize: 12, color: '#A85B5B', marginBottom: 12, lineHeight: 1.5 }}>
+                              {domainError}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={submitCustomDomain}
+                            disabled={domainSaving || !domainInput.trim()}
+                            style={{
+                              padding: '10px 18px', borderRadius: 2,
+                              background: textPrimary, color: '#fff',
+                              border: `1px solid ${textPrimary}`,
+                              fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
+                              textTransform: 'uppercase',
+                              cursor: (domainSaving || !domainInput.trim()) ? 'not-allowed' : 'pointer',
+                              fontFamily: 'inherit',
+                              opacity: (domainSaving || !domainInput.trim()) ? 0.5 : 1,
+                            }}
+                          >
+                            {domainSaving ? 'שומר...' : 'בדוק זמינות ושמור'}
+                          </button>
                         </div>
                       )}
                     </Section>
