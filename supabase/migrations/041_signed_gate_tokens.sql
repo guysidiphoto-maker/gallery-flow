@@ -200,10 +200,14 @@ SET search_path = public
 AS $$
 BEGIN
   IF NOT _gallery_authz(p_gallery_id, p_token) THEN RETURN; END IF;
+  -- Order by sort_order; the images table has no created_at column. The
+  -- original draft used created_at and broke every gallery on first
+  -- deploy — fixed live, this file aligns with the patched RPC. Migration
+  -- 050 runs the same CREATE OR REPLACE so existing environments catch up.
   RETURN QUERY
     SELECT * FROM images
      WHERE gallery_id = p_gallery_id
-     ORDER BY created_at ASC
+     ORDER BY sort_order ASC
      LIMIT GREATEST(0, LEAST(COALESCE(p_limit, 500), 2000))
     OFFSET GREATEST(0, COALESCE(p_offset, 0));
 END;
