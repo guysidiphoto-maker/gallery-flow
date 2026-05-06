@@ -449,18 +449,24 @@ export function PostPreview({
   galleryById: Map<string, Gallery>
   onClick?: () => void
 }): JSX.Element {
-  switch (post.format) {
+  // Legacy plans (pre-deep migration) had posts without a `format` field —
+  // they were always single-photo. Treat undefined as 'single' so old rows
+  // still render instead of disappearing silently.
+  const fmt = post.format ?? 'single'
+  switch (fmt) {
     case 'single':
-      return <SinglePostCard post={post} imageById={imageById} galleryById={galleryById} onClick={onClick} />
+      return <SinglePostCard post={post as SinglePost} imageById={imageById} galleryById={galleryById} onClick={onClick} />
     case 'carousel':
-      return <CarouselPostCard post={post} imageById={imageById} galleryById={galleryById} onClick={onClick} />
+      return <CarouselPostCard post={post as CarouselPost} imageById={imageById} galleryById={galleryById} onClick={onClick} />
     case 'story':
-      return <StoryPostCard post={post} imageById={imageById} galleryById={galleryById} onClick={onClick} />
+      return <StoryPostCard post={post as StoryPost} imageById={imageById} galleryById={galleryById} onClick={onClick} />
     case 'reel_cover':
-      return <ReelCoverPostCard post={post} imageById={imageById} galleryById={galleryById} onClick={onClick} />
+      return <ReelCoverPostCard post={post as ReelCoverPost} imageById={imageById} galleryById={galleryById} onClick={onClick} />
     case 'text_slide':
-      return <TextSlidePostCard post={post} galleryById={galleryById} onClick={onClick} />
+      return <TextSlidePostCard post={post as TextSlidePost} galleryById={galleryById} onClick={onClick} />
   }
+  // Final fallback — should be unreachable.
+  return <SinglePostCard post={post as SinglePost} imageById={imageById} galleryById={galleryById} onClick={onClick} />
 }
 
 // ── Shared style tokens (mirrors FeedStudio.tsx Workspace cards) ─────────
