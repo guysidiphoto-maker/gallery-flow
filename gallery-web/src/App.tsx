@@ -1314,20 +1314,27 @@ export function App() {
   }
 
   // ── Welcome screen (collage of top picks) ──────────────────────────────
+  // Source preference for the mosaic, in order:
+  //   1) photographer-curated top picks (is_top_pick = true)
+  //   2) first 30 photos, spread evenly across sections so the collage feels
+  //      representative of the whole gallery rather than concentrated in one
+  //      shoot block
+  // 30 is the visual sweet spot for the 6-column scrolling mosaic — more
+  // adds noise without adding feel.
+  const TARGET = 30
   const topPicks = images.filter(img => img.is_top_pick)
-  // Welcome screen mosaic: take images evenly from all sections
   const welcomeImages = (() => {
-    if (sections.length <= 1) return images.slice(0, 60)
-    const perSection = Math.ceil(60 / sections.length)
+    if (topPicks.length > 0) return topPicks.slice(0, TARGET)
+    if (sections.length <= 1) return images.slice(0, TARGET)
+    const perSection = Math.ceil(TARGET / sections.length)
     const result: GalleryImage[] = []
     for (const sec of sections) {
       const secImgs = images.filter(img => img.section_id === sec.id)
       result.push(...secImgs.slice(0, perSection))
     }
-    // Add unsectioned images if needed
     const unsectioned = images.filter(img => !img.section_id)
-    result.push(...unsectioned.slice(0, Math.max(0, 60 - result.length)))
-    return result.slice(0, 60)
+    result.push(...unsectioned.slice(0, Math.max(0, TARGET - result.length)))
+    return result.slice(0, TARGET)
   })()
 
   // ── Helpers ─────────────────────────────────────────────────────────────
