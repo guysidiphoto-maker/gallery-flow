@@ -1,25 +1,15 @@
-// generate-feed.ts — first endpoint of the AI Visual Operating System.
+// generate-feed.ts — the AI Visual OS planning surface.
 //
-// Input: { clientId, style? }
-// Output: { ok: true, plan: { id, posts: [...] }, traceMs }
-//         or  { ok: false, error }
+// Replaces a paid social-media manager. The photographer drops an event;
+// the AI returns THREE distinct feed plans (curations + arrangements + captions),
+// each with a different strategic concept. The photographer picks one.
 //
-// Pipeline:
-//   1. Fetch the client's top picks (up to 12, we pick best 9).
-//   2. Fetch business name + slug for the brand prompt.
-//   3. Single Claude Sonnet call producing 9 posts:
-//        - caption: 3-5 word Hebrew headline
-//        - theme: Hebrew tag ("אווירה", "פנים", "מאחורי הקלעים", etc.)
-//        - color: enum ('red'|'cream'|'teal'|'blue'|'indigo')
-//        - reasoning: one sentence in Hebrew explaining the choice
-//        - position: 1..9 (top-left → bottom-right grid position)
-//   4. Persist as a draft feed_plan row + return.
+// Photos are NEVER overlaid with text in this product — captions live below
+// the post, like real Instagram. The AI's job is curation, arrangement,
+// and voice — not graphic design on top of the photos.
 //
-// We hold to one Claude call total — the architecture committed to predictable
-// per-event cost (~$0.10–0.20 per generation). Image gen / SAM 3 are NOT in
-// the MVP demo path; the visual color-block effect is achieved purely via
-// CSS (mix-blend-mode: multiply) on the client. That's intentional — the AI
-// thinks; the CSS shows.
+// Single Claude Sonnet call. ~3000 output tokens for 3 variants × 9 posts each.
+// Cost: ~$0.10–0.20 per generation.
 
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
@@ -35,47 +25,72 @@ const supabase =
     ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     : null
 
-// Five colors per the architecture's Color-Block Editorial palette. The AI
-// picks one per post; we render it on the client. Deliberate: AI decides
-// rhythm, code decides hex.
-const COLOR_KEYS = ['red', 'cream', 'teal', 'blue', 'indigo'] as const
-type ColorKey = typeof COLOR_KEYS[number]
-
 interface PostPlan {
-  position: number       // 1..9
-  image_id: string
-  caption: string        // 3-5 word Hebrew headline
-  theme: string          // Hebrew tag
-  color: ColorKey
-  reasoning: string      // one Hebrew sentence
+  position: number    // 1..9
+  image_id: string    // one of the provided uuids
+  caption: string     // first-line IG caption, 8-14 Hebrew words
+  reasoning: string   // one Hebrew sentence — why this photo, this position, in this variant
 }
 
-const SYSTEM_PROMPT = `You are an art director and social media strategist building a 9-post Instagram feed (3×3 grid) for an Israeli production company's brand.
+interface Variant {
+  id: string          // 'rhythm' | 'symphony' | 'continuity'
+  label: string       // Hebrew name shown to user
+  tagline: string     // 4-6 word Hebrew tagline, magazine-cover energy
+  rationale: string   // 2-3 Hebrew sentences explaining the strategy
+  posts: PostPlan[]   // 9 posts, positions 1..9
+}
 
-Style: Color-Block Editorial. Each post is a magazine-poster: subject on a solid color background from a fixed brand palette, bold short headline.
+const VARIANT_IDS = ['rhythm', 'symphony', 'continuity'] as const
 
-Your job, for the 9 photos provided:
-- Assign each photo to a grid position (1=top-left, 2=top-center, 3=top-right, 4=middle-left, ..., 9=bottom-right). Plan the rhythm: vary subject density, alternate close-up vs wide, spread color across the grid so no two same colors touch (a checkerboard sense).
-- Write a 3-5 word HEADLINE in Hebrew per photo. NOT a description. A magazine cover line. Strong, present-tense, no hashtags.
-- Pick a theme tag in Hebrew per post (e.g. "אווירה", "פנים", "מאחורי הקלעים", "פתיחה", "סגירה", "פרט", "המון", "חלל", "המנחה").
-- Pick one color per post from: red, cream, teal, blue, indigo. Distribute across the 9 tiles so no two adjacent tiles share a color.
-- Write one Hebrew sentence (max 14 words) explaining WHY this photo is in this position with this color and headline.
+const SYSTEM_PROMPT = `You are a senior Instagram social-media manager + creative director planning a 9-post Instagram feed (3×3 grid) for an Israeli production-company brand.
 
-Output STRICT JSON with shape:
+The photographer hands you up to 30 hand-picked photos from recent events. Your job: propose THREE distinct feed plans so the photographer can pick the one that fits the moment. The photos themselves are CLEAN — no text overlays, no graphic treatments. Captions live beneath each post like a real Instagram feed.
+
+The three variants MUST be strategically different (different curations, different arrangements, different rationales):
+
+VARIANT A — "rhythm" — קצב עיתונאי
+Narrative-arc plan. Opens dramatic, builds emotional weight, closes intimate. Like a magazine spread that walks the reader through a story. The first row should hook attention, the middle row should deepen the brand, the bottom row should leave warmth.
+
+VARIANT B — "symphony" — סימפוניית קומפוזיציה
+Composition-driven. Alternates close-up vs wide, dense vs negative space, in a checkerboard rhythm across the 9 tiles. The grid feels visually balanced regardless of which photo you click first. Less story, more visual harmony.
+
+VARIANT C — "continuity" — המשכיות מותג
+Brand-continuity plan. Establishes 3 recurring visual themes (people · atmosphere · detail) and repeats them across the grid in a pattern, so the brand language carries across future events. Most "templated" — easiest to continue next month.
+
+For EACH variant:
+- Pick 9 photos out of the 30 provided. Variants SHOULD mostly pick different photos — at least 4 of the 9 should differ between any two variants.
+- Assign each chosen photo to a position 1..9 (1 = top-left of the 3×3 grid, 9 = bottom-right; row-major).
+- Write a 1-line Hebrew caption per post — what shows below the photo on Instagram. 8–14 Hebrew words. Editorial, present-tense, sensorial. Like top Israeli production-company accounts. NO hashtags. NO emojis. NO generic phrases ("רגע מיוחד", "אירוע מושלם").
+- Write a one-sentence Hebrew reasoning per post — why this photo, in this position, in this variant.
+- Write a 2–3 sentence Hebrew rationale for the variant as a whole — why this strategy fits this brand.
+- Write a 4–6 word Hebrew tagline for the variant — magazine-cover energy.
+
+Output STRICT JSON only — no preamble, no markdown:
 {
-  "posts": [
-    { "position": 1, "image_id": "<uuid>", "caption": "...", "theme": "...", "color": "red|cream|teal|blue|indigo", "reasoning": "..." },
-    ... (9 entries total)
+  "variants": [
+    {
+      "id": "rhythm",
+      "label": "קצב עיתונאי",
+      "tagline": "...",
+      "rationale": "...",
+      "posts": [
+        { "position": 1, "image_id": "<uuid from provided list>", "caption": "...", "reasoning": "..." },
+        ... (9 total, positions 1-9, image_ids must each be unique within the variant)
+      ]
+    },
+    { "id": "symphony", ... },
+    { "id": "continuity", ... }
   ]
 }
 
-Hebrew rules:
-- Headlines feel like 2024-2026 Israeli editorial fashion + production-company copy. Confident, minimal.
-- Avoid Canva-default phrases. Avoid emojis. Avoid all-caps.
-- Use 3-5 Hebrew words. Examples: "הרגע הראשון", "הקהל", "מאחורי הקלעים", "הפתיחה", "אור צד".
+Hebrew style examples (caption energy):
+- "האור של הערב הזה ריצף את כל הנוכחים."
+- "פתחנו את הבמה והבנו — זה לא יהיה ערב רגיל."
+- "הפרטים הקטנים שמחזיקים את הסיפור הגדול."
 
-Reasoning rules:
-- One sentence in Hebrew. Concrete. References the photo, the position, or the rhythm. Example: "סגרתי את שורה 1 בתמונת קהל כי שורה 2 פותחת בקלוז-אפ — איזון."`
+Reasoning style examples:
+- "פותחת את הגריד בקלוז-אפ אינטימי כדי לרכך את הצופה לפני הסצנות הרחבות בשורה 2."
+- "ממקמת את תמונת הקהל במרכז כי שתי השורות מסביבה כבר בנויות מקלוז-אפים — היא נותנת אוויר."`
 
 function buildUserMessage(opts: {
   businessName: string
@@ -84,25 +99,23 @@ function buildUserMessage(opts: {
   photos: Array<{ image_id: string; filename: string; gallery_name: string }>
 }): string {
   const photoLines = opts.photos
-    .slice(0, 9)
     .map(
       (p, i) =>
-        `${i + 1}. id=${p.image_id} · gallery="${p.gallery_name}" · file="${p.filename}"`,
+        `${String(i + 1).padStart(2, '0')}. id=${p.image_id} · gallery="${p.gallery_name}" · file="${p.filename}"`,
     )
     .join('\n')
-  return `Brand: ${opts.businessName} (production-company photographer)
+  return `Brand: ${opts.businessName} (Israeli production-company photographer)
 Client: ${opts.clientName}
 Event type: ${opts.eventType}
 
-The 9 top-pick photos to plan:
+The ${opts.photos.length} hand-picked top photos to work with:
 ${photoLines}
 
-Plan the 9-post Color-Block Editorial feed. Output strict JSON only.`
+Plan 3 distinct feed variants (rhythm / symphony / continuity). Output strict JSON only.`
 }
 
 interface FeedRequestBody {
   clientId?: string
-  style?: string
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -116,7 +129,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const clientId = String(body.clientId ?? '').trim()
   if (!clientId) return res.status(400).json({ ok: false, error: 'clientId_required' })
 
-  // Resolve client + business + galleries.
   const { data: client } = await supabase
     .from('clients')
     .select('id, name, business_id')
@@ -140,15 +152,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (galleryIds.length === 0)
     return res.status(404).json({ ok: false, error: 'no_galleries' })
 
-  // Pull top-picks across all galleries; pick the best 9 by sort_order.
+  // Pull up to 30 top picks across all galleries — the AI curates 9 of these
+  // per variant, and different variants should pick different subsets.
   const { data: picks } = await supabase
     .from('images')
     .select('id, gallery_id, filename')
     .in('gallery_id', galleryIds)
     .eq('is_top_pick', true)
     .order('sort_order', { ascending: true })
-    .limit(12)
-  const photos9 = (picks ?? []).slice(0, 9).map(p => {
+    .limit(30)
+  const photos = (picks ?? []).map(p => {
     const gallery = (galleries ?? []).find(g => g.id === p.gallery_id)
     return {
       image_id: p.id as string,
@@ -156,23 +169,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       gallery_name: (gallery?.name as string) || 'event',
     }
   })
-  if (photos9.length < 9)
-    return res.status(409).json({ ok: false, error: 'need_at_least_9_top_picks', have: photos9.length })
+  if (photos.length < 9)
+    return res.status(409).json({ ok: false, error: 'need_at_least_9_top_picks', have: photos.length })
 
-  // Event type: pull from the first gallery's delivery_settings, default 'event'.
   const firstSettings = (galleries?.[0]?.delivery_settings || {}) as Record<string, unknown>
   const eventType = (firstSettings.eventType as string) || 'event'
 
-  // Single Claude call. Sonnet is the right tradeoff: fast enough for the
-  // 25-second demo, smart enough for the hebrew + reasoning quality. Opus is
-  // overkill for 9 captions; Haiku misses brand voice.
   const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY })
 
   let llmText: string
   try {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2400,
+      max_tokens: 4000,
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -181,7 +190,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             businessName: business.business_name as string,
             clientName: client.name as string,
             eventType,
-            photos: photos9,
+            photos,
           }),
         },
       ],
@@ -195,35 +204,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(502).json({ ok: false, error: 'anthropic_call_failed', detail: msg.slice(0, 200) })
   }
 
-  // Strict-JSON parsing. Strip leading/trailing fluff if Claude adds any.
+  // Strict-JSON parsing.
   const jsonStart = llmText.indexOf('{')
   const jsonEnd = llmText.lastIndexOf('}')
   if (jsonStart === -1 || jsonEnd === -1)
     return res.status(502).json({ ok: false, error: 'llm_returned_no_json' })
-  let parsed: { posts?: PostPlan[] } = {}
+  let parsed: { variants?: Variant[] } = {}
   try {
     parsed = JSON.parse(llmText.slice(jsonStart, jsonEnd + 1))
   } catch {
     return res.status(502).json({ ok: false, error: 'llm_returned_bad_json' })
   }
 
-  const posts = parsed.posts ?? []
-  if (!Array.isArray(posts) || posts.length !== 9)
-    return res.status(502).json({ ok: false, error: 'llm_returned_wrong_count', count: posts.length })
+  const variants = parsed.variants ?? []
+  if (!Array.isArray(variants) || variants.length !== 3)
+    return res.status(502).json({ ok: false, error: 'llm_returned_wrong_variant_count', count: variants.length })
 
-  // Validate every post — colors enum, image_id matches our 9, position 1..9.
-  const validImageIds = new Set(photos9.map(p => p.image_id))
-  for (const p of posts) {
-    if (!validImageIds.has(p.image_id))
-      return res.status(502).json({ ok: false, error: 'llm_invalid_image_id', got: p.image_id })
-    if (!COLOR_KEYS.includes(p.color))
-      return res.status(502).json({ ok: false, error: 'llm_invalid_color', got: p.color })
-    if (typeof p.position !== 'number' || p.position < 1 || p.position > 9)
-      return res.status(502).json({ ok: false, error: 'llm_invalid_position', got: p.position })
+  // Validate every variant + every post.
+  const validImageIds = new Set(photos.map(p => p.image_id))
+  for (const v of variants) {
+    if (!VARIANT_IDS.includes(v.id as typeof VARIANT_IDS[number]))
+      return res.status(502).json({ ok: false, error: 'llm_invalid_variant_id', got: v.id })
+    if (!Array.isArray(v.posts) || v.posts.length !== 9)
+      return res.status(502).json({ ok: false, error: 'llm_variant_wrong_post_count', got: v.posts?.length })
+    const seenPositions = new Set<number>()
+    const seenImages = new Set<string>()
+    for (const p of v.posts) {
+      if (!validImageIds.has(p.image_id))
+        return res.status(502).json({ ok: false, error: 'llm_invalid_image_id', got: p.image_id })
+      if (typeof p.position !== 'number' || p.position < 1 || p.position > 9)
+        return res.status(502).json({ ok: false, error: 'llm_invalid_position', got: p.position })
+      if (seenPositions.has(p.position))
+        return res.status(502).json({ ok: false, error: 'llm_duplicate_position', got: p.position })
+      if (seenImages.has(p.image_id))
+        return res.status(502).json({ ok: false, error: 'llm_duplicate_image_in_variant', got: p.image_id })
+      seenPositions.add(p.position)
+      seenImages.add(p.image_id)
+    }
   }
 
-  // Persist as draft. Generated_by is null when called pre-auth (the
-  // photographer-side dashboard). Photographer will accept it explicitly.
+  // Persist all 3 variants in posts JSONB. Status=draft until photographer picks one.
   const { data: plan, error: insertErr } = await supabase
     .from('feed_plans')
     .insert({
@@ -231,16 +251,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       client_id: client.id,
       source_gallery_ids: galleryIds,
       style: 'color_block_editorial',
-      posts,
+      posts: { variants },
       brand_snapshot: {
         business_name: business.business_name,
         client_name: client.name,
         event_type: eventType,
+        photo_count: photos.length,
       },
       llm_trace: {
         model: 'claude-sonnet-4-6',
         latency_ms: Date.now() - t0,
         prompt_chars: SYSTEM_PROMPT.length,
+        variant_ids: variants.map(v => v.id),
       },
       status: 'draft',
     })
@@ -254,7 +276,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ok: true,
     plan: {
       id: plan.id,
-      posts: plan.posts,
+      variants,
       status: plan.status,
       created_at: plan.created_at,
     },
