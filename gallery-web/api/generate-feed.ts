@@ -181,7 +181,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
+      // 3 variants × 9 posts × ~120 Hebrew chars per post + variant rationales
+      // can run ~6-7k tokens. 8000 keeps us well clear of truncation.
+      max_tokens: 8000,
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -208,12 +210,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const jsonStart = llmText.indexOf('{')
   const jsonEnd = llmText.lastIndexOf('}')
   if (jsonStart === -1 || jsonEnd === -1)
-    return res.status(502).json({ ok: false, error: 'llm_returned_no_json' })
+    return res.status(502).json({
+      ok: false,
+      error: 'llm_returned_no_json',
+      tail: llmText.slice(-300),
+      length: llmText.length,
+    })
   let parsed: { variants?: Variant[] } = {}
   try {
     parsed = JSON.parse(llmText.slice(jsonStart, jsonEnd + 1))
-  } catch {
-    return res.status(502).json({ ok: false, error: 'llm_returned_bad_json' })
+  } catch (parseErr) {
+    return res.status(502).json({
+      ok: false,
+      error: 'llm_returned_bad_json',
+      detail: parseErr instanceof Error ? parseErr.message.slice(0, 120) : 'parse error',
+      tail: llmText.slice(-400),
+      length: llmText.length,
+    })
   }
 
   const variants = parsed.variants ?? []
