@@ -20,7 +20,13 @@ const supabase =
     : null
 
 const BATCH_SIZE = 8
-const MAX_BATCHES = 30 // hard cap → 240 images per call
+// Hard cap: 5 batches × 8 = 40 images per call. /api/generate-feed only
+// reads the first 30 top picks (`.limit(30)` in its SQL) per generation, so
+// scoring 240 was 8× wasteful and routinely tripped Vercel's 300-second
+// function timeout. 40 keeps a small headroom over the 30 used + lets the
+// next batch land if the user marks a few new top picks before re-running.
+// (Frontend can still pass an explicit `limit` to override; see body schema.)
+const MAX_BATCHES = 5
 // Haiku 4.5 is 5× cheaper than Sonnet 4.6 (input $1 vs $3, output $5 vs $15
 // per MTok) and plenty good for "score this image on 7 dimensions" — Sonnet's
 // extra reasoning is wasted on a structured-scoring task. Vision quality is
@@ -253,11 +259,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Founder hard constraint: only is_top_pick = true.
+  // Order by sort_order so scoring aligns with the photos /api/generate-feed
+  // will actually use (it reads the first 30 in the same ordering). Skipping
+  // the order would have us scoring random photos that the variant generator
+  // never sees.
   const { data: picks, error: picksErr } = await supabase
     .from('images')
     .select('id, gallery_id, web_preview_path, thumbnail_path')
     .in('gallery_id', galleryIds)
     .eq('is_top_pick', true)
+    .order('sort_order', { ascending: true })
   if (picksErr) {
     return res.status(500).json({ ok: false, error: 'picks_fetch_failed', detail: picksErr.message.slice(0, 200) })
   }
