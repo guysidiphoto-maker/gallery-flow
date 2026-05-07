@@ -105,15 +105,66 @@ function StoryPlayer({ url, onClose }: { url: string; onClose: () => void }) {
 // ─── Main Component ────────────────────────────────────────────────────────
 
 export function ClientDashboard() {
-  // Parse URL
-  const { clientId, slug } = (() => {
+  // Parse URL — supports four shapes:
+  //   /eclipse-media/c/pro-market                ← short, slug-based (NEW)
+  //   /eclipse-media/client/<uuid>/dashboard     ← legacy UUID
+  //   /eclipse-media/client/<uuid>               ← legacy without /dashboard
+  //   /client/<uuid>                             ← root-level legacy
+  const parsedUrl = (() => {
     const path = window.location.pathname.replace(/\/dashboard\/?$/, '').replace(/\/$/, '')
+    // Short slug form: /<businessSlug>/c/<clientSlug>
+    const shortMatch = path.match(/^\/([^/]+)\/c\/([^/]+)$/)
+    if (shortMatch) return { slug: shortMatch[1], clientSlug: shortMatch[2], clientId: '' }
+    // Legacy UUID forms (clientId is a UUID).
     const slugMatch = path.match(/^\/([^/]+)\/client\/([^/]+)$/)
-    if (slugMatch) return { slug: slugMatch[1], clientId: slugMatch[2] }
+    if (slugMatch) return { slug: slugMatch[1], clientSlug: '', clientId: slugMatch[2] }
     const directMatch = path.match(/^\/client\/([^/]+)$/)
-    if (directMatch) return { slug: '', clientId: directMatch[1] }
-    return { slug: '', clientId: '' }
+    if (directMatch) return { slug: '', clientSlug: '', clientId: directMatch[1] }
+    return { slug: '', clientSlug: '', clientId: '' }
   })()
+  const slug = parsedUrl.slug
+
+  // We need a UUID `clientId` for all existing queries. Resolve from the
+  // slug-based URL via a one-time lookup; legacy UUID URLs already give us
+  // the UUID directly. When a UUID URL is loaded, we look up the client's
+  // slug in the background and rewrite the address bar to the short form
+  // (replaceState — no navigation, no re-render) so the user copies a
+  // shareable link.
+  const [clientId, setClientId] = useState<string>(parsedUrl.clientId)
+  const [resolveErr, setResolveErr] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    if (clientId) {
+      // Legacy UUID URL — canonicalize to short form in the URL bar.
+      ;(async () => {
+        const { data: c } = await supabase
+          .from('clients').select('slug, business_id').eq('id', clientId).maybeSingle()
+        if (cancelled || !c?.slug) return
+        const { data: b } = await supabase
+          .from('businesses').select('slug').eq('id', c.business_id).maybeSingle()
+        if (cancelled || !b?.slug) return
+        const newUrl = `/${b.slug}/c/${c.slug}`
+        if (window.location.pathname !== newUrl) {
+          window.history.replaceState(null, '', newUrl + window.location.search + window.location.hash)
+        }
+      })()
+      return () => { cancelled = true }
+    }
+    if (!parsedUrl.slug || !parsedUrl.clientSlug) return
+    ;(async () => {
+      const { data: biz } = await supabase
+        .from('businesses').select('id').eq('slug', parsedUrl.slug).maybeSingle()
+      if (cancelled) return
+      if (!biz) { setResolveErr('Business not found'); return }
+      const { data: c } = await supabase
+        .from('clients').select('id')
+        .eq('business_id', biz.id).eq('slug', parsedUrl.clientSlug).maybeSingle()
+      if (cancelled) return
+      if (!c) { setResolveErr('Client not found'); return }
+      setClientId(c.id)
+    })()
+    return () => { cancelled = true }
+  }, [parsedUrl.slug, parsedUrl.clientSlug, clientId])
 
   // Auth state
   const [authenticated, setAuthenticated] = useState(() => {
@@ -144,7 +195,12 @@ export function ClientDashboard() {
   // ── Load data ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!clientId) { setError('No client ID'); setLoading(false); return }
+    if (!clientId) {
+      // Slug-based URL but resolution hasn't finished or it failed.
+      if (resolveErr) { setError(resolveErr); setLoading(false) }
+      // Otherwise stay in loading state until clientId resolves.
+      return
+    }
     load()
     async function load() {
       const { data, error: e } = await supabase
@@ -197,7 +253,7 @@ export function ClientDashboard() {
       }
       setLoading(false)
     }
-  }, [clientId])
+  }, [clientId, resolveErr])
 
   // ── Helpers ────────────────────────────────────────────────────────────
 

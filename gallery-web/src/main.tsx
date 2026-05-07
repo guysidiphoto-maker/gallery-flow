@@ -31,11 +31,15 @@ function Router() {
   if (path.startsWith('/event/')) return <EventCapturePage />
   // Vendor portal
   if (path.startsWith('/vendor/') || /^\/[^/]+\/vendor\//.test(path)) return <VendorPortal />
-  // Client dashboard (authenticated)
+  // Client dashboard (authenticated) — short slug form: /<biz>/c/<client-slug>
+  if (/^\/[^/]+\/c\/[^/]+\/?$/.test(path)) return <ClientDashboard />
+  // Client dashboard — legacy UUID forms.
   if (/\/client\/[^/]+\/dashboard/.test(path)) return <ClientDashboard />
   // Client public page → Portfolio (auto-generated website)
   if (path.startsWith('/client/') || /^\/[^/]+\/client\//.test(path)) return <PortfolioPage />
   if (path.startsWith('/gallery') || /^\/[^/]+\/gallery\//.test(path)) return <App />
+  // Short gallery URL: /<biz>/g/<gallery-slug>
+  if (/^\/[^/]+\/g\/[^/]+\/?$/.test(path)) return <App />
   // Clean gallery URL: /{business-slug}/{gallery-slug}
   if (/^\/[^/]+\/[^/]+\/?$/.test(path)) return <App />
 
