@@ -19,6 +19,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
+export const maxDuration = 60
+
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
@@ -173,6 +175,23 @@ Suggest 1–3 posts for the new event. Output strict JSON only.`
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const t0 = Date.now()
+  const ALLOWED_ORIGINS = new Set([
+    'https://pixflow-ai.com',
+    'https://www.pixflow-ai.com',
+  ])
+  const origin = String(req.headers.origin ?? req.headers.referer ?? '')
+  const isLocalDev = origin.startsWith('http://localhost')
+  const isVercelPreview = /\.vercel\.app$/.test(new URL(origin || 'http://x').hostname || '')
+  if (origin && !isLocalDev && !isVercelPreview) {
+    try {
+      const host = new URL(origin).origin
+      if (!ALLOWED_ORIGINS.has(host)) {
+        return res.status(403).json({ ok: false, error: 'origin_not_allowed' })
+      }
+    } catch {
+      return res.status(403).json({ ok: false, error: 'invalid_origin' })
+    }
+  }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' })
   if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_not_configured' })
   if (!ANTHROPIC_API_KEY) return res.status(500).json({ ok: false, error: 'anthropic_not_configured' })
@@ -332,7 +351,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const jsonStart = llmText.indexOf('{')
   const jsonEnd = llmText.lastIndexOf('}')
   if (jsonStart === -1 || jsonEnd === -1)
-    return res.status(502).json({ ok: false, error: 'llm_returned_no_json', tail: llmText.slice(-200) })
+    return res.status(502).json({
+      ok: false, error: 'llm_returned_no_json',
+      ...(process.env.NODE_ENV !== 'production' ? { tail: llmText.slice(-200), length: llmText.length } : {}),
+    })
 
   let parsed: { suggestions?: RawSuggestion[] } = {}
   try {
@@ -341,7 +363,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(502).json({
       ok: false, error: 'llm_returned_bad_json',
       detail: parseErr instanceof Error ? parseErr.message.slice(0, 120) : 'parse error',
-      tail: llmText.slice(-300),
+      ...(process.env.NODE_ENV !== 'production' ? { tail: llmText.slice(-300), length: llmText.length } : {}),
     })
   }
 

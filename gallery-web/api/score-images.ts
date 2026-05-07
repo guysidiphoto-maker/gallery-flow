@@ -9,6 +9,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
+export const maxDuration = 60
+
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
@@ -214,6 +216,23 @@ async function scoreBatch(
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const t0 = Date.now()
+  const ALLOWED_ORIGINS = new Set([
+    'https://pixflow-ai.com',
+    'https://www.pixflow-ai.com',
+  ])
+  const origin = String(req.headers.origin ?? req.headers.referer ?? '')
+  const isLocalDev = origin.startsWith('http://localhost')
+  const isVercelPreview = /\.vercel\.app$/.test(new URL(origin || 'http://x').hostname || '')
+  if (origin && !isLocalDev && !isVercelPreview) {
+    try {
+      const host = new URL(origin).origin
+      if (!ALLOWED_ORIGINS.has(host)) {
+        return res.status(403).json({ ok: false, error: 'origin_not_allowed' })
+      }
+    } catch {
+      return res.status(403).json({ ok: false, error: 'invalid_origin' })
+    }
+  }
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'method_not_allowed' })
   }
