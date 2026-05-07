@@ -1,0 +1,75 @@
+-- =====================================================================
+-- Migration 055: Drop anon_all_* storage policies
+-- =====================================================================
+--
+-- WHAT
+--   Drops two RLS policies on storage.objects that grant ALL commands
+--   (SELECT, INSERT, UPDATE, DELETE) to PUBLIC for the buckets
+--   `gallery-images` and `gallery-stories`:
+--     1. anon_all_gallery_images
+--     2. anon_all_gallery_stories
+--
+--   Verified via pg_policy on 2026-05-06 (project vlyiqfawkrjvqcmkpfvs):
+--     - polrelid = storage.objects
+--     - polroles = {-}  (i.e. role 0 / PUBLIC — applies to every role,
+--                        including anon AND authenticated)
+--     - polcmd   = '*'  (ALL)
+--     - qual/check = (bucket_id = '<bucket>'::text)
+--
+-- WHY
+--   These policies allow anonymous (and any other) clients to DELETE,
+--   UPDATE, and INSERT objects in production gallery buckets that
+--   contain real customer photos. This is documented in
+--   docs/PRODUCTION_AUDIT_2026_05_08.md section A1 as a critical
+--   data-loss risk.
+--
+--   The correct, narrower policies already exist and STAY in place:
+--     - gallery_storage_owner_write  (authenticated, business-scoped
+--                                     write via galleries.business_id =
+--                                     current_business_id())
+--     - gallery_storage_public_read  (anon SELECT only, and only for
+--                                     galleries where status = 'live')
+--
+--   After this migration:
+--     - anon retains SELECT on live-gallery objects (public read works).
+--     - anon loses INSERT / UPDATE / DELETE on gallery-images and
+--       gallery-stories.
+--     - authenticated owners retain full write via the owner_write
+--       policy (business-scoped).
+--
+-- EXPECTED BEHAVIOR AFTER APPLY
+--   - Visitors of a live gallery still load images and stories
+--     normally (gallery_storage_public_read still grants SELECT).
+--   - Anonymous DELETE/UPDATE/INSERT against the two buckets is denied.
+--   - The owning business (authenticated session whose
+--     current_business_id() matches the gallery's business_id) can
+--     still upload/replace/delete its own gallery objects.
+--
+-- ROLLBACK (run manually if a regression is observed):
+--   BEGIN;
+--   CREATE POLICY anon_all_gallery_images
+--     ON storage.objects
+--     AS PERMISSIVE
+--     FOR ALL
+--     TO public
+--     USING      (bucket_id = 'gallery-images'::text)
+--     WITH CHECK (bucket_id = 'gallery-images'::text);
+--   CREATE POLICY anon_all_gallery_stories
+--     ON storage.objects
+--     AS PERMISSIVE
+--     FOR ALL
+--     TO public
+--     USING      (bucket_id = 'gallery-stories'::text)
+--     WITH CHECK (bucket_id = 'gallery-stories'::text);
+--   COMMIT;
+--   (Note: rollback restores the insecure state. Prefer fixing the
+--   real authorization issue inside gallery_storage_owner_write
+--   instead of rolling back.)
+-- =====================================================================
+
+BEGIN;
+
+DROP POLICY IF EXISTS anon_all_gallery_images  ON storage.objects;
+DROP POLICY IF EXISTS anon_all_gallery_stories ON storage.objects;
+
+COMMIT;
