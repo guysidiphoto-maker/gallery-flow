@@ -163,6 +163,7 @@ export function SinglePostCard({
           <img
             src={src}
             alt=""
+            loading="lazy"
             style={photoStyle(crop.focalX, crop.focalY)}
           />
         )}
@@ -227,6 +228,7 @@ export function CarouselPostCard({
                   <img
                     src={src}
                     alt=""
+                    loading="lazy"
                     style={photoStyle(0.5, 0.5)}
                   />
                 )}
@@ -312,6 +314,7 @@ export function StoryPostCard({
             <img
               src={src}
               alt=""
+              loading="lazy"
               style={photoStyle(crop.focalX, crop.focalY)}
             />
           )}
@@ -359,6 +362,7 @@ export function ReelCoverPostCard({
           <img
             src={src}
             alt=""
+            loading="lazy"
             style={photoStyle(crop.focalX, crop.focalY)}
           />
         )}

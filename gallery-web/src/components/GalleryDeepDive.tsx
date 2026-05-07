@@ -172,6 +172,7 @@ function Card({ topPick, score, expanded, index, onToggle }: {
         <img
           src={storageUrl('gallery-images', topPick.thumbnail_path || topPick.storage_path)}
           alt=""
+          loading="lazy"
           style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
             objectFit: 'cover', objectPosition: `${focalX * 100}% ${focalY * 100}%`,
