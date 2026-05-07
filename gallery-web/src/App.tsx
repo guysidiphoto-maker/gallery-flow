@@ -942,6 +942,9 @@ export function App() {
   // Parse gallery from URL
   const galleryRef = useMemo(() => {
     const path = window.location.pathname.replace(/\/+$/, '')
+    // Short slug form: /<biz>/g/<gallery-slug> (NEW)
+    const short = path.match(/^\/([^/]+)\/g\/([^/]+)$/)
+    if (short) return { type: 'slug' as const, businessSlug: short[1], gallerySlug: short[2] }
     const legacy = path.match(/^\/[^/]+\/gallery\/([^/]+)$/)
     if (legacy) return { type: 'id' as const, value: legacy[1] }
     const direct = path.match(/^\/gallery\/([^/]+)$/)
