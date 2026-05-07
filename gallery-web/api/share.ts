@@ -71,9 +71,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .in('status', ['live', 'published'])
       .single()
     if (gallery) {
-      const settings = (gallery.delivery_settings || {}) as Record<string, unknown>
-      const studio = (settings.studioName as string) || (settings.businessName as string) || ''
-      const t = (settings.galleryTitle as string) || (gallery.name as string) || 'Gallery'
+      // Whitelist: ONLY these fields may be read out of delivery_settings into
+      // OG meta. Anything else (notes, internal phone, clientCode, …) would
+      // leak into WhatsApp/Slack/Twitter previews. Do not add to this list
+      // without a security review.
+      const rawSettings = (gallery.delivery_settings || {}) as Record<string, unknown>
+      const safeSettings: {
+        studioName?: string
+        galleryTitle?: string
+        galleryDescription?: string
+        studioWebsite?: string
+        logoUrl?: string
+      } = {
+        studioName: typeof rawSettings.studioName === 'string' ? rawSettings.studioName : undefined,
+        galleryTitle: typeof rawSettings.galleryTitle === 'string' ? rawSettings.galleryTitle : undefined,
+        galleryDescription: typeof rawSettings.galleryDescription === 'string' ? rawSettings.galleryDescription : undefined,
+        studioWebsite: typeof rawSettings.studioWebsite === 'string' ? rawSettings.studioWebsite : undefined,
+        logoUrl: typeof rawSettings.logoUrl === 'string' ? rawSettings.logoUrl : undefined,
+      }
+      const studio = safeSettings.studioName || ''
+      const t = safeSettings.galleryTitle || (gallery.name as string) || 'Gallery'
       title = studio ? `${t} — ${studio}` : t
       const count = Number(gallery.image_count ?? 0)
       description = count > 0
