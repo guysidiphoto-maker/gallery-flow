@@ -24,6 +24,7 @@ import { supabase, storageUrl } from '../supabase'
 import { CreativeBriefWizard, type Brief } from './CreativeBriefWizard'
 import { PostPreview } from './FeedStudioPreviews'
 import { GalleryDeepDive, type ImageScore } from './GalleryDeepDive'
+import { EventPlanDialog } from './EventPlanDialog'
 
 // ── Types ──────────────────────────────────────────────────────────────
 type PostFormat = 'single' | 'carousel' | 'story' | 'reel_cover' | 'text_slide'
@@ -180,6 +181,8 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
   const [imageScores, setImageScores] = useState<Map<string, ImageScore>>(new Map())
   const [deepDiveGallery, setDeepDiveGallery] = useState<Gallery | null>(null)
   const [rescoring, setRescoring] = useState(false)
+  const [eventPlanGallery, setEventPlanGallery] = useState<Gallery | null>(null)
+  const [planRefreshKey, setPlanRefreshKey] = useState(0)
   const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const imageById   = useMemo(() => new Map(topPicks.map(p => [p.id, p])), [topPicks])
@@ -202,6 +205,27 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
     const v = variants.find(x => x.id === chosenVariantId)
     return v ? applyDefaultsToVariant(v) : null
   }, [chosenVariantId, variants])
+
+  // Per-event mode: derive the queue of galleries that have top picks but
+  // are NOT yet referenced by any planned post. Sorted by id (latest first
+  // happens via the parent props order — galleries are passed in chronological
+  // order from the dashboard fetch).
+  const unplannedGalleries = useMemo(() => {
+    const usedGalleryIds = new Set<string>()
+    for (const v of variants) {
+      for (const p of v.posts) {
+        if (p.source_gallery_id) usedGalleryIds.add(p.source_gallery_id)
+      }
+    }
+    // Count top_picks per gallery so we can show "N top picks" on each card.
+    const picksByGallery = new Map<string, number>()
+    for (const tp of topPicks) {
+      picksByGallery.set(tp.gallery_id, (picksByGallery.get(tp.gallery_id) ?? 0) + 1)
+    }
+    return galleries
+      .filter(g => (picksByGallery.get(g.id) ?? 0) >= 1 && !usedGalleryIds.has(g.id))
+      .map(g => ({ id: g.id, name: g.name, topPicksCount: picksByGallery.get(g.id) ?? 0 }))
+  }, [galleries, topPicks, variants])
 
   // Load latest plan + image scores on mount.
   useEffect(() => {
@@ -243,7 +267,7 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
       setImageScores(m)
     })()
     return () => { cancelled = true }
-  }, [clientId, topPicks])
+  }, [clientId, topPicks, planRefreshKey])
 
   const startStageTimer = useCallback((seedStage = 0) => {
     setStage(seedStage)
@@ -412,9 +436,15 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
         .fs-variant { animation: fs-fadeIn .6s both; }
       `}</style>
 
-      {/* Empty state */}
+      {/* Empty state — primary path is per-event planning */}
       {!plan && !generating && !error && !showWizard && (
-        <EmptyState onStart={startGenerate} topPicksCount={topPicks.length} galleriesCount={galleries.length} />
+        <EmptyState
+          onStart={startGenerate}
+          topPicksCount={topPicks.length}
+          galleriesCount={galleries.length}
+          unplannedGalleries={unplannedGalleries}
+          onPlanEvent={(g) => setEventPlanGallery({ id: g.id, name: g.name })}
+        />
       )}
 
       {/* Wizard */}
@@ -446,10 +476,12 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
           galleryById={galleryById}
           galleries={galleries}
           imageScores={imageScores}
+          unplannedGalleries={unplannedGalleries}
           onEdit={(p) => setEditPost({ post: p, variantId: chosenVariant.id })}
           onRegenerate={startGenerate}
           onUnchoose={unchooseVariant}
           onDeepDive={(g) => setDeepDiveGallery(g)}
+          onPlanEvent={(g) => setEventPlanGallery({ id: g.id, name: g.name })}
         />
       )}
 
@@ -518,6 +550,22 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
           rescoring={rescoring}
         />
       )}
+
+      {/* Per-event plan dialog */}
+      {eventPlanGallery && (
+        <EventPlanDialog
+          clientId={clientId}
+          galleryId={eventPlanGallery.id}
+          galleryName={eventPlanGallery.name}
+          topPicksCount={topPicks.filter(t => t.gallery_id === eventPlanGallery.id).length}
+          imageById={imageById}
+          onClose={() => setEventPlanGallery(null)}
+          onAppended={() => {
+            setEventPlanGallery(null)
+            setPlanRefreshKey(k => k + 1)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -534,46 +582,122 @@ function extractImageIds(p: Post): string[] {
 }
 
 // ── EmptyState ──────────────────────────────────────────────────────────
-function EmptyState({ onStart, topPicksCount, galleriesCount }: { onStart: () => void; topPicksCount: number; galleriesCount: number }) {
+// Per-event mode is the PRIMARY workflow: list every gallery that has top
+// picks but no planned posts yet, with a "תכנן פוסטים" CTA on each. The
+// big-bang wizard ("תכנן את כל הפיד") stays as a secondary CTA for first-time
+// brand-voice setup or full campaign refreshes.
+function EmptyState({
+  onStart, topPicksCount, galleriesCount, unplannedGalleries, onPlanEvent,
+}: {
+  onStart: () => void
+  topPicksCount: number
+  galleriesCount: number
+  unplannedGalleries: Array<{ id: string; name: string; topPicksCount: number }>
+  onPlanEvent: (g: { id: string; name: string }) => void
+}) {
+  const hasEvents = unplannedGalleries.length > 0
   return (
     <div style={{
-      padding: '96px 56px', textAlign: 'center', minHeight: 'calc(100vh - 220px)',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: '56px 40px 80px', minHeight: 'calc(100vh - 220px)',
       animation: 'fs-fadeIn .5s both',
     }}>
-      <div style={{ fontSize: 11, letterSpacing: '.28em', textTransform: 'uppercase', color: 'rgba(255,255,255,.5)', marginBottom: 24, fontWeight: 600 }}>
-        Feed Studio
-      </div>
-      <h1 style={{
-        fontFamily: 'Playfair Display, Georgia, serif',
-        fontSize: 'clamp(40px, 6vw, 72px)', fontWeight: 800,
-        margin: 0, letterSpacing: '-0.03em', lineHeight: 1.05, maxWidth: 900,
-      }}>
-        תכנון פיד.<br/>בכלים של מנהל סושיאל.
-      </h1>
-      <p style={{ fontSize: 17, color: 'rgba(255,255,255,.65)', maxWidth: 620, lineHeight: 1.7, margin: '24px auto 40px', fontWeight: 400 }}>
-        ה-AI לא רץ קדימה. הוא ישאל אותך 10 שאלות יוצרות, ינקד את כל ה-top picks
-        בעצמו, ויציע 3 גישות לבחירה — עם פוסטים, קרוסלות, סטוריז וכריכות ריל.
-      </p>
-      <button
-        onClick={onStart}
-        disabled={topPicksCount < 9}
-        style={{
-          padding: '18px 36px', fontSize: 15, letterSpacing: '.04em',
-          fontWeight: 700, fontFamily: 'inherit',
-          background: '#D4FF00', color: '#000', border: 'none',
-          borderRadius: 8, cursor: topPicksCount >= 9 ? 'pointer' : 'not-allowed',
-          opacity: topPicksCount >= 9 ? 1 : 0.4,
-          display: 'inline-flex', alignItems: 'center', gap: 12,
-        }}
-      >
-        <span>✨</span><span>תכנן את הפיד שלי</span>
-      </button>
-      {topPicksCount < 9 && (
-        <p style={{ marginTop: 20, fontSize: 13, color: 'rgba(255,255,255,.45)' }}>
-          צריך לפחות 9 top picks. יש כרגע {topPicksCount} ב-{galleriesCount || 'גלריות'}.
+      <div style={{ textAlign: 'center', marginBottom: 48 }}>
+        <div style={{ fontSize: 11, letterSpacing: '.28em', textTransform: 'uppercase', color: 'rgba(255,255,255,.5)', marginBottom: 18, fontWeight: 600 }}>
+          Feed Studio
+        </div>
+        <h1 style={{
+          fontFamily: 'Playfair Display, Georgia, serif',
+          fontSize: 'clamp(34px, 5vw, 60px)', fontWeight: 800,
+          margin: 0, letterSpacing: '-0.03em', lineHeight: 1.05, maxWidth: 900,
+          marginInline: 'auto',
+        }}>
+          תכנון שבועי. אירוע אחר אירוע.
+        </h1>
+        <p style={{ fontSize: 16, color: 'rgba(255,255,255,.65)', maxWidth: 620, lineHeight: 1.7, margin: '20px auto 0', fontWeight: 400 }}>
+          לכל אירוע שעולה למערכת — ה-AI מציע 1–3 פוסטים שמשתלבים בלוח השנה הקיים.
+          לא צריך לתכנן הכל בבת אחת.
         </p>
+      </div>
+
+      {hasEvents && (
+        <div style={{ maxWidth: 900, marginInline: 'auto', marginBottom: 56 }}>
+          <div style={{ fontSize: 11, letterSpacing: '.28em', textTransform: 'uppercase', color: '#D4FF00', marginBottom: 16, fontWeight: 700 }}>
+            אירועים שמחכים לתכנון · {unplannedGalleries.length}
+          </div>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12,
+          }}>
+            {unplannedGalleries.map(g => (
+              <button
+                key={g.id}
+                onClick={() => onPlanEvent(g)}
+                disabled={g.topPicksCount < 1}
+                style={{
+                  textAlign: 'right', padding: '16px 18px',
+                  background: 'rgba(255,255,255,.04)',
+                  border: '1px solid rgba(255,255,255,.1)',
+                  borderRadius: 10, cursor: g.topPicksCount > 0 ? 'pointer' : 'not-allowed',
+                  fontFamily: 'inherit', color: '#fff',
+                  display: 'flex', flexDirection: 'column', gap: 8,
+                  transition: 'border-color .2s, background .2s',
+                  opacity: g.topPicksCount > 0 ? 1 : 0.45,
+                }}
+                onMouseEnter={e => {
+                  if (g.topPicksCount > 0) {
+                    e.currentTarget.style.borderColor = '#D4FF00'
+                    e.currentTarget.style.background = 'rgba(212,255,0,.04)'
+                  }
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'
+                  e.currentTarget.style.background = 'rgba(255,255,255,.04)'
+                }}
+              >
+                <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>{g.name}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,.55)' }}>
+                    🖼 {g.topPicksCount} top picks
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#D4FF00', letterSpacing: '.04em' }}>
+                    תכנן פוסטים →
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
+
+      {/* Secondary CTA — big-bang wizard */}
+      <div style={{ textAlign: 'center', maxWidth: 720, marginInline: 'auto', paddingTop: hasEvents ? 24 : 16 }}>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.45)', marginBottom: 14 }}>
+          {hasEvents
+            ? 'או — תכנן את כל הפיד מחדש (חד-פעמי)'
+            : `${galleriesCount} גלריות · ${topPicksCount} top picks`}
+        </div>
+        <button
+          onClick={onStart}
+          disabled={topPicksCount < 9}
+          style={{
+            padding: '14px 28px', fontSize: 13, letterSpacing: '.04em',
+            fontWeight: 700, fontFamily: 'inherit',
+            background: hasEvents ? 'transparent' : '#D4FF00',
+            color: hasEvents ? '#fafafa' : '#000',
+            border: hasEvents ? '1px solid rgba(255,255,255,.2)' : 'none',
+            borderRadius: 6, cursor: topPicksCount >= 9 ? 'pointer' : 'not-allowed',
+            opacity: topPicksCount >= 9 ? 1 : 0.4,
+            display: 'inline-flex', alignItems: 'center', gap: 10,
+          }}
+        >
+          <span>✨</span>
+          <span>{hasEvents ? 'תכנן את כל הפיד מאפס' : 'תכנן את הפיד שלי'}</span>
+        </button>
+        {topPicksCount < 9 && (
+          <p style={{ marginTop: 14, fontSize: 12, color: 'rgba(255,255,255,.4)' }}>
+            צריך לפחות 9 top picks. יש כרגע {topPicksCount}.
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -728,17 +852,20 @@ function formatLabel(f: string): string {
 // ── Workspace ───────────────────────────────────────────────────────────
 function Workspace({
   variant, imageById, galleryById, galleries, imageScores,
-  onEdit, onRegenerate, onUnchoose, onDeepDive,
+  unplannedGalleries,
+  onEdit, onRegenerate, onUnchoose, onDeepDive, onPlanEvent,
 }: {
   variant: Variant
   imageById: Map<string, TopPick>
   galleryById: Map<string, Gallery>
   galleries: Gallery[]
   imageScores: Map<string, ImageScore>
+  unplannedGalleries: Array<{ id: string; name: string; topPicksCount: number }>
   onEdit: (post: Post) => void
   onRegenerate: () => void
   onUnchoose: () => void
   onDeepDive: (g: Gallery) => void
+  onPlanEvent: (g: { id: string; name: string }) => void
 }) {
   const accent = VARIANT_ACCENT[variant.id] || '#D4FF00'
   const sortedPosts = variant.posts.slice().sort((a, b) =>
@@ -788,6 +915,50 @@ function Workspace({
           <button onClick={onRegenerate} style={btnGhost}><span>↻</span><span>ג'נרציה חדשה</span></button>
         </div>
       </div>
+
+      {/* Events queue — galleries waiting to be planned */}
+      {unplannedGalleries.length > 0 && (
+        <div style={{
+          marginBottom: 28, padding: '18px 20px', borderRadius: 12,
+          background: 'linear-gradient(135deg, rgba(212,255,0,.06), rgba(212,255,0,.02))',
+          border: '1px solid rgba(212,255,0,.2)',
+        }}>
+          <div style={{
+            fontSize: 11, letterSpacing: '.28em', textTransform: 'uppercase',
+            color: '#D4FF00', marginBottom: 10, fontWeight: 700,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span>✨</span><span>אירועים מחכים לתכנון · {unplannedGalleries.length}</span>
+          </div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,.7)', marginBottom: 12 }}>
+            ה-AI יציע 1–3 פוסטים לאירוע — מותאמים לסגנון הפיד הקיים.
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {unplannedGalleries.slice(0, 6).map(g => (
+              <button
+                key={g.id}
+                onClick={() => onPlanEvent({ id: g.id, name: g.name })}
+                style={{
+                  padding: '10px 16px', fontSize: 12, fontWeight: 700,
+                  background: 'rgba(212,255,0,.1)', color: '#D4FF00',
+                  border: '1px solid rgba(212,255,0,.4)', borderRadius: 16,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                }}
+              >
+                <span>{g.name}</span>
+                <span style={{ color: 'rgba(212,255,0,.6)', fontWeight: 600 }}>· {g.topPicksCount}</span>
+                <span>→</span>
+              </button>
+            ))}
+            {unplannedGalleries.length > 6 && (
+              <span style={{ padding: '10px 14px', fontSize: 11, color: 'rgba(255,255,255,.45)' }}>
+                +{unplannedGalleries.length - 6} נוספים
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Source galleries — quick-access for Gallery Deep Dive */}
       {galleriesWithPosts.length > 0 && (
