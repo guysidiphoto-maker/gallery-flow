@@ -25,6 +25,7 @@ import { CreativeBriefWizard, type Brief } from './CreativeBriefWizard'
 import { PostPreview } from './FeedStudioPreviews'
 import { GalleryDeepDive, type ImageScore } from './GalleryDeepDive'
 import { EventPlanDialog } from './EventPlanDialog'
+import { useToast } from './Toast'
 
 // ── Types ──────────────────────────────────────────────────────────────
 type PostFormat = 'single' | 'carousel' | 'story' | 'reel_cover' | 'text_slide'
@@ -184,6 +185,7 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
   const [eventPlanGallery, setEventPlanGallery] = useState<Gallery | null>(null)
   const [planRefreshKey, setPlanRefreshKey] = useState(0)
   const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const { showToast, ToastContainer } = useToast()
 
   const imageById   = useMemo(() => new Map(topPicks.map(p => [p.id, p])), [topPicks])
   const galleryById = useMemo(() => new Map(galleries.map(g => [g.id, g])), [galleries])
@@ -368,46 +370,72 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
   async function chooseVariant(variantId: string) {
     if (!plan) return
     setAccepting(variantId)
-    const updatedVariants = variants.map(v => v.id === variantId ? applyDefaultsToVariant(v) : v)
-    const newField: FeedPlanRowPosts = {
-      ...(plan.posts as FeedPlanRowPosts),
-      variants: updatedVariants,
-      chosen_variant_id: variantId,
+    try {
+      const res = await fetch('/api/append-event-posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, planId: plan.id, action: 'choose_variant', variantId }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (res.ok && json?.ok && json?.plan) {
+        setPlan(json.plan as FeedPlan)
+      } else {
+        console.error('[FeedStudio] choose_variant failed', { status: res.status, json })
+        showToast({ kind: 'error', text: 'שמירת הבחירה נכשלה. נסה שוב.' })
+      }
+    } catch (err) {
+      console.error('[FeedStudio] choose_variant exception', err)
+      showToast({ kind: 'error', text: 'שמירת הבחירה נכשלה. נסה שוב.' })
+    } finally {
+      setAccepting(null)
     }
-    const { error: upErr } = await supabase
-      .from('feed_plans')
-      .update({ status: 'accepted', accepted_at: new Date().toISOString(), posts: newField })
-      .eq('id', plan.id)
-    setAccepting(null)
-    if (upErr) { setError('שמירת הבחירה נכשלה.'); return }
-    setPlan({ ...plan, status: 'accepted', posts: newField })
   }
 
   async function unchooseVariant() {
     if (!plan) return
-    const newField: FeedPlanRowPosts = { ...(plan.posts as FeedPlanRowPosts), chosen_variant_id: undefined }
-    await supabase.from('feed_plans')
-      .update({ status: 'draft', accepted_at: null, posts: newField })
-      .eq('id', plan.id)
-    setPlan({ ...plan, status: 'draft', posts: newField })
+    try {
+      const res = await fetch('/api/append-event-posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, planId: plan.id, action: 'unchoose_variant' }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (res.ok && json?.ok && json?.plan) {
+        setPlan(json.plan as FeedPlan)
+      } else {
+        console.error('[FeedStudio] unchoose_variant failed', { status: res.status, json })
+        showToast({ kind: 'error', text: 'ההחלפה נכשלה. נסה שוב.' })
+      }
+    } catch (err) {
+      console.error('[FeedStudio] unchoose_variant exception', err)
+      showToast({ kind: 'error', text: 'ההחלפה נכשלה. נסה שוב.' })
+    }
   }
 
   async function savePostEdit(updated: SinglePost, variantId: string) {
     if (!plan) return
-    const cur = plan.posts as FeedPlanRowPosts
-    const newVariants = (cur.variants ?? []).map(v => {
-      if (v.id !== variantId) return v
-      return {
-        ...v,
-        posts: v.posts.map(p => p.id === updated.id ? updated : p),
+    try {
+      const res = await fetch('/api/append-event-posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId, planId: plan.id, action: 'save_post_edit',
+          variantId, post: updated,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (res.ok && json?.ok && json?.plan) {
+        setPlan(json.plan as FeedPlan)
+        setEditPost(null)
+        showToast({ kind: 'success', text: 'נשמר בהצלחה.' })
+      } else {
+        console.error('[FeedStudio] save_post_edit failed', { status: res.status, json })
+        showToast({ kind: 'error', text: 'שמירה נכשלה. נסה שוב.' })
       }
-    })
-    const newField: FeedPlanRowPosts = { ...cur, variants: newVariants }
-    const { error: upErr } = await supabase
-      .from('feed_plans').update({ posts: newField }).eq('id', plan.id)
-    if (upErr) { setError('שמירה נכשלה.'); return }
-    setPlan({ ...plan, posts: newField })
-    setEditPost(null)
+    } catch (err) {
+      console.error('[FeedStudio] save_post_edit exception', err)
+      showToast({ kind: 'error', text: 'שמירה נכשלה. נסה שוב.' })
+    }
   }
 
   function startGenerate() {
@@ -435,6 +463,8 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
         .fs-card:hover { border-color: rgba(255,255,255,.22); transform: translateY(-2px); cursor: pointer; }
         .fs-variant { animation: fs-fadeIn .6s both; }
       `}</style>
+
+      <ToastContainer />
 
       {/* Empty state — primary path is per-event planning */}
       {!plan && !generating && !error && !showWizard && (

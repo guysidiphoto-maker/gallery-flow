@@ -184,7 +184,19 @@ export function ClientDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'feed-studio' | 'content' | 'calendar' | 'galleries' | 'stories' | 'page' | 'tender'>('feed-studio')
-  const [selectedPicks, setSelectedPicks] = useState<Set<string>>(new Set())
+  const [selectedPicks, setSelectedPicks] = useState<Set<string>>(() => {
+    // Hydrate from sessionStorage so the user's selection survives refresh
+    // within the same browser session. Real persistence (a
+    // `client_post_selections` table) is Phase 3+ work.
+    try {
+      const raw = sessionStorage.getItem('selectedPicks-' + clientId)
+      if (raw) {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr)) return new Set(arr.filter((x): x is string => typeof x === 'string'))
+      }
+    } catch { /* ignore */ }
+    return new Set()
+  })
   const [playingStory, setPlayingStory] = useState<string | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
   // Filter & sort for galleries tab
@@ -193,6 +205,26 @@ export function ClientDashboard() {
   const [galleryViewMode, setGalleryViewMode] = useState<'grid' | 'masonry' | 'list'>('grid')
   const [creativeGallery, setCreativeGallery] = useState<{ id: string; name: string; topPicksCount: number } | null>(null)
   const reveal = useReveal()
+
+  // Re-hydrate selectedPicks from sessionStorage when the active client
+  // changes (initial state ran with possibly-stale clientId on the very
+  // first render). Empty set if no key exists yet — the data loader will
+  // seed from photographer top picks.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('selectedPicks-' + clientId)
+      if (raw) {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr)) {
+          setSelectedPicks(new Set(arr.filter((x): x is string => typeof x === 'string')))
+          return
+        }
+      }
+      setSelectedPicks(new Set())
+    } catch {
+      setSelectedPicks(new Set())
+    }
+  }, [clientId])
 
   // ── Load data ──────────────────────────────────────────────────────────
 
@@ -240,8 +272,18 @@ export function ClientDashboard() {
       if (picksRes.data) setTopPicks(picksRes.data)
       if (allRes.data) setAllImages(allRes.data)
 
-      // Initialize selected picks with photographer's top picks
-      if (picksRes.data) setSelectedPicks(new Set(picksRes.data.map(p => p.id)))
+      // Initialize selected picks with photographer's top picks — but only
+      // if the user doesn't already have a session-persisted selection.
+      if (picksRes.data) {
+        const existing = sessionStorage.getItem('selectedPicks-' + clientId)
+        if (!existing) {
+          const seeded = new Set(picksRes.data.map(p => p.id))
+          setSelectedPicks(seeded)
+          try {
+            sessionStorage.setItem('selectedPicks-' + clientId, JSON.stringify(Array.from(seeded)))
+          } catch { /* ignore quota */ }
+        }
+      }
 
       if (storiesRes.data?.length) {
         const sm = new Map<string, StoryRow[]>()
@@ -402,6 +444,9 @@ export function ClientDashboard() {
     setSelectedPicks(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
+      try {
+        sessionStorage.setItem('selectedPicks-' + clientId, JSON.stringify(Array.from(next)))
+      } catch { /* ignore quota */ }
       return next
     })
   }
