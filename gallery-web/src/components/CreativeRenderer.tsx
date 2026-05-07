@@ -167,6 +167,7 @@ function HeadlineOverlay({
         <img
           src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
           alt=""
+          loading="lazy"
           style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
             objectFit: 'cover',
@@ -233,6 +234,7 @@ function ColorBlockFrame({
           <img
             src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
             alt=""
+            loading="lazy"
             style={{
               position: 'absolute', inset: 0, width: '100%', height: '100%',
               objectFit: 'cover',
@@ -299,6 +301,7 @@ function SplitTile3({
             <img
               src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
               alt=""
+              loading="lazy"
               style={{
                 position: 'absolute', top: 0, left: 0,
                 width: '300%', height: '100%',
@@ -412,6 +415,7 @@ function MagazineSpread({
           <img
             src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
             alt=""
+            loading="lazy"
             style={{
               position: 'absolute', inset: 0, width: '100%', height: '100%',
               objectFit: 'cover',
@@ -470,6 +474,7 @@ function DuotonePortrait({
         <img
           src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
           alt=""
+          loading="lazy"
           style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
             objectFit: 'cover',
