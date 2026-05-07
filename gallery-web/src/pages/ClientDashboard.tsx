@@ -9,6 +9,7 @@ const TenderBuilder    = lazy(() => import('../components/TenderBuilder').then(m
 const SocialManager    = lazy(() => import('../components/SocialManager').then(m => ({ default: m.SocialManager })))
 const PortfolioEditor  = lazy(() => import('../components/PortfolioEditor').then(m => ({ default: m.PortfolioEditor })))
 const FeedStudio       = lazy(() => import('../components/FeedStudio').then(m => ({ default: m.FeedStudio })))
+const CreativeEngineDialog = lazy(() => import('../components/CreativeEngineDialog').then(m => ({ default: m.CreativeEngineDialog })))
 import { loadPortfolioSettings } from '../components/portfolioSettings'
 import { Icon, type IconName } from '../components/Icon'
 
@@ -190,6 +191,7 @@ export function ClientDashboard() {
   const [galleryFilter, setGalleryFilter] = useState('')
   const [gallerySortBy, setGallerySortBy] = useState<'date' | 'name' | 'top-picks'>('date')
   const [galleryViewMode, setGalleryViewMode] = useState<'grid' | 'masonry' | 'list'>('grid')
+  const [creativeGallery, setCreativeGallery] = useState<{ id: string; name: string; topPicksCount: number } | null>(null)
   const reveal = useReveal()
 
   // ── Load data ──────────────────────────────────────────────────────────
@@ -911,22 +913,41 @@ export function ClientDashboard() {
                         {g.image_count.toLocaleString('he-IL')} תמונות
                       </p>
                     </div>
-                    <a href={galleryUrl(g.id)} style={{
-                      padding: '11px 22px', borderRadius: 2,
-                      background: 'transparent', border: `1px solid ${textPrimary}`,
-                      color: textPrimary,
-                      fontSize: 11, fontWeight: 500,
-                      letterSpacing: '0.18em', textTransform: 'uppercase',
-                      textDecoration: 'none', fontFamily: 'inherit',
-                      display: 'inline-flex', alignItems: 'center', gap: 8,
-                      transition: 'background .15s, color .15s',
-                    }}
-                      onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => { e.currentTarget.style.background = textPrimary; e.currentTarget.style.color = '#fff' }}
-                      onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = textPrimary }}
-                    >
-                      View Gallery
-                      <Icon name="arrow-out" size={12} strokeWidth={1.85} />
-                    </a>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <button
+                        onClick={() => setCreativeGallery({ id: g.id, name: g.name, topPicksCount: galleryImages.filter(i => i.is_top_pick).length })}
+                        style={{
+                          padding: '11px 22px', borderRadius: 2,
+                          background: '#0a0a0f', border: '1px solid #0a0a0f',
+                          color: '#D4FF00',
+                          fontSize: 11, fontWeight: 700,
+                          letterSpacing: '0.18em', textTransform: 'uppercase',
+                          fontFamily: 'inherit', cursor: 'pointer',
+                          display: 'inline-flex', alignItems: 'center', gap: 8,
+                          transition: 'background .15s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#1a1a25' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = '#0a0a0f' }}
+                      >
+                        🎨 מנוע יצירה
+                      </button>
+                      <a href={galleryUrl(g.id)} style={{
+                        padding: '11px 22px', borderRadius: 2,
+                        background: 'transparent', border: `1px solid ${textPrimary}`,
+                        color: textPrimary,
+                        fontSize: 11, fontWeight: 500,
+                        letterSpacing: '0.18em', textTransform: 'uppercase',
+                        textDecoration: 'none', fontFamily: 'inherit',
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                        transition: 'background .15s, color .15s',
+                      }}
+                        onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => { e.currentTarget.style.background = textPrimary; e.currentTarget.style.color = '#fff' }}
+                        onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = textPrimary }}
+                      >
+                        View Gallery
+                        <Icon name="arrow-out" size={12} strokeWidth={1.85} />
+                      </a>
+                    </div>
                   </div>
                   <div style={{
                     display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 4,
@@ -1117,6 +1138,20 @@ export function ClientDashboard() {
 
       {/* Story player */}
       {playingStory && <StoryPlayer url={playingStory} onClose={() => setPlayingStory(null)} />}
+
+      {/* Creative Engine — per-gallery AI design campaign */}
+      {creativeGallery && (
+        <Suspense fallback={null}>
+          <CreativeEngineDialog
+            clientId={clientId}
+            galleryId={creativeGallery.id}
+            galleryName={creativeGallery.name}
+            topPicksCount={creativeGallery.topPicksCount}
+            imageById={new Map(topPicks.map(p => [p.id, { id: p.id, thumbnail_path: p.thumbnail_path, storage_path: p.storage_path }]))}
+            onClose={() => setCreativeGallery(null)}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }
