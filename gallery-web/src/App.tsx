@@ -879,17 +879,35 @@ export function App() {
     }
   })
 
-  // Mirror activeSectionView onto ?section=<id> so refreshes / shares stay
-  // on the same section. Wrapped in try/catch so a malformed URL never
-  // takes the page down.
+  // Mirror activeSectionView onto ?section=<slug> (preferred) or <id>
+  // (fallback) so refreshes / shares stay on the same section. Wrapped in
+  // try/catch so a malformed URL never takes the page down.
   useEffect(() => {
     try {
       const url = new URL(window.location.href)
-      if (activeSectionView) url.searchParams.set('section', activeSectionView)
-      else url.searchParams.delete('section')
+      if (activeSectionView) {
+        // Prefer the slug if we have it (much friendlier shareable URL),
+        // fall back to the raw UUID otherwise.
+        const sec = sections.find(s => s.id === activeSectionView || s.slug === activeSectionView)
+        const param = sec?.slug || activeSectionView
+        url.searchParams.set('section', param)
+      } else {
+        url.searchParams.delete('section')
+      }
       window.history.replaceState(null, '', url.toString())
     } catch { /* ignore — url sync is a UX nicety, never load-bearing */ }
-  }, [activeSectionView])
+  }, [activeSectionView, sections])
+
+  // When loading from a URL with ?section=<slug>, resolve the slug back to
+  // the canonical section id so the rest of the component (which keys on id)
+  // works without per-call slug lookups.
+  useEffect(() => {
+    if (!activeSectionView || sections.length === 0) return
+    const matchById = sections.find(s => s.id === activeSectionView)
+    if (matchById) return
+    const matchBySlug = sections.find(s => s.slug === activeSectionView)
+    if (matchBySlug) setActiveSectionView(matchBySlug.id)
+  }, [sections, activeSectionView])
 
   // Auto-select the first section once gallery data is loaded, IF and only
   // if (a) the gallery actually has sections, (b) we don't already have a
@@ -1109,7 +1127,7 @@ export function App() {
       // to wait on token issuance for what is essentially a label.
       supabase
         .from('gallery_sections')
-        .select('id, name, sort_order')
+        .select('id, name, slug, sort_order')
         .eq('gallery_id', id)
         .order('sort_order', { ascending: true }),
     ])

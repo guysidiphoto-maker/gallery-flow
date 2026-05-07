@@ -81,6 +81,7 @@ export interface Story {
 export interface GallerySection {
   id: string
   name: string
+  slug?: string | null
   sort_order: number
 }
 
