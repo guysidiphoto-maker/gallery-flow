@@ -774,7 +774,7 @@ async function handleSignedUrl(
   })
 }
 
-// ── Phase 4.5.A — public_gallery_session ────────────────────────────────
+// ── Phase 4.5.A/B — public_gallery_session ──────────────────────────────
 //
 // Issues a 60-min opaque token (43-char base64url) scoped to one gallery,
 // one IP. Used by the anonymous viewer at /<biz>/<gallery> to call
@@ -783,16 +783,58 @@ async function handleSignedUrl(
 // dashboards.
 //
 // Anti-abuse:
-//   - 30 sessions/IP/hour soft (will require Turnstile in P4.5.B)
+//   - 30 sessions/IP/hour soft (P4.5.B requires a valid Cloudflare
+//     Turnstile token past this point)
 //   - 100 sessions/IP/hour hard ceiling
 //   - Origin allowlist (existing guard)
 //
 // Idempotent on (ip, galleryId): a same-IP request that lands within 5 min
 // of an existing un-expired token reuses it (issue_public_gallery_session
 // RPC handles this).
+//
+// Env (P4.5.B):
+//   CF_TURNSTILE_SECRET — Cloudflare Turnstile secret key (server-side)
+//   VITE_CF_TURNSTILE_SITE_KEY — public site key (read here for the 429
+//     response; the frontend reads it from import.meta.env at build time)
+// If the secret is unset we fail-open: soft limit logs a warning but
+// allows the request through. Once the env is configured the soft limit
+// becomes enforcing.
 
 const SOFT_LIMIT_PER_HOUR = 30
 const HARD_LIMIT_PER_HOUR = 100
+
+const CF_TURNSTILE_SECRET = process.env.CF_TURNSTILE_SECRET ?? ''
+const CF_TURNSTILE_SITE_KEY = process.env.VITE_CF_TURNSTILE_SITE_KEY ?? ''
+const CF_TURNSTILE_SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+
+// Verify a Cloudflare Turnstile token via siteverify. Returns true iff
+// Cloudflare confirms it. Fails closed on network errors so a flaky
+// Cloudflare doesn't open the soft limit.
+async function verifyTurnstileToken(token: string, ip: string): Promise<boolean> {
+  if (!CF_TURNSTILE_SECRET) return false
+  if (!token) return false
+  try {
+    const form = new URLSearchParams()
+    form.set('secret', CF_TURNSTILE_SECRET)
+    form.set('response', token)
+    if (ip && ip !== '0.0.0.0') form.set('remoteip', ip)
+    const r = await fetch(CF_TURNSTILE_SITEVERIFY_URL, {
+      method: 'POST',
+      body: form,
+      // Cloudflare expects application/x-www-form-urlencoded
+    })
+    if (!r.ok) return false
+    const j = await r.json() as { success?: boolean; 'error-codes'?: string[] }
+    if (!j.success) {
+      console.warn('[turnstile] siteverify rejected', { 'error-codes': j['error-codes'] ?? [] })
+      return false
+    }
+    return true
+  } catch (err) {
+    console.warn('[turnstile] siteverify error', err)
+    return false
+  }
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -840,17 +882,31 @@ async function handlePublicGallerySession(
     res.status(429).json({ ok: false, error: 'hard_limit_exceeded', retry_after_seconds: 3600 }); return
   }
 
-  // Phase 4.5.B will verify the Turnstile token here. For now, we just note
-  // whether one was sent. P4.5.B will reject the request when soft limit is
-  // hit and no valid Turnstile token is present.
+  // Phase 4.5.B — Turnstile enforcement past the soft limit.
+  // 1. If a token was sent, verify it via Cloudflare siteverify regardless of
+  //    rate. A valid token boosts trust on the row (turnstile_validated=true).
+  // 2. If recent >= soft limit AND no valid token AND the secret is
+  //    configured → reject with 429 turnstile_required + the public site key
+  //    so the frontend can render the widget and retry.
+  // 3. If the secret is NOT configured (e.g., dev or pre-rollout), fail-open:
+  //    log a warning and proceed. This keeps the endpoint useful before
+  //    Cloudflare is wired up.
   let turnstileValidated = false
-  if (recentCount >= SOFT_LIMIT_PER_HOUR && !turnstileToken) {
-    // P4.5.A: log + allow. P4.5.B will reject with 429 turnstile_required.
-    console.warn('[public_gallery_session] soft limit hit without turnstile token', { ip, recentCount, galleryId })
+  if (turnstileToken && CF_TURNSTILE_SECRET) {
+    turnstileValidated = await verifyTurnstileToken(turnstileToken, ip)
   }
-  if (turnstileToken) {
-    // P4.5.B will replace this stub with a real Cloudflare siteverify call.
-    turnstileValidated = false
+
+  if (recentCount >= SOFT_LIMIT_PER_HOUR && !turnstileValidated) {
+    if (CF_TURNSTILE_SECRET) {
+      res.status(429).json({
+        ok: false,
+        error: 'turnstile_required',
+        retry_after_seconds: 60,
+        turnstile_site_key: CF_TURNSTILE_SITE_KEY || null,
+      })
+      return
+    }
+    console.warn('[public_gallery_session] soft limit hit but CF_TURNSTILE_SECRET unset; failing open', { ip, recentCount, galleryId })
   }
 
   // Mint or reuse session via RPC.
