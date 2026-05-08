@@ -160,6 +160,11 @@ interface SignedUrlBody {
   bucket?: string
   path?: string
 }
+interface PublicGallerySessionBody {
+  action: 'public_gallery_session'
+  galleryId?: string
+  turnstileToken?: string
+}
 type ActionBody =
   | AppendBody
   | ChooseVariantBody
@@ -168,6 +173,7 @@ type ActionBody =
   | VerifyCodeBody
   | RedeemTokenBody
   | SignedUrlBody
+  | PublicGallerySessionBody
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -768,6 +774,110 @@ async function handleSignedUrl(
   })
 }
 
+// ── Phase 4.5.A — public_gallery_session ────────────────────────────────
+//
+// Issues a 60-min opaque token (43-char base64url) scoped to one gallery,
+// one IP. Used by the anonymous viewer at /<biz>/<gallery> to call
+// signed_url after the bucket flip. NOT to be confused with Phase 3
+// `verify_code`/`redeem_token` which authenticate PIN-protected client
+// dashboards.
+//
+// Anti-abuse:
+//   - 30 sessions/IP/hour soft (will require Turnstile in P4.5.B)
+//   - 100 sessions/IP/hour hard ceiling
+//   - Origin allowlist (existing guard)
+//
+// Idempotent on (ip, galleryId): a same-IP request that lands within 5 min
+// of an existing un-expired token reuses it (issue_public_gallery_session
+// RPC handles this).
+
+const SOFT_LIMIT_PER_HOUR = 30
+const HARD_LIMIT_PER_HOUR = 100
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function getClientIp(req: VercelRequest): string {
+  // Vercel forwards x-forwarded-for. First entry is the real client.
+  const xff = req.headers['x-forwarded-for']
+  const xffStr = Array.isArray(xff) ? xff[0] : xff
+  if (xffStr) return xffStr.split(',')[0].trim()
+  const cf = req.headers['cf-connecting-ip']
+  if (typeof cf === 'string') return cf
+  const real = req.headers['x-real-ip']
+  if (typeof real === 'string') return real
+  return '0.0.0.0'
+}
+
+async function handlePublicGallerySession(
+  body: PublicGallerySessionBody,
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<void> {
+  if (!supabase) { res.status(500).json({ ok: false, error: 'supabase_not_configured' }); return }
+
+  const galleryId = String(body.galleryId ?? '').trim()
+  if (!galleryId || !UUID_RE.test(galleryId)) {
+    res.status(400).json({ ok: false, error: 'invalid_payload' }); return
+  }
+
+  const ip = getClientIp(req)
+  const userAgent = (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null
+  const turnstileToken = String(body.turnstileToken ?? '').trim()
+
+  // Per-IP rate limit: count rows in the last hour.
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  const { count, error: countErr } = await supabase
+    .from('public_gallery_sessions')
+    .select('token', { count: 'exact', head: true })
+    .eq('ip', ip)
+    .gte('issued_at', oneHourAgo)
+  if (countErr) {
+    res.status(500).json({ ok: false, error: 'rate_check_failed', detail: countErr.message.slice(0, 200) }); return
+  }
+  const recentCount = count ?? 0
+
+  if (recentCount >= HARD_LIMIT_PER_HOUR) {
+    res.status(429).json({ ok: false, error: 'hard_limit_exceeded', retry_after_seconds: 3600 }); return
+  }
+
+  // Phase 4.5.B will verify the Turnstile token here. For now, we just note
+  // whether one was sent. P4.5.B will reject the request when soft limit is
+  // hit and no valid Turnstile token is present.
+  let turnstileValidated = false
+  if (recentCount >= SOFT_LIMIT_PER_HOUR && !turnstileToken) {
+    // P4.5.A: log + allow. P4.5.B will reject with 429 turnstile_required.
+    console.warn('[public_gallery_session] soft limit hit without turnstile token', { ip, recentCount, galleryId })
+  }
+  if (turnstileToken) {
+    // P4.5.B will replace this stub with a real Cloudflare siteverify call.
+    turnstileValidated = false
+  }
+
+  // Mint or reuse session via RPC.
+  const { data, error: rpcErr } = await supabase.rpc('issue_public_gallery_session', {
+    p_gallery_id: galleryId,
+    p_ip: ip,
+    p_user_agent: userAgent,
+    p_turnstile_validated: turnstileValidated,
+  })
+  if (rpcErr) {
+    if (rpcErr.message?.includes('gallery_not_live')) {
+      res.status(404).json({ ok: false, error: 'gallery_not_live' }); return
+    }
+    res.status(500).json({ ok: false, error: 'issue_failed', detail: rpcErr.message?.slice(0, 200) }); return
+  }
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row?.token || !row?.expires_at) {
+    res.status(500).json({ ok: false, error: 'issue_failed', detail: 'rpc_returned_empty' }); return
+  }
+
+  res.status(200).json({
+    ok: true,
+    token: row.token,
+    expires_at: row.expires_at,
+  })
+}
+
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -804,6 +914,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (action === 'signed_url') {
     await handleSignedUrl(body as SignedUrlBody, req, res); return
+  }
+  if (action === 'public_gallery_session') {
+    await handlePublicGallerySession(body as PublicGallerySessionBody, req, res); return
   }
 
   return res.status(400).json({ ok: false, error: 'unknown_action', detail: String(action) })
