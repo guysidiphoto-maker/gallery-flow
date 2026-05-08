@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase, storageUrl } from '../supabase'
+import { SignedImg } from '../components/SignedImg'
 import { loadPortfolioSettings, getFontFamily, type PortfolioSettings, DEFAULT_SETTINGS } from '../components/portfolioSettings'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -551,7 +552,7 @@ export function PortfolioPage() {
             {galPhotos.map((img, i) => (
               <div key={img.id} ref={reveal} data-delay={i * 60}
                 className="pf-thumb" style={{ borderRadius: 0 }}>
-                <img src={imgUrl(img.thumbnail_path || img.storage_path)} alt=""
+                <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path} alt=""
                   style={{ width: '100%', height: 'auto', display: 'block' }}
                   loading="lazy" />
               </div>

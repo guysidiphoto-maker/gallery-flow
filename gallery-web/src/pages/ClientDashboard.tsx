@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react'
 import { supabase, storageUrl } from '../supabase'
+import { signedStorageUrl } from '../lib/signedStorage'
+import { SignedImg } from '../components/SignedImg'
 // Heavy panels are only rendered when their tab is active. Lazy-loading
 // them strips ~220KB (html2canvas + jsPDF in TenderBuilder, plus the rest
 // of PortfolioEditor + SocialManager) from the initial bundle most clients
@@ -669,7 +671,7 @@ export function ClientDashboard() {
                     onClick={async () => {
                       setDownloading('all')
                       for (const img of selectedImages.slice(0, 20)) {
-                        const url = storageUrl('gallery-images', img.storage_path)
+                        const url = await signedStorageUrl('gallery-images', img.storage_path)
                         await downloadImage(url, `post_${img.filename}`)
                         await new Promise(r => setTimeout(r, 300))
                       }
@@ -708,8 +710,9 @@ export function ClientDashboard() {
                         outlineOffset: selected ? -2 : 0,
                       }}
                     >
-                      <img
-                        src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+                      <SignedImg
+                        bucket="gallery-images"
+                        path={img.thumbnail_path || img.storage_path}
                         alt="" loading="lazy"
                         style={{
                           width: '100%', height: '100%', objectFit: 'cover', display: 'block',
@@ -747,7 +750,8 @@ export function ClientDashboard() {
                           onClick={async (e) => {
                             e.stopPropagation()
                             setDownloading(img.id)
-                            await downloadImage(storageUrl('gallery-images', img.storage_path), `post_${img.filename}`)
+                            const url = await signedStorageUrl('gallery-images', img.storage_path)
+                            await downloadImage(url, `post_${img.filename}`)
                             setDownloading(null)
                           }}
                           aria-label="Download"
@@ -1076,8 +1080,9 @@ export function ClientDashboard() {
                             outlineOffset: selected ? -2 : 0,
                           }}
                         >
-                          <img
-                            src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+                          <SignedImg
+                            bucket="gallery-images"
+                            path={img.thumbnail_path || img.storage_path}
                             alt="" loading="lazy"
                             style={{
                               width: '100%', height: '100%', objectFit: 'cover', display: 'block',

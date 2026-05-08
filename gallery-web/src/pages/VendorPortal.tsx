@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase, storageUrl } from '../supabase'
+import { signedStorageUrl } from '../lib/signedStorage'
+import { SignedImg } from '../components/SignedImg'
 
 interface VendorInfo {
   id: string; name: string; category: string; logo_url: string | null
@@ -158,7 +160,8 @@ export function VendorPortal() {
     setDownloading(true)
     const selected = images.filter(i => selectedIds.has(i.id))
     for (const img of selected) {
-      await downloadImage(storageUrl('gallery-images', img.storage_path), img.filename)
+      const url = await signedStorageUrl('gallery-images', img.storage_path)
+      await downloadImage(url, img.filename)
       await new Promise(r => setTimeout(r, 200))
     }
     setDownloading(false)
@@ -300,8 +303,9 @@ export function VendorPortal() {
                         aspectRatio: '1', overflow: 'hidden', position: 'relative', cursor: 'pointer',
                       }}
                     >
-                      <img
-                        src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+                      <SignedImg
+                        bucket="gallery-images"
+                        path={img.thumbnail_path || img.storage_path}
                         alt="" loading="lazy"
                         style={{
                           width: '100%', height: '100%', objectFit: 'cover', display: 'block',

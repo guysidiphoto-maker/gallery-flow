@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase, storageUrl } from '../supabase'
+import { SignedImg } from '../components/SignedImg'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -594,8 +595,9 @@ export function ClientPage() {
                       position: 'relative', background: 'rgba(255,255,255,.02)',
                     }}
                   >
-                    <img
-                      src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+                    <SignedImg
+                      bucket="gallery-images"
+                      path={img.thumbnail_path || img.storage_path}
                       alt="" loading="lazy"
                       style={{
                         width: '100%', height: '100%', objectFit: 'cover', display: 'block',
