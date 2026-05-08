@@ -4,8 +4,12 @@
 // the SAME key, and sets `images.public_thumb_present = true` on success.
 // Idempotent: re-running just skips rows already flagged true.
 //
-// Auth: service-role only. The Authorization bearer must equal
-// SUPABASE_SERVICE_ROLE_KEY. Anon and photographer JWTs are rejected.
+// Auth: service-role only. Function deploys with `verify_jwt: true`, so the
+// Supabase platform validates the JWT signature against SUPABASE_JWT_SECRET
+// before our handler runs. We then read the JWT payload and require
+// `role === 'service_role'`. This is the same pattern Supabase recommends
+// for admin-only edge functions and works regardless of which key format
+// the dashboard exposes (legacy JWT vs new sb_secret_*).
 //
 // Input (POST JSON, all optional):
 //   { batchSize?: number, businessId?: string, galleryId?: string }
@@ -27,7 +31,7 @@ const PRIVATE_BUCKET = 'gallery-images'
 const PUBLIC_BUCKET  = 'gallery-images-thumbs-public'
 const DEFAULT_BATCH = 200
 const MAX_BATCH = 500
-const CONCURRENCY = 6
+const CONCURRENCY = 12
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -43,11 +47,19 @@ function json(body: unknown, status = 200): Response {
 }
 
 function requireServiceRole(req: Request) {
+  // The platform already verified the JWT (verify_jwt: true). We just need
+  // to confirm the role claim is `service_role`.
   const authHeader = req.headers.get('Authorization') ?? ''
   const token = authHeader.replace(/^Bearer\s+/i, '')
-  if (!token || token !== SUPABASE_SERVICE_ROLE_KEY) {
+  const parts = token.split('.')
+  if (parts.length !== 3) throw new Error('unauthorized')
+  let payload: { role?: string }
+  try {
+    payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+  } catch {
     throw new Error('unauthorized')
   }
+  if (payload.role !== 'service_role') throw new Error('unauthorized')
 }
 
 interface Row {
