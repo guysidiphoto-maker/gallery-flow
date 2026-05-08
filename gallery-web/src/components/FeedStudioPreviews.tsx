@@ -10,7 +10,7 @@
 // All inline styles via CSSProperties; shared tokens at the bottom of the file.
 
 import type { CSSProperties, JSX } from 'react'
-import { storageUrl } from '../supabase'
+import { SignedImg } from './SignedImg'
 
 // ── Types (frozen contracts mirrored from the architecture spec) ─────────
 type PostFormat = 'single' | 'carousel' | 'story' | 'reel_cover' | 'text_slide'
@@ -91,9 +91,9 @@ function fmtDate(iso?: string): string {
   return `יום ${day} · ${date}/${month} · ${hh}:${mm}`
 }
 
-function imgSrc(img: TopPick | undefined): string | undefined {
+function imgPath(img: TopPick | undefined): string | undefined {
   if (!img) return undefined
-  return storageUrl('gallery-images', img.thumbnail_path || img.storage_path)
+  return img.thumbnail_path || img.storage_path
 }
 
 function cropFor(crop: Crop | undefined): Crop {
@@ -154,14 +154,15 @@ export function SinglePostCard({
   const crop = cropFor(post.crop)
   const status = (post.status ?? 'draft') as PostStatus
   const aspect = aspectStr(crop.aspect)
-  const src = imgSrc(img)
+  const path = imgPath(img)
 
   return (
     <div onClick={onClick} style={cardStyle(!!onClick)}>
       <div style={{ aspectRatio: aspect, position: 'relative', background: '#000' }}>
-        {src && (
-          <img
-            src={src}
+        {path && (
+          <SignedImg
+            bucket="gallery-images"
+            path={path}
             alt=""
             loading="lazy"
             style={photoStyle(crop.focalX, crop.focalY)}
@@ -209,7 +210,7 @@ export function CarouselPostCard({
             // i=0 is the bottom of the deck (most offset), i=2 is the top tile.
             const depthFromTop = deckImages.length - 1 - i
             const offset = depthFromTop * 8
-            const src = imgSrc(img)
+            const path = imgPath(img)
             return (
               <div
                 key={i}
@@ -224,9 +225,10 @@ export function CarouselPostCard({
                   boxShadow: '0 4px 12px rgba(0,0,0,.45)',
                 }}
               >
-                {src && (
-                  <img
-                    src={src}
+                {path && (
+                  <SignedImg
+                    bucket="gallery-images"
+                    path={path}
                     alt=""
                     loading="lazy"
                     style={photoStyle(0.5, 0.5)}
@@ -264,7 +266,7 @@ export function StoryPostCard({
   const firstImg = firstId ? imageById.get(firstId) : undefined
   const firstCrop = firstId && post.crops ? post.crops[firstId] : undefined
   const crop = cropFor(firstCrop)
-  const src = imgSrc(firstImg)
+  const path = imgPath(firstImg)
 
   return (
     <div onClick={onClick} style={cardStyle(!!onClick)}>
@@ -310,15 +312,16 @@ export function StoryPostCard({
             ))}
           </div>
           {/* First slide photo (full-bleed) */}
-          {src && (
-            <img
-              src={src}
+          {path && (
+            <SignedImg
+              bucket="gallery-images"
+              path={path}
               alt=""
               loading="lazy"
               style={photoStyle(crop.focalX, crop.focalY)}
             />
           )}
-          {!src && (
+          {!path && (
             <div style={{
               position: 'absolute', inset: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -353,14 +356,15 @@ export function ReelCoverPostCard({
   const gallery = post.source_gallery_id ? galleryById.get(post.source_gallery_id) : undefined
   const crop = cropFor(post.crop)
   const status = (post.status ?? 'draft') as PostStatus
-  const src = imgSrc(img)
+  const path = imgPath(img)
 
   return (
     <div onClick={onClick} style={cardStyle(!!onClick)}>
       <div style={{ aspectRatio: '9/16', position: 'relative', background: '#000' }}>
-        {src && (
-          <img
-            src={src}
+        {path && (
+          <SignedImg
+            bucket="gallery-images"
+            path={path}
             alt=""
             loading="lazy"
             style={photoStyle(crop.focalX, crop.focalY)}

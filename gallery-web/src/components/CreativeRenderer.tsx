@@ -12,7 +12,7 @@
 // `displaySize` prop, so previews can be small but exports can be 1080.
 
 import { useMemo, type CSSProperties } from 'react'
-import { storageUrl } from '../supabase'
+import { SignedImg } from './SignedImg'
 
 // ─── Design tokens (mirror /api/generate-campaign.ts DIRECTIONS) ────────
 export interface DirectionTokens {
@@ -164,8 +164,9 @@ function HeadlineOverlay({
   return (
     <>
       {img && (
-        <img
-          src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+        <SignedImg
+          bucket="gallery-images"
+          path={img.thumbnail_path || img.storage_path}
           alt=""
           loading="lazy"
           style={{
@@ -231,8 +232,9 @@ function ColorBlockFrame({
         boxShadow: `0 0 0 8px ${tokens.bg_color}`,
       }}>
         {img && (
-          <img
-            src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+          <SignedImg
+            bucket="gallery-images"
+            path={img.thumbnail_path || img.storage_path}
             alt=""
             loading="lazy"
             style={{
@@ -298,8 +300,9 @@ function SplitTile3({
           borderInlineEnd: slide < 2 ? `2px solid ${tokens.bg_color}` : 'none',
         }}>
           {img && (
-            <img
-              src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+            <SignedImg
+              bucket="gallery-images"
+              path={img.thumbnail_path || img.storage_path}
               alt=""
               loading="lazy"
               style={{
@@ -412,8 +415,9 @@ function MagazineSpread({
         width: photoW, height: CANVAS, overflow: 'hidden',
       }}>
         {img && (
-          <img
-            src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+          <SignedImg
+            bucket="gallery-images"
+            path={img.thumbnail_path || img.storage_path}
             alt=""
             loading="lazy"
             style={{
@@ -471,8 +475,9 @@ function DuotonePortrait({
   return (
     <>
       {img && (
-        <img
-          src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+        <SignedImg
+          bucket="gallery-images"
+          path={img.thumbnail_path || img.storage_path}
           alt=""
           loading="lazy"
           style={{
