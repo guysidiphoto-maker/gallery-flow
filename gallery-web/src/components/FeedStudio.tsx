@@ -367,13 +367,24 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
     }
   }
 
+  // Read the Phase 3 server-issued session token. Empty string for legacy
+  // (un-migrated) clients — in that case the header is omitted and the
+  // backend's advisory mode allows the request through.
+  function readSessionToken(): string {
+    try { return sessionStorage.getItem(`client-token-${clientId}`) ?? '' } catch { return '' }
+  }
+
   async function chooseVariant(variantId: string) {
     if (!plan) return
     setAccepting(variantId)
     try {
+      const sessionToken = readSessionToken()
       const res = await fetch('/api/append-event-posts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sessionToken ? { 'X-Client-Session': sessionToken } : {}),
+        },
         body: JSON.stringify({ clientId, planId: plan.id, action: 'choose_variant', variantId }),
       })
       const json = await res.json().catch(() => ({}))
@@ -394,9 +405,13 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
   async function unchooseVariant() {
     if (!plan) return
     try {
+      const sessionToken = readSessionToken()
       const res = await fetch('/api/append-event-posts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sessionToken ? { 'X-Client-Session': sessionToken } : {}),
+        },
         body: JSON.stringify({ clientId, planId: plan.id, action: 'unchoose_variant' }),
       })
       const json = await res.json().catch(() => ({}))
@@ -415,9 +430,13 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
   async function savePostEdit(updated: SinglePost, variantId: string) {
     if (!plan) return
     try {
+      const sessionToken = readSessionToken()
       const res = await fetch('/api/append-event-posts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sessionToken ? { 'X-Client-Session': sessionToken } : {}),
+        },
         body: JSON.stringify({
           clientId, planId: plan.id, action: 'save_post_edit',
           variantId, post: updated,
