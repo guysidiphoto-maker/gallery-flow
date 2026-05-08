@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo, Fragment } from 'react'
 import JSZip from 'jszip'
 import { supabase, storageUrl } from './supabase'
+import { ensurePublicSession, isPublicViewerSignedUrlsEnabled } from './lib/publicSession'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
@@ -1150,6 +1151,38 @@ export function App() {
       setStories(verified)
     }
   }
+
+  // ── Phase 4.5.C — public-viewer session bootstrap ───────────────────────
+  // When a gallery loads, fire-and-forget request a public-viewer token so
+  // signedStorage.ts has it ready before any signed_url call. No-op when
+  // VITE_PUBLIC_VIEWER_SIGNED_URLS is not '1' (the helper short-circuits).
+  // Refreshes silently every 50 minutes; mid-scroll expiry is handled
+  // lazily by signedStorage.ts which re-issues on cache miss.
+  useEffect(() => {
+    if (!gallery?.id) return
+    if (!isPublicViewerSignedUrlsEnabled()) return
+    let cancelled = false
+    ;(async () => {
+      const r = await ensurePublicSession(gallery.id)
+      if (cancelled) return
+      if (r.notLive) {
+        // Gallery isn't live anymore — surface a 404-ish state. We don't
+        // wipe the existing UI here; the user already sees the gallery,
+        // just future signed_url calls will fail and fall back to public.
+        // P4.5.E will tighten this when the bucket actually flips.
+        console.warn('[publicSession] gallery_not_live')
+      }
+      if (r.needsTurnstile) {
+        // P4.5.D will render the Turnstile widget here. For now, just log.
+        console.warn('[publicSession] turnstile required', r.needsTurnstile)
+      }
+    })()
+    const REFRESH_MS = 50 * 60 * 1000
+    const iv = setInterval(() => {
+      ensurePublicSession(gallery.id, { bypassCache: true }).catch(() => { /* silent */ })
+    }, REFRESH_MS)
+    return () => { cancelled = true; clearInterval(iv) }
+  }, [gallery?.id])
 
   // After unlock, fetch the gated content (images + stories) for galleries
   // that deferred them in loadGallery. No-op for galleries already loaded.
