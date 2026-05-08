@@ -14,7 +14,7 @@
 // edit each post in the workspace (caption, crop, schedule, status).
 
 import { useEffect, useState, useMemo, type CSSProperties } from 'react'
-import { storageUrl } from '../supabase'
+import { SignedImg } from './SignedImg'
 
 interface TopPick {
   id: string
@@ -321,8 +321,9 @@ function SuggestionPreview({
         background: '#000',
       }}>
         {img && (
-          <img
-            src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+          <SignedImg
+            bucket="gallery-images"
+            path={img.thumbnail_path || img.storage_path}
             alt=""
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
@@ -350,8 +351,9 @@ function SuggestionPreview({
             }}
           >
             {img && (
-              <img
-                src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+              <SignedImg
+                bucket="gallery-images"
+                path={img.thumbnail_path || img.storage_path}
                 alt=""
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />

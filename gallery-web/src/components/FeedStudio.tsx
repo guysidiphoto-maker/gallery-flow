@@ -21,6 +21,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react'
 import { supabase, storageUrl } from '../supabase'
+import { SignedImg } from './SignedImg'
 import { CreativeBriefWizard, type Brief } from './CreativeBriefWizard'
 import { PostPreview } from './FeedStudioPreviews'
 import { GalleryDeepDive, type ImageScore } from './GalleryDeepDive'
@@ -1122,8 +1123,9 @@ function SingleEditor({
             <div style={labelStyle}>תמונה · לחץ לקביעת נקודת מיקוד</div>
             <div onClick={onImageClick} style={{ aspectRatio: aspect, position: 'relative', background: '#000', borderRadius: 8, overflow: 'hidden', cursor: 'crosshair', border: '1px solid rgba(255,255,255,.1)' }}>
               {img && (
-                <img
-                  src={storageUrl('gallery-images', img.thumbnail_path || img.storage_path)}
+                <SignedImg
+                  bucket="gallery-images"
+                  path={img.thumbnail_path || img.storage_path}
                   alt=""
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${crop.focalX * 100}% ${crop.focalY * 100}%` }}
                 />
@@ -1244,7 +1246,7 @@ function ReplacePicker({
                   border: isCurrent ? '2px solid #D4FF00' : '2px solid transparent',
                 }}
               >
-                <img src={storageUrl('gallery-images', p.thumbnail_path || p.storage_path)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                <SignedImg bucket="gallery-images" path={p.thumbnail_path || p.storage_path} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                 {isUsed && <div style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,.7)', borderRadius: 3, padding: '2px 6px', fontSize: 11, color: '#fff' }}>✓ בשימוש</div>}
                 {isCurrent && <div style={{ position: 'absolute', bottom: 4, left: 4, background: '#D4FF00', borderRadius: 3, padding: '2px 6px', fontSize: 10, color: '#000', fontWeight: 700 }}>נוכחי</div>}
                 {gallery && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '20px 6px 4px', background: 'linear-gradient(transparent, rgba(0,0,0,.85))', fontSize: 10, color: 'rgba(255,255,255,.85)', fontWeight: 600 }}>{gallery.name}</div>}

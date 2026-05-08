@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import JSZip from 'jszip'
 import { storageUrl } from '../supabase'
+import { signedStorageUrl } from '../lib/signedStorage'
+import { SignedImg } from './SignedImg'
 import { PdfEditor } from './PdfEditor'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -118,7 +120,8 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
       for (let i = 0; i < selected.length; i++) {
         const img = selected[i]
         try {
-          const res = await fetch(imgUrl(img.storage_path))
+          const url = await signedStorageUrl('gallery-images', img.storage_path)
+          const res = await fetch(url)
           const blob = await res.blob()
           zip.file(img.filename || `photo-${i + 1}.jpg`, blob)
         } catch { /* skip */ }
@@ -625,7 +628,7 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
                               boxShadow: sel ? '0 0 0 4px rgba(129,140,248,.15)' : 'none',
                             }}
                           >
-                            <img src={imgUrl(img.thumbnail_path || img.storage_path)} alt=""
+                            <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path} alt=""
                               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
                             {sel && (
                               <div style={{
@@ -800,7 +803,7 @@ export function TenderBuilder({ galleries, allImages, covers, businessName }: Te
                         boxShadow: sel ? '0 0 0 3px rgba(129,140,248,.2)' : 'none',
                       }}
                     >
-                      <img src={imgUrl(img.thumbnail_path || img.storage_path)} alt=""
+                      <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path} alt=""
                         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
                       <div style={{
                         position: 'absolute', top: 6, right: 6, width: 20, height: 20, borderRadius: 5,

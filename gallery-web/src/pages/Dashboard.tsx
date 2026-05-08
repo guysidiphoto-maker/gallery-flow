@@ -3,6 +3,7 @@ import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany } from '../lib/uploadPipeline'
 import { signedStorageUrl } from '../lib/signedStorage'
+import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
@@ -2299,8 +2300,9 @@ export function Dashboard() {
                                   pointerEvents: 'none',
                                 }} />
                               )}
-                              <img
-                                src={imgUrl(img.thumbnail_path || img.storage_path)}
+                              <SignedImg
+                                bucket="gallery-images"
+                                path={img.thumbnail_path || img.storage_path}
                                 alt="" loading="lazy"
                                 style={{
                                   width: '100%', height: '100%', objectFit: 'cover', display: 'block',
@@ -3744,7 +3746,7 @@ export function Dashboard() {
                                       opacity: isCover ? 1 : 0.92,
                                       transition: 'outline-offset .15s, opacity .15s',
                                     }}>
-                                    <img src={imgUrl(img.thumbnail_path || img.storage_path)}
+                                    <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path}
                                       alt="" loading="lazy"
                                       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                                   </button>
