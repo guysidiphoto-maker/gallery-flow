@@ -155,6 +155,11 @@ interface RedeemTokenBody {
   action: 'redeem_token'
   token?: string
 }
+interface SignedUrlBody {
+  action: 'signed_url'
+  bucket?: string
+  path?: string
+}
 type ActionBody =
   | AppendBody
   | ChooseVariantBody
@@ -162,6 +167,7 @@ type ActionBody =
   | SavePostEditBody
   | VerifyCodeBody
   | RedeemTokenBody
+  | SignedUrlBody
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -717,6 +723,51 @@ async function handleSavePostEdit(
   })
 }
 
+// ── Action: signed_url (Phase 4 prep) ───────────────────────────────────
+
+const ALLOWED_BUCKETS = new Set(['gallery-images', 'gallery-stories', 'demo-uploads'])
+
+async function handleSignedUrl(
+  body: SignedUrlBody,
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<void> {
+  if (!supabase) { res.status(500).json({ ok: false, error: 'supabase_not_configured' }); return }
+
+  const bucket = String(body.bucket ?? '').trim()
+  const path = String(body.path ?? '').trim()
+  if (!bucket || !path) { res.status(400).json({ ok: false, error: 'bucket_and_path_required' }); return }
+  if (!ALLOWED_BUCKETS.has(bucket)) { res.status(400).json({ ok: false, error: 'bucket_not_allowed' }); return }
+  if (path.includes('..')) { res.status(400).json({ ok: false, error: 'invalid_path' }); return }
+
+  // Phase 3 token check (advisory): if a token is present, verify and log.
+  // For Phase 4.1 we issue signed URLs WITHOUT requiring a token, so the bucket
+  // can stay public during prep. When the bucket flips private, token will
+  // become required — but that's a later phase's enforcement flag flip.
+  const headerToken = String(req.headers['x-client-session'] ?? '').trim()
+  let tokenClientId: string | null = null
+  if (headerToken) {
+    const { data } = await supabase.rpc('verify_client_token', { p_token: headerToken })
+    tokenClientId = (data as string | null) ?? null
+  }
+
+  // Issue a 60-minute signed URL via Supabase storage API.
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60)
+  if (error || !data?.signedUrl) {
+    res.status(500).json({ ok: false, error: 'sign_failed', detail: error?.message?.slice(0, 200) })
+    return
+  }
+
+  res.status(200).json({
+    ok: true,
+    url: data.signedUrl,
+    expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    // Echo whether token was present (helps observability when we flip the
+    // bucket and need to know if any clients are still calling without one).
+    token_present: tokenClientId !== null,
+  })
+}
+
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -750,6 +801,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (action === 'redeem_token') {
     await handleRedeemToken(body as RedeemTokenBody, res); return
+  }
+  if (action === 'signed_url') {
+    await handleSignedUrl(body as SignedUrlBody, req, res); return
   }
 
   return res.status(400).json({ ok: false, error: 'unknown_action', detail: String(action) })
