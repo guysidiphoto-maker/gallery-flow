@@ -1,10 +1,15 @@
-// signedStorage.ts — Phase 4 prep. Not yet wired into any callsite.
+// signedStorage.ts — Phase 4 prep, extended in P4.5.C.
 //
 // Today, every <img src={storageUrl(bucket, path)} /> uses a permanent public
 // URL because the bucket is public. Phase 4 will flip the bucket private;
 // this helper is the swap-in replacement that requests a short-lived signed
 // URL from /api/append-event-posts (action='signed_url') and falls back to
 // the public URL if the request fails.
+//
+// P4.5.C: also reads the public-viewer session token (set by publicSession.ts
+// when the SPA boots an anonymous gallery viewer) and passes it as `pvt` in
+// the signed_url request. The backend verifies the token's gallery scope
+// against the path before issuing.
 
 import { storageUrl } from '../supabase'
 
@@ -31,9 +36,34 @@ function readSessionToken(): string {
   return ''
 }
 
+// P4.5.C: scan sessionStorage for any pixflow-public-token-* entry. We don't
+// know which gallery is being rendered here (the helper is path-based), so
+// pass whatever the SPA cached for the active anonymous viewer. The backend
+// extracts the gallery_id from the path and validates the token's scope —
+// if the cached token belongs to a different gallery, the backend rejects
+// it and we fall back to the public URL.
+function readPublicViewerToken(): string {
+  try {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i)
+      if (k && k.startsWith('pixflow-public-token-')) {
+        const raw = sessionStorage.getItem(k)
+        if (!raw) continue
+        try {
+          const parsed = JSON.parse(raw) as { token?: string; expiresAt?: number }
+          if (parsed.token && (parsed.expiresAt ?? 0) > Date.now()) return parsed.token
+        } catch { /* corrupt entry, skip */ }
+      }
+    }
+  } catch { /* ignore */ }
+  return ''
+}
+
 interface SignedStorageOptions {
-  /** Override session token (e.g., when caller already has it). */
+  /** Override Phase 3 client session token (e.g., when caller already has it). */
   token?: string
+  /** Override Phase 4.5 public viewer token (e.g., when caller already has it). */
+  pvt?: string
   /** Skip cache (force fresh signed URL). */
   bypassCache?: boolean
   /** When the signed URL request fails, fall back to public URL. Default true. */
@@ -60,13 +90,19 @@ export async function signedStorageUrl(
   const fetchPromise = (async () => {
     try {
       const token = options.token ?? readSessionToken()
+      const pvt = options.pvt ?? readPublicViewerToken()
       const res = await fetch('/api/append-event-posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { 'X-Client-Session': token } : {}),
         },
-        body: JSON.stringify({ action: 'signed_url', bucket, path }),
+        body: JSON.stringify({
+          action: 'signed_url',
+          bucket,
+          path,
+          ...(pvt ? { pvt } : {}),
+        }),
       })
       const json = await res.json()
       if (res.ok && json.ok && json.url) {

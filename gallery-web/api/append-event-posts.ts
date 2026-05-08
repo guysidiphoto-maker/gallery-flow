@@ -159,6 +159,9 @@ interface SignedUrlBody {
   action: 'signed_url'
   bucket?: string
   path?: string
+  /** P4.5.C: public-viewer token, gallery-scoped. Verified against the
+   *  gallery_id extracted from `path`'s second segment. */
+  pvt?: string
 }
 interface PublicGallerySessionBody {
   action: 'public_gallery_session'
@@ -757,6 +760,32 @@ async function handleSignedUrl(
     tokenClientId = (data as string | null) ?? null
   }
 
+  // Phase 4.5.C — public-viewer token. Path scheme is
+  // `<biz_slug>/<gallery_id>/<thumbs|web|originals>/<file>`. Extract the
+  // gallery_id (second segment) and verify the pvt is alive + gallery-scoped.
+  // Advisory only for now: log on mismatch but still issue. P4.5.E will flip
+  // this to enforcing when the bucket goes private.
+  const pvt = String(body.pvt ?? '').trim()
+  let pvtValidated = false
+  let pvtMismatch = false
+  if (pvt && bucket === 'gallery-images') {
+    const segments = path.split('/')
+    const galleryIdGuess = segments[1] // <slug>/<gallery_id>/...
+    if (galleryIdGuess && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(galleryIdGuess)) {
+      const { data, error: pvtErr } = await supabase.rpc('verify_public_gallery_session', {
+        p_token: pvt,
+        p_gallery_id: galleryIdGuess,
+      })
+      if (!pvtErr) {
+        pvtValidated = data === true
+        pvtMismatch = !pvtValidated
+        if (pvtMismatch) {
+          console.warn('[signed_url] pvt provided but failed verification', { galleryIdGuess })
+        }
+      }
+    }
+  }
+
   // Issue a 60-minute signed URL via Supabase storage API.
   const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60)
   if (error || !data?.signedUrl) {
@@ -771,6 +800,7 @@ async function handleSignedUrl(
     // Echo whether token was present (helps observability when we flip the
     // bucket and need to know if any clients are still calling without one).
     token_present: tokenClientId !== null,
+    pvt_validated: pvtValidated,
   })
 }
 
