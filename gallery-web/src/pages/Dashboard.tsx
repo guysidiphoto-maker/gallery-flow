@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
-import { supabase } from '../supabase'
+import { supabase, storageUrl } from '../supabase'
 import { uploadMany } from '../lib/uploadPipeline'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
@@ -291,7 +291,7 @@ export function Dashboard() {
         if (!img) return null
         const path = img.thumbnail_path || img.web_preview_path
         if (!path) return null
-        return { id: g.id, url: `https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/gallery-images/${path}` }
+        return { id: g.id, url: storageUrl('gallery-images', path) }
       }))
       if (cancelled) return
       const next: Record<string, string> = {}
@@ -907,7 +907,7 @@ export function Dashboard() {
     })
   }
 
-  const imgUrl = (path: string) => `https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/gallery-images/${path}`
+  const imgUrl = (path: string) => storageUrl('gallery-images', path)
 
   // ─── Bulk actions (selectMode) ───────────────────────────────────────────
   function exitSelectMode() {
@@ -2693,7 +2693,7 @@ export function Dashboard() {
                           const isHovered = hoveredStoryId === st.id
                           const isMenuOpen = storyMenuOpenId === st.id
                           const isConfirming = confirmDeleteStoryId === st.id
-                          const url = `https://vlyiqfawkrjvqcmkpfvs.supabase.co/storage/v1/object/public/${STORY_BUCKET}/${st.storage_path}`
+                          const url = storageUrl(STORY_BUCKET, st.storage_path)
                           return (
                             <div
                               key={st.id}

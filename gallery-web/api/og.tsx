@@ -42,6 +42,13 @@ const SUPABASE_ANON_KEY =
   process.env.VITE_SUPABASE_ANON_KEY ||
   ''
 
+// Centralized public-storage URL builder. Mirrors the SPA's storageUrl() in
+// gallery-web/src/supabase.ts but reads SUPABASE_URL from env (edge runtime).
+// Single line so a future signed-URL swap is a one-file change.
+function buildPublicUrl(path: string): string {
+  return `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${path}`
+}
+
 const ACCENT = '#6366f1'
 const ACCENT_LIGHT = '#818cf8'
 const BG = '#07070d'
@@ -105,7 +112,7 @@ async function pickCoverUrl(g: GalleryLite): Promise<string | null> {
   )) as Array<{ web_preview_path: string | null }> | null
   const path = imgs?.[0]?.web_preview_path
   if (!path) return null
-  return `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${path}`
+  return buildPublicUrl(path)
 }
 
 function fallbackResponse(): ImageResponse {
