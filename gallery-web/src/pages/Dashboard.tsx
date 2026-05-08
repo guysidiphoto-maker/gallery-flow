@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany } from '../lib/uploadPipeline'
+import { signedStorageUrl } from '../lib/signedStorage'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
@@ -973,10 +974,17 @@ export function Dashboard() {
       .eq('id', editingGallery.id)
     fetchGalleries()
   }
-  function downloadOriginal(imageId: string) {
+  // Phase 4.3 canary: this is the first call site that goes through the
+  // signed-URL helper instead of the public URL. Today the bucket is still
+  // public, so signed URLs work just like public URLs do; the helper also
+  // falls back to the public URL on any failure (network, server, missing
+  // env). Once we have weeks of clean telemetry on this single surface we
+  // can roll the same swap out to the rest of Dashboard / FeedStudio /
+  // CreativeRenderer (Phase 4.4) and finally App.tsx (Phase 4.5).
+  async function downloadOriginal(imageId: string) {
     const img = galleryImages.find(i => i.id === imageId)
     if (!img) return
-    const url = imgUrl(img.storage_path)
+    const url = await signedStorageUrl('gallery-images', img.storage_path)
     const a = document.createElement('a')
     a.href = url; a.download = img.filename || 'photo.jpg'
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
