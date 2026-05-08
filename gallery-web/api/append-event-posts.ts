@@ -146,7 +146,22 @@ interface SavePostEditBody {
   variantId?: string
   post?: PersistedPost
 }
-type ActionBody = AppendBody | ChooseVariantBody | UnchooseVariantBody | SavePostEditBody
+interface VerifyCodeBody {
+  action: 'verify_code'
+  clientId?: string
+  code?: string
+}
+interface RedeemTokenBody {
+  action: 'redeem_token'
+  token?: string
+}
+type ActionBody =
+  | AppendBody
+  | ChooseVariantBody
+  | UnchooseVariantBody
+  | SavePostEditBody
+  | VerifyCodeBody
+  | RedeemTokenBody
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -245,10 +260,136 @@ async function verifyOwnership(
   }
 }
 
+// ── Phase 3: client session token enforcement (advisory by default) ─────
+//
+// Frontend rolls out the `x-client-session` header in stages. During rollout
+// we verify the token if present and warn on mismatch, but don't block. Once
+// REQUIRE_CLIENT_SESSION_TOKEN=1 is set on Vercel, missing/mismatched tokens
+// hard-fail (401/403). Returns null on success-or-advisory; returns a
+// response-shaped error object when the env flag triggers a hard block.
+async function enforceClientSessionToken(
+  req: VercelRequest,
+  bodyClientId: string,
+): Promise<{ status: number; error: string } | null> {
+  const headerToken = String(req.headers['x-client-session'] ?? '').trim()
+  let tokenClientId: string | null = null
+  if (headerToken && supabase) {
+    const { data } = await supabase.rpc('verify_client_token', { p_token: headerToken })
+    tokenClientId = (data as string | null) ?? null
+  }
+
+  if (tokenClientId !== null && tokenClientId !== bodyClientId) {
+    console.warn('[append-event-posts] token client_id mismatch', {
+      tokenClientId,
+      bodyClientId,
+    })
+    if (process.env.REQUIRE_CLIENT_SESSION_TOKEN === '1') {
+      return { status: 403, error: 'token_client_mismatch' }
+    }
+  }
+  if (!headerToken && process.env.REQUIRE_CLIENT_SESSION_TOKEN === '1') {
+    return { status: 401, error: 'session_token_required' }
+  }
+  return null
+}
+
+// ── Action: verify_code (Phase 3 hashed-PIN login) ──────────────────────
+
+async function handleVerifyCode(
+  body: VerifyCodeBody,
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<void> {
+  if (!supabase) { res.status(500).json({ ok: false, error: 'supabase_not_configured' }); return }
+
+  const clientId = String(body.clientId ?? '').trim()
+  const code = String(body.code ?? '').trim()
+  if (!clientId) { res.status(400).json({ ok: false, error: 'clientId_required' }); return }
+  if (!code || code.length < 4 || code.length > 32) {
+    res.status(400).json({ ok: false, error: 'invalid_code_format' }); return
+  }
+
+  // Extract IP. x-forwarded-for may be a comma-separated list — first entry
+  // is the original client.
+  const xff = req.headers['x-forwarded-for']
+  const xffStr = Array.isArray(xff) ? xff[0] : xff
+  const xRealIp = req.headers['x-real-ip']
+  const xRealIpStr = Array.isArray(xRealIp) ? xRealIp[0] : xRealIp
+  const remote = req.socket?.remoteAddress
+  const rawIp =
+    (xffStr ? xffStr.split(',')[0].trim() : '') ||
+    (xRealIpStr ? String(xRealIpStr).trim() : '') ||
+    (remote ? String(remote).trim() : '')
+  const ip = rawIp || null
+
+  const uaHeader = req.headers['user-agent']
+  const userAgent = Array.isArray(uaHeader) ? uaHeader[0] : (uaHeader ?? null)
+
+  const { data, error } = await supabase.rpc('verify_client_code', {
+    p_client_id: clientId,
+    p_code: code,
+    p_ip: ip,
+    p_user_agent: userAgent,
+  })
+  if (error) {
+    res.status(500).json({ ok: false, error: 'verify_failed', detail: error.message?.slice(0, 200) }); return
+  }
+
+  // RPC returns SETOF or a single composite row. Normalize to one row.
+  const row = Array.isArray(data) ? (data[0] ?? null) : (data ?? null)
+  const token = row?.token ?? null
+  const expiresAt = row?.expires_at ?? null
+  const cooldownUntil = row?.cooldown_until ?? null
+
+  if (token) {
+    res.status(200).json({ ok: true, token, expires_at: expiresAt }); return
+  }
+  if (cooldownUntil) {
+    res.status(429).json({ ok: false, error: 'cooldown_active', cooldown_until: cooldownUntil }); return
+  }
+
+  // All-NULL response can mean either "wrong code" OR "client not migrated
+  // (access_code_hash IS NULL)". Distinguish so the caller can fall back to
+  // legacy plain-text PIN compare during rollout.
+  const { data: cli } = await supabase
+    .from('clients')
+    .select('access_code_hash')
+    .eq('id', clientId)
+    .maybeSingle()
+  const hash = (cli as { access_code_hash?: string | null } | null)?.access_code_hash ?? null
+  if (cli && hash === null) {
+    res.status(200).json({ ok: true, fallback_to_legacy: true }); return
+  }
+
+  res.status(401).json({ ok: false, error: 'invalid_code' })
+}
+
+// ── Action: redeem_token (Phase 3 session-token verification) ───────────
+
+async function handleRedeemToken(
+  body: RedeemTokenBody,
+  res: VercelResponse,
+): Promise<void> {
+  if (!supabase) { res.status(500).json({ ok: false, error: 'supabase_not_configured' }); return }
+
+  const token = String(body.token ?? '').trim()
+  if (!token) { res.status(400).json({ ok: false, error: 'token_required' }); return }
+
+  const { data, error } = await supabase.rpc('verify_client_token', { p_token: token })
+  if (error) {
+    res.status(500).json({ ok: false, error: 'verify_failed', detail: error.message?.slice(0, 200) }); return
+  }
+
+  const clientId = (data as string | null) ?? null
+  if (!clientId) { res.status(401).json({ ok: false, error: 'invalid_token' }); return }
+  res.status(200).json({ ok: true, client_id: clientId })
+}
+
 // ── Action: append_event_posts (DEFAULT, legacy) ────────────────────────
 
 async function handleAppendEventPosts(
   body: AppendBody,
+  req: VercelRequest,
   res: VercelResponse,
 ): Promise<void> {
   if (!supabase) { res.status(500).json({ ok: false, error: 'supabase_not_configured' }); return }
@@ -278,6 +419,9 @@ async function handleAppendEventPosts(
     .eq('id', clientId)
     .maybeSingle()
   if (!client) { res.status(404).json({ ok: false, error: 'client_not_found' }); return }
+
+  const tokenErr = await enforceClientSessionToken(req, clientId)
+  if (tokenErr) { res.status(tokenErr.status).json({ ok: false, error: tokenErr.error }); return }
 
   const persistedPosts: PersistedPost[] = incoming.map(p => {
     const offset = Math.max(1, Math.min(60, Number(p.suggested_schedule_offset_days || 3)))
@@ -410,6 +554,7 @@ async function handleAppendEventPosts(
 
 async function handleChooseVariant(
   body: ChooseVariantBody,
+  req: VercelRequest,
   res: VercelResponse,
 ): Promise<void> {
   if (!supabase) { res.status(500).json({ ok: false, error: 'supabase_not_configured' }); return }
@@ -423,6 +568,9 @@ async function handleChooseVariant(
 
   const own = await verifyOwnership(clientId, planId)
   if (!own.ok) { res.status(own.status).json({ ok: false, error: own.code, detail: own.detail }); return }
+
+  const tokenErr = await enforceClientSessionToken(req, clientId)
+  if (tokenErr) { res.status(tokenErr.status).json({ ok: false, error: tokenErr.error }); return }
 
   const cur = (own.plan.posts ?? {}) as FeedPlanPosts
   const variants = cur.variants ? [...cur.variants] : []
@@ -461,6 +609,7 @@ async function handleChooseVariant(
 
 async function handleUnchooseVariant(
   body: UnchooseVariantBody,
+  req: VercelRequest,
   res: VercelResponse,
 ): Promise<void> {
   if (!supabase) { res.status(500).json({ ok: false, error: 'supabase_not_configured' }); return }
@@ -472,6 +621,9 @@ async function handleUnchooseVariant(
 
   const own = await verifyOwnership(clientId, planId)
   if (!own.ok) { res.status(own.status).json({ ok: false, error: own.code, detail: own.detail }); return }
+
+  const tokenErr = await enforceClientSessionToken(req, clientId)
+  if (tokenErr) { res.status(tokenErr.status).json({ ok: false, error: tokenErr.error }); return }
 
   const cur = (own.plan.posts ?? {}) as FeedPlanPosts
   const newField: FeedPlanPosts = { ...cur, chosen_variant_id: undefined }
@@ -508,6 +660,7 @@ function isPersistedPost(x: unknown): x is PersistedPost {
 
 async function handleSavePostEdit(
   body: SavePostEditBody,
+  req: VercelRequest,
   res: VercelResponse,
 ): Promise<void> {
   if (!supabase) { res.status(500).json({ ok: false, error: 'supabase_not_configured' }); return }
@@ -525,6 +678,9 @@ async function handleSavePostEdit(
 
   const own = await verifyOwnership(clientId, planId)
   if (!own.ok) { res.status(own.status).json({ ok: false, error: own.code, detail: own.detail }); return }
+
+  const tokenErr = await enforceClientSessionToken(req, clientId)
+  if (tokenErr) { res.status(tokenErr.status).json({ ok: false, error: tokenErr.error }); return }
 
   // Re-read + merge in-memory to avoid stale-write losing concurrent edits.
   const cur = (own.plan.posts ?? {}) as FeedPlanPosts
@@ -578,16 +734,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = (body as { action?: string }).action
 
   if (action === 'append_event_posts' || !action) {
-    await handleAppendEventPosts(body as AppendBody, res); return
+    await handleAppendEventPosts(body as AppendBody, req, res); return
   }
   if (action === 'choose_variant') {
-    await handleChooseVariant(body as ChooseVariantBody, res); return
+    await handleChooseVariant(body as ChooseVariantBody, req, res); return
   }
   if (action === 'unchoose_variant') {
-    await handleUnchooseVariant(body as UnchooseVariantBody, res); return
+    await handleUnchooseVariant(body as UnchooseVariantBody, req, res); return
   }
   if (action === 'save_post_edit') {
-    await handleSavePostEdit(body as SavePostEditBody, res); return
+    await handleSavePostEdit(body as SavePostEditBody, req, res); return
+  }
+  if (action === 'verify_code') {
+    await handleVerifyCode(body as VerifyCodeBody, req, res); return
+  }
+  if (action === 'redeem_token') {
+    await handleRedeemToken(body as RedeemTokenBody, res); return
   }
 
   return res.status(400).json({ ok: false, error: 'unknown_action', detail: String(action) })
