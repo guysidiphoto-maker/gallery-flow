@@ -18,6 +18,11 @@
 import { supabase } from '../supabase'
 
 const BUCKET = 'gallery-images'
+// Phase 4.2: thumbs are dual-written here (public bucket) for crawlers / OG /
+// public previews. Same key as in `gallery-images`. Best-effort — failure here
+// must NOT block the upload; the row is committed with public_thumb_present=false
+// and the backfill function reconciles it later.
+const THUMB_PUBLIC_BUCKET = 'gallery-images-thumbs-public'
 
 const WEB_MAX_DIM       = 1600
 const WEB_JPEG_QUALITY  = 0.82
@@ -31,6 +36,7 @@ export interface UploadResult {
   thumbPath: string
   originalPath: string
   originalSize: number
+  publicThumbPresent: boolean
 }
 
 export interface UploadProgress {
@@ -147,7 +153,13 @@ export async function uploadOneImage(file: File, opts: UploadOptions): Promise<U
   ])
 
   onProgress?.({ phase: 'thumb' })
-  await uploadOne(BUCKET, thumbPath, thumb.blob, 'image/jpeg')
+  // Dual-write: primary thumb is mandatory, public mirror is best-effort.
+  const [, publicThumbPresent] = await Promise.all([
+    uploadOne(BUCKET, thumbPath, thumb.blob, 'image/jpeg'),
+    uploadOne(THUMB_PUBLIC_BUCKET, thumbPath, thumb.blob, 'image/jpeg')
+      .then(() => true)
+      .catch(() => false),
+  ])
 
   onProgress?.({ phase: 'web' })
   await uploadOne(BUCKET, webPath, web.blob, 'image/jpeg')
@@ -157,14 +169,15 @@ export async function uploadOneImage(file: File, opts: UploadOptions): Promise<U
 
   onProgress?.({ phase: 'record' })
   const { data, error } = await supabase.rpc('record_image_upload', {
-    p_gallery_id:        galleryId,
-    p_filename:          file.name,
-    p_web_preview_path:  webPath,
-    p_thumbnail_path:    thumbPath,
-    p_original_path:     origPath,
-    p_original_size:     file.size,
-    p_section_id:        sectionId ?? null,
-    p_sort_order:        sortOrder ?? 0,
+    p_gallery_id:            galleryId,
+    p_filename:              file.name,
+    p_web_preview_path:      webPath,
+    p_thumbnail_path:        thumbPath,
+    p_original_path:         origPath,
+    p_original_size:         file.size,
+    p_section_id:            sectionId ?? null,
+    p_sort_order:            sortOrder ?? 0,
+    p_public_thumb_present:  publicThumbPresent,
   })
   if (error) throw error
   const imageId = String(data)
@@ -174,6 +187,7 @@ export async function uploadOneImage(file: File, opts: UploadOptions): Promise<U
     imageId, filename: file.name,
     webPath, thumbPath, originalPath: origPath,
     originalSize: file.size,
+    publicThumbPresent,
   }
 }
 
