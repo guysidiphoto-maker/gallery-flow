@@ -99,10 +99,21 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function fetchImageBytes(url: string): Promise<Uint8Array> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Fetch image failed: ${res.status}`)
-  return new Uint8Array(await res.arrayBuffer())
+// Download image bytes via the service-role Supabase client. Bypasses RLS
+// and works regardless of bucket privacy — the only callsite is the face
+// indexer (line ~190 below). Phase 4 prep: removes the dependency on the
+// public URL of `gallery-images`, so this function keeps working when the
+// bucket flips private in Phase 4.5.
+async function downloadImageBytes(
+  sb: SupabaseClient,
+  bucket: string,
+  path: string,
+): Promise<Uint8Array> {
+  const { data, error } = await sb.storage.from(bucket).download(path)
+  if (error || !data) {
+    throw new Error(`Download image failed: ${error?.message ?? 'no data'}`)
+  }
+  return new Uint8Array(await data.arrayBuffer())
 }
 
 function serviceClient(): SupabaseClient {
@@ -187,8 +198,7 @@ async function indexOneImage(
   }
 
   try {
-    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${image.storage_path}`
-    const bytes = await fetchImageBytes(publicUrl)
+    const bytes = await downloadImageBytes(sb, 'gallery-images', image.storage_path)
 
     const result = await rekognition.send(new IndexFacesCommand({
       CollectionId: collectionId,
