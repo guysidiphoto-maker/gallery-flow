@@ -172,8 +172,31 @@ export function ClientDashboard() {
     return sessionStorage.getItem(`client-dash-${clientId}`) === 'true'
   })
   const [codeInput, setCodeInput] = useState('')
-  const [codeError, setCodeError] = useState(false)
+  const [codeError, setCodeError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [clientCode, setClientCode] = useState('')
+
+  // Token expiry awareness — if the previously-issued session token is past
+  // its server-side expiry, drop the cached "authenticated" flag so the gate
+  // re-prompts on next visit. Runs once per clientId resolution.
+  useEffect(() => {
+    if (!clientId) return
+    try {
+      const expRaw = sessionStorage.getItem(`client-token-expires-${clientId}`)
+      if (expRaw) {
+        // The backend returns a TIMESTAMPTZ which serializes to an ISO string
+        // (e.g., "2026-06-08T15:30:00+00:00"). new Date(...) parses both ISO
+        // and numeric (ms) safely; we keep both interpretations valid.
+        const expMs = new Date(expRaw).getTime()
+        if (Number.isFinite(expMs) && expMs < Date.now()) {
+          sessionStorage.removeItem(`client-dash-${clientId}`)
+          sessionStorage.removeItem(`client-token-${clientId}`)
+          sessionStorage.removeItem(`client-token-expires-${clientId}`)
+          setAuthenticated(false)
+        }
+      }
+    } catch { /* ignore */ }
+  }, [clientId])
 
   // State
   const [galleries, setGalleries] = useState<GalleryRow[]>([])
@@ -341,6 +364,56 @@ export function ClientDashboard() {
     </div>
   )
 
+  // ── Server-issued session token ────────────────────────────────────────
+  // Phase 3 introduces hashed `access_code_hash` + per-attempt rate limiting.
+  // The endpoint replies in three shapes:
+  //   1. `{ ok, token, expires_at }`        → migrated client, hashed PIN ok
+  //   2. `{ ok, fallback_to_legacy: true }` → not yet migrated, do plaintext
+  //   3. `{ error: 'cooldown_active', cooldown_until }` → 429 throttled
+  // Anything else is a generic invalid-code response. `submitting` blocks
+  // double-submits and drives the loading label on the Enter button.
+  async function tryUnlock() {
+    setSubmitting(true)
+    setCodeError(null)
+    try {
+      const res = await fetch('/api/append-event-posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'verify_code', clientId, code: codeInput }),
+      })
+      const json = await res.json().catch(() => ({} as Record<string, unknown>))
+      if (json.ok && json.token) {
+        // New flow: hashed PIN, server-issued token.
+        sessionStorage.setItem(`client-token-${clientId}`, String(json.token))
+        sessionStorage.setItem(`client-token-expires-${clientId}`, String(json.expires_at))
+        sessionStorage.setItem(`client-dash-${clientId}`, 'true')
+        setAuthenticated(true)
+        return
+      }
+      if (json.ok && json.fallback_to_legacy) {
+        // Migration not yet run for this client. Fall back to plain-text compare.
+        if (codeInput === clientCode) {
+          sessionStorage.setItem(`client-dash-${clientId}`, 'true')
+          setAuthenticated(true)
+          return
+        }
+        setCodeError('קוד שגוי')
+        return
+      }
+      if (json.error === 'cooldown_active') {
+        const until = new Date(String(json.cooldown_until))
+        const mins = Math.ceil((until.getTime() - Date.now()) / 60000)
+        setCodeError(`יותר מדי ניסיונות שגויים. נסה שוב בעוד ${mins} דקות.`)
+        return
+      }
+      setCodeError('קוד שגוי')
+    } catch {
+      setCodeError('שגיאת רשת. נסה שוב.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   // ── Code gate ──────────────────────────────────────────────────────────
   if (!authenticated && clientCode) {
     return (
@@ -370,16 +443,12 @@ export function ClientDashboard() {
             <input
               type="text"
               value={codeInput}
-              onChange={e => { setCodeInput(e.target.value.toUpperCase()); setCodeError(false) }}
+              onChange={e => { setCodeInput(e.target.value.toUpperCase()); setCodeError(null) }}
               placeholder="CODE"
               autoFocus
+              disabled={submitting}
               onKeyDown={e => {
-                if (e.key === 'Enter' && codeInput === clientCode) {
-                  setAuthenticated(true)
-                  sessionStorage.setItem(`client-dash-${clientId}`, 'true')
-                } else if (e.key === 'Enter') {
-                  setCodeError(true)
-                }
+                if (e.key === 'Enter' && !submitting) { void tryUnlock() }
               }}
               style={{
                 flex: 1, padding: '12px 14px', fontSize: 15, fontFamily: 'inherit',
@@ -388,31 +457,28 @@ export function ClientDashboard() {
                 borderRadius: 2, outline: 'none', letterSpacing: '0.18em',
                 textAlign: 'center', textTransform: 'uppercase',
                 transition: 'border-color .15s',
+                opacity: submitting ? 0.6 : 1,
               }}
               onFocus={e => { if (!codeError) e.currentTarget.style.borderColor = textPrimary }}
               onBlur={e => { if (!codeError) e.currentTarget.style.borderColor = border }}
             />
             <button
-              onClick={() => {
-                if (codeInput === clientCode) {
-                  setAuthenticated(true)
-                  sessionStorage.setItem(`client-dash-${clientId}`, 'true')
-                } else {
-                  setCodeError(true)
-                }
-              }}
+              onClick={() => { void tryUnlock() }}
+              disabled={submitting}
               style={{
                 padding: '12px 24px', borderRadius: 2,
                 background: textPrimary, border: `1px solid ${textPrimary}`,
-                color: '#fff', fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                color: '#fff', fontSize: 11, fontWeight: 500,
+                cursor: submitting ? 'not-allowed' : 'pointer',
                 fontFamily: 'inherit',
                 letterSpacing: '0.18em', textTransform: 'uppercase',
+                opacity: submitting ? 0.7 : 1,
               }}
-            >Enter</button>
+            >{submitting ? 'מאמת...' : 'Enter'}</button>
           </div>
           {codeError && (
             <p style={{ fontSize: 12, color: '#dc2626', marginTop: 12, fontWeight: 500 }}>
-              קוד שגוי
+              {codeError}
             </p>
           )}
           <a
