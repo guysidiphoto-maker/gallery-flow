@@ -1466,6 +1466,22 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showWelcome, welcomeImages.length, imgBucket])
 
+  // Cover image hook — declared HERE (above the early WelcomeScreen return)
+  // so the hooks order stays stable across renders. React error #310 will
+  // fire if we let this useState/useEffect live below the early return.
+  const coverImage = coverImageId ? images.find(img => img.id === coverImageId) : null
+  const [coverUrl, setCoverUrl] = useState<string | null>(
+    coverImage ? storageUrl(imgBucket, coverImage.storage_path) : null,
+  )
+  useEffect(() => {
+    if (!coverImage) { setCoverUrl(null); return }
+    let cancelled = false
+    signedStorageUrl(imgBucket, coverImage.storage_path)
+      .then(url => { if (!cancelled) setCoverUrl(url) })
+      .catch(() => { /* fallback handled by helper */ })
+    return () => { cancelled = true }
+  }, [imgBucket, coverImage?.storage_path])
+
   // Private face-mode: anon users can't fetch the bulk image list (RLS), so
   // `images` is intentionally empty until the selfie unlocks matches. The
   // welcome screen still needs to show — just without the mosaic. We force
@@ -1904,23 +1920,6 @@ export function App() {
       setDownloadProgress(null)
     }
   }
-
-  // ── Cover image ─────────────────────────────────────────────────────────
-  const coverImage = coverImageId ? images.find(img => img.id === coverImageId) : null
-  // Resolve cover URL via signedStorageUrl so it works after the bucket flip.
-  // Initial render uses the public URL synchronously (zero flicker pre-flip);
-  // useEffect swaps in the signed URL once it resolves.
-  const [coverUrl, setCoverUrl] = useState<string | null>(
-    coverImage ? storageUrl(imgBucket, coverImage.storage_path) : null,
-  )
-  useEffect(() => {
-    if (!coverImage) { setCoverUrl(null); return }
-    let cancelled = false
-    signedStorageUrl(imgBucket, coverImage.storage_path)
-      .then(url => { if (!cancelled) setCoverUrl(url) })
-      .catch(() => { /* fallback handled by helper */ })
-    return () => { cancelled = true }
-  }, [imgBucket, coverImage?.storage_path])
 
   // ── Grid classes ────────────────────────────────────────────────────────
   const gridClasses = [
