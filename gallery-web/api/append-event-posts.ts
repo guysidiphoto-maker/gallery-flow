@@ -748,7 +748,16 @@ async function handleSignedUrl(
   const path = String(body.path ?? '').trim()
   if (!bucket || !path) { res.status(400).json({ ok: false, error: 'bucket_and_path_required' }); return }
   if (!ALLOWED_BUCKETS.has(bucket)) { res.status(400).json({ ok: false, error: 'bucket_not_allowed' }); return }
-  if (path.includes('..')) { res.status(400).json({ ok: false, error: 'invalid_path' }); return }
+  // Path-traversal guard: reject only when '..' appears as a complete path
+  // segment. The original `path.includes('..')` was over-aggressive — real
+  // production filenames like `b270cdd8_11..jpg` contain consecutive dots
+  // inside the filename and aren't traversal attempts.
+  if (path.split('/').some(seg => seg === '..')) {
+    res.status(400).json({ ok: false, error: 'invalid_path' }); return
+  }
+  if (path.startsWith('/') || path.includes('//')) {
+    res.status(400).json({ ok: false, error: 'invalid_path' }); return
+  }
 
   // Phase 3 token check (advisory): if a token is present, verify and log.
   // For Phase 4.1 we issue signed URLs WITHOUT requiring a token, so the bucket
