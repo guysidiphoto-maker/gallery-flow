@@ -48,6 +48,7 @@ function isAllowedOrigin(origin: string | undefined): boolean {
     if (host === 'localhost' || host === '127.0.0.1') return true
     if (host.endsWith('.vercel.app')) return true
     if (host === 'pixflow.co.il' || host.endsWith('.pixflow.co.il')) return true
+    if (host === 'pixflow-ai.com' || host.endsWith('.pixflow-ai.com')) return true
     if (host === 'eclipsemedia.co.il' || host.endsWith('.eclipsemedia.co.il')) return true
     return false
   } catch {
