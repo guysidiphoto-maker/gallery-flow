@@ -1296,6 +1296,82 @@ export function App() {
     document.documentElement.lang = lang
   }, [gallery, lang])
 
+  // ── Storage hooks (must live above all early returns) ───────────────────
+  // These three useState/useEffect pairs MUST be called unconditionally on
+  // every render — React error #310 fires the moment the hook count
+  // diverges between renders. The error/!gallery/password-gate early
+  // returns below would otherwise skip them and crash on subsequent paint.
+  // Inputs are computed defensively so they tolerate gallery=null and an
+  // empty images list during the initial pre-load render.
+  const _hookRaw = (gallery?.delivery_settings || {}) as Record<string, unknown>
+  const _hookImgBucket = gallery?.demo_expires_at ? 'demo-uploads' : 'gallery-images'
+  const _hookCoverImageId = (_hookRaw.coverImageId as string | null | undefined) ?? null
+  const _hookCoverImageUrlSetting = (_hookRaw.coverImageUrl as string | null | undefined) ?? null
+  const _hookCoverImage = _hookCoverImageId ? images.find(img => img.id === _hookCoverImageId) ?? null : null
+  const _hookCoverImgForResolve = (() => {
+    if (!_hookCoverImageId) return null
+    const cid = _hookCoverImageId
+    const cFilename = cid.includes('/') ? cid.split('/').pop() : cid
+    return images.find(i => i.id === cid || i.filename === cid || i.filename === cFilename) ?? null
+  })()
+  const _hookWelcomeImages = (() => {
+    const TARGET = 30
+    const topPicks = images.filter(img => img.is_top_pick)
+    if (topPicks.length > 0) return topPicks.slice(0, TARGET)
+    if (sections.length <= 1) return images.slice(0, TARGET)
+    const perSection = Math.ceil(TARGET / sections.length)
+    const result: GalleryImage[] = []
+    for (const sec of sections) {
+      const secImgs = images.filter(img => img.section_id === sec.id)
+      result.push(...secImgs.slice(0, perSection))
+    }
+    const unsectioned = images.filter(img => !img.section_id)
+    result.push(...unsectioned.slice(0, Math.max(0, TARGET - result.length)))
+    return result.slice(0, TARGET)
+  })()
+
+  const [resolvedCoverUrl, setResolvedCoverUrl] = useState<string | null>(
+    _hookCoverImageUrlSetting
+      ?? (_hookCoverImgForResolve ? storageUrl(_hookImgBucket, _hookCoverImgForResolve.storage_path) : null),
+  )
+  useEffect(() => {
+    if (_hookCoverImageUrlSetting) {
+      setResolvedCoverUrl(_hookCoverImageUrlSetting); return
+    }
+    if (!_hookCoverImgForResolve) { setResolvedCoverUrl(null); return }
+    let cancelled = false
+    signedStorageUrl(_hookImgBucket, _hookCoverImgForResolve.storage_path)
+      .then(url => { if (!cancelled) setResolvedCoverUrl(url) })
+      .catch(() => { /* fallback handled by helper */ })
+    return () => { cancelled = true }
+  }, [_hookImgBucket, _hookCoverImgForResolve?.storage_path, _hookCoverImageUrlSetting])
+
+  const [welcomeUrlMap, setWelcomeUrlMap] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    if (!showWelcome || _hookWelcomeImages.length === 0) return
+    let cancelled = false
+    const paths = Array.from(new Set(
+      _hookWelcomeImages.flatMap(img => [img.thumbnail_path, img.storage_path]).filter(Boolean) as string[],
+    ))
+    Promise.all(paths.map(async p => [p, await signedStorageUrl(_hookImgBucket, p)] as [string, string]))
+      .then(pairs => { if (!cancelled) setWelcomeUrlMap(new Map(pairs)) })
+      .catch(() => { /* fallback to public URLs via callback */ })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWelcome, _hookWelcomeImages.length, _hookImgBucket])
+
+  const [coverUrl, setCoverUrl] = useState<string | null>(
+    _hookCoverImage ? storageUrl(_hookImgBucket, _hookCoverImage.storage_path) : null,
+  )
+  useEffect(() => {
+    if (!_hookCoverImage) { setCoverUrl(null); return }
+    let cancelled = false
+    signedStorageUrl(_hookImgBucket, _hookCoverImage.storage_path)
+      .then(url => { if (!cancelled) setCoverUrl(url) })
+      .catch(() => { /* fallback handled by helper */ })
+    return () => { cancelled = true }
+  }, [_hookImgBucket, _hookCoverImage?.storage_path])
+
   if (error) {
     return (
       <div className="center-msg">
@@ -1421,66 +1497,6 @@ export function App() {
   // of the regular 'gallery-images' bucket. Detect by checking demo_expires_at.
   const isDemoGallery = !!gallery?.demo_expires_at
   const imgBucket = isDemoGallery ? 'demo-uploads' : 'gallery-images'
-
-  // Resolve cover image URL from settings. The path-derived form is wrapped
-  // in signedStorageUrl so it works after the bucket flip; the URL-stored
-  // form (raw.coverImageUrl) is passed through unchanged because it may
-  // already be a fully-qualified absolute URL.
-  const rawSettingsForCover: Partial<DeliverySettings> =
-    (gallery?.delivery_settings || {}) as Partial<DeliverySettings>
-  const coverImgForResolve = (() => {
-    if (!rawSettingsForCover.coverImageId) return null
-    const cid = rawSettingsForCover.coverImageId
-    const cFilename = cid.includes('/') ? cid.split('/').pop() : cid
-    return images.find(i => i.id === cid || i.filename === cid || i.filename === cFilename) ?? null
-  })()
-  const initialResolvedCoverUrl = rawSettingsForCover.coverImageUrl
-    ?? (coverImgForResolve ? storageUrl(imgBucket, coverImgForResolve.storage_path) : null)
-  const [resolvedCoverUrl, setResolvedCoverUrl] = useState<string | null>(initialResolvedCoverUrl)
-  useEffect(() => {
-    if (rawSettingsForCover.coverImageUrl) {
-      setResolvedCoverUrl(rawSettingsForCover.coverImageUrl); return
-    }
-    if (!coverImgForResolve) { setResolvedCoverUrl(null); return }
-    let cancelled = false
-    signedStorageUrl(imgBucket, coverImgForResolve.storage_path)
-      .then(url => { if (!cancelled) setResolvedCoverUrl(url) })
-      .catch(() => { /* fallback handled by helper */ })
-    return () => { cancelled = true }
-  }, [imgBucket, coverImgForResolve?.storage_path, rawSettingsForCover.coverImageUrl])
-
-  // Pre-resolve signed URLs for the WelcomeScreen mosaic. The screen renders
-  // a few photos via a sync `storageUrl: (path) => string` callback. We
-  // populate a Map<path, signedUrl> async; the callback prefers the cache.
-  const [welcomeUrlMap, setWelcomeUrlMap] = useState<Map<string, string>>(new Map())
-  useEffect(() => {
-    if (!showWelcome || welcomeImages.length === 0) return
-    let cancelled = false
-    const paths = Array.from(new Set(
-      welcomeImages.flatMap(img => [img.thumbnail_path, img.storage_path]).filter(Boolean) as string[],
-    ))
-    Promise.all(paths.map(async p => [p, await signedStorageUrl(imgBucket, p)] as [string, string]))
-      .then(pairs => { if (!cancelled) setWelcomeUrlMap(new Map(pairs)) })
-      .catch(() => { /* fallback to public URLs via callback */ })
-    return () => { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showWelcome, welcomeImages.length, imgBucket])
-
-  // Cover image hook — declared HERE (above the early WelcomeScreen return)
-  // so the hooks order stays stable across renders. React error #310 will
-  // fire if we let this useState/useEffect live below the early return.
-  const coverImage = coverImageId ? images.find(img => img.id === coverImageId) : null
-  const [coverUrl, setCoverUrl] = useState<string | null>(
-    coverImage ? storageUrl(imgBucket, coverImage.storage_path) : null,
-  )
-  useEffect(() => {
-    if (!coverImage) { setCoverUrl(null); return }
-    let cancelled = false
-    signedStorageUrl(imgBucket, coverImage.storage_path)
-      .then(url => { if (!cancelled) setCoverUrl(url) })
-      .catch(() => { /* fallback handled by helper */ })
-    return () => { cancelled = true }
-  }, [imgBucket, coverImage?.storage_path])
 
   // Private face-mode: anon users can't fetch the bulk image list (RLS), so
   // `images` is intentionally empty until the selfie unlocks matches. The
