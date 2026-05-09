@@ -19,6 +19,13 @@ const cache = new Map<string, CacheEntry>()
 const inflight = new Map<string, Promise<string>>()
 const CACHE_TTL_MS = 55 * 60 * 1000   // 55min, signed URLs last 60min server-side
 
+// P4.5.D: when the public-viewer signed-URLs feature flag is off, every call
+// to signedStorageUrl short-circuits to the public URL immediately. This
+// protects against the perf hit of ~200 signed_url roundtrips on every
+// dashboard / gallery render before the bucket actually goes private.
+const SIGNED_URLS_ENABLED =
+  (import.meta.env.VITE_PUBLIC_VIEWER_SIGNED_URLS as string | undefined) === '1'
+
 function readSessionToken(): string {
   // Read whatever Phase 3 stored. We don't know the clientId here, but the
   // server endpoint can resolve it from the token. The frontend caller may
@@ -75,6 +82,9 @@ export async function signedStorageUrl(
   path: string,
   options: SignedStorageOptions = {},
 ): Promise<string> {
+  // P4.5.D — feature-flag short-circuit (see SIGNED_URLS_ENABLED above).
+  if (!SIGNED_URLS_ENABLED) return storageUrl(bucket, path)
+
   const key = `${bucket}::${path}`
   const now = Date.now()
 
