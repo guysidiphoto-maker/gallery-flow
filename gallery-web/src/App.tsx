@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo, Fragment } from 'react'
 import JSZip from 'jszip'
 import { supabase, storageUrl } from './supabase'
-import { ensurePublicSession, isPublicViewerSignedUrlsEnabled } from './lib/publicSession'
+import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from './lib/publicSession'
 import { signedStorageUrl } from './lib/signedStorage'
 import { TurnstileWidget } from './components/TurnstileWidget'
 import { SignedImg } from './components/SignedImg'
@@ -1790,9 +1790,51 @@ export function App() {
       }
     }
 
-    // Desktop (or mobile fallback): bundle all photos into a single ZIP
+    // Desktop (or mobile fallback): bundle all photos into a single ZIP.
     setDlProgress(`Preparing ${imgs.length} photos...`)
     setDownloadProgress({ current: 0, total: imgs.length })
+    const safeTitle = (galleryTitle || 'gallery').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '') || 'gallery'
+
+    // P4.6: when the public-viewer signed-URL flow is on, route the ZIP
+    // through /api/gallery-zip — the server fetches via service-role and
+    // streams the archive back. Avoids the per-image client-side fetches
+    // that would each round-trip through signedStorage.
+    if (isPublicViewerSignedUrlsEnabled() && gallery?.id) {
+      try {
+        const pvt = readPublicSessionToken(gallery.id) ?? ''
+        if (!pvt) throw new Error('no_pvt')
+        const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+        const res = await fetch('/api/gallery-zip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            galleryId: gallery.id,
+            imageIds: imgs.map(i => i.id),
+            pvt,
+            quality: wantsHd ? 'original' : 'web',
+            filenameStem: safeTitle,
+          }),
+        })
+        if (!res.ok) throw new Error(`zip_${res.status}`)
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${safeTitle}.zip`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        return
+      } catch (err) {
+        console.warn('[gallery-zip] server-side failed, falling back to JSZip:', err)
+        // fall through to client-side bundling below
+      } finally {
+        setDlProgress(null)
+        setDownloadProgress(null)
+      }
+    }
+
     try {
       const zip = new JSZip()
       const usedNames = new Set<string>()
@@ -1818,7 +1860,6 @@ export function App() {
         { type: 'blob' },
         (meta) => setDlProgress(`Creating ZIP ${Math.round(meta.percent)}%...`),
       )
-      const safeTitle = (galleryTitle || 'gallery').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '') || 'gallery'
       const url = URL.createObjectURL(zipBlob)
       const a = document.createElement('a')
       a.href = url
