@@ -1,11 +1,16 @@
 import { useEffect, useCallback, useState } from 'react'
 import type { GalleryImage } from './types'
 import { Icon } from './components/Icon'
+import { signedStorageUrl } from './lib/signedStorage'
 
 interface ViewerProps {
   images: GalleryImage[]
   index: number
-  webUrl: (img: GalleryImage) => string
+  /** Storage bucket the web previews live in. The viewer picks the path
+   *  per image (storage_path) and resolves a signed URL via
+   *  signedStorageUrl, which short-circuits to the public URL when the
+   *  feature flag is off. */
+  imgBucket: string
   downloadUrl: (img: GalleryImage) => string
   allowDownloads: boolean
   downloadLabel: string
@@ -40,30 +45,42 @@ const controlBase = {
   WebkitBackdropFilter: 'blur(8px)',
 } as const
 
-export function Viewer({ images, index, webUrl, downloadUrl, allowDownloads, downloadLabel, onClose, onNavigate, onDownload, favoritedIds, onToggleFavorite }: ViewerProps) {
+export function Viewer({ images, index, imgBucket, downloadUrl, allowDownloads, downloadLabel, onClose, onNavigate, onDownload, favoritedIds, onToggleFavorite }: ViewerProps) {
   const img = images[index]
   const total = images.length
-  const currentSrc = webUrl(img)
+  const [currentSrc, setCurrentSrc] = useState<string>('')
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
   const isFav = favoritedIds?.has(img.id) ?? false
 
   const prev = useCallback(() => onNavigate((index - 1 + total) % total), [index, total, onNavigate])
   const next = useCallback(() => onNavigate((index + 1) % total), [index, total, onNavigate])
 
-  // Reset loaded state on navigation so the previous image clears immediately
+  // Resolve the signed URL for the current image. signedStorageUrl
+  // short-circuits to the public URL when VITE_PUBLIC_VIEWER_SIGNED_URLS
+  // is off, so this works either way.
   useEffect(() => {
+    let cancelled = false
     setLoadedSrc(null)
-  }, [currentSrc])
+    setCurrentSrc('')
+    if (!img?.storage_path) return
+    signedStorageUrl(imgBucket, img.storage_path)
+      .then(url => { if (!cancelled) setCurrentSrc(url) })
+      .catch(() => { /* fallback handled inside signedStorageUrl */ })
+    return () => { cancelled = true }
+  }, [imgBucket, img?.storage_path])
 
-  // Preload next 5 photos
+  // Preload next 5 photos via signedStorageUrl (warms the helper's cache).
   useEffect(() => {
     if (total <= 1) return
     const count = Math.min(5, total - 1)
     for (let i = 1; i <= count; i++) {
-      const img = new Image()
-      img.src = webUrl(images[(index + i) % total])
+      const next = images[(index + i) % total]
+      if (!next?.storage_path) continue
+      signedStorageUrl(imgBucket, next.storage_path)
+        .then(url => { const im = new Image(); im.src = url })
+        .catch(() => { /* ignore preload failure */ })
     }
-  }, [index, total, images, webUrl])
+  }, [index, total, images, imgBucket])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

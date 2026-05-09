@@ -2360,7 +2360,7 @@ export function App() {
         <Viewer
           images={viewerList ?? images}
           index={viewerIndex}
-          webUrl={webUrl}
+          imgBucket={imgBucket}
           downloadUrl={downloadUrl}
           allowDownloads={downloadsEnabled}
           downloadLabel={downloadLabel}
