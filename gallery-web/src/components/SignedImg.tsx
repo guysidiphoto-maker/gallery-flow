@@ -6,10 +6,11 @@
 //   ↓
 //   <SignedImg bucket="gallery-images" path={img.storage_path} ... />
 //
-// All other <img> props (alt, style, loading, className, onLoad, onError, …)
-// pass through unchanged.
+// All other <img> props (alt, style, loading, className, onLoad, onError,
+// ref, …) pass through unchanged. ref is supported via forwardRef so
+// callers (e.g. MasonryGrid in P4.5.D2) can keep their imgRefs map.
 
-import React from 'react'
+import React, { forwardRef } from 'react'
 import { useSignedSrc } from '../lib/useSignedSrc'
 
 type ImgProps = Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'>
@@ -19,7 +20,9 @@ interface Props extends ImgProps {
   path: string | null | undefined
 }
 
-export function SignedImg({ bucket, path, ...rest }: Props) {
-  const src = useSignedSrc(bucket, path)
-  return <img src={src} {...rest} />
-}
+export const SignedImg = forwardRef<HTMLImageElement, Props>(
+  function SignedImg({ bucket, path, ...rest }, ref) {
+    const src = useSignedSrc(bucket, path)
+    return <img ref={ref} src={src} {...rest} />
+  },
+)
