@@ -1422,20 +1422,49 @@ export function App() {
   const isDemoGallery = !!gallery?.demo_expires_at
   const imgBucket = isDemoGallery ? 'demo-uploads' : 'gallery-images'
 
-  // Resolve cover image URL from settings
-  const resolvedCoverUrl = (() => {
-    const raw: Partial<DeliverySettings> = (gallery?.delivery_settings || {}) as Partial<DeliverySettings>
-    // Custom uploaded cover image (full URL stored in settings)
-    if (raw.coverImageUrl) return raw.coverImageUrl
-    // Cover from gallery image by ID
-    if (raw.coverImageId) {
-      const coverId = raw.coverImageId
-      const coverFilename = coverId.includes('/') ? coverId.split('/').pop() : coverId
-      const coverImg = images.find(i => i.id === coverId || i.filename === coverId || i.filename === coverFilename)
-      if (coverImg) return storageUrl(imgBucket, coverImg.storage_path)
-    }
-    return null
+  // Resolve cover image URL from settings. The path-derived form is wrapped
+  // in signedStorageUrl so it works after the bucket flip; the URL-stored
+  // form (raw.coverImageUrl) is passed through unchanged because it may
+  // already be a fully-qualified absolute URL.
+  const rawSettingsForCover: Partial<DeliverySettings> =
+    (gallery?.delivery_settings || {}) as Partial<DeliverySettings>
+  const coverImgForResolve = (() => {
+    if (!rawSettingsForCover.coverImageId) return null
+    const cid = rawSettingsForCover.coverImageId
+    const cFilename = cid.includes('/') ? cid.split('/').pop() : cid
+    return images.find(i => i.id === cid || i.filename === cid || i.filename === cFilename) ?? null
   })()
+  const initialResolvedCoverUrl = rawSettingsForCover.coverImageUrl
+    ?? (coverImgForResolve ? storageUrl(imgBucket, coverImgForResolve.storage_path) : null)
+  const [resolvedCoverUrl, setResolvedCoverUrl] = useState<string | null>(initialResolvedCoverUrl)
+  useEffect(() => {
+    if (rawSettingsForCover.coverImageUrl) {
+      setResolvedCoverUrl(rawSettingsForCover.coverImageUrl); return
+    }
+    if (!coverImgForResolve) { setResolvedCoverUrl(null); return }
+    let cancelled = false
+    signedStorageUrl(imgBucket, coverImgForResolve.storage_path)
+      .then(url => { if (!cancelled) setResolvedCoverUrl(url) })
+      .catch(() => { /* fallback handled by helper */ })
+    return () => { cancelled = true }
+  }, [imgBucket, coverImgForResolve?.storage_path, rawSettingsForCover.coverImageUrl])
+
+  // Pre-resolve signed URLs for the WelcomeScreen mosaic. The screen renders
+  // a few photos via a sync `storageUrl: (path) => string` callback. We
+  // populate a Map<path, signedUrl> async; the callback prefers the cache.
+  const [welcomeUrlMap, setWelcomeUrlMap] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    if (!showWelcome || welcomeImages.length === 0) return
+    let cancelled = false
+    const paths = Array.from(new Set(
+      welcomeImages.flatMap(img => [img.thumbnail_path, img.storage_path]).filter(Boolean) as string[],
+    ))
+    Promise.all(paths.map(async p => [p, await signedStorageUrl(imgBucket, p)] as [string, string]))
+      .then(pairs => { if (!cancelled) setWelcomeUrlMap(new Map(pairs)) })
+      .catch(() => { /* fallback to public URLs via callback */ })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWelcome, welcomeImages.length, imgBucket])
 
   // Private face-mode: anon users can't fetch the bulk image list (RLS), so
   // `images` is intentionally empty until the selfie unlocks matches. The
@@ -1464,7 +1493,7 @@ export function App() {
           images={welcomeImages}
           coverImageUrl={resolvedCoverUrl}
           coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
-          storageUrl={(path: string) => storageUrl(imgBucket, path)}
+          storageUrl={(path: string) => welcomeUrlMap.get(path) ?? storageUrl(imgBucket, path)}
           onEnter={() => setShowWelcome(false)}
           faceSearchAvailable={faceSearchAvailable}
           facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}
@@ -1878,7 +1907,20 @@ export function App() {
 
   // ── Cover image ─────────────────────────────────────────────────────────
   const coverImage = coverImageId ? images.find(img => img.id === coverImageId) : null
-  const coverUrl = coverImage ? storageUrl(imgBucket, coverImage.storage_path) : null
+  // Resolve cover URL via signedStorageUrl so it works after the bucket flip.
+  // Initial render uses the public URL synchronously (zero flicker pre-flip);
+  // useEffect swaps in the signed URL once it resolves.
+  const [coverUrl, setCoverUrl] = useState<string | null>(
+    coverImage ? storageUrl(imgBucket, coverImage.storage_path) : null,
+  )
+  useEffect(() => {
+    if (!coverImage) { setCoverUrl(null); return }
+    let cancelled = false
+    signedStorageUrl(imgBucket, coverImage.storage_path)
+      .then(url => { if (!cancelled) setCoverUrl(url) })
+      .catch(() => { /* fallback handled by helper */ })
+    return () => { cancelled = true }
+  }, [imgBucket, coverImage?.storage_path])
 
   // ── Grid classes ────────────────────────────────────────────────────────
   const gridClasses = [
