@@ -2361,12 +2361,11 @@ export function App() {
           images={viewerList ?? images}
           index={viewerIndex}
           imgBucket={imgBucket}
-          downloadUrl={downloadUrl}
           allowDownloads={downloadsEnabled}
           downloadLabel={downloadLabel}
           onClose={() => { setViewerIndex(null); setViewerList(null) }}
           onNavigate={setViewerIndex}
-          onDownload={handleDownload}
+          onDownload={handleImageDownload}
           favoritedIds={favoritedIds}
           onToggleFavorite={toggleImageFavorite}
         />

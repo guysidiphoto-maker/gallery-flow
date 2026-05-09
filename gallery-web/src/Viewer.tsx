@@ -11,12 +11,14 @@ interface ViewerProps {
    *  signedStorageUrl, which short-circuits to the public URL when the
    *  feature flag is off. */
   imgBucket: string
-  downloadUrl: (img: GalleryImage) => string
   allowDownloads: boolean
   downloadLabel: string
   onClose: () => void
   onNavigate: (index: number) => void
-  onDownload: (url: string, filename: string) => void
+  /** Hand the entire GalleryImage object back to the parent. The parent
+   *  resolves the right URL (HEAD-checking the original to guard against
+   *  the original_uploaded data drift) before downloading. */
+  onDownload: (img: GalleryImage) => void
   /** Currently-favorited image ids (in localStorage). When provided alongside
    *  onToggleFavorite, the viewer renders a Heart button next to download. */
   favoritedIds?: Set<string>
@@ -45,7 +47,7 @@ const controlBase = {
   WebkitBackdropFilter: 'blur(8px)',
 } as const
 
-export function Viewer({ images, index, imgBucket, downloadUrl, allowDownloads, downloadLabel, onClose, onNavigate, onDownload, favoritedIds, onToggleFavorite }: ViewerProps) {
+export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel, onClose, onNavigate, onDownload, favoritedIds, onToggleFavorite }: ViewerProps) {
   const img = images[index]
   const total = images.length
   const [currentSrc, setCurrentSrc] = useState<string>('')
@@ -237,7 +239,7 @@ export function Viewer({ images, index, imgBucket, downloadUrl, allowDownloads, 
           {allowDownloads && (
             <button
               className="viewer__download"
-              onClick={() => onDownload(downloadUrl(img), img.filename)}
+              onClick={() => onDownload(img)}
               style={{
                 ...controlBase,
                 background: SURFACE,
