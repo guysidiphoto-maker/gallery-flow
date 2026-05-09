@@ -12,6 +12,11 @@
 // Cache: signedStorageUrl already de-dupes in-flight requests and caches
 // resolved URLs for 55 minutes, so calling this hook in many places at once
 // triggers exactly one network request per (bucket, path) pair per session.
+//
+// P4.5.D: when VITE_PUBLIC_VIEWER_SIGNED_URLS is not '1', short-circuit to
+// the public URL and skip the signed-URL roundtrip entirely. Pre-flip this
+// avoids ~200 needless signed_url requests per gallery load, while keeping
+// every callsite already wired to <SignedImg> safe.
 
 import { useEffect, useRef, useState } from 'react'
 import { storageUrl } from '../supabase'
@@ -24,15 +29,24 @@ import { signedStorageUrl } from './signedStorage'
  */
 const INITIAL_USE_PUBLIC = true
 
+const SIGNED_URLS_ENABLED =
+  (import.meta.env.VITE_PUBLIC_VIEWER_SIGNED_URLS as string | undefined) === '1'
+
 export function useSignedSrc(
   bucket: string,
   path: string | null | undefined,
 ): string {
+  // Hooks must be called unconditionally (rules of hooks), so we always
+  // declare state + effect; the flag only changes what they do.
   const initial = path && INITIAL_USE_PUBLIC ? storageUrl(bucket, path) : ''
   const [src, setSrc] = useState<string>(initial)
   const lastKeyRef = useRef<string>('')
 
   useEffect(() => {
+    if (!SIGNED_URLS_ENABLED) {
+      setSrc(path ? storageUrl(bucket, path) : '')
+      return
+    }
     if (!path) {
       setSrc('')
       lastKeyRef.current = ''
@@ -52,5 +66,9 @@ export function useSignedSrc(
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run on key change
   }, [bucket, path])
 
+  // When flag is off, return the public URL synchronously (no waiting for
+  // useEffect). When flag is on, return whatever state holds (public initially,
+  // signed after resolve).
+  if (!SIGNED_URLS_ENABLED) return path ? storageUrl(bucket, path) : ''
   return src
 }

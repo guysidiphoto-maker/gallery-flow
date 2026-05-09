@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useRef, useMemo, Fragment } from 'rea
 import JSZip from 'jszip'
 import { supabase, storageUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled } from './lib/publicSession'
+import { signedStorageUrl } from './lib/signedStorage'
+import { TurnstileWidget } from './components/TurnstileWidget'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
@@ -1152,12 +1154,17 @@ export function App() {
     }
   }
 
-  // ── Phase 4.5.C — public-viewer session bootstrap ───────────────────────
+  // ── Phase 4.5.C/D — public-viewer session bootstrap ─────────────────────
   // When a gallery loads, fire-and-forget request a public-viewer token so
   // signedStorage.ts has it ready before any signed_url call. No-op when
   // VITE_PUBLIC_VIEWER_SIGNED_URLS is not '1' (the helper short-circuits).
   // Refreshes silently every 50 minutes; mid-scroll expiry is handled
   // lazily by signedStorage.ts which re-issues on cache miss.
+  //
+  // P4.5.D: when the server returns 429 turnstile_required, store the site
+  // key in state so the TurnstileWidget renders. The widget's onToken
+  // callback re-calls ensurePublicSession with the resolved token.
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
   useEffect(() => {
     if (!gallery?.id) return
     if (!isPublicViewerSignedUrlsEnabled()) return
@@ -1173,8 +1180,7 @@ export function App() {
         console.warn('[publicSession] gallery_not_live')
       }
       if (r.needsTurnstile) {
-        // P4.5.D will render the Turnstile widget here. For now, just log.
-        console.warn('[publicSession] turnstile required', r.needsTurnstile)
+        setTurnstileSiteKey(r.needsTurnstile.siteKey)
       }
     })()
     const REFRESH_MS = 50 * 60 * 1000
@@ -1182,6 +1188,15 @@ export function App() {
       ensurePublicSession(gallery.id, { bypassCache: true }).catch(() => { /* silent */ })
     }, REFRESH_MS)
     return () => { cancelled = true; clearInterval(iv) }
+  }, [gallery?.id])
+
+  // Re-issue the session once Turnstile resolves a token.
+  const onTurnstileToken = useCallback(async (token: string) => {
+    if (!gallery?.id) return
+    const r = await ensurePublicSession(gallery.id, { turnstileToken: token, bypassCache: true })
+    if (r.token) {
+      setTurnstileSiteKey(null) // dismiss the widget on success
+    }
   }, [gallery?.id])
 
   // After unlock, fetch the gated content (images + stories) for galleries
@@ -1642,17 +1657,29 @@ export function App() {
   async function resolveDownloadUrl(img: GalleryImage): Promise<{ url: string; downgraded: boolean }> {
     const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
     if (!wantsHd || !img.original_path) {
-      return { url: wantsHd ? originalUrl(img) : webUrl(img), downgraded: false }
+      // P4.5.D: when flag is on, route through signedStorageUrl. When flag
+      // off, signedStorageUrl short-circuits to public URL — same behavior
+      // as today (originalUrl/webUrl return public URLs).
+      const path = wantsHd ? (img.original_uploaded ? img.original_path! : img.storage_path) : img.storage_path
+      const url = await signedStorageUrl(imgBucket, path)
+      return { url, downgraded: false }
     }
-    const candidate = storageUrl(imgBucket, img.original_path)
+    // HD requested AND original_path is set: HEAD-check whether the file
+    // really exists, then sign or fall back.
+    const headCandidate = storageUrl(imgBucket, img.original_path)
     try {
-      const head = await fetch(candidate, { method: 'HEAD' })
-      if (head.ok) return { url: candidate, downgraded: false }
+      const head = await fetch(headCandidate, { method: 'HEAD' })
+      if (head.ok) {
+        const url = await signedStorageUrl(imgBucket, img.original_path)
+        return { url, downgraded: false }
+      }
     } catch {
       // Network blip — assume present and let the actual download surface any real error.
-      return { url: candidate, downgraded: false }
+      const url = await signedStorageUrl(imgBucket, img.original_path)
+      return { url, downgraded: false }
     }
-    return { url: webUrl(img), downgraded: true }
+    const fallbackUrl = await signedStorageUrl(imgBucket, img.storage_path)
+    return { url: fallbackUrl, downgraded: true }
   }
 
   async function handleImageDownload(img: GalleryImage) {
@@ -1851,6 +1878,32 @@ export function App() {
       {/* Override the global accent CSS variable to match the photographer's
           chosen theme color. Cascades into every existing rgb(var(--accent)) ref. */}
       <style>{`:root { --accent: ${themeAccentRgb}; }`}</style>
+      {/* P4.5.D — Turnstile challenge modal. Renders only when the public-
+          gallery-session endpoint returned `turnstile_required` for this IP.
+          The widget is invisible 98% of the time (Managed mode); when it does
+          show interaction, this overlay frames it. */}
+      {turnstileSiteKey && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 3000,
+          background: 'rgba(0,0,0,.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexDirection: 'column', gap: 16, padding: 24,
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 12, padding: '32px 28px',
+            maxWidth: 360, width: '100%', textAlign: 'center',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          }}>
+            <h2 style={{ margin: '0 0 8px', fontSize: 18, color: '#0a0a0f' }}>
+              רגע, מאמתים שאתה לא רובוט
+            </h2>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'rgba(0,0,0,.6)' }}>
+              זה לוקח שנייה ויעבור אוטומטית.
+            </p>
+            <TurnstileWidget siteKey={turnstileSiteKey} onToken={onTurnstileToken} />
+          </div>
+        </div>
+      )}
       {/* Hero */}
       {/* Feed mode: mobile sticky header */}
       {isFeedMode && (
