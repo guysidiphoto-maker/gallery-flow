@@ -4,6 +4,7 @@ import { supabase, storageUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled } from './lib/publicSession'
 import { signedStorageUrl } from './lib/signedStorage'
 import { TurnstileWidget } from './components/TurnstileWidget'
+import { SignedImg } from './components/SignedImg'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
@@ -69,9 +70,12 @@ function useColumnCount(layoutMode: string): number {
   return cols
 }
 
-function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide, favoritedIds, onToggleFavorite, watermark }: {
+function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide, favoritedIds, onToggleFavorite, watermark }: {
   images: GalleryImage[]
-  thumbUrl: (img: GalleryImage) => string
+  /** Storage bucket the thumbnails live in. The component picks the path
+   *  per image (thumbnail_path with web fallback) and routes through
+   *  SignedImg, which signs/short-circuits based on the feature flag. */
+  imgBucket: string
   layoutMode: string
   imageSpacing: string
   cornerStyle: string
@@ -159,9 +163,10 @@ function MasonryGrid({ images, thumbUrl, layoutMode, imageSpacing, cornerStyle, 
             const isSelected = selectMode && selectedIds?.has(img.id)
             const gridItem = (
               <div className="grid-item" style={{ position: 'relative', borderRadius: rounded ? 8 : 0, overflow: 'hidden' }}>
-                <img
+                <SignedImg
                   ref={el => { if (el) imgRefs.current.set(img.id, el) }}
-                  src={thumbUrl(img)}
+                  bucket={imgBucket}
+                  path={img.thumbnail_path || img.storage_path}
                   alt=""
                   loading="lazy"
                   decoding="async"
@@ -2207,7 +2212,7 @@ export function App() {
             </h2>
             <MasonryGrid
               images={sectionImages}
-              thumbUrl={thumbUrl}
+              imgBucket={imgBucket}
               layoutMode={layoutMode}
               imageSpacing={imageSpacing}
               cornerStyle={cornerStyle}
@@ -2268,7 +2273,7 @@ export function App() {
           <section id="all-images" className="gallery-section gallery-section--all">
             <MasonryGrid
               images={mainGridImages}
-              thumbUrl={thumbUrl}
+              imgBucket={imgBucket}
               layoutMode={layoutMode}
               imageSpacing={imageSpacing}
               cornerStyle={cornerStyle}
