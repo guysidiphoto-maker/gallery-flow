@@ -89,11 +89,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ? `${title} by ${studioName} — ${imageCount} photos`
     : `${title} — ${imageCount} photos`
 
-  // Always point og:image at the branded generator. /api/og falls back to a
-  // Pixflow-only card if it can't load the gallery, so this is safe even when
-  // the cover hasn't been set yet — and it beats handing crawlers a raw 8MB
-  // photo URL.
-  const ogImage = `https://pixflow-ai.com/api/og?gallery=${encodeURIComponent(gallery.id as string)}`
+  // Hot-fix 2026-05-16: /api/og is failing in production (Satori/Edge issue).
+  // Resolve og:image to a direct cover photo from storage so WhatsApp/Facebook
+  // see a real preview. Order: settings.coverImageUrl (if HTTP) → first
+  // image's web_preview_path → /api/og as last-resort fallback.
+  let ogImage: string
+  const declaredCover =
+    typeof s.coverImageUrl === 'string' && s.coverImageUrl.startsWith('http')
+      ? s.coverImageUrl
+      : null
+  if (declaredCover) {
+    ogImage = declaredCover
+  } else {
+    const { data: imgs } = await supabase
+      .from('images')
+      .select('web_preview_path')
+      .eq('gallery_id', gallery.id)
+      .order('sort_order', { ascending: true })
+      .limit(1)
+    const firstPath = imgs?.[0]?.web_preview_path as string | undefined
+    ogImage = firstPath
+      ? `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${firstPath}`
+      : `https://pixflow-ai.com/api/og?gallery=${encodeURIComponent(gallery.id as string)}`
+  }
 
   res.setHeader('Content-Type', 'text/html')
   res.setHeader('Cache-Control', 'public, s-maxage=3600')
