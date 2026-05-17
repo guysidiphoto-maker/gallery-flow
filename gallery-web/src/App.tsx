@@ -1694,14 +1694,26 @@ export function App() {
   }
 
   async function handleImageDownload(img: GalleryImage) {
-    const { url, downgraded } = await resolveDownloadUrl(img)
-    if (downgraded) {
-      showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
-    }
-    handleDownload(url, img.filename)
-    if (gallery) {
-      const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
-      void logDownload(gallery.id, img.id, wantsHd ? 'original' : 'web', 'single')
+    // Re-entry guard: ignore taps while a save is already in flight. Without
+    // this, rapid taps before the slow HEAD/sign/fetch chain resolves spawn
+    // parallel chains that fight over the share sheet.
+    if (savingPhoto) return
+    // Show the "saving" overlay immediately so the tap has feedback BEFORE
+    // the HEAD/sign/fetch chain runs. Without this, mobile users see no UI
+    // for ~1s on a cold tap and keep tapping.
+    if (isMobile) setSavingPhoto(true)
+    try {
+      const { url, downgraded } = await resolveDownloadUrl(img)
+      if (downgraded) {
+        showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+      }
+      await handleDownload(url, img.filename)
+      if (gallery) {
+        const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+        void logDownload(gallery.id, img.id, wantsHd ? 'original' : 'web', 'single')
+      }
+    } finally {
+      if (isMobile) setSavingPhoto(false)
     }
   }
 
@@ -1709,7 +1721,6 @@ export function App() {
 
   async function handleDownload(url: string, filename: string) {
     if (isMobile) {
-      setSavingPhoto(true)
       try {
         const res = await fetch(url)
         const blob = await res.blob()
@@ -1730,7 +1741,6 @@ export function App() {
           document.body.removeChild(a)
         }
       } catch { /* user cancelled share sheet */ }
-      finally { setSavingPhoto(false) }
       return
     }
 
