@@ -19,10 +19,6 @@ interface ViewerProps {
    *  resolves the right URL (HEAD-checking the original to guard against
    *  the original_uploaded data drift) before downloading. */
   onDownload: (img: GalleryImage) => void
-  /** Currently-favorited image ids (in localStorage). When provided alongside
-   *  onToggleFavorite, the viewer renders a Heart button next to download. */
-  favoritedIds?: Set<string>
-  onToggleFavorite?: (imageId: string) => void
 }
 
 // Editorial palette — keeps the lightbox in the same Pic-Time language as
@@ -47,12 +43,11 @@ const controlBase = {
   WebkitBackdropFilter: 'blur(8px)',
 } as const
 
-export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel, onClose, onNavigate, onDownload, favoritedIds, onToggleFavorite }: ViewerProps) {
+export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel, onClose, onNavigate, onDownload }: ViewerProps) {
   const img = images[index]
   const total = images.length
   const [currentSrc, setCurrentSrc] = useState<string>('')
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
-  const isFav = favoritedIds?.has(img.id) ?? false
 
   const prev = useCallback(() => onNavigate((index - 1 + total) % total), [index, total, onNavigate])
   const next = useCallback(() => onNavigate((index + 1) % total), [index, total, onNavigate])
@@ -200,40 +195,6 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
           }}>
             {index + 1} / {total}
           </span>
-
-          {/* Favorite — outlined hairline pill, charcoal fill when on (no red) */}
-          {onToggleFavorite && (
-            <button
-              onClick={() => onToggleFavorite(img.id)}
-              aria-label={isFav ? 'Remove favorite' : 'Add favorite'}
-              aria-pressed={isFav}
-              style={{
-                ...controlBase,
-                background: isFav ? '#fff' : SURFACE,
-                color: isFav ? CHARCOAL : '#fff',
-                borderColor: isFav ? '#fff' : HAIRLINE,
-                borderRadius: 2,
-                padding: '9px 16px',
-                fontSize: 11, fontWeight: 500,
-                letterSpacing: '0.18em', textTransform: 'uppercase',
-                gap: 8,
-              }}
-              onMouseEnter={(e) => {
-                if (!isFav) e.currentTarget.style.borderColor = HAIRLINE_HOVER
-              }}
-              onMouseLeave={(e) => {
-                if (!isFav) e.currentTarget.style.borderColor = HAIRLINE
-              }}
-            >
-              <Icon
-                name={isFav ? 'star-filled' : 'heart'}
-                size={13}
-                strokeWidth={1.85}
-                style={{ color: isFav ? CHARCOAL : '#fff' }}
-              />
-              {isFav ? 'Saved' : 'Save'}
-            </button>
-          )}
 
           {/* Download — outlined uppercase, matches the rest of the app's CTAs */}
           {allowDownloads && (
