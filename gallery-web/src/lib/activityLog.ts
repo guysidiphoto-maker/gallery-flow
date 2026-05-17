@@ -45,32 +45,3 @@ export async function logBatchDownload(
   }
 }
 
-export async function toggleFavorite(
-  galleryId: string,
-  imageId: string,
-  next: boolean,
-  guestName?: string,
-): Promise<void> {
-  try {
-    if (next) {
-      await supabase.from('gallery_favorites').insert({
-        gallery_id: galleryId,
-        image_id: imageId,
-        guest_name: guestName ?? null,
-      })
-    } else {
-      // Without explicit guest_name scoping, .delete() would match every
-      // anonymous favorite for this image — i.e. one guest unfavoriting
-      // would wipe out everyone else's heart. Pin the filter explicitly
-      // to either the named guest or the null/anonymous bucket.
-      const q = supabase
-        .from('gallery_favorites')
-        .delete()
-        .eq('gallery_id', galleryId)
-        .eq('image_id', imageId)
-      await (guestName ? q.eq('guest_name', guestName) : q.is('guest_name', null))
-    }
-  } catch (e) {
-    console.warn('[activity] favorite toggle failed', e)
-  }
-}

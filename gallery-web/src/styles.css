@@ -572,13 +572,6 @@ input, button, textarea, select {
   opacity: 1 !important;
 }
 
-/* Heart button: visible only on hover when not favorited (its style sets
-   opacity: 1 when favorited inline, so this :hover override only catches
-   the unfavorited state). */
-.grid-item:hover .grid-item__fav {
-  opacity: 1 !important;
-}
-
 /* ── Image loading skeleton ───────────────────────────────────────────────── */
 
 @keyframes shimmer {
