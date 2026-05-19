@@ -48,6 +48,10 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
   const total = images.length
   const [currentSrc, setCurrentSrc] = useState<string>('')
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
+  // Thumbnail URL renders as an instant LQIP placeholder behind the full
+  // image. The browser usually has it cached from the grid, so it paints
+  // in 1 frame and the viewer never sits on a black screen.
+  const [thumbSrc, setThumbSrc] = useState<string>('')
 
   const prev = useCallback(() => onNavigate((index - 1 + total) % total), [index, total, onNavigate])
   const next = useCallback(() => onNavigate((index + 1) % total), [index, total, onNavigate])
@@ -59,12 +63,18 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
     let cancelled = false
     setLoadedSrc(null)
     setCurrentSrc('')
+    setThumbSrc('')
     if (!img?.storage_path) return
+    if (img.thumbnail_path) {
+      signedStorageUrl(imgBucket, img.thumbnail_path)
+        .then(url => { if (!cancelled) setThumbSrc(url) })
+        .catch(() => { /* placeholder is optional */ })
+    }
     signedStorageUrl(imgBucket, img.storage_path)
       .then(url => { if (!cancelled) setCurrentSrc(url) })
       .catch(() => { /* fallback handled inside signedStorageUrl */ })
     return () => { cancelled = true }
-  }, [imgBucket, img?.storage_path])
+  }, [imgBucket, img?.storage_path, img?.thumbnail_path])
 
   // Preload next 5 photos via signedStorageUrl (warms the helper's cache).
   useEffect(() => {
@@ -152,14 +162,57 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
           </svg>
         </button>
 
+        {/* LQIP layer: thumbnail blown up + blurred. Paints in 1 frame
+            because the browser usually has it from the grid. Hidden once
+            the full image loads. */}
+        {thumbSrc && loadedSrc !== currentSrc && (
+          <img
+            key={`thumb-${thumbSrc}`}
+            className="viewer__img"
+            src={thumbSrc}
+            alt=""
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              filter: 'blur(14px)',
+              transform: 'scale(1.04)',
+            }}
+          />
+        )}
+
         <img
           key={currentSrc}
           className="viewer__img"
           src={currentSrc}
           alt=""
           onLoad={() => setLoadedSrc(currentSrc)}
-          style={{ visibility: loadedSrc === currentSrc ? 'visible' : 'hidden' }}
+          style={{
+            opacity: loadedSrc === currentSrc ? 1 : 0,
+            transition: 'opacity .25s ease',
+            position: 'relative',
+          }}
         />
+
+        {/* Loading spinner: visible until the full image finishes loading.
+            Sits above the LQIP layer so guests get an unambiguous "still
+            working" signal even on slow mobile networks. */}
+        {loadedSrc !== currentSrc && (
+          <div
+            aria-label="Loading"
+            style={{
+              position: 'absolute',
+              top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: 36, height: 36,
+              borderRadius: '50%',
+              border: '2px solid rgba(255,255,255,.18)',
+              borderTopColor: 'rgba(255,255,255,.85)',
+              animation: 'spin .7s cubic-bezier(.4,.0,.2,1) infinite',
+              zIndex: 5,
+              pointerEvents: 'none',
+            }}
+          />
+        )}
 
         {/* Next — chevron right, on the right edge */}
         <button

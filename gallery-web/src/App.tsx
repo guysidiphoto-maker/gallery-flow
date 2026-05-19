@@ -1694,14 +1694,26 @@ export function App() {
   }
 
   async function handleImageDownload(img: GalleryImage) {
-    const { url, downgraded } = await resolveDownloadUrl(img)
-    if (downgraded) {
-      showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
-    }
-    handleDownload(url, img.filename)
-    if (gallery) {
-      const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
-      void logDownload(gallery.id, img.id, wantsHd ? 'original' : 'web', 'single')
+    // Re-entry guard: ignore taps while a save is already in flight. Without
+    // this, rapid taps before the slow HEAD/sign/fetch chain resolves spawn
+    // parallel chains that fight over the share sheet.
+    if (savingPhoto) return
+    // Show the "saving" overlay immediately so the click has feedback BEFORE
+    // the HEAD/sign/fetch chain runs. Without this, users on either platform
+    // see no UI for ~1s on a cold click and keep clicking.
+    setSavingPhoto(true)
+    try {
+      const { url, downgraded } = await resolveDownloadUrl(img)
+      if (downgraded) {
+        showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+      }
+      await handleDownload(url, img.filename)
+      if (gallery) {
+        const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+        void logDownload(gallery.id, img.id, wantsHd ? 'original' : 'web', 'single')
+      }
+    } finally {
+      setSavingPhoto(false)
     }
   }
 
@@ -1709,7 +1721,6 @@ export function App() {
 
   async function handleDownload(url: string, filename: string) {
     if (isMobile) {
-      setSavingPhoto(true)
       try {
         const res = await fetch(url)
         const blob = await res.blob()
@@ -1730,7 +1741,6 @@ export function App() {
           document.body.removeChild(a)
         }
       } catch { /* user cancelled share sheet */ }
-      finally { setSavingPhoto(false) }
       return
     }
 
@@ -1738,12 +1748,18 @@ export function App() {
     const res = await fetch(url)
     const blob = await res.blob()
 
-    // Desktop / fallback: regular download
+    // Desktop / fallback: regular download. The anchor MUST be in the DOM
+    // for Safari/Firefox to honor the click, and the blob URL must outlive
+    // the click event for the download to start — revoke on a setTimeout
+    // instead of synchronously.
+    const objectUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
+    a.href = objectUrl
     a.download = filename
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(a.href)
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 4000)
   }
 
   async function handleBatchDownload(imgs: GalleryImage[]) {
