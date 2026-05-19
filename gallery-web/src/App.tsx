@@ -1698,10 +1698,10 @@ export function App() {
     // this, rapid taps before the slow HEAD/sign/fetch chain resolves spawn
     // parallel chains that fight over the share sheet.
     if (savingPhoto) return
-    // Show the "saving" overlay immediately so the tap has feedback BEFORE
-    // the HEAD/sign/fetch chain runs. Without this, mobile users see no UI
-    // for ~1s on a cold tap and keep tapping.
-    if (isMobile) setSavingPhoto(true)
+    // Show the "saving" overlay immediately so the click has feedback BEFORE
+    // the HEAD/sign/fetch chain runs. Without this, users on either platform
+    // see no UI for ~1s on a cold click and keep clicking.
+    setSavingPhoto(true)
     try {
       const { url, downgraded } = await resolveDownloadUrl(img)
       if (downgraded) {
@@ -1713,7 +1713,7 @@ export function App() {
         void logDownload(gallery.id, img.id, wantsHd ? 'original' : 'web', 'single')
       }
     } finally {
-      if (isMobile) setSavingPhoto(false)
+      setSavingPhoto(false)
     }
   }
 
@@ -1748,12 +1748,18 @@ export function App() {
     const res = await fetch(url)
     const blob = await res.blob()
 
-    // Desktop / fallback: regular download
+    // Desktop / fallback: regular download. The anchor MUST be in the DOM
+    // for Safari/Firefox to honor the click, and the blob URL must outlive
+    // the click event for the download to start — revoke on a setTimeout
+    // instead of synchronously.
+    const objectUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
+    a.href = objectUrl
     a.download = filename
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(a.href)
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 4000)
   }
 
   async function handleBatchDownload(imgs: GalleryImage[]) {
