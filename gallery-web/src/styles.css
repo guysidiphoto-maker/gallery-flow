@@ -853,6 +853,7 @@ input, button, textarea, select {
   display: flex;
   align-items: center;
   justify-self: center;
+  min-width: 0;
 }
 
 .section-nav__item {
@@ -913,9 +914,18 @@ input, button, textarea, select {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
   justify-self: end;
+  /* When the toolbar grows (select mode: "N selected / Download N / Cancel")
+     it used to overflow its 1fr grid track leftward and render on top of the
+     centered Stories toggle — the doubled-text overlap clients reported.
+     min-width:0 lets the track shrink and overflow-x scrolls the buttons
+     within their own lane instead of spilling onto neighbours. */
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.section-nav__toolbar::-webkit-scrollbar { display: none; }
+.section-nav__toolbar > * { flex-shrink: 0; }
 
 /* ── Gallery toolbar buttons (used inside section-nav__toolbar) ────────── */
 .gallery-toolbar__btn {
