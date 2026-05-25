@@ -51,18 +51,25 @@ function ScrollReveal({ children }: { children: React.ReactNode }) {
 
 // ─── Order-preserving Masonry Grid ──────────────────────────────────────────
 
+function computeColumns(layoutMode: string): number {
+  if (typeof window === 'undefined') return 2
+  const w = window.innerWidth
+  if (layoutMode === '1-col') return 1
+  const base = layoutMode === '3-col' ? 3 : 2
+  if (w < 480) return Math.min(base, 2)
+  if (w < 768) return base
+  if (w < 1100) return base + 1
+  return base + 2
+}
+
 function useColumnCount(layoutMode: string): number {
-  const [cols, setCols] = useState(2)
+  // Lazy initializer computes the correct column count on the very first
+  // render. Initializing at a fixed 2 and correcting in the effect made the
+  // whole grid re-flow from 2→3/4 columns on every load — to a client that
+  // looked like "the photos jumped / the order changed" right after opening.
+  const [cols, setCols] = useState(() => computeColumns(layoutMode))
   useEffect(() => {
-    const calc = () => {
-      const w = window.innerWidth
-      if (layoutMode === '1-col') { setCols(1); return }
-      const base = layoutMode === '3-col' ? 3 : 2
-      if (w < 480) setCols(Math.min(base, 2))
-      else if (w < 768) setCols(base)
-      else if (w < 1100) setCols(base + 1)
-      else setCols(base + 2)
-    }
+    const calc = () => setCols(computeColumns(layoutMode))
     calc()
     window.addEventListener('resize', calc)
     return () => window.removeEventListener('resize', calc)
