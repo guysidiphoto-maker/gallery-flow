@@ -12,6 +12,7 @@ import { useFocusTrap } from '../lib/useFocusTrap'
 interface Gallery {
   id: string
   name: string
+  slug?: string | null
   image_count: number
   published_at: string | null
   status: string
@@ -380,7 +381,7 @@ export function Dashboard() {
     }
     const { data, error } = await supabase
       .from('galleries')
-      .select('id, name, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
@@ -908,9 +909,21 @@ export function Dashboard() {
     }
   }
 
+  // Clean, short, shareable URL — pixflow-ai.com/<business>/<gallery-slug>
+  // (e.g. /eclipse-media/rapyd-saint-lucia), matching Pixieset. The router
+  // resolves this by slug; falls back to the legacy /gallery/<id> form when a
+  // slug is missing. Old UUID links keep working, so nothing breaks.
+  function galleryShareUrl(g: { id: string; slug?: string | null }): string {
+    const origin = window.location.origin
+    return businessSlug && g.slug
+      ? `${origin}/${businessSlug}/${g.slug}`
+      : `${origin}/gallery/${g.id}`
+  }
+
   function copyGalleryLink(galleryId: string, e: React.MouseEvent) {
     e.stopPropagation()
-    const url = `${window.location.origin}/gallery/${galleryId}`
+    const g = galleries.find(x => x.id === galleryId)
+    const url = g ? galleryShareUrl(g) : `${window.location.origin}/gallery/${galleryId}`
     navigator.clipboard.writeText(url).then(() => {
       setCopiedGalleryId(galleryId)
       setTimeout(() => setCopiedGalleryId(prev => prev === galleryId ? null : prev), 1800)
@@ -1792,7 +1805,7 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <a href={`/gallery/${editingGallery.id}`} target="_blank" style={{
+                  <a href={galleryShareUrl(editingGallery)} target="_blank" style={{
                     padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
                     background: 'transparent', border: `1px solid ${border}`, color: textPrimary,
                     textDecoration: 'none', fontFamily: 'inherit',
