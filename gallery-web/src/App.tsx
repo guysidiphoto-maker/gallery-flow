@@ -1071,18 +1071,18 @@ export function App() {
     // mirror that here: skip the heavy fetch when the gate hasn't been passed.
     const mustWaitForUnlock = gateOn && hasPw && !isGalleryUnlocked(id)
 
-    const fetchAllImages = async (): Promise<GalleryImage[]> => {
-      const PAGE = 1000
-      const out: GalleryImage[] = []
-      for (let offset = 0; ; offset += PAGE) {
-        const rows = await gcGetImages<GalleryImage>(id, { offset, limit: PAGE })
-        out.push(...rows)
-        if (rows.length < PAGE) break
-      }
-      return out
-    }
-    const [imgs, secsRes] = await Promise.all([
-      (isPrivateFaceMode || mustWaitForUnlock) ? Promise.resolve([] as GalleryImage[]) : fetchAllImages(),
+    // Staged load: fetch a first slice fast so the welcome/cover + first grid
+    // screens render in ~0.6s, then stream the rest in the background instead
+    // of blocking ~2s on all ~900 rows. Pages arrive in sort_order, so
+    // appending keeps the gallery order stable.
+    const FIRST_PAGE = 300   // covers the welcome mosaic + first grid batches
+    const REST_PAGE = 1000
+    const skipImages = isPrivateFaceMode || mustWaitForUnlock
+
+    const [firstImgs, secsRes] = await Promise.all([
+      skipImages
+        ? Promise.resolve([] as GalleryImage[])
+        : gcGetImages<GalleryImage>(id, { offset: 0, limit: FIRST_PAGE }),
       // gallery_sections is intentionally left on the legacy public path —
       // section names ("Day 1", "Day 2") are far less sensitive than image
       // contents, and gating them here would force every PasswordGate render
@@ -1093,9 +1093,21 @@ export function App() {
         .eq('gallery_id', id)
         .order('sort_order', { ascending: true }),
     ])
-    setImages(imgs)
+    setImages(firstImgs)
     setSections(secsRes.data || [])
     setGallery(g)
+
+    // Stream the remaining pages in the background (best-effort), appending in
+    // order. Runs while the guest is still on the welcome/cover screen.
+    if (!skipImages && firstImgs.length === FIRST_PAGE) {
+      void (async () => {
+        for (let offset = FIRST_PAGE; ; offset += REST_PAGE) {
+          const rows = await gcGetImages<GalleryImage>(id, { offset, limit: REST_PAGE })
+          if (rows.length > 0) setImages(prev => [...prev, ...rows])
+          if (rows.length < REST_PAGE) break
+        }
+      })()
+    }
 
     if (mustWaitForUnlock) return  // stories deferred to the unlock effect below
 
