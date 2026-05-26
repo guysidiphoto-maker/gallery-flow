@@ -916,13 +916,8 @@ export function App() {
   const [clientCodeError, setClientCodeError] = useState(false)
   const [hiddenImageIds, setHiddenImageIds] = useState<Set<string>>(new Set())
   // Active story index for the full-screen StoryPlayer overlay. null = closed.
-  // Set when a guest taps a story thumbnail in the collapsible row below.
+  // Set when a guest taps a story circle in the row below the hero.
   const [storyPlayerIndex, setStoryPlayerIndex] = useState<number | null>(null)
-
-  // Stories are collapsed by default. The viewer surfaces them via a toggle
-  // button in the section-nav toolbar so the gallery doesn't open with a big
-  // stories block above the photos.
-  const [storiesOpen, setStoriesOpen] = useState(false)
   // Face search: null = no search done; Set = matched IDs (always kept once found)
   const [faceMatchIds, setFaceMatchIds] = useState<Set<string> | null>(null)
   // Toggle: true = show only face matches, false = show all (but keep matches for toggling back)
@@ -2119,6 +2114,39 @@ export function App() {
         </div>
       </header>
 
+      {/* Stories — Instagram-style circle row, directly below the hero. Each
+          circle opens the full-screen StoryPlayer; the row scrolls away above
+          the sticky section nav. Replaces the old header toggle + collapsible
+          block that crowded the section pills. */}
+      {showStoriesSection && (
+        <div className="stories-circles" aria-label="Stories">
+          {stories.map((st, idx) => (
+            <button
+              key={st.id}
+              type="button"
+              className="story-circle"
+              onClick={() => setStoryPlayerIndex(idx)}
+              aria-label={`Play story ${st.style}`}
+            >
+              <span className="story-circle__ring">
+                <video
+                  className="story-circle__media"
+                  src={storyUrl(st)}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  tabIndex={-1}
+                />
+                <span className="story-circle__play" aria-hidden="true">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                </span>
+              </span>
+              <span className="story-circle__label">{st.style}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Unified sticky bar: section pills (left) + download/select toolbar (right) */}
       {(sections.length > 0 || downloadsEnabled || showStoriesSection || faceSearchAvailable) && (
         <SectionNav
@@ -2140,20 +2168,9 @@ export function App() {
             setActiveSectionView(sectionId)
             window.scrollTo({ top: 0, behavior: 'auto' })
           }}
-          centerToolbar={showStoriesSection ? (
-            <button
-              className={`gallery-toolbar__btn ${storiesOpen ? 'gallery-toolbar__btn--active' : ''}`}
-              onClick={() => setStoriesOpen(v => !v)}
-              aria-expanded={storiesOpen}
-              aria-controls="gallery-stories"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-              </svg>
-              Stories
-              <span className="gallery-toolbar__count">{stories.length}</span>
-            </button>
-          ) : null}
+          /* Stories moved out of the header into the Instagram-style circle
+             row below the hero — the center slot crowded the section pills. */
+          centerToolbar={null}
           toolbar={(faceSearchAvailable || downloadsEnabled) ? (
             <>
               {faceSearchAvailable && !selectMode && !faceMatchIds && (
@@ -2224,43 +2241,8 @@ export function App() {
         />
       )}
 
-      {/* Stories — collapsible. Hidden by default; opened from the toolbar.
-          Tapping a thumbnail launches the full-screen StoryPlayer overlay
-          (Instagram-style); the inline preview keeps autoplay-on-hover so
-          guests can sample the clip before committing to full screen. */}
-      {showStoriesSection && storiesOpen && (
-        <section id="gallery-stories" className="stories">
-          <div className="stories__row">
-            {stories.map((st, idx) => (
-              <div key={st.id} className="story-card">
-                <video
-                  className="story-card__preview"
-                  src={storyUrl(st)}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  onClick={() => setStoryPlayerIndex(idx)}
-                  onMouseEnter={(e) => (e.target as HTMLVideoElement).play()}
-                  onMouseLeave={(e) => { const v = e.target as HTMLVideoElement; v.pause(); v.currentTime = 0 }}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Play story ${st.style}`}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      setStoryPlayerIndex(idx)
-                    }
-                  }}
-                />
-                <span className="story-card__name">{st.style}</span>
-                <button className="story-card__dl" onClick={() => handleDownload(storyUrl(st), `story_${st.style}.mp4`)}>
-                  Download
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      {/* Stories now render as a circle row just below the hero (see the
+          .stories-circles block above the section nav). */}
 
       {/* Full-screen StoryPlayer overlay. Mounted only while a story is
           active; closing returns to the gallery without losing scroll. */}
