@@ -652,7 +652,8 @@ export function Dashboard() {
     setStoryUploadProgress({ pct: 30, filename: file.name })
     const { error: uploadErr } = await supabase.storage
       .from(STORY_BUCKET)
-      .upload(storagePath, file, { contentType: 'video/mp4', upsert: true })
+      // 1-year cache: story files are content-addressed, safe to cache long.
+      .upload(storagePath, file, { contentType: 'video/mp4', upsert: true, cacheControl: '31536000' })
     if (uploadErr) {
       setStoryUploading(false)
       setStoryUploadProgress(null)

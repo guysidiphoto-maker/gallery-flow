@@ -12,7 +12,7 @@ import type {
 } from './uploadTypes'
 import {
   BUCKET, STORY_BUCKET, STANDARD_UPLOAD_LIMIT, TUS_CHUNK_SIZE,
-  PREVIEW_FAILURE_THRESHOLD, GALLERY_BASE, DEFAULT_QUEUE_CONFIG,
+  PREVIEW_FAILURE_THRESHOLD, GALLERY_BASE, DEFAULT_QUEUE_CONFIG, ONE_YEAR_CACHE,
 } from './uploadTypes'
 import { startFaceIndexingInBackground, resumeFaceIndexingIfEnabled, deleteCollection, deleteImageFaces } from './faceIndex'
 
@@ -245,7 +245,7 @@ export async function publishGallery(
         const blob = new Blob([buffer], { type: 'image/jpeg' })
         const { error: coverErr } = await supabase.storage
           .from(BUCKET)
-          .upload(coverPath, blob, { contentType: 'image/jpeg', upsert: true })
+          .upload(coverPath, blob, { contentType: 'image/jpeg', upsert: true, cacheControl: ONE_YEAR_CACHE })
         if (!coverErr) {
           // Update delivery_settings with the storage URL
           const coverStorageUrl = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${coverPath}`
@@ -696,7 +696,7 @@ export async function uploadStoryToCloud(
       const blob = new Blob([buffer], { type: 'video/mp4' })
       const { error } = await supabase.storage
         .from(STORY_BUCKET)
-        .upload(storagePath, blob, { contentType: 'video/mp4', upsert: true })
+        .upload(storagePath, blob, { contentType: 'video/mp4', upsert: true, cacheControl: ONE_YEAR_CACHE })
       if (error) return { skipped: true, reason: `Upload failed: ${error.message}` }
     } else {
       const token = await getSupabaseToken()
@@ -1184,15 +1184,15 @@ export async function updateGalleryImages(
         const origPath = buildAssetPath(slug, galleryDbId, 'originals', hashPrefix, filename)
 
         await Promise.all([
-          supabase.storage.from(BUCKET).upload(thumbPath, new Blob([cr.thumb], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true }),
-          supabase.storage.from(BUCKET).upload(webPath, new Blob([cr.web], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true }),
+          supabase.storage.from(BUCKET).upload(thumbPath, new Blob([cr.thumb], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true, cacheControl: ONE_YEAR_CACHE }),
+          supabase.storage.from(BUCKET).upload(webPath, new Blob([cr.web], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true, cacheControl: ONE_YEAR_CACHE }),
         ])
 
         // Upload original (may be large — use regular upload)
         const origBuffer = await window.api.readFileBuffer(localPath)
         if (origBuffer) {
           const contentType = mimeFromFilename(filename)
-          await supabase.storage.from(BUCKET).upload(origPath, new Blob([origBuffer], { type: contentType }), { contentType, upsert: true })
+          await supabase.storage.from(BUCKET).upload(origPath, new Blob([origBuffer], { type: contentType }), { contentType, upsert: true, cacheControl: ONE_YEAR_CACHE })
         }
 
         // Insert DB record

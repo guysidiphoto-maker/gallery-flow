@@ -6,7 +6,7 @@ import type {
 } from './uploadTypes'
 import {
   STANDARD_UPLOAD_LIMIT, SAFE_UPLOAD_LIMIT, ORIGINAL_TUS_THRESHOLD,
-  TUS_CHUNK_SIZE, BUCKET, MAX_RETRIES, DEFAULT_QUEUE_CONFIG,
+  TUS_CHUNK_SIZE, BUCKET, MAX_RETRIES, DEFAULT_QUEUE_CONFIG, ONE_YEAR_CACHE,
 } from './uploadTypes'
 
 // ─── Logger ─────────────────────────────────────────────────────────────────
@@ -50,6 +50,7 @@ function tusUpload(
         bucketName: bucket,
         objectName: storagePath,
         contentType,
+        cacheControl: ONE_YEAR_CACHE,
       },
       onError: (error) => reject(error),
       onSuccess: () => resolve(),
@@ -70,7 +71,7 @@ async function standardUploadWithRetry(
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const { error } = await supabase.storage
       .from(bucket)
-      .upload(storagePath, blob, { contentType, upsert: true })
+      .upload(storagePath, blob, { contentType, upsert: true, cacheControl: ONE_YEAR_CACHE })
     if (!error) return { error: null }
 
     if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
