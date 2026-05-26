@@ -172,6 +172,12 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                   ref={el => { if (el) imgRefs.current.set(img.id, el) }}
                   bucket={imgBucket}
                   path={img.thumbnail_path || img.storage_path}
+                  // Responsive thumbnails: a phone grabs ~16KB (240w) instead of
+                  // the ~74KB stored thumb; desktop gets a crisp 600w. The CDN
+                  // caches each transform for a year. `sizes` mirrors the column
+                  // breakpoints in useColumnCount (2 / 2 / 3 / 4 cols).
+                  transformWidths={[240, 400, 600]}
+                  sizes="(max-width: 479px) 50vw, (max-width: 767px) 50vw, (max-width: 1099px) 33vw, 25vw"
                   alt=""
                   loading="lazy"
                   decoding="async"
