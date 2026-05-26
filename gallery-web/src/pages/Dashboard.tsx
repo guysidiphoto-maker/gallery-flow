@@ -3726,7 +3726,7 @@ export function Dashboard() {
                               ...labelStyle, marginBottom: 12,
                               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                             }}>
-                              <span>תמונת שער</span>
+                              <span>תמונת שער · ראש הגלריה</span>
                               {ds.coverImageUrl && (
                                 <button onClick={() => updateGallerySetting('coverImageUrl', null)} style={{
                                   background: 'transparent', border: 'none', cursor: 'pointer',
@@ -3736,12 +3736,51 @@ export function Dashboard() {
                                 }}>נקה</button>
                               )}
                             </div>
+
+                            {/* Live preview of what the gallery header (hero)
+                                will show — makes the cover choice obvious and
+                                WYSIWYG instead of buried in a thumbnail grid. */}
+                            <div style={{
+                              position: 'relative', width: '100%', aspectRatio: '16 / 7',
+                              borderRadius: 10, overflow: 'hidden', marginBottom: 14,
+                              background: '#0a0a0f',
+                            }}>
+                              {((ds.coverImageUrl as string) || galleryImages[0]) && (
+                                <img
+                                  src={(ds.coverImageUrl as string) || imgUrl(galleryImages[0].thumbnail_path || galleryImages[0].storage_path)}
+                                  alt=""
+                                  style={{
+                                    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                                    filter: ds.coverImageUrl ? 'none' : 'blur(3px) brightness(0.55)',
+                                  }}
+                                />
+                              )}
+                              <div style={{
+                                position: 'absolute', inset: 0,
+                                display: 'flex', flexDirection: 'column',
+                                alignItems: 'center', justifyContent: 'center', gap: 5, padding: 12,
+                                background: 'linear-gradient(to bottom, rgba(0,0,0,.15), rgba(0,0,0,.6))',
+                                color: '#fff', textAlign: 'center',
+                              }}>
+                                <div style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', opacity: 0.8 }}>
+                                  תצוגה מקדימה · ראש הגלריה
+                                </div>
+                                <div style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.2 }}>
+                                  {(ds.galleryTitle as string) || editingGallery.name}
+                                </div>
+                                {!ds.coverImageUrl && (
+                                  <div style={{ fontSize: 10.5, opacity: 0.8 }}>
+                                    לא נבחר שער — מוצגת התמונה הראשונה. בחר תמונה למטה ↓
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                             <div style={{
                               display: 'grid',
                               gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
                               gap: 4,
                             }}>
-                              {galleryImages.slice(0, 24).map(img => {
+                              {galleryImages.slice(0, 48).map(img => {
                                 const url = imgUrl(img.storage_path)
                                 const isCover = ds.coverImageUrl === url
                                 return (

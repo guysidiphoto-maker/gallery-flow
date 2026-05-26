@@ -1935,10 +1935,17 @@ export function App() {
   // Hero background image: prefer the photographer's chosen cover; otherwise
   // fall back to the first photo of the gallery (heavily blurred + dimmed)
   // so the page never opens as a flat black rectangle.
+  //
+  // `resolvedCoverUrl` honours the Dashboard cover picker (delivery_settings
+  // .coverImageUrl) — the same source the welcome screen uses. The hero used
+  // to read only `coverUrl` (the coverImageId path), so a cover chosen in the
+  // dashboard never showed at the top. Prefer the resolved cover, then the
+  // id-based one, then the first photo.
   const heroFallbackImage = images[0]
-  const heroBgUrl = coverUrl
+  const heroBgUrl = resolvedCoverUrl
+    || coverUrl
     || (heroFallbackImage ? webUrl(heroFallbackImage) : null)
-  const hasCustomCover = !!coverUrl
+  const hasCustomCover = !!(resolvedCoverUrl || coverUrl)
 
   // Convert the chosen theme accent (#rrggbb) to "r, g, b" so it can override
   // the existing --accent CSS variable used everywhere in styles.css.
