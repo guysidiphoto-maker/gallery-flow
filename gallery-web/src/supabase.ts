@@ -8,3 +8,18 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 export function storageUrl(bucket: string, path: string): string {
   return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`
 }
+
+/**
+ * Supabase on-the-fly image transform URL (resized + re-encoded). Result is
+ * served by the Smart CDN with a 1-year cache, so each (image,width) pair is
+ * transformed once and then served from the edge. Used to emit a responsive
+ * <img srcset> so phones download ~16KB instead of the ~74KB stored thumb.
+ */
+export function renderUrl(
+  bucket: string,
+  path: string,
+  width: number,
+  quality = 60,
+): string {
+  return `${SUPABASE_URL}/storage/v1/render/image/public/${bucket}/${path}?width=${width}&quality=${quality}`
+}
