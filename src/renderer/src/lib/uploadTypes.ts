@@ -126,6 +126,11 @@ export const ORIGINAL_TUS_THRESHOLD = 5 * 1024 * 1024  // 5MB — always TUS for
 export const TUS_CHUNK_SIZE = 6 * 1024 * 1024
 export const BUCKET = 'gallery-images'
 export const STORY_BUCKET = 'gallery-stories'
+// Gallery assets are content-addressed (path embeds a file hash), so a URL
+// always maps to the same bytes and can be cached for a year. Supabase
+// defaults to 3600s (1h), which cooled the CDN edge hourly and forced slow
+// ~1.5s origin re-fetches per viewer. 1 year matches Pic-Time / Pixieset.
+export const ONE_YEAR_CACHE = '31536000'
 export const MAX_RETRIES = 2
 export const GALLERY_BASE = 'https://pixflow-ai.com'
 export const PREVIEW_FAILURE_THRESHOLD = 0.8  // gallery fails only if >80% of previews fail

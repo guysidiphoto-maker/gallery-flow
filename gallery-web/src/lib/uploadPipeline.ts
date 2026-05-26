@@ -117,12 +117,19 @@ function loadImageElement(file: File): Promise<HTMLImageElement> {
 
 // ── Storage uploads ─────────────────────────────────────────────────────────
 
+// Gallery assets are content-addressed (the path embeds an FNV hash of the
+// file), so a given URL always points at the same bytes — it can be cached
+// effectively forever. Supabase's default is only 3600s (1h), which let the
+// CDN edge "cool off" hourly and forced slow origin re-fetches (~1.5s each)
+// for every gallery viewer. 1 year matches what Pic-Time / Pixieset serve.
+const ONE_YEAR_CACHE = '31536000'
+
 async function uploadOne(
   bucket: string, path: string, body: Blob | File, contentType: string,
 ): Promise<void> {
   const { error } = await supabase.storage
     .from(bucket)
-    .upload(path, body, { upsert: true, contentType })
+    .upload(path, body, { upsert: true, contentType, cacheControl: ONE_YEAR_CACHE })
   if (error) throw error
 }
 
