@@ -16,11 +16,18 @@
 // batches a guest sees. The long tail warms naturally as the first viewer
 // scrolls and then stays cached for a year.
 
-import { supabase, storageUrl } from '../supabase'
+import { supabase, storageUrl, renderUrl } from '../supabase'
 
 const BUCKET = 'gallery-images'
 const WARM_COUNT = 250 // first N thumbnails — covers the opening screens
 const CONCURRENCY = 6  // gentle on the photographer's connection
+
+// Mirror the grid's responsive thumbnail config (App.tsx MasonryGrid) so a
+// preload caches the exact variant the grid will later request.
+const THUMB_WIDTHS = [240, 400, 600]
+const THUMB_SIZES =
+  '(max-width: 479px) 50vw, (max-width: 767px) 50vw, (max-width: 1099px) 33vw, 25vw'
+const TRANSFORMABLE = new Set(['gallery-images', 'demo-uploads'])
 
 function preload(url: string): Promise<void> {
   return new Promise(resolve => {
@@ -67,4 +74,42 @@ export async function warmGalleryCache(galleryId: string): Promise<void> {
   } catch {
     /* best-effort warm — never disrupts publish/share */
   }
+}
+
+/**
+ * Preload the gallery's first thumbnails into the *guest's* browser cache
+ * while the welcome/cover screen is shown — so when they tap "enter" the grid
+ * appears already-loaded (the Pixieset "everything loads on the cover page"
+ * trick). Each preload mirrors the grid's srcset/sizes so the browser caches
+ * the exact variant the grid will request. Returns a cancel function.
+ */
+export function preloadGalleryThumbs(
+  items: Array<{ thumbnail_path?: string | null; storage_path?: string | null }>,
+  opts: { bucket?: string; count?: number } = {},
+): () => void {
+  const bucket = opts.bucket ?? BUCKET
+  const count = opts.count ?? 150
+  const useTransforms = TRANSFORMABLE.has(bucket)
+  const paths = items
+    .slice(0, count)
+    .map(it => it.thumbnail_path || it.storage_path)
+    .filter((p): p is string => !!p)
+
+  let next = 0
+  let cancelled = false
+
+  const loadNext = () => {
+    if (cancelled || next >= paths.length) return
+    const path = paths[next++]
+    const img = new Image()
+    img.onload = img.onerror = () => { if (!cancelled) loadNext() }
+    if (useTransforms) {
+      img.sizes = THUMB_SIZES
+      img.srcset = THUMB_WIDTHS.map(w => `${renderUrl(bucket, path, w, 60)} ${w}w`).join(', ')
+    }
+    img.src = storageUrl(bucket, path) // fallback + non-transform buckets
+  }
+
+  for (let k = 0; k < Math.min(CONCURRENCY, paths.length); k++) loadNext()
+  return () => { cancelled = true }
 }

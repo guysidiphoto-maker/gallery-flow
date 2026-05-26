@@ -3,6 +3,7 @@ import JSZip from 'jszip'
 import { supabase, storageUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from './lib/publicSession'
 import { signedStorageUrl } from './lib/signedStorage'
+import { preloadGalleryThumbs } from './lib/warmCache'
 import { TurnstileWidget } from './components/TurnstileWidget'
 import { SignedImg } from './components/SignedImg'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
@@ -1312,6 +1313,17 @@ export function App() {
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showWelcome, _hookWelcomeImages.length, _hookImgBucket])
+
+  // While the welcome/cover screen is shown, preload the gallery's first grid
+  // thumbnails into the guest's browser cache (mirroring the grid's srcset).
+  // The grid isn't mounted yet, so without this the guest only starts loading
+  // photos AFTER tapping "enter". This is the Pixieset trick: the cover page
+  // doubles as a loading buffer, so the grid appears instantly on enter.
+  useEffect(() => {
+    if (!showWelcome || images.length === 0) return
+    return preloadGalleryThumbs(images, { bucket: _hookImgBucket, count: 150 })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWelcome, images.length, _hookImgBucket])
 
   const [coverUrl, setCoverUrl] = useState<string | null>(
     _hookCoverImage ? storageUrl(_hookImgBucket, _hookCoverImage.storage_path) : null,
