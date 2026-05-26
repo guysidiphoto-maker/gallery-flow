@@ -3,6 +3,7 @@ import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany } from '../lib/uploadPipeline'
 import { signedStorageUrl } from '../lib/signedStorage'
+import { warmGalleryCache } from '../lib/warmCache'
 import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
@@ -837,6 +838,10 @@ export function Dashboard() {
     await supabase.from('galleries').update({ status: 'live', published_at: new Date().toISOString() }).eq('id', editingGallery.id)
     setEditingGallery({ ...editingGallery, status: 'live', published_at: new Date().toISOString() })
 
+    // Pre-warm the CDN edge so the first guest gets cached (~50ms) thumbnails
+    // instead of the slow (~1.5s) cold-origin path. Fire-and-forget.
+    void warmGalleryCache(editingGallery.id)
+
     // Kick off face indexing if the photographer enabled it. Without this,
     // FaceFinder is a dead button on web-published galleries — the desktop
     // app calls this same edge action automatically; we matched the behaviour.
@@ -880,6 +885,8 @@ export function Dashboard() {
   async function sendShareEmail() {
     if (!shareGallery || !shareEmail) return
     setShareSending(true)
+    // Warm the edge as the email (with the gallery link) goes out to the guest.
+    void warmGalleryCache(shareGallery.id)
     try {
       const { sendGalleryShareEmail } = await import('../lib/shareGallery')
       const res = await sendGalleryShareEmail({
@@ -908,6 +915,9 @@ export function Dashboard() {
       setCopiedGalleryId(galleryId)
       setTimeout(() => setCopiedGalleryId(prev => prev === galleryId ? null : prev), 1800)
     })
+    // Warm the edge at the exact moment the link is about to be sent, so an
+    // older gallery (published before its cache was warm) is hot for the guest.
+    void warmGalleryCache(galleryId)
   }
 
   const imgUrl = (path: string) => storageUrl('gallery-images', path)
