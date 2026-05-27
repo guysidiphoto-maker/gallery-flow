@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo, Fragment } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import JSZip from 'jszip'
 import { supabase, storageUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from './lib/publicSession'
@@ -50,27 +50,24 @@ function ScrollReveal({ children }: { children: React.ReactNode }) {
   return <div ref={ref} style={{ willChange: 'opacity, transform', transformStyle: 'preserve-3d' }}>{children}</div>
 }
 
-// ─── Order-preserving Masonry Grid ──────────────────────────────────────────
+// ─── Masonry Grid (3-column, full-frame for presence) ───────────────────────
+// Column masonry: each image renders FULL (uncropped) at its natural aspect,
+// so portraits stay tall and every photo keeps its presence — like Pixieset.
+// Round-robin placement (image i → column i % cols) fixes each photo's column
+// once, so the layout never "dances" as images lazy-load.
 
-function computeColumns(layoutMode: string): number {
-  if (typeof window === 'undefined') return 2
-  const w = window.innerWidth
+function computeColumns(layoutMode: string, w: number): number {
   if (layoutMode === '1-col') return 1
-  const base = layoutMode === '3-col' ? 3 : 2
-  if (w < 480) return Math.min(base, 2)
-  if (w < 768) return base
-  if (w < 1100) return base + 1
-  return base + 2
+  if (w < 640) return 2            // phones: 2 across
+  if (layoutMode === '3-col') return 4
+  return 3                          // tablet/desktop: 3 big columns
 }
 
 function useColumnCount(layoutMode: string): number {
-  // Lazy initializer computes the correct column count on the very first
-  // render. Initializing at a fixed 2 and correcting in the effect made the
-  // whole grid re-flow from 2→3/4 columns on every load — to a client that
-  // looked like "the photos jumped / the order changed" right after opening.
-  const [cols, setCols] = useState(() => computeColumns(layoutMode))
+  const initial = typeof window === 'undefined' ? 3 : computeColumns(layoutMode, window.innerWidth)
+  const [cols, setCols] = useState(initial)
   useEffect(() => {
-    const calc = () => setCols(computeColumns(layoutMode))
+    const calc = () => setCols(computeColumns(layoutMode, window.innerWidth))
     calc()
     window.addEventListener('resize', calc)
     return () => window.removeEventListener('resize', calc)
@@ -97,18 +94,26 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
   onToggleHide?: (id: string) => void
   watermark?: { text: string; position: string } | null
 }) {
-  const cols = useColumnCount(layoutMode)
   const imgRefs = useRef<Map<string, HTMLImageElement>>(new Map())
+  const cols = useColumnCount(layoutMode)
 
-  // Progressive render: keep at most this many photos in the DOM at once.
-  // Even with content-visibility, mobile Safari OOMs at ~500+ tiles when
-  // the user flings the scroll. Render the first batch, then reveal more
-  // as a sentinel near the bottom comes into view.
+  // Measure the container so thumbnails are fetched at the exact column width.
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const measure = () => setContainerWidth(el.clientWidth)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Progressive render: keep at most this many photos mounted at once.
   const BATCH_SIZE = 150
   const [visibleCount, setVisibleCount] = useState(BATCH_SIZE)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
-  // When `images` shrinks (e.g. face-search filter applied), don't keep
-  // a stale large visibleCount — clamp it back to the new total.
   useEffect(() => {
     setVisibleCount(prev => Math.min(Math.max(BATCH_SIZE, prev), images.length))
   }, [images.length])
@@ -129,14 +134,13 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
   }, [visibleCount, images.length])
   const visibleImages = useMemo(() => images.slice(0, visibleCount), [images, visibleCount])
 
-  // Round-robin column distribution: image 0 → col 0, image 1 → col 1, …
-  //
-  // The earlier shortest-column algorithm depended on each image's loaded
-  // aspect ratio, so as lazy-loaded images came in the layout reshuffled
-  // mid-scroll — photos visibly jumped between columns. Round-robin places
-  // every image once on first render and never moves it. Columns may end
-  // up slightly uneven in height, but the gallery stops "dancing" when
-  // a client opens a section.
+  const gap = imageSpacing === 'none' ? 0 : imageSpacing === 'medium' ? 10 : 4
+  const rounded = cornerStyle === 'rounded'
+  // Exact display width of one column → the precise size to fetch (× DPR).
+  const colWidth = containerWidth > 0 ? (containerWidth - gap * (cols - 1)) / cols : 0
+  const imgSizes = colWidth > 0 ? `${Math.round(colWidth)}px` : `${Math.round(100 / cols)}vw`
+
+  // Round-robin: image i → column i % cols. Fixed placement = no reflow churn.
   const columns = useMemo(() => {
     const result: Array<Array<{ img: GalleryImage; index: number }>> = Array.from({ length: cols }, () => [])
     for (let i = 0; i < visibleImages.length; i++) {
@@ -145,40 +149,37 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
     return result
   }, [visibleImages, cols])
 
-  const handleLoad = useCallback((_index: number, _el: HTMLImageElement) => {
-    // No-op: column placement is now position-based, so we no longer need
-    // to track per-image natural ratios. Each <img height="auto"> still
-    // stretches to its natural ratio inside its slot.
-  }, [])
-
-  const gap = imageSpacing === 'none' ? 0 : imageSpacing === 'medium' ? 10 : 4
-  const rounded = cornerStyle === 'rounded'
-
   return (
-    <div style={{
-      display: 'flex',
-      gap,
-      padding: gap > 0 ? `0 ${gap}px` : 0,
-      maxWidth: layoutMode === '1-col' ? 900 : undefined,
-      margin: layoutMode === '1-col' ? '0 auto' : undefined,
-      position: 'relative',
-    }}>
+    <div
+      ref={containerRef}
+      style={{
+        display: 'flex', gap,
+        padding: gap > 0 ? `0 ${gap}px` : 0,
+        maxWidth: layoutMode === '1-col' ? 900 : undefined,
+        margin: layoutMode === '1-col' ? '0 auto' : undefined,
+        position: 'relative',
+      }}
+    >
       {columns.map((col, ci) => (
-        <div key={ci} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap }}>
+        <div key={ci} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap }}>
           {col.map(({ img, index }) => {
             const isSelected = selectMode && selectedIds?.has(img.id)
-            const gridItem = (
-              <div className="grid-item" style={{ position: 'relative', borderRadius: rounded ? 8 : 0, overflow: 'hidden' }}>
+            return (
+              <div
+                key={img.id}
+                className="grid-item"
+                style={{ position: 'relative', borderRadius: rounded ? 8 : 0, overflow: 'hidden' }}
+              >
                 <SignedImg
                   ref={el => { if (el) imgRefs.current.set(img.id, el) }}
                   bucket={imgBucket}
-                  path={img.thumbnail_path || img.storage_path}
-                  // Responsive thumbnails: a phone grabs ~16KB (240w) instead of
-                  // the ~74KB stored thumb; desktop gets a crisp 600w. The CDN
-                  // caches each transform for a year. `sizes` mirrors the column
-                  // breakpoints in useColumnCount (2 / 2 / 3 / 4 cols).
-                  transformWidths={[240, 400, 600]}
-                  sizes="(max-width: 479px) 50vw, (max-width: 767px) 50vw, (max-width: 1099px) 33vw, 25vw"
+                  // Transform from the WEB preview (~1600px), not the 360px
+                  // thumbnail — the big columns need that detail to stay crisp.
+                  // Phones still pull a small file (sizes = the column width).
+                  path={img.storage_path || img.thumbnail_path}
+                  transformWidths={[320, 640, 960, 1280]}
+                  transformQuality={70}
+                  sizes={imgSizes}
                   alt=""
                   loading="lazy"
                   decoding="async"
@@ -186,11 +187,11 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                     width: '100%', height: 'auto', display: 'block',
                     cursor: 'pointer',
                     background: 'linear-gradient(135deg, rgba(255,255,255,.02), rgba(255,255,255,.05))',
-                    transition: 'opacity .35s ease, transform .4s cubic-bezier(.16,1,.3,1), filter .3s ease',
+                    transition: 'opacity .35s ease, filter .3s ease',
                     opacity: selectMode && !isSelected ? 0.55 : (clientMode && hiddenIds?.has(img.id)) ? 0.3 : 1,
                     filter: selectMode && !isSelected ? 'saturate(0.6)' : 'none',
                   }}
-                  onLoad={e => { handleLoad(index, e.currentTarget); e.currentTarget.style.animation = 'none' }}
+                  onLoad={e => { e.currentTarget.style.animation = 'none' }}
                   onClick={() => selectMode ? onToggleSelect?.(img.id) : onImageClick(index)}
                 />
                 {/* Selection checkbox */}
@@ -289,12 +290,6 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                 )}
               </div>
             )
-            // ScrollReveal previously wrapped every tile with a 21-threshold
-            // IntersectionObserver + a 3D-perspective transform on a GPU
-            // layer. With 150+ tiles that meant thousands of layout/paint
-            // operations per scroll frame on mobile Safari and the tab
-            // crashed on fast scroll. Render the bare grid item instead.
-            return <Fragment key={img.id}>{gridItem}</Fragment>
           })}
         </div>
       ))}

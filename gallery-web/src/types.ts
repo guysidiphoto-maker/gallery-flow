@@ -70,6 +70,11 @@ export interface GalleryImage {
   is_top_pick: boolean
   sort_order: number
   section_id?: string | null
+  /** Pixel dimensions of the original. When present the justified grid lays
+   *  out instantly with no measure-on-load settle. Populated at upload +
+   *  backfilled for existing images. */
+  width?: number | null
+  height?: number | null
 }
 
 export interface Story {

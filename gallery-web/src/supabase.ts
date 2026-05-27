@@ -21,5 +21,9 @@ export function renderUrl(
   width: number,
   quality = 60,
 ): string {
-  return `${SUPABASE_URL}/storage/v1/render/image/public/${bucket}/${path}?width=${width}&quality=${quality}`
+  // resize=contain is REQUIRED: with the default (fill) and only a width,
+  // Supabase keeps the source HEIGHT — a 1600×1068 photo came back 640×1068
+  // (distorted/squarish). `contain` scales proportionally to the width,
+  // preserving the real aspect ratio (→ 640×427).
+  return `${SUPABASE_URL}/storage/v1/render/image/public/${bucket}/${path}?width=${width}&quality=${quality}&resize=contain`
 }
