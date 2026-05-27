@@ -1157,15 +1157,29 @@ export async function updateGalleryImages(
 
     onProgress?.({ phase: 'uploading', current: 0, total: addedPaths.length })
 
-    // Compress, upload, and insert DB records for each new image
-    for (let i = 0; i < addedPaths.length; i++) {
-      const localPath = addedPaths[i]
-      const filename = sanitizeFilename(localPath.split('/').pop() || `img_${i}`)
-      const hashPrefix = pathHash(localPath)
-      onProgress?.({ phase: 'uploading', current: i, total: addedPaths.length, filename })
+    // Upload one storage object with a few retries — a transient network/
+    // throttle blip on one of ~12,000 uploads (4000 imgs × 3 tiers) must not
+    // fail the whole image.
+    const uploadWithRetry = async (path: string, blob: Blob, contentType: string): Promise<void> => {
+      let lastMsg = 'upload failed'
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { error } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, blob, { contentType, upsert: true, cacheControl: ONE_YEAR_CACHE })
+        if (!error) return
+        lastMsg = error.message
+        await new Promise(r => setTimeout(r, 400 * (attempt + 1)))
+      }
+      throw new Error(lastMsg)
+    }
 
+    // Process ONE image end-to-end: compress → upload 3 tiers → insert row.
+    // Memory stays bounded because only CONCURRENCY images are in flight at
+    // once (each holds its thumb/web/original buffers only until done).
+    const processOne = async (localPath: string): Promise<void> => {
+      const filename = sanitizeFilename(localPath.split('/').pop() || 'img')
+      const hashPrefix = pathHash(localPath)
       try {
-        // Compress
         const cr = await window.api.compressImageForUpload(localPath) as {
           thumb: Uint8Array; web: Uint8Array; original: Uint8Array
           thumbSize: number; webSize: number; originalSize: number
@@ -1174,28 +1188,25 @@ export async function updateGalleryImages(
         if (!cr) {
           log('update-images:compress-failed', filename)
           failures.push({ filename, reason: 'compression failed (file may be missing or unreadable)' })
-          continue
+          return
         }
 
-        // Upload thumb, web preview, original — paths include the local
-        // path's hash prefix so two same-named local files don't collide.
         const thumbPath = buildAssetPath(slug, galleryDbId, 'thumbs', hashPrefix, filename)
         const webPath = buildAssetPath(slug, galleryDbId, 'web', hashPrefix, filename)
         const origPath = buildAssetPath(slug, galleryDbId, 'originals', hashPrefix, filename)
 
+        // Light tiers first (these make the gallery viewable), then original.
         await Promise.all([
-          supabase.storage.from(BUCKET).upload(thumbPath, new Blob([cr.thumb], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true, cacheControl: ONE_YEAR_CACHE }),
-          supabase.storage.from(BUCKET).upload(webPath, new Blob([cr.web], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true, cacheControl: ONE_YEAR_CACHE }),
+          uploadWithRetry(thumbPath, new Blob([cr.thumb], { type: 'image/jpeg' }), 'image/jpeg'),
+          uploadWithRetry(webPath, new Blob([cr.web], { type: 'image/jpeg' }), 'image/jpeg'),
         ])
 
-        // Upload original (may be large — use regular upload)
         const origBuffer = await window.api.readFileBuffer(localPath)
         if (origBuffer) {
           const contentType = mimeFromFilename(filename)
-          await supabase.storage.from(BUCKET).upload(origPath, new Blob([origBuffer], { type: contentType }), { contentType, upsert: true, cacheControl: ONE_YEAR_CACHE })
+          await uploadWithRetry(origPath, new Blob([origBuffer], { type: contentType }), contentType)
         }
 
-        // Insert DB record
         const sortOrder = currentImagePaths.indexOf(localPath)
         const { data: inserted } = await supabase.from('images').insert({
           gallery_id: galleryDbId,
@@ -1209,15 +1220,29 @@ export async function updateGalleryImages(
         if (inserted?.id) {
           cloudIdForPath.set(localPath, inserted.id as string)
         }
-
         log('update-images:added', filename)
-        onProgress?.({ phase: 'uploading', current: i + 1, total: addedPaths.length, filename })
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err)
         log('update-images:add-error', `${filename}: ${reason}`)
         failures.push({ filename, reason })
       }
     }
+
+    // Concurrency pool: was a sequential for-loop (one image at a time, each
+    // waiting a full ~1.1s round-trip to the far origin) → ~4-5h for 4000.
+    // Five workers saturate the upload bandwidth → ~4-6× faster, memory-safe.
+    const UPLOAD_CONCURRENCY = 5
+    let cursor = 0
+    let done = 0
+    const worker = async (): Promise<void> => {
+      while (cursor < addedPaths.length) {
+        const localPath = addedPaths[cursor++]
+        await processOne(localPath)
+        done++
+        onProgress?.({ phase: 'uploading', current: done, total: addedPaths.length, filename: localPath.split('/').pop() || '' })
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, addedPaths.length) }, worker))
   }
 
   // 3. Update sort_order for all images. Match by cloud row id (not by
