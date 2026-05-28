@@ -1231,7 +1231,7 @@ export async function updateGalleryImages(
     // Concurrency pool: was a sequential for-loop (one image at a time, each
     // waiting a full ~1.1s round-trip to the far origin) → ~4-5h for 4000.
     // Five workers saturate the upload bandwidth → ~4-6× faster, memory-safe.
-    const UPLOAD_CONCURRENCY = 5
+    const UPLOAD_CONCURRENCY = 8
     let cursor = 0
     let done = 0
     const worker = async (): Promise<void> => {

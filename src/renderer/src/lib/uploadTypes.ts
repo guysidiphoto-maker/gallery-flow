@@ -113,9 +113,14 @@ export interface QueueConfig {
   originalConcurrency: number
 }
 
+// Concurrency tuned for a HIGH-LATENCY origin (~1.1s round-trip to the US
+// region). Small preview files are dominated by per-request/connection
+// overhead, so they need many in-flight at once to fill the pipe — 6 left the
+// link mostly idle. Originals are large enough to be bandwidth-bound, so a
+// smaller number already saturates the uplink; a few extra hide latency.
 export const DEFAULT_QUEUE_CONFIG: QueueConfig = {
-  previewConcurrency: 6,
-  originalConcurrency: 3,
+  previewConcurrency: 14,
+  originalConcurrency: 5,
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
