@@ -124,13 +124,22 @@ function loadImageElement(file: File): Promise<HTMLImageElement> {
 // for every gallery viewer. 1 year matches what Pic-Time / Pixieset serve.
 const ONE_YEAR_CACHE = '31536000'
 
+// Upload one object with a few retries. A transient network/throttle blip on
+// one of thousands of uploads must not fail the whole image — the path is
+// content-addressed so the retry overwrites the same key, no garbage accrues.
 async function uploadOne(
   bucket: string, path: string, body: Blob | File, contentType: string,
 ): Promise<void> {
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(path, body, { upsert: true, contentType, cacheControl: ONE_YEAR_CACHE })
-  if (error) throw error
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(path, body, { upsert: true, contentType, cacheControl: ONE_YEAR_CACHE })
+    if (!error) return
+    lastErr = error
+    await new Promise(r => setTimeout(r, 400 * (attempt + 1)))
+  }
+  throw lastErr
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -212,7 +221,7 @@ export async function uploadMany(
   files: File[],
   opts: UploadOptions,
   onBatch: (b: BatchProgress) => void,
-  concurrency = 3,
+  concurrency = 8,
 ): Promise<{ ok: UploadResult[]; failed: Array<{ file: File; error: string }> }> {
   const results: UploadResult[] = []
   const failed: Array<{ file: File; error: string }> = []

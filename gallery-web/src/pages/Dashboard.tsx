@@ -542,7 +542,7 @@ export function Dashboard() {
         sortOrder: galleryImages.length,
       },
       (b) => setUploadBatch(b),
-      3,
+      8,
     )
     if (result.failed.length > 0) {
       const insufficient = result.failed.find(f => f.error.includes('insufficient_tokens'))
