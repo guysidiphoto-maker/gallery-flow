@@ -1173,47 +1173,35 @@ export async function updateGalleryImages(
       throw new Error(lastMsg)
     }
 
-    // Process ONE image end-to-end: compress → upload 3 tiers → insert row.
-    // Memory stays bounded because only CONCURRENCY images are in flight at
-    // once (each holds its thumb/web/original buffers only until done).
+    // Process ONE image: upload the ORIGINAL only → insert row. No client-side
+    // compression (the old main-thread bottleneck) and no thumb/web uploads —
+    // every display size is a Supabase on-the-fly transform of the original,
+    // generated server-side and CDN-cached. This is the Pixieset model.
     const processOne = async (localPath: string): Promise<void> => {
       const filename = sanitizeFilename(localPath.split('/').pop() || 'img')
       const hashPrefix = pathHash(localPath)
       try {
-        const cr = await window.api.compressImageForUpload(localPath) as {
-          thumb: Uint8Array; web: Uint8Array; original: Uint8Array
-          thumbSize: number; webSize: number; originalSize: number
-          width: number; height: number
-        } | null
-        if (!cr) {
-          log('update-images:compress-failed', filename)
-          failures.push({ filename, reason: 'compression failed (file may be missing or unreadable)' })
+        const origBuffer = await window.api.readFileBuffer(localPath)
+        if (!origBuffer) {
+          log('update-images:read-failed', filename)
+          failures.push({ filename, reason: 'could not read file (missing or unreadable)' })
           return
         }
 
-        const thumbPath = buildAssetPath(slug, galleryDbId, 'thumbs', hashPrefix, filename)
-        const webPath = buildAssetPath(slug, galleryDbId, 'web', hashPrefix, filename)
         const origPath = buildAssetPath(slug, galleryDbId, 'originals', hashPrefix, filename)
+        const contentType = mimeFromFilename(filename)
+        await uploadWithRetry(origPath, new Blob([origBuffer], { type: contentType }), contentType)
 
-        // Light tiers first (these make the gallery viewable), then original.
-        await Promise.all([
-          uploadWithRetry(thumbPath, new Blob([cr.thumb], { type: 'image/jpeg' }), 'image/jpeg'),
-          uploadWithRetry(webPath, new Blob([cr.web], { type: 'image/jpeg' }), 'image/jpeg'),
-        ])
-
-        const origBuffer = await window.api.readFileBuffer(localPath)
-        if (origBuffer) {
-          const contentType = mimeFromFilename(filename)
-          await uploadWithRetry(origPath, new Blob([origBuffer], { type: contentType }), contentType)
-        }
-
+        // All three path columns point at the original; the viewer transforms
+        // whatever path it gets, so thumb/web are derived on demand.
         const sortOrder = currentImagePaths.indexOf(localPath)
         const { data: inserted } = await supabase.from('images').insert({
           gallery_id: galleryDbId,
           filename,
-          web_preview_path: webPath,
+          web_preview_path: origPath,
           original_path: origPath,
-          thumbnail_path: thumbPath,
+          thumbnail_path: origPath,
+          original_uploaded: true,
           is_top_pick: false,
           sort_order: sortOrder,
         }).select('id').single()
@@ -1228,9 +1216,9 @@ export async function updateGalleryImages(
       }
     }
 
-    // Concurrency pool: was a sequential for-loop (one image at a time, each
-    // waiting a full ~1.1s round-trip to the far origin) → ~4-5h for 4000.
-    // Five workers saturate the upload bandwidth → ~4-6× faster, memory-safe.
+    // Concurrency pool: each worker streams one original (no compression to
+    // serialize on the main thread anymore), so this now actually saturates
+    // the uplink. Memory stays bounded — only CONCURRENCY files in flight.
     const UPLOAD_CONCURRENCY = 8
     let cursor = 0
     let done = 0
