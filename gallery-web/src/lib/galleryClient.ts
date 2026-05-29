@@ -108,10 +108,30 @@ export async function getImages<T = unknown>(
   // Direct .select('storage_path:web_preview_path') used to do that; the RPC
   // returns the raw column name, so re-alias here. Without this the viewer
   // tries to render thumb / web URLs from undefined paths and shows nothing.
-  return (data as Array<Record<string, unknown>>).map(row => ({
+  const rows: Array<Record<string, unknown>> = (data as Array<Record<string, unknown>>).map(row => ({
     ...row,
     storage_path: row.storage_path ?? row.web_preview_path,
-  })) as T[]
+  }))
+
+  // Supplement pixel dimensions when the RPC didn't include them, so the grid
+  // can reserve exact space per tile (no layout shift). Best-effort: anon-
+  // readable for live galleries; a gated/blocked read just leaves dims absent
+  // and the grid falls back to a placeholder ratio.
+  if (rows.length > 0 && rows[0].width == null) {
+    const { data: dimRows } = await supabase
+      .from('images')
+      .select('id, width, height')
+      .eq('gallery_id', galleryId)
+    if (dimRows) {
+      const byId = new Map(dimRows.map(d => [d.id as string, d]))
+      for (const r of rows) {
+        const d = byId.get(r.id as string)
+        if (d?.width && d?.height) { r.width = d.width; r.height = d.height }
+      }
+    }
+  }
+
+  return rows as T[]
 }
 
 export async function getStories<T = unknown>(galleryId: string): Promise<T[]> {
