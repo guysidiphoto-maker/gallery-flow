@@ -15,6 +15,7 @@ import {
   PREVIEW_FAILURE_THRESHOLD, GALLERY_BASE, DEFAULT_QUEUE_CONFIG, ONE_YEAR_CACHE,
 } from './uploadTypes'
 import { startFaceIndexingInBackground, resumeFaceIndexingIfEnabled, deleteCollection, deleteImageFaces } from './faceIndex'
+import { parseImageDimensions, type ImageDimensions } from './imageDimensions'
 
 // ─── Logger ─────────────────────────────────────────────────────────────────
 
@@ -371,6 +372,11 @@ export async function publishGallery(
 
   store.setQueueItems(queueItems)
 
+  // Pixel dimensions captured (from the header, no decode) while each original
+  // is read for upload, then written to the row so the grid reserves exact
+  // space per tile → zero layout shift.
+  const dimsByFilename = new Map<string, ImageDimensions>()
+
   // ── Step 5: Run queue ─────────────────────────────────────────────────
 
   const runner = new UploadQueueRunner(queueItems, {
@@ -380,6 +386,8 @@ export async function publishGallery(
       // Originals-only: only 'original' items exist — read the raw file.
       const buffer = await window.api.readFileBuffer(item.localPath)
       if (!buffer) return null
+      const dims = parseImageDimensions(buffer)
+      if (dims) dimsByFilename.set(item.filename, dims)
       const contentType = mimeFromFilename(item.filename)
       return { blob: new Blob([buffer], { type: contentType }), contentType }
     },
@@ -508,6 +516,7 @@ export async function publishGallery(
     const isTopPick = topPickIds.has(imagePaths[i])
     const hashPrefix = pathHash(imageRecords[i].localPath)
     const origPath = buildAssetPath(slug, galleryId, 'originals', hashPrefix, filename)
+    const dims = dimsByFilename.get(filename)
 
     // Originals-only: all three path columns point at the original; the viewer
     // serves every display size via on-the-fly Supabase transforms.
@@ -521,6 +530,7 @@ export async function publishGallery(
       is_top_pick: isTopPick,
       sort_order: i,
       section_id: sectionPathToDbId.get(imagePaths[i]) ?? null,
+      ...(dims ? { width: dims.width, height: dims.height } : {}),
     }
 
     const { error: imgError } = await supabase.from('images').insert(payload).select('id')
@@ -1183,6 +1193,9 @@ export async function updateGalleryImages(
 
         const origPath = buildAssetPath(slug, galleryDbId, 'originals', hashPrefix, filename)
         const contentType = mimeFromFilename(filename)
+        // Pixel dimensions from the header (no decode) so the gallery grid can
+        // reserve exact space per tile → zero layout shift.
+        const dims = parseImageDimensions(origBuffer)
         await uploadWithRetry(origPath, new Blob([origBuffer], { type: contentType }), contentType)
 
         // All three path columns point at the original; the viewer transforms
@@ -1197,6 +1210,7 @@ export async function updateGalleryImages(
           original_uploaded: true,
           is_top_pick: false,
           sort_order: sortOrder,
+          ...(dims ? { width: dims.width, height: dims.height } : {}),
         }).select('id').single()
         if (inserted?.id) {
           cloudIdForPath.set(localPath, inserted.id as string)
