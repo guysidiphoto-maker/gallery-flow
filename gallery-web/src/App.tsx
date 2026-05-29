@@ -140,11 +140,22 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
   const colWidth = containerWidth > 0 ? (containerWidth - gap * (cols - 1)) / cols : 0
   const imgSizes = colWidth > 0 ? `${Math.round(colWidth)}px` : `${Math.round(100 / cols)}vw`
 
-  // Round-robin: image i → column i % cols. Fixed placement = no reflow churn.
+  // Height-balanced masonry: place each image (in order) into the currently
+  // SHORTEST column, using its real aspect ratio (h/w) for the height. This
+  // keeps columns even — no one column ending far short of the others (the big
+  // black gap). Deterministic in index order, so loading more images never
+  // reshuffles already-placed ones → no jump. Falls back to ~square (1) when a
+  // photo's dimensions aren't stored yet (then it degrades to round-robin).
   const columns = useMemo(() => {
     const result: Array<Array<{ img: GalleryImage; index: number }>> = Array.from({ length: cols }, () => [])
+    const heights = new Array(cols).fill(0)
     for (let i = 0; i < visibleImages.length; i++) {
-      result[i % cols].push({ img: visibleImages[i], index: i })
+      const img = visibleImages[i]
+      const ratio = img.width && img.height ? img.height / img.width : 1
+      let c = 0
+      for (let k = 1; k < cols; k++) if (heights[k] < heights[c] - 1e-6) c = k
+      result[c].push({ img, index: i })
+      heights[c] += ratio
     }
     return result
   }, [visibleImages, cols])
