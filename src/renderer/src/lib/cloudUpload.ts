@@ -1157,67 +1157,80 @@ export async function updateGalleryImages(
 
     onProgress?.({ phase: 'uploading', current: 0, total: addedPaths.length })
 
-    // Compress, upload, and insert DB records for each new image
-    for (let i = 0; i < addedPaths.length; i++) {
-      const localPath = addedPaths[i]
-      const filename = sanitizeFilename(localPath.split('/').pop() || `img_${i}`)
+    // Upload one storage object with a few retries — a transient network/
+    // throttle blip on one of ~12,000 uploads (4000 imgs × 3 tiers) must not
+    // fail the whole image.
+    const uploadWithRetry = async (path: string, blob: Blob, contentType: string): Promise<void> => {
+      let lastMsg = 'upload failed'
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { error } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, blob, { contentType, upsert: true, cacheControl: ONE_YEAR_CACHE })
+        if (!error) return
+        lastMsg = error.message
+        await new Promise(r => setTimeout(r, 400 * (attempt + 1)))
+      }
+      throw new Error(lastMsg)
+    }
+
+    // Process ONE image: upload the ORIGINAL only → insert row. No client-side
+    // compression (the old main-thread bottleneck) and no thumb/web uploads —
+    // every display size is a Supabase on-the-fly transform of the original,
+    // generated server-side and CDN-cached. This is the Pixieset model.
+    const processOne = async (localPath: string): Promise<void> => {
+      const filename = sanitizeFilename(localPath.split('/').pop() || 'img')
       const hashPrefix = pathHash(localPath)
-      onProgress?.({ phase: 'uploading', current: i, total: addedPaths.length, filename })
-
       try {
-        // Compress
-        const cr = await window.api.compressImageForUpload(localPath) as {
-          thumb: Uint8Array; web: Uint8Array; original: Uint8Array
-          thumbSize: number; webSize: number; originalSize: number
-          width: number; height: number
-        } | null
-        if (!cr) {
-          log('update-images:compress-failed', filename)
-          failures.push({ filename, reason: 'compression failed (file may be missing or unreadable)' })
-          continue
-        }
-
-        // Upload thumb, web preview, original — paths include the local
-        // path's hash prefix so two same-named local files don't collide.
-        const thumbPath = buildAssetPath(slug, galleryDbId, 'thumbs', hashPrefix, filename)
-        const webPath = buildAssetPath(slug, galleryDbId, 'web', hashPrefix, filename)
-        const origPath = buildAssetPath(slug, galleryDbId, 'originals', hashPrefix, filename)
-
-        await Promise.all([
-          supabase.storage.from(BUCKET).upload(thumbPath, new Blob([cr.thumb], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true, cacheControl: ONE_YEAR_CACHE }),
-          supabase.storage.from(BUCKET).upload(webPath, new Blob([cr.web], { type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true, cacheControl: ONE_YEAR_CACHE }),
-        ])
-
-        // Upload original (may be large — use regular upload)
         const origBuffer = await window.api.readFileBuffer(localPath)
-        if (origBuffer) {
-          const contentType = mimeFromFilename(filename)
-          await supabase.storage.from(BUCKET).upload(origPath, new Blob([origBuffer], { type: contentType }), { contentType, upsert: true, cacheControl: ONE_YEAR_CACHE })
+        if (!origBuffer) {
+          log('update-images:read-failed', filename)
+          failures.push({ filename, reason: 'could not read file (missing or unreadable)' })
+          return
         }
 
-        // Insert DB record
+        const origPath = buildAssetPath(slug, galleryDbId, 'originals', hashPrefix, filename)
+        const contentType = mimeFromFilename(filename)
+        await uploadWithRetry(origPath, new Blob([origBuffer], { type: contentType }), contentType)
+
+        // All three path columns point at the original; the viewer transforms
+        // whatever path it gets, so thumb/web are derived on demand.
         const sortOrder = currentImagePaths.indexOf(localPath)
         const { data: inserted } = await supabase.from('images').insert({
           gallery_id: galleryDbId,
           filename,
-          web_preview_path: webPath,
+          web_preview_path: origPath,
           original_path: origPath,
-          thumbnail_path: thumbPath,
+          thumbnail_path: origPath,
+          original_uploaded: true,
           is_top_pick: false,
           sort_order: sortOrder,
         }).select('id').single()
         if (inserted?.id) {
           cloudIdForPath.set(localPath, inserted.id as string)
         }
-
         log('update-images:added', filename)
-        onProgress?.({ phase: 'uploading', current: i + 1, total: addedPaths.length, filename })
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err)
         log('update-images:add-error', `${filename}: ${reason}`)
         failures.push({ filename, reason })
       }
     }
+
+    // Concurrency pool: each worker streams one original (no compression to
+    // serialize on the main thread anymore), so this now actually saturates
+    // the uplink. Memory stays bounded — only CONCURRENCY files in flight.
+    const UPLOAD_CONCURRENCY = 8
+    let cursor = 0
+    let done = 0
+    const worker = async (): Promise<void> => {
+      while (cursor < addedPaths.length) {
+        const localPath = addedPaths[cursor++]
+        await processOne(localPath)
+        done++
+        onProgress?.({ phase: 'uploading', current: done, total: addedPaths.length, filename: localPath.split('/').pop() || '' })
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, addedPaths.length) }, worker))
   }
 
   // 3. Update sort_order for all images. Match by cloud row id (not by
