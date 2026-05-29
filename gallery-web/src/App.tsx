@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import JSZip from 'jszip'
-import { supabase, storageUrl } from './supabase'
+import { supabase, storageUrl, renderUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from './lib/publicSession'
 import { signedStorageUrl } from './lib/signedStorage'
 import { preloadGalleryThumbs } from './lib/warmCache'
@@ -1497,7 +1497,7 @@ export function App() {
           images={welcomeImages}
           coverImageUrl={resolvedCoverUrl}
           coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
-          storageUrl={(path: string) => welcomeUrlMap.get(path) ?? storageUrl(imgBucket, path)}
+          storageUrl={(path: string) => welcomeUrlMap.get(path) ?? renderUrl(imgBucket, path, 1280, 65)}
           onEnter={() => setShowWelcome(false)}
           faceSearchAvailable={faceSearchAvailable}
           facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}
@@ -1511,7 +1511,7 @@ export function App() {
           <FaceSearchExperience
             galleryId={gallery.id}
             backgroundImages={images.slice(0, 6)}
-            storageUrl={(path: string) => storageUrl(imgBucket, path)}
+            storageUrl={(path: string) => renderUrl(imgBucket, path, 1280, 65)}
             privacyMode={facePrivacyMode}
             lang={lang}
             onClose={() => setShowFaceSearch(false)}
@@ -1958,7 +1958,12 @@ export function App() {
   const heroFallbackImage = images[0]
   const heroBgUrl = resolvedCoverUrl
     || coverUrl
-    || (heroFallbackImage ? webUrl(heroFallbackImage) : null)
+    // Blurred+dimmed hero — a small server-side transform is plenty and never
+    // pulls the multi-MB original (storage_path is the original in the
+    // originals-only model).
+    || (heroFallbackImage
+        ? renderUrl(imgBucket, heroFallbackImage.storage_path, 1280, 60)
+        : null)
   const hasCustomCover = !!(resolvedCoverUrl || coverUrl)
 
   // Convert the chosen theme accent (#rrggbb) to "r, g, b" so it can override

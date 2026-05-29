@@ -2,6 +2,15 @@ import { useEffect, useCallback, useState } from 'react'
 import type { GalleryImage } from './types'
 import { Icon } from './components/Icon'
 import { signedStorageUrl } from './lib/signedStorage'
+import { renderUrl } from './supabase'
+
+// Buckets that support Supabase on-the-fly image transforms. For these, the
+// fullscreen view loads a bounded ~2048px transform (sharp + fast) instead of
+// the stored object — which in the originals-only model IS the multi-MB
+// original. The true original is only fetched on explicit download.
+const TRANSFORMABLE_BUCKETS = new Set(['gallery-images', 'demo-uploads'])
+const FULLSCREEN_WIDTH = 2048
+const LQIP_WIDTH = 48
 
 interface ViewerProps {
   images: GalleryImage[]
@@ -65,6 +74,15 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
     setCurrentSrc('')
     setThumbSrc('')
     if (!img?.storage_path) return
+    // Preferred path: server-side transform. A bounded fullscreen width keeps
+    // even a 10MB original down to a few hundred KB, and a tiny blurred LQIP
+    // paints instantly. The stored object is never loaded raw here.
+    if (TRANSFORMABLE_BUCKETS.has(imgBucket)) {
+      setThumbSrc(renderUrl(imgBucket, img.storage_path, LQIP_WIDTH, 40))
+      setCurrentSrc(renderUrl(imgBucket, img.storage_path, FULLSCREEN_WIDTH, 78))
+      return () => { cancelled = true }
+    }
+    // Legacy fallback (non-transformable bucket): signed raw object.
     if (img.thumbnail_path) {
       signedStorageUrl(imgBucket, img.thumbnail_path)
         .then(url => { if (!cancelled) setThumbSrc(url) })
@@ -81,9 +99,14 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
     if (total <= 1) return
     const count = Math.min(5, total - 1)
     for (let i = 1; i <= count; i++) {
-      const next = images[(index + i) % total]
-      if (!next?.storage_path) continue
-      signedStorageUrl(imgBucket, next.storage_path)
+      const nextImg = images[(index + i) % total]
+      if (!nextImg?.storage_path) continue
+      if (TRANSFORMABLE_BUCKETS.has(imgBucket)) {
+        const im = new Image()
+        im.src = renderUrl(imgBucket, nextImg.storage_path, FULLSCREEN_WIDTH, 78)
+        continue
+      }
+      signedStorageUrl(imgBucket, nextImg.storage_path)
         .then(url => { const im = new Image(); im.src = url })
         .catch(() => { /* ignore preload failure */ })
     }

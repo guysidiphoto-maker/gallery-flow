@@ -45,6 +45,12 @@ const RETRY_DELAYS_MS = [500, 1500, 4000]
 // Transforms only work on the public image bucket(s); never for stories etc.
 const TRANSFORMABLE_BUCKETS = new Set(['gallery-images', 'demo-uploads'])
 
+// When a caller doesn't specify transformWidths, this bounded width is still
+// used for `src` so a transformable bucket NEVER serves the raw stored object.
+// In the originals-only model that object is the multi-MB original; Supabase
+// does not upscale, so legacy small thumbnails are returned at their own size.
+const DEFAULT_DISPLAY_WIDTH = 1280
+
 export const SignedImg = forwardRef<HTMLImageElement, Props>(
   function SignedImg(
     { bucket, path, transformWidths, transformQuality = 60, onError, onLoad, ...rest },
@@ -73,15 +79,22 @@ export const SignedImg = forwardRef<HTMLImageElement, Props>(
     const bust = (url: string): string =>
       attempt > 0 ? url + (url.includes('?') ? '&' : '?') + 'cb=' + attempt : url
 
-    const src = baseSrc ? bust(baseSrc) : baseSrc
+    const transformable = !!(path && TRANSFORMABLE_BUCKETS.has(bucket))
+    const hasWidths = !!transformWidths?.length
 
     // Build a responsive srcset of transforms when asked for and supported.
-    const srcSet =
-      path && transformWidths?.length && TRANSFORMABLE_BUCKETS.has(bucket)
-        ? transformWidths
-            .map(w => `${bust(renderUrl(bucket, path, w, transformQuality))} ${w}w`)
-            .join(', ')
-        : undefined
+    const srcSet = transformable && hasWidths
+      ? transformWidths!
+          .map(w => `${bust(renderUrl(bucket, path!, w, transformQuality))} ${w}w`)
+          .join(', ')
+      : undefined
+
+    // For transformable buckets the `src` is ALWAYS a bounded server-side
+    // transform — never the raw stored object. Uses the largest requested
+    // width, or a sane default when none were given.
+    const src = transformable
+      ? bust(renderUrl(bucket, path!, hasWidths ? Math.max(...transformWidths!) : DEFAULT_DISPLAY_WIDTH, transformQuality))
+      : (baseSrc ? bust(baseSrc) : baseSrc)
 
     const handleError: React.ReactEventHandler<HTMLImageElement> = e => {
       if (baseSrc && attempt < RETRY_DELAYS_MS.length) {
