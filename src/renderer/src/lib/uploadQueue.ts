@@ -351,7 +351,10 @@ export function buildQueueItems(
     thumbBlob?: Blob
     webBlob?: Blob
   }>,
-  slug?: string
+  slug?: string,
+  /** Originals-only (Pixieset model): emit just the original item per image —
+   *  no thumbnail/web. Every display size is a server-side transform. */
+  originalsOnly = false,
 ): QueueItem[] {
   const items: QueueItem[] = []
 
@@ -359,29 +362,31 @@ export function buildQueueItems(
     const base = slug ? `${slug}/${galleryId}` : `${galleryId}`
     const stem = img.pathHashPrefix ? `${img.pathHashPrefix}_${img.filename}` : img.filename
 
-    items.push({
-      id: `q_${++queueIdCounter}_thumb_${stem}`,
-      galleryId,
-      filename: img.filename,
-      localPath: img.localPath,
-      storagePath: `${base}/thumbs/${stem}`,
-      type: 'thumbnail',
-      priority: 'high',
-      status: 'pending',
-      sizeBytes: 0, // filled after compression
-    })
+    if (!originalsOnly) {
+      items.push({
+        id: `q_${++queueIdCounter}_thumb_${stem}`,
+        galleryId,
+        filename: img.filename,
+        localPath: img.localPath,
+        storagePath: `${base}/thumbs/${stem}`,
+        type: 'thumbnail',
+        priority: 'high',
+        status: 'pending',
+        sizeBytes: 0, // filled after compression
+      })
 
-    items.push({
-      id: `q_${++queueIdCounter}_preview_${stem}`,
-      galleryId,
-      filename: img.filename,
-      localPath: img.localPath,
-      storagePath: `${base}/web/${stem}`,
-      type: 'web_preview',
-      priority: 'high',
-      status: 'pending',
-      sizeBytes: 0,
-    })
+      items.push({
+        id: `q_${++queueIdCounter}_preview_${stem}`,
+        galleryId,
+        filename: img.filename,
+        localPath: img.localPath,
+        storagePath: `${base}/web/${stem}`,
+        type: 'web_preview',
+        priority: 'high',
+        status: 'pending',
+        sizeBytes: 0,
+      })
+    }
 
     items.push({
       id: `q_${++queueIdCounter}_orig_${stem}`,

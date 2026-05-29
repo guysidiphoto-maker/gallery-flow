@@ -120,7 +120,9 @@ export interface QueueConfig {
 // smaller number already saturates the uplink; a few extra hide latency.
 export const DEFAULT_QUEUE_CONFIG: QueueConfig = {
   previewConcurrency: 14,
-  originalConcurrency: 5,
+  // Originals-only model: this is the only phase now. The US origin's ~1.2s
+  // round-trip means we need several in flight to keep the uplink full.
+  originalConcurrency: 8,
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
