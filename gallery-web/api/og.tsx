@@ -49,6 +49,13 @@ function buildPublicUrl(path: string): string {
   return `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${path}`
 }
 
+// Server-side transform — the OG card is 1200×630, and in the originals-only
+// model web_preview_path points at the multi-MB original. Pull a small
+// resized copy so the edge function never fetches a 10MB file.
+function buildRenderUrl(path: string, width = 1200, quality = 70): string {
+  return `${SUPABASE_URL}/storage/v1/render/image/public/gallery-images/${path}?width=${width}&quality=${quality}&resize=contain`
+}
+
 const ACCENT = '#6366f1'
 const ACCENT_LIGHT = '#818cf8'
 const BG = '#07070d'
@@ -112,7 +119,7 @@ async function pickCoverUrl(g: GalleryLite): Promise<string | null> {
   )) as Array<{ web_preview_path: string | null }> | null
   const path = imgs?.[0]?.web_preview_path
   if (!path) return null
-  return buildPublicUrl(path)
+  return buildRenderUrl(path)
 }
 
 function fallbackResponse(): ImageResponse {

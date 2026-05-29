@@ -152,48 +152,36 @@ export interface UploadOptions {
   onProgress?: ProgressFn
 }
 
-/** Upload one file end-to-end: compress, push 3 tiers, record. */
+/** Upload one ORIGINAL file and record it — the Pixieset model.
+ *
+ *  No client-side compression and no thumb/web uploads: every display size is
+ *  a Supabase on-the-fly transform of this single object (see renderUrl /
+ *  SignedImg), generated server-side and cached on the CDN for a year. This is
+ *  what makes uploads fast — the browser streams one file per photo instead of
+ *  burning CPU on canvas resizes and pushing three objects. */
 export async function uploadOneImage(file: File, opts: UploadOptions): Promise<UploadResult> {
   const { galleryId, businessSlug, sectionId, sortOrder, onProgress } = opts
-  const safeName  = sanitizeFilename(file.name)
-  const filename  = ensureJpgExt(safeName)
-  const hash      = pathHash(`${galleryId}/${file.name}/${file.size}/${file.lastModified}`)
-  const thumbPath = buildPath(businessSlug, galleryId, 'thumbs',    hash, filename)
-  const webPath   = buildPath(businessSlug, galleryId, 'web',       hash, filename)
-  const origPath  = buildPath(businessSlug, galleryId, 'originals', hash, file.name)
-
-  onProgress?.({ phase: 'compress' })
-  const [thumb, web] = await Promise.all([
-    resizeToBlob(file, THUMB_MAX_DIM, THUMB_JPEG_QUALITY),
-    resizeToBlob(file, WEB_MAX_DIM,   WEB_JPEG_QUALITY),
-  ])
-
-  onProgress?.({ phase: 'thumb' })
-  // Dual-write: primary thumb is mandatory, public mirror is best-effort.
-  const [, publicThumbPresent] = await Promise.all([
-    uploadOne(BUCKET, thumbPath, thumb.blob, 'image/jpeg'),
-    uploadOne(THUMB_PUBLIC_BUCKET, thumbPath, thumb.blob, 'image/jpeg')
-      .then(() => true)
-      .catch(() => false),
-  ])
-
-  onProgress?.({ phase: 'web' })
-  await uploadOne(BUCKET, webPath, web.blob, 'image/jpeg')
+  const hash     = pathHash(`${galleryId}/${file.name}/${file.size}/${file.lastModified}`)
+  const origPath = buildPath(businessSlug, galleryId, 'originals', hash, file.name)
 
   onProgress?.({ phase: 'original' })
   await uploadOne(BUCKET, origPath, file, file.type || 'image/jpeg')
 
   onProgress?.({ phase: 'record' })
+  // All three path columns point at the original. The viewer transforms
+  // whatever path it gets, so thumbnail/web are derived on demand; and
+  // original_uploaded becomes true (p_original_path IS NOT NULL) so HD
+  // downloads resolve immediately.
   const { data, error } = await supabase.rpc('record_image_upload', {
     p_gallery_id:            galleryId,
     p_filename:              file.name,
-    p_web_preview_path:      webPath,
-    p_thumbnail_path:        thumbPath,
+    p_web_preview_path:      origPath,
+    p_thumbnail_path:        origPath,
     p_original_path:         origPath,
     p_original_size:         file.size,
     p_section_id:            sectionId ?? null,
     p_sort_order:            sortOrder ?? 0,
-    p_public_thumb_present:  publicThumbPresent,
+    p_public_thumb_present:  false,
   })
   if (error) throw error
   const imageId = String(data)
@@ -201,9 +189,9 @@ export async function uploadOneImage(file: File, opts: UploadOptions): Promise<U
   onProgress?.({ phase: 'done' })
   return {
     imageId, filename: file.name,
-    webPath, thumbPath, originalPath: origPath,
+    webPath: origPath, thumbPath: origPath, originalPath: origPath,
     originalSize: file.size,
-    publicThumbPresent,
+    publicThumbPresent: false,
   }
 }
 
