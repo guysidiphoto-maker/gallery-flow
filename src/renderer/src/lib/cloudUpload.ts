@@ -93,6 +93,40 @@ function buildAssetPath(
   return `${slug}/${galleryId}/${kind}/${hashPrefix}_${filename}`
 }
 
+// ─── Transform cache warming ─────────────────────────────────────────────────
+
+// Originals-only means the viewer resizes from the multi-MB original on the
+// fly. The first request for each (image,width) is a ~2s cold transform; after
+// that it's cached on the CDN for a year. We pre-warm a representative mobile
+// + desktop grid width right after upload so the FIRST client to open the
+// gallery sees instant thumbnails instead of triggering all those cold
+// transforms themselves. Best-effort + background — never blocks or throws.
+const WARM_WIDTHS = [640, 1280]
+const WARM_QUALITY = 70
+const WARM_CONCURRENCY = 8
+
+async function warmTransformCache(
+  items: Array<{ slug: string; galleryId: string; hashPrefix: string; filename: string }>,
+): Promise<void> {
+  const renderBase = `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}`
+  const urls: string[] = []
+  for (const it of items) {
+    const path = buildAssetPath(it.slug, it.galleryId, 'originals', it.hashPrefix, it.filename)
+    for (const w of WARM_WIDTHS) {
+      urls.push(`${renderBase}/${path}?width=${w}&quality=${WARM_QUALITY}&resize=contain`)
+    }
+  }
+  let cursor = 0
+  const worker = async (): Promise<void> => {
+    while (cursor < urls.length) {
+      const url = urls[cursor++]
+      try { await fetch(url) } catch { /* best-effort */ }
+    }
+  }
+  await Promise.all(Array.from({ length: WARM_CONCURRENCY }, worker))
+  log('cache-warm:done', `${urls.length} variants`)
+}
+
 // ─── Main Publish Orchestrator ──────────────────────────────────────────────
 
 export interface PublishSectionInput {
@@ -509,6 +543,14 @@ export async function publishGallery(
   await flipGalleryLive(galleryId, publicUrl)
 
   log('preview-live', publicUrl)
+
+  // Warm the transform cache so the first client gets instant thumbnails
+  // (originals are already uploaded by now). Background, best-effort.
+  void warmTransformCache(imageRecords.map(rec => ({
+    slug, galleryId,
+    hashPrefix: pathHash(rec.localPath),
+    filename: rec.filename,
+  })))
 
   // Bump monthly usage counters now that the gallery is live
   import('./planGuard').then(({ bumpUsage }) => bumpUsage(imagePaths.length)).catch(() => {})
@@ -1178,6 +1220,13 @@ export async function updateGalleryImages(
       }
     }
     await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, addedPaths.length) }, worker))
+
+    // Warm the transform cache for the newly added originals (background).
+    void warmTransformCache(addedPaths.map(p => ({
+      slug, galleryId: galleryDbId,
+      hashPrefix: pathHash(p),
+      filename: sanitizeFilename(p.split('/').pop() || 'img'),
+    })))
   }
 
   // 3. Update sort_order for all images. Match by cloud row id (not by
