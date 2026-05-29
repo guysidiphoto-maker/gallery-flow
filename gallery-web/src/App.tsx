@@ -1972,7 +1972,15 @@ export function App() {
   // to read only `coverUrl` (the coverImageId path), so a cover chosen in the
   // dashboard never showed at the top. Prefer the resolved cover, then the
   // id-based one, then the first photo.
-  const heroFallbackImage = images[0]
+  // When no cover is set, pick a flattering hero rather than just images[0]
+  // (which is often a dark/portrait frame): prefer a landscape top-pick, then
+  // any landscape photo, then a top-pick, then the first image.
+  const _isLandscape = (im: GalleryImage) => !!(im.width && im.height && im.width > im.height)
+  const heroFallbackImage =
+    images.find(im => im.is_top_pick && _isLandscape(im))
+    ?? images.find(_isLandscape)
+    ?? images.find(im => im.is_top_pick)
+    ?? images[0]
   const heroBgUrl = resolvedCoverUrl
     || coverUrl
     // Blurred+dimmed hero — a small server-side transform is plenty and never
