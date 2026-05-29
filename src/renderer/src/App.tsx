@@ -280,6 +280,24 @@ export function resolveImages(imageIds: string[], registry: Record<string, Image
   return imageIds.map(id => registry[id]).filter(Boolean)
 }
 
+/** A picked gallery-image cover is stored as the LOCAL image id (img_…), which
+ *  the cloud viewer can't resolve → the cover "disappears". Translate it to the
+ *  cloud filename (what the viewer matches on) before pushing settings to the
+ *  cloud. Must run on EVERY settings push (publish + updates) or a later update
+ *  would re-write the local id and break the cover again. */
+export function fixCoverForCloud(
+  settings: Record<string, unknown>,
+  imgs: Array<{ id: string; path: string }>,
+): Record<string, unknown> {
+  const out = { ...settings }
+  const cid = out.coverImageId as string | null
+  if (cid && !out.coverImageUrl) {
+    const p = imgs.find(i => i.id === cid)?.path
+    if (p) out.coverImageId = sanitizeFilename(p.split('/').pop() || '')
+  }
+  return out
+}
+
 // Get cover image path for a project
 export function getProjectCover(project: ProjectData, registry: Record<string, ImageFile>): string | null {
   if (project.imageIds.length === 0) return null
@@ -642,8 +660,8 @@ function MainApp({ business }: { business: Business | null }) {
             }
             await Promise.all(Array.from({ length: 6 }, worker))
           }),
-        // Delivery settings
-        updateGallerySettings(project.id, settings as Record<string, unknown>),
+        // Delivery settings (translate the picked cover to a cloud-resolvable ref)
+        updateGallerySettings(project.id, fixCoverForCloud(settings as Record<string, unknown>, imgs)),
       ])
 
       // 4) Update local snapshot of published image ids so the next diff is empty
@@ -794,6 +812,8 @@ function MainApp({ business }: { business: Business | null }) {
             .filter((p): p is string => !!p),
         }))
 
+      const coverFixedSettings = fixCoverForCloud(settings as Record<string, unknown>, imgs)
+
       const { galleryId, publicUrl } = await publishGallery(
         project.name,
         project.clientName,
@@ -801,7 +821,7 @@ function MainApp({ business }: { business: Business | null }) {
         project.id,
         imgs.map(i => i.path),
         topPickPaths,
-        settings as Record<string, unknown>,
+        coverFixedSettings,
         sectionsInput,
       )
 
@@ -892,8 +912,9 @@ function MainApp({ business }: { business: Business | null }) {
       if (!project) { return }
 
       const settings = migrateSettings((project.deliverySettings || {}) as Record<string, unknown>)
+      const imgs = resolveImages(project.imageIds, imageRegistry)
 
-      const { error } = await updateGallerySettings(project.id, settings as Record<string, unknown>)
+      const { error } = await updateGallerySettings(project.id, fixCoverForCloud(settings as Record<string, unknown>, imgs))
       if (error) {
         console.error('[handleUpdateSettings] FAILED:', error)
         setPubError(`Failed to update: ${error}`)
