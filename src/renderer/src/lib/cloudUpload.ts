@@ -7,7 +7,7 @@ import {
   persistQueue, clearPersistedQueue,
 } from './uploadQueue'
 import type {
-  ImageUploadRecord, CompressionResult,
+  ImageUploadRecord,
   QueueItem, PersistedQueueState,
 } from './uploadTypes'
 import {
@@ -290,83 +290,46 @@ export async function publishGallery(
     log('sections-created', insertedSections.length)
   }
 
-  // ── Step 3: Compress all images (CPU-safe, sequential) ────────────────
+  // ── Step 3: Prepare (originals-only — NO client compression) ──────────
+  // Pixieset model: upload only the original; every display size is a
+  // server-side Supabase transform. No compression step and no thumb/web
+  // uploads — this removes the old main-thread-blocking CPU bottleneck AND
+  // the ~1.2GB pre-compress memory peak that risked crashing on 4000 images.
 
   store.setPublishStatus('preparing_assets')
 
-  const compressedMap = new Map<string, CompressionResult>()
-  const COMPRESS_BATCH = 3 // parallel compression — CPU safe
-
-  for (let batch = 0; batch < imagePaths.length; batch += COMPRESS_BATCH) {
-    const slice = imagePaths.slice(batch, batch + COMPRESS_BATCH)
-    const batchRecords = imageRecords.slice(batch, batch + COMPRESS_BATCH)
-
-    // Mark all in batch as generating
-    for (const rec of batchRecords) store.updateImage(rec.filename, { status: 'generating_assets' })
-
-    // Compress batch in parallel
-    const results = await Promise.all(
-      slice.map((path, j) =>
-        window.api.compressImageForUpload(path).then(r => ({
-          filename: batchRecords[j].filename,
-          result: r as CompressionResult | null,
-        }))
-      )
-    )
-
-    for (const { filename, result } of results) {
-      if (!result) {
-        log('compress:failed', filename)
-        store.updateImage(filename, { status: 'failed' })
-        continue
-      }
-
-      compressedMap.set(filename, result)
-      store.updateImage(filename, {
-        status: 'pending',
-        thumbnailSizeBytes: result.thumbSize,
-        webPreviewSizeBytes: result.webSize,
-        originalSizeBytes: result.originalSize,
-        width: result.width,
-        height: result.height,
-        mimeType: mimeFromFilename(filename),
-      })
-
-      log('compressed', `${filename} ${result.width}x${result.height} orig=${(result.originalSize / 1024 / 1024).toFixed(1)}MB web=${(result.webSize / 1024).toFixed(0)}KB thumb=${(result.thumbSize / 1024).toFixed(0)}KB`)
-    }
+  // Read original file sizes for accurate progress (best-effort — a failed
+  // stat just yields 0 and never drops the image).
+  const sizeByPath = new Map<string, number>()
+  await Promise.all(imagePaths.map(async p => {
+    const sz = await window.api.getFileSize(p).catch(() => null)
+    sizeByPath.set(p, sz ?? 0)
+  }))
+  for (const rec of imageRecords) {
+    store.updateImage(rec.filename, {
+      status: 'pending',
+      originalSizeBytes: sizeByPath.get(rec.localPath) ?? 0,
+      mimeType: mimeFromFilename(rec.filename),
+    })
   }
 
-  // Check how many failed compression
-  const compressedImages = imageRecords.filter(img => compressedMap.has(img.filename))
-  if (compressedImages.length === 0) {
-    store.setPublishStatus('failed')
-    await supabase.from('galleries').update({ status: 'failed' }).eq('id', galleryId)
-    throw new Error('All images failed compression')
-  }
+  // Nothing can fail "compression" anymore — every image proceeds.
+  const compressedImages = imageRecords
 
-  // ── Step 4: Build queue ───────────────────────────────────────────────
+  // ── Step 4: Build queue (originals only) ──────────────────────────────
 
-  store.setPublishStatus('uploading_previews')
+  store.setPublishStatus('uploading_originals')
 
   const queueInputs = compressedImages.map(img => ({
     filename: img.filename,
     localPath: img.localPath,
-    originalSizeBytes: compressedMap.get(img.filename)!.originalSize,
+    originalSizeBytes: sizeByPath.get(img.localPath) ?? 0,
     // Path-hash prefix makes the cloud key unique even when two local files
     // share a filename across sections (e.g. 0001.jpg in /Gala/ and /Day2/).
     pathHashPrefix: pathHash(img.localPath),
   }))
 
-  const queueItems = buildQueueItems(galleryId, queueInputs, slug)
-
-  // Fill in sizes for thumb/preview items
-  for (const item of queueItems) {
-    const cr = compressedMap.get(item.filename)
-    if (!cr) continue
-    if (item.type === 'thumbnail') item.sizeBytes = cr.thumbSize
-    if (item.type === 'web_preview') item.sizeBytes = cr.webSize
-    if (item.type === 'original') item.sizeBytes = cr.originalSize
-  }
+  const queueItems = buildQueueItems(galleryId, queueInputs, slug, true)
 
   store.setQueueItems(queueItems)
 
@@ -376,17 +339,7 @@ export async function publishGallery(
     config: DEFAULT_QUEUE_CONFIG,
 
     getBlob: async (item: QueueItem) => {
-      if (item.type === 'thumbnail') {
-        const cr = compressedMap.get(item.filename)
-        if (!cr) return null
-        return { blob: new Blob([cr.thumb], { type: 'image/jpeg' }), contentType: 'image/jpeg' }
-      }
-      if (item.type === 'web_preview') {
-        const cr = compressedMap.get(item.filename)
-        if (!cr) return null
-        return { blob: new Blob([cr.web], { type: 'image/jpeg' }), contentType: 'image/jpeg' }
-      }
-      // Original: read raw file from disk
+      // Originals-only: only 'original' items exist — read the raw file.
       const buffer = await window.api.readFileBuffer(item.localPath)
       if (!buffer) return null
       const contentType = mimeFromFilename(item.filename)
@@ -485,26 +438,22 @@ export async function publishGallery(
 
   activeRunner = runner
 
-  // Start the queue — previews run first (blocking)
+  // Start the queue — originals-only, so this uploads the originals.
   const runPromise = runner.run()
+  await runPromise
 
-  // Wait for previews to complete before going live
-  // The runner processes thumbs → previews → originals sequentially by type
-  // We need to intercept after previews are done
+  // ── Step 6: Evaluate upload results ───────────────────────────────────
+  // Originals-only: gate go-live on originals (there are no previews).
 
-  const { previewsDone } = await runPromise
-
-  // ── Step 6: Evaluate preview results ──────────────────────────────────
-
-  const totalPreviewable = compressedImages.length
-  const previewsUploaded = usePublish.getState().progress.previewsUploaded
-  const failureRate = 1 - (previewsUploaded / totalPreviewable)
+  const totalImages = compressedImages.length
+  const originalsUploaded = usePublish.getState().progress.originalsUploaded
+  const failureRate = totalImages > 0 ? 1 - (originalsUploaded / totalImages) : 0
 
   if (failureRate > PREVIEW_FAILURE_THRESHOLD) {
     store.setPublishStatus('failed')
     await supabase.from('galleries').update({ status: 'failed' }).eq('id', galleryId)
     activeRunner = null
-    throw new Error(`Too many preview failures (${Math.round(failureRate * 100)}%). Gallery cannot go live.`)
+    throw new Error(`Too many upload failures (${Math.round(failureRate * 100)}%). Gallery cannot go live.`)
   }
 
   // ── Step 7: Insert image records ──────────────────────────────────────
@@ -514,22 +463,23 @@ export async function publishGallery(
   let insertedCount = 0
   let firstInsertError: string | null = null
   for (let i = 0; i < imagePaths.length; i++) {
-    // IMPORTANT: use the sanitized filename from imageRecords, not the raw
-    // basename of imagePaths. compressedMap + the upload queue are both
-    // keyed on the sanitized name; looking up by the raw filename misses
-    // every image with a space/Hebrew/non-ASCII char and silently drops it.
+    // Use the sanitized filename from imageRecords, not the raw basename —
+    // the upload queue is keyed on the sanitized name, so the raw name would
+    // miss every image with a space/Hebrew/non-ASCII char and silently drop it.
     const filename = imageRecords[i].filename
-    const cr = compressedMap.get(filename)
-    if (!cr) continue
     const isTopPick = topPickIds.has(imagePaths[i])
     const hashPrefix = pathHash(imageRecords[i].localPath)
+    const origPath = buildAssetPath(slug, galleryId, 'originals', hashPrefix, filename)
 
+    // Originals-only: all three path columns point at the original; the viewer
+    // serves every display size via on-the-fly Supabase transforms.
     const payload = {
       gallery_id: galleryId,
       filename,
-      web_preview_path: buildAssetPath(slug, galleryId, 'web', hashPrefix, filename),
-      original_path: buildAssetPath(slug, galleryId, 'originals', hashPrefix, filename),
-      thumbnail_path: buildAssetPath(slug, galleryId, 'thumbs', hashPrefix, filename),
+      web_preview_path: origPath,
+      original_path: origPath,
+      thumbnail_path: origPath,
+      original_uploaded: true,
       is_top_pick: isTopPick,
       sort_order: i,
       section_id: sectionPathToDbId.get(imagePaths[i]) ?? null,
@@ -569,9 +519,6 @@ export async function publishGallery(
   if (faceIndexEnabled) {
     startFaceIndexingInBackground(galleryId)
   }
-
-  // Free compression cache (originals read from disk as needed)
-  compressedMap.clear()
 
   // ── Step 9: Originals continue in background ─────────────────────────
 
