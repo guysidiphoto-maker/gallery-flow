@@ -101,9 +101,13 @@ function buildAssetPath(
 // + desktop grid width right after upload so the FIRST client to open the
 // gallery sees instant thumbnails instead of triggering all those cold
 // transforms themselves. Best-effort + background — never blocks or throws.
-const WARM_WIDTHS = [640, 1280]
+// Must cover the widths the grid actually requests (SignedImg transformWidths
+// = 320/640/960/1280). The desktop 3-column grid usually picks 960 or 1280, so
+// warming only 640/1280 left 960 cold → black tiles on first view. Warm the
+// three sizes a real device picks (320 is tiny + cold-cheap, warms on demand).
+const WARM_WIDTHS = [640, 960, 1280]
 const WARM_QUALITY = 70
-const WARM_CONCURRENCY = 8
+const WARM_CONCURRENCY = 12
 
 async function warmTransformCache(
   items: Array<{ slug: string; galleryId: string; hashPrefix: string; filename: string }>,
