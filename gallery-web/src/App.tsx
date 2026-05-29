@@ -185,6 +185,12 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                   decoding="async"
                   style={{
                     width: '100%', height: 'auto', display: 'block',
+                    // Reserve each tile's space BEFORE its image loads so a
+                    // column never collapses to 0-height (the big black gaps).
+                    // `auto W/H` uses the real ratio when we have it, else a
+                    // 3:2 placeholder; once the image loads its natural ratio
+                    // takes over, so photos are never cropped or distorted.
+                    aspectRatio: img.width && img.height ? `${img.width} / ${img.height}` : 'auto 3 / 2',
                     cursor: 'pointer',
                     background: 'linear-gradient(135deg, rgba(255,255,255,.02), rgba(255,255,255,.05))',
                     transition: 'opacity .35s ease, filter .3s ease',
