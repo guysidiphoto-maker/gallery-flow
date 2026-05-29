@@ -121,8 +121,9 @@ export interface QueueConfig {
 export const DEFAULT_QUEUE_CONFIG: QueueConfig = {
   previewConcurrency: 14,
   // Originals-only model: this is the only phase now. The US origin's ~1.2s
-  // round-trip means we need several in flight to keep the uplink full.
-  originalConcurrency: 8,
+  // round-trip means we need MANY in flight to keep the uplink full — at 8 we
+  // measured only ~41% of a 73Mbit uplink, so 16 to push toward the ceiling.
+  originalConcurrency: 16,
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
