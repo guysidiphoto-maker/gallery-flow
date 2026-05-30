@@ -154,6 +154,16 @@ export function Dashboard() {
   // has unpublished local edits that haven't yet bumped published_at.
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0)
   const [unpublishedChanges, setUnpublishedChanges] = useState(false)
+  // In-flight + just-published states for the Publish/Update button so a click
+  // gives immediate visual feedback (was: silent black button → toast 200ms
+  // later, easy to miss). `publishing` flips true during the await; `justPublished`
+  // briefly shows a confirmation label that auto-dismisses.
+  const [publishing, setPublishing] = useState(false)
+  const [justPublished, setJustPublished] = useState(false)
+  // Inline confirmation for the Copy Link button — the toast is great but
+  // the eye is already on the button at the moment of click. Mirrors the
+  // copy-link pattern on the gallery list cards.
+  const [copiedInEditor, setCopiedInEditor] = useState(false)
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number; description?: string | null }>>([])
   const [newSectionName, setNewSectionName] = useState('')
   const [newSectionDesc, setNewSectionDesc] = useState('')
@@ -1015,10 +1025,15 @@ export function Dashboard() {
     if (!editingGallery) return
     const wasLive = editingGallery.status === 'live' || editingGallery.status === 'published'
     const publishedAt = new Date().toISOString()
+    // Flip publishing on so the button's label + spinner reflect the in-flight
+    // request immediately — important because the supabase call can take
+    // 200-600ms and previously the button looked dead during that window.
+    setPublishing(true)
     const { error } = await supabase
       .from('galleries')
       .update({ status: 'live', published_at: publishedAt })
       .eq('id', editingGallery.id)
+    setPublishing(false)
     if (error) {
       showToast({ kind: 'error', text: 'הפרסום נכשל. נסה שוב.' })
       console.warn('[publishGallery]', error)
@@ -1029,6 +1044,11 @@ export function Dashboard() {
     // and force the iframe to reload so it picks up the freshest snapshot.
     setUnpublishedChanges(false)
     setPreviewRefreshKey(k => k + 1)
+    // Inline button feedback — briefly turns the button into a "✓ עודכן"
+    // confirmation, then back to the resting state. Survives alongside the
+    // toast so both screen-reading users and eyes-on-button users get a hit.
+    setJustPublished(true)
+    setTimeout(() => setJustPublished(false), 1800)
     showToast({ kind: 'success', text: wasLive ? 'הגלריה עודכנה ושודרה ללקוח' : 'הגלריה פורסמה ✓' })
 
     // Pre-warm the CDN edge so the first guest gets cached (~50ms) thumbnails
@@ -2062,38 +2082,81 @@ export function Dashboard() {
                     <Icon name="arrow-out" size={13} strokeWidth={1.85} />
                     Preview
                   </a>
-                  {/* Copy share link — useful right after the first publish too. */}
+                  {/* Copy share link — useful right after the first publish too.
+                      Inline label/icon flip on success so the eye on the button
+                      gets immediate confirmation (toast remains for redundancy). */}
                   {isLiveStatus && (
                     <button
                       onClick={() => {
                         const url = galleryShareUrl(editingGallery)
                         navigator.clipboard.writeText(url).then(
-                          () => showToast({ kind: 'success', text: 'הקישור הועתק ✓' }),
+                          () => {
+                            setCopiedInEditor(true)
+                            setTimeout(() => setCopiedInEditor(false), 1800)
+                            showToast({ kind: 'success', text: 'הקישור הועתק ✓' })
+                          },
                           () => showToast({ kind: 'error', text: 'לא הצלחנו להעתיק. העתק ידנית מהדפדפן.' }),
                         )
                         void warmGalleryCache(editingGallery.id)
                       }}
+                      aria-live="polite"
                       style={{
                         padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-                        background: 'transparent', border: `1px solid ${border}`, color: textPrimary,
+                        background: copiedInEditor ? 'rgba(45,196,121,.10)' : 'transparent',
+                        border: `1px solid ${copiedInEditor ? 'rgba(45,196,121,.45)' : border}`,
+                        color: copiedInEditor ? '#1b8a4e' : textPrimary,
                         cursor: 'pointer', fontFamily: 'inherit',
                         letterSpacing: '0.18em', textTransform: 'uppercase',
                         display: 'inline-flex', alignItems: 'center', gap: 8,
+                        transition: 'background .15s, border-color .15s, color .15s',
                       }}
                     >
-                      <Icon name="copy" size={13} strokeWidth={1.85} />
-                      Copy Link
+                      <Icon name={copiedInEditor ? 'check' : 'copy'} size={13} strokeWidth={1.85} />
+                      {copiedInEditor ? 'הקישור הועתק' : 'Copy Link'}
                     </button>
                   )}
-                  {/* Publish OR Update — always visible. Drafts get "Publish",
-                      live galleries get "Update" so the photographer always has
-                      a clear "push my changes" action and visual confirmation. */}
-                  <button onClick={publishGallery} style={{
-                    padding: '10px 22px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-                    background: textPrimary, border: `1px solid ${textPrimary}`,
-                    color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
-                    letterSpacing: '0.18em', textTransform: 'uppercase',
-                  }}>{isLiveStatus ? 'Update' : 'Publish'}</button>
+                  {/* Publish (drafts) or Update (live). Three visual states:
+                      - dirty / draft → strong filled-black, enabled
+                      - clean live    → outlined + muted, disabled (nothing to push)
+                      - publishing    → "מפרסם…" + disabled to prevent double-fire
+                      - just-published → "✓ עודכן" for 1.8s, then back to clean */}
+                  {(() => {
+                    const isDraft = !isLiveStatus
+                    const hasWork = isDraft || unpublishedChanges
+                    const disabled = !hasWork || publishing
+                    const label = publishing
+                      ? 'מפרסם…'
+                      : justPublished
+                        ? (isDraft ? '✓ פורסם' : '✓ עודכן')
+                        : (isDraft ? 'Publish' : 'Update')
+                    const filled = hasWork && !justPublished
+                    const successTint = justPublished
+                    return (
+                      <button
+                        onClick={publishGallery}
+                        disabled={disabled}
+                        aria-live="polite"
+                        style={{
+                          padding: '10px 22px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                          background: successTint
+                            ? 'rgba(45,196,121,.12)'
+                            : filled ? textPrimary : 'transparent',
+                          border: `1px solid ${successTint
+                            ? 'rgba(45,196,121,.5)'
+                            : filled ? textPrimary : border}`,
+                          color: successTint
+                            ? '#1b8a4e'
+                            : filled ? '#fff' : textMuted,
+                          cursor: disabled ? 'default' : 'pointer',
+                          opacity: disabled && !successTint && !publishing ? 0.65 : 1,
+                          fontFamily: 'inherit',
+                          letterSpacing: '0.18em', textTransform: 'uppercase',
+                          transition: 'background .15s, border-color .15s, color .15s, opacity .15s',
+                          minWidth: 96,
+                        }}
+                      >{label}</button>
+                    )
+                  })()}
                 </div>
               </div>
 
