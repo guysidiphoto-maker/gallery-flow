@@ -954,12 +954,22 @@ export function Dashboard() {
       setDomainError('יש להזין דומיין')
       return
     }
+    // Client-side format check — avoids a network round-trip for the obvious
+    // bad inputs (https://, trailing slash, leading dot, spaces, single-label
+    // hosts like "localhost"). Server-side validation in the RPC remains the
+    // source of truth; this just gives instant feedback for the easy cases.
+    const VALID_DOMAIN = /^(?!-)([a-z0-9-]{1,63}(?<!-)\.)+[a-z]{2,63}$/
+    if (!VALID_DOMAIN.test(candidate)) {
+      setDomainError('דומיין לא תקין — דוגמה: photos.studio.co.il')
+      return
+    }
     setDomainSaving(true)
     setDomainError(null)
     try {
       const { data, error } = await supabase.rpc('set_business_custom_domain', { p_domain: candidate })
       if (error) {
-        setDomainError('שגיאה בשמירה — נסו שוב')
+        setDomainError(`שגיאה בשמירה — ${error.message}`)
+        console.warn('[set_business_custom_domain]', error)
         return
       }
       const result = data as {
@@ -3124,7 +3134,11 @@ export function Dashboard() {
                                 src={url}
                                 muted
                                 playsInline
-                                preload="metadata"
+                                // preload="none" — was "metadata" which fires a
+                                // range request for every story tile on tab open
+                                // (heavy on mobile + galleries with 20+ stories).
+                                // Hover triggers play() which loads what's needed.
+                                preload="none"
                                 onMouseEnter={(e) => { void (e.target as HTMLVideoElement).play().catch(() => { /* autoplay blocked */ }) }}
                                 onMouseLeave={(e) => {
                                   const v = e.target as HTMLVideoElement
@@ -3932,7 +3946,7 @@ export function Dashboard() {
                                 opacity: domainSaving ? 0.6 : 1,
                               }}
                             >
-                              בדוק שוב עכשיו
+                              רענן סטטוס
                             </button>
                             <button
                               type="button"
