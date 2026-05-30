@@ -88,17 +88,29 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
     /* Sidebar mobile transformation. Above 900px the sidebar is a permanent
        sticky 240px column. Below 900px it becomes an off-canvas drawer that
        slides in from the right (RTL); the hamburger button in the topbar
-       toggles it; a backdrop dims the rest. */
+       toggles it; a backdrop dims the rest.
+
+       Use logical inset (inset-inline-end) + translate by 100% — under
+       direction: rtl, translateX(100%) flips to LEFT, which moves the drawer
+       INTO view (the inverse of what we want). The translate value below uses
+       the keyword "100%" on a transformed offset that is direction-aware via
+       writing-mode-neutral logical property fallbacks; cleaner: just use a
+       conditional class that swaps the offscreen position to the inline end. */
     @media (max-width: 900px) {
       .dash-sidebar {
         position: fixed !important;
-        right: 0 !important;
+        inset-inline-end: 0 !important;
         top: 0 !important;
         height: 100vh !important;
-        transform: translateX(100%);
+        /* Hide off-canvas by translating away from the inline-end edge. In RTL
+           this is to the right (positive X); in LTR to the left (negative X).
+           Using a CSS custom property keeps it direction-aware in one place. */
+        --dash-drawer-hide: translateX(100%);
+        transform: var(--dash-drawer-hide);
         transition: transform .25s cubic-bezier(.4,0,.2,1);
         box-shadow: -8px 0 32px rgba(0,0,0,.4);
       }
+      [dir="rtl"] .dash-sidebar { --dash-drawer-hide: translateX(-100%); }
       .dash-sidebar.dash-sidebar--open {
         transform: translateX(0);
       }
@@ -618,7 +630,7 @@ export function Dashboard() {
     if (tokenBalance < files.length) {
       const wanted = files.length
       const have = tokenBalance
-      alert(`אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}. רכוש חבילה כדי להמשיך.`)
+      showToast({ kind: 'error', text: `אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}. רכוש חבילה כדי להמשיך.` })
       setShowBuyTokens(true)
       return
     }
@@ -640,10 +652,10 @@ export function Dashboard() {
     if (result.failed.length > 0) {
       const insufficient = result.failed.find(f => f.error.includes('insufficient_tokens'))
       if (insufficient) {
-        alert('הטוקנים נגמרו באמצע ההעלאה. רכוש חבילה כדי להמשיך עם השאר.')
+        showToast({ kind: 'error', text: 'הטוקנים נגמרו באמצע ההעלאה. רכוש חבילה כדי להמשיך עם השאר.' })
         setShowBuyTokens(true)
       } else {
-        alert(`${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.`)
+        showToast({ kind: 'error', text: `${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.` })
       }
     }
     // Refresh balance + image list
@@ -758,7 +770,8 @@ export function Dashboard() {
     if (uploadErr) {
       setStoryUploading(false)
       setStoryUploadProgress(null)
-      alert('שגיאה בהעלאה: ' + uploadErr.message)
+      showToast({ kind: 'error', text: 'שגיאה בהעלאה: ' + uploadErr.message })
+      console.warn('[handleStoryUpload]', uploadErr)
       return
     }
 
@@ -779,7 +792,8 @@ export function Dashboard() {
       await supabase.storage.from(STORY_BUCKET).remove([storagePath])
       setStoryUploading(false)
       setStoryUploadProgress(null)
-      alert('שגיאה בשמירת הסטורי: ' + (insertErr?.message ?? 'unknown'))
+      showToast({ kind: 'error', text: 'שגיאה בשמירת הסטורי: ' + (insertErr?.message ?? 'unknown') })
+      console.warn('[story-insert]', insertErr)
       return
     }
 
@@ -1112,7 +1126,8 @@ export function Dashboard() {
     const ids = Array.from(selectedImageIds)
     const { error } = await supabase.from('images').delete().in('id', ids)
     if (error) {
-      alert('שגיאה במחיקה: ' + error.message)
+      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + error.message })
+      console.warn('[bulkDelete]', error)
       return
     }
     setGalleryImages(prev => prev.filter(i => !selectedImageIds.has(i.id)))
@@ -1127,7 +1142,8 @@ export function Dashboard() {
     const ids = Array.from(selectedImageIds)
     const { error } = await supabase.from('images').update({ is_top_pick: makeTopPick }).in('id', ids)
     if (error) {
-      alert('שגיאה: ' + error.message)
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      console.warn('[bulkToggleTopPick]', error)
       return
     }
     setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, is_top_pick: makeTopPick } : i))
@@ -1145,19 +1161,31 @@ export function Dashboard() {
     if (!img) return
     const next = !img.is_top_pick
     const { error } = await supabase.from('images').update({ is_top_pick: next }).eq('id', imageId)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      console.warn('[toggleSingleTopPick]', error)
+      return
+    }
     setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, is_top_pick: next } : i))
   }
   async function moveImageToSection(imageId: string, sectionId: string | null) {
     const { error } = await supabase.from('images').update({ section_id: sectionId }).eq('id', imageId)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      console.warn('[moveImageToSection]', error)
+      return
+    }
     setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, section_id: sectionId } : i))
   }
   async function deleteSingleImage(imageId: string) {
     if (!editingGallery) return
     if (!confirm('למחוק את התמונה? פעולה זו לא ניתנת לביטול.')) return
     const { error } = await supabase.from('images').delete().eq('id', imageId)
-    if (error) { alert('שגיאה במחיקה: ' + error.message); return }
+    if (error) {
+      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + error.message })
+      console.warn('[deleteSingleImage]', error)
+      return
+    }
     setGalleryImages(prev => prev.filter(i => i.id !== imageId))
     await supabase.from('galleries')
       .update({ image_count: Math.max(0, galleryImages.length - 1) })
@@ -2175,9 +2203,14 @@ export function Dashboard() {
                           background: isActive ? bgSubtle : 'transparent',
                           transition: 'background .15s',
                         }}>
+                          {/* Section row — select-section action (outer button)
+                              and the three-dot menu (sibling button). Was
+                              previously a button nested inside another button,
+                              which is invalid HTML and confused screen readers
+                              with two overlapping click targets. */}
                           <button onClick={() => { setActiveSectionId(s.id); setSectionMenuOpenId(null) }} style={{
                             width: '100%', textAlign: 'right' as const,
-                            padding: '10px 12px', borderRadius: 2,
+                            padding: '10px 36px 10px 12px', borderRadius: 2,
                             background: 'transparent', border: 'none', cursor: 'pointer',
                             fontFamily: 'inherit', fontSize: 13,
                             fontWeight: isActive ? 600 : 500,
@@ -2193,6 +2226,7 @@ export function Dashboard() {
                               <input
                                 autoFocus
                                 defaultValue={s.name}
+                                onClick={(e) => e.stopPropagation()}
                                 onBlur={(e) => {
                                   const v = e.target.value.trim()
                                   if (v && v !== s.name) renameSection(s.id, v)
@@ -2217,25 +2251,22 @@ export function Dashboard() {
                             <span style={{ color: textMuted, fontSize: 12, fontWeight: 400 }}>
                               {count}
                             </span>
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              onClick={(e) => { e.stopPropagation(); setSectionMenuOpenId(isMenuOpen ? null : s.id) }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault(); e.stopPropagation()
-                                  setSectionMenuOpenId(isMenuOpen ? null : s.id)
-                                }
-                              }}
-                              style={{
-                                color: textMuted, cursor: 'pointer',
-                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                width: 24, height: 24, borderRadius: 2,
-                              }}
-                              aria-label="עוד"
-                            >
-                              <Icon name="menu" size={14} strokeWidth={1.85} />
-                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSectionMenuOpenId(isMenuOpen ? null : s.id) }}
+                            aria-label="עוד פעולות לסקשן"
+                            aria-haspopup="menu"
+                            aria-expanded={isMenuOpen}
+                            style={{
+                              position: 'absolute', top: 8, insetInlineEnd: 6,
+                              width: 24, height: 24, borderRadius: 2,
+                              background: 'transparent', border: 'none', cursor: 'pointer',
+                              color: textMuted,
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >
+                            <Icon name="menu" size={14} strokeWidth={1.85} />
                           </button>
                           {isMenuOpen && (
                             <div style={{
