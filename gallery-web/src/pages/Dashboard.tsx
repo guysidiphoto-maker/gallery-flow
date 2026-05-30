@@ -9,14 +9,24 @@ import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenCl
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useToast } from '../components/Toast'
-import { requestStoryGeneration, type StoryStyle, STORY_STYLES, STORY_DEFAULT_PHOTO_BUDGET } from '../lib/storyRender'
+import {
+  requestStoryGeneration,
+  type StoryStyle,
+  STORY_STYLES,
+  STORY_DEFAULT_PHOTO_BUDGET,
+  STORY_MIN_PHOTOS,
+  STORY_MAX_PHOTOS,
+  estimateRenderSeconds,
+  formatStoryDuration,
+} from '../lib/storyRender'
 
 // Stories Phase 1 — minimum gallery size for the "Generate story" CTA. The
 // Remotion "clean" composition needs ~12 photos to produce a coherent ~30s
 // clip (roughly 2.5s per scene at the spike's pacing). Below that we keep
 // the manual upload escape hatch but hide the automatic CTA so the
 // photographer never triggers a render that would look thin.
-const STORY_GENERATE_MIN_PHOTOS = 12
+const STORY_GENERATE_MIN_PHOTOS = STORY_MIN_PHOTOS
+const STORY_GENERATE_MAX_PHOTOS = STORY_MAX_PHOTOS
 
 interface Gallery {
   id: string
@@ -210,6 +220,13 @@ export function Dashboard() {
   const [showStoryStyleModal, setShowStoryStyleModal] = useState(false)
   const [storyGenStyle, setStoryGenStyle] = useState<StoryStyle>('clean')
   const [storyGenerating, setStoryGenerating] = useState(false)
+  // Curated shot list for the story. null = use defaults (favorites if any,
+  // else first 30). When the photographer touches the curator (remove, drag,
+  // add) this becomes an explicit ordered list of image ids.
+  const [storyCandidateIds, setStoryCandidateIds] = useState<string[] | null>(null)
+  const [storyShowAddPicker, setStoryShowAddPicker] = useState(false)
+  const [storyDraggedId, setStoryDraggedId] = useState<string | null>(null)
+  const [storyDragOverId, setStoryDragOverId] = useState<string | null>(null)
 
   // Toast surface for the generate flow. The ToastContainer is rendered near
   // the bottom of the JSX tree.
@@ -910,11 +927,19 @@ export function Dashboard() {
   // replace the success branch with real render polling.
   async function handleGenerateStoryConfirm() {
     if (!editingGallery || storyGenerating) return
+    // Pull the curated list — order matters. If the photographer hasn't
+    // touched the curator we still send the defaults explicitly (rather
+    // than letting the server re-derive) so the rendered clip exactly
+    // matches the preview the dashboard showed them.
+    const photoIds = storyCandidateIds && storyCandidateIds.length >= STORY_GENERATE_MIN_PHOTOS
+      ? storyCandidateIds
+      : undefined
     setStoryGenerating(true)
     // Optimistic progress toast — the photographer can keep working while
     // the (future) Lambda render proceeds in the background.
-    showToast({ kind: 'info', text: 'מייצר סטורי — זה ייקח דקה או שתיים' })
-    const result = await requestStoryGeneration(editingGallery.id, storyGenStyle)
+    const estSec = estimateRenderSeconds(photoIds?.length ?? STORY_DEFAULT_PHOTO_BUDGET, storyGenStyle)
+    showToast({ kind: 'info', text: `מייצר סטורי — ${formatStoryDuration(estSec)}` })
+    const result = await requestStoryGeneration(editingGallery.id, storyGenStyle, photoIds)
     setStoryGenerating(false)
     setShowStoryStyleModal(false)
     if (result.ok) {
@@ -2705,6 +2730,23 @@ export function Dashboard() {
                           <button
                             onClick={() => {
                               setStoryGenStyle('clean')
+                              // Initialise the curator with the default
+                              // shot list (favorites if any, else first N)
+                              // so the modal opens with something concrete
+                              // the photographer can immediately edit.
+                              const favs = galleryImages
+                                .filter(i => i.is_top_pick)
+                                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                                .map(i => i.id)
+                              const defaults = favs.length > 0
+                                ? favs.slice(0, STORY_GENERATE_MAX_PHOTOS)
+                                : galleryImages
+                                    .slice()
+                                    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                                    .slice(0, STORY_DEFAULT_PHOTO_BUDGET)
+                                    .map(i => i.id)
+                              setStoryCandidateIds(defaults)
+                              setStoryShowAddPicker(false)
                               setShowStoryStyleModal(true)
                             }}
                             disabled={storyGenerating || storyUploading}
@@ -4995,33 +5037,191 @@ export function Dashboard() {
               איזה סגנון סטורי?
             </h3>
 
-            {/* Photo source — transparent about which images go into the clip.
-                Favorites take priority because the photographer signalled
-                intent; otherwise we fall back to the first N photos so the
-                feature works even when nobody has curated yet. */}
+            {/* Photo curator — full edit-before-generate: see the candidate
+                shot list, drag-reorder, remove (✕), add more from the rest of
+                the gallery. Default load is favorites if any, otherwise the
+                first N; the photographer can override everything. */}
             {(() => {
-              const favoriteCount = galleryImages.filter(i => i.is_top_pick).length
-              const usingFavorites = favoriteCount > 0
-              const count = usingFavorites
-                ? favoriteCount
-                : Math.min(galleryImages.length, STORY_DEFAULT_PHOTO_BUDGET)
+              const candidates = storyCandidateIds ?? []
+              const candidateSet = new Set(candidates)
+              const imgById = new Map(galleryImages.map(i => [i.id, i]))
+              const ordered = candidates
+                .map(id => imgById.get(id))
+                .filter((i): i is GalleryImage => !!i)
+              const additionalPool = galleryImages
+                .filter(i => !candidateSet.has(i.id))
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+              const removeCandidate = (id: string) =>
+                setStoryCandidateIds(prev => (prev ?? []).filter(x => x !== id))
+              const addCandidate = (id: string) =>
+                setStoryCandidateIds(prev => {
+                  const base = prev ?? []
+                  if (base.includes(id)) return base
+                  if (base.length >= STORY_GENERATE_MAX_PHOTOS) return base
+                  return [...base, id]
+                })
+              const reorder = (from: string, to: string) => {
+                if (from === to) return
+                setStoryCandidateIds(prev => {
+                  const base = (prev ?? []).slice()
+                  const fromIdx = base.indexOf(from)
+                  const toIdx = base.indexOf(to)
+                  if (fromIdx === -1 || toIdx === -1) return base
+                  const [moved] = base.splice(fromIdx, 1)
+                  base.splice(toIdx, 0, moved)
+                  return base
+                })
+              }
+              const tooFew = candidates.length < STORY_GENERATE_MIN_PHOTOS
+              const tooMany = candidates.length > STORY_GENERATE_MAX_PHOTOS
               return (
                 <div style={{
-                  margin: '0 0 18px', padding: '12px 14px',
-                  background: bgSubtle, border: `1px solid ${border}`,
+                  margin: '0 0 18px',
+                  border: `1px solid ${tooFew || tooMany ? '#d97706' : border}`,
+                  background: bgSubtle,
                 }}>
                   <div style={{
-                    fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-                    color: textMuted, textTransform: 'uppercase', marginBottom: 6,
-                  }}>תמונות בסטורי</div>
-                  <div style={{ fontSize: 13, color: textPrimary, lineHeight: 1.5 }}>
-                    {usingFavorites
-                      ? <>שימוש ב-<strong>{favoriteCount}</strong> תמונות שסימנת כ-<strong>מועדפות</strong>.</>
-                      : <>לא סומנו תמונות מועדפות — אבחר אוטומטית את <strong>{count}</strong> התמונות הראשונות בגלריה.</>}
+                    display: 'flex', justifyContent: 'space-between',
+                    alignItems: 'baseline', gap: 10,
+                    padding: '12px 14px 8px',
+                  }}>
+                    <div style={{
+                      fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                      color: textMuted, textTransform: 'uppercase',
+                    }}>תמונות בסטורי · {candidates.length} / {STORY_GENERATE_MAX_PHOTOS}</div>
+                    <button
+                      type="button"
+                      onClick={() => setStoryShowAddPicker(v => !v)}
+                      style={{
+                        background: 'transparent', border: 'none',
+                        color: textPrimary, cursor: 'pointer',
+                        fontSize: 11, fontWeight: 500,
+                        letterSpacing: '0.06em', fontFamily: 'inherit',
+                      }}
+                    >
+                      {storyShowAddPicker ? '✕ סגור' : '+ הוסף עוד תמונות'}
+                    </button>
                   </div>
-                  {!usingFavorites && galleryImages.length > 0 && (
-                    <div style={{ fontSize: 11, color: textMuted, marginTop: 6, lineHeight: 1.5 }}>
-                      טיפ: סמן את הצילומים החזקים שלך בכפתור המועדפים (♡) על כל תמונה, ויצירת הסטורי הבאה תשתמש בהם.
+                  {/* Selected strip — drag to reorder, ✕ to remove. RTL flow */}
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: 6,
+                    padding: '0 14px 12px', maxHeight: 168, overflowY: 'auto',
+                  }}>
+                    {ordered.map(img => {
+                      const isDragSrc = storyDraggedId === img.id
+                      const isDropTgt = storyDragOverId === img.id && storyDraggedId && storyDraggedId !== img.id
+                      return (
+                        <div
+                          key={img.id}
+                          draggable
+                          onDragStart={(e) => {
+                            setStoryDraggedId(img.id)
+                            e.dataTransfer.effectAllowed = 'move'
+                            try { e.dataTransfer.setData('text/plain', img.id) } catch {}
+                          }}
+                          onDragOver={(e) => {
+                            if (!storyDraggedId || storyDraggedId === img.id) return
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                            if (storyDragOverId !== img.id) setStoryDragOverId(img.id)
+                          }}
+                          onDragLeave={() => { if (storyDragOverId === img.id) setStoryDragOverId(null) }}
+                          onDrop={(e) => {
+                            if (!storyDraggedId) return
+                            e.preventDefault()
+                            const src = storyDraggedId
+                            setStoryDraggedId(null); setStoryDragOverId(null)
+                            if (src && src !== img.id) reorder(src, img.id)
+                          }}
+                          onDragEnd={() => { setStoryDraggedId(null); setStoryDragOverId(null) }}
+                          style={{
+                            position: 'relative', width: 52, height: 52,
+                            cursor: 'grab',
+                            opacity: isDragSrc ? 0.4 : 1,
+                            outline: isDropTgt ? `2px solid ${textPrimary}` : 'none',
+                            outlineOffset: -2,
+                            transition: 'opacity .15s',
+                          }}
+                          title="גרור לסידור · לחץ ✕ להסרה"
+                        >
+                          <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path}
+                            alt="" loading="lazy"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: border }} />
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeCandidate(img.id) }}
+                            aria-label="הסר תמונה מהסטורי"
+                            style={{
+                              position: 'absolute', top: -4, insetInlineEnd: -4,
+                              width: 16, height: 16, borderRadius: '50%',
+                              background: '#fff', border: `1px solid ${border}`,
+                              color: textPrimary, cursor: 'pointer', fontSize: 10, lineHeight: 1,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              padding: 0,
+                            }}
+                          >✕</button>
+                        </div>
+                      )
+                    })}
+                    {ordered.length === 0 && (
+                      <div style={{ fontSize: 12, color: textMuted, padding: '8px 0' }}>
+                        אין תמונות שנבחרו. לחץ "הוסף עוד תמונות" כדי לבחור.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Inline picker for adding more from the rest of the gallery */}
+                  {storyShowAddPicker && (
+                    <div style={{
+                      borderTop: `1px solid ${border}`, padding: '10px 14px 14px',
+                      maxHeight: 280, overflowY: 'auto',
+                    }}>
+                      <div style={{ fontSize: 11, color: textMuted, marginBottom: 8, lineHeight: 1.5 }}>
+                        לחץ על תמונה כדי להוסיף אותה לסוף הסטורי. תמונות שכבר נכללות מודגשות.
+                      </div>
+                      {additionalPool.length === 0 ? (
+                        <div style={{ fontSize: 12, color: textMuted }}>אין תמונות נוספות בגלריה.</div>
+                      ) : (
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))',
+                          gap: 4,
+                        }}>
+                          {additionalPool.map(img => {
+                            const reachedMax = candidates.length >= STORY_GENERATE_MAX_PHOTOS
+                            return (
+                              <button
+                                key={img.id}
+                                type="button"
+                                onClick={() => addCandidate(img.id)}
+                                disabled={reachedMax}
+                                title={reachedMax ? `מקסימום ${STORY_GENERATE_MAX_PHOTOS} תמונות` : 'הוסף לסטורי'}
+                                style={{
+                                  padding: 0, border: 'none', background: 'transparent',
+                                  aspectRatio: '1', cursor: reachedMax ? 'not-allowed' : 'pointer',
+                                  opacity: reachedMax ? 0.4 : 1,
+                                  position: 'relative',
+                                }}
+                              >
+                                <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path}
+                                  alt="" loading="lazy"
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: border }} />
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Bounds warning — keep the photographer inside the
+                      12-60 sweet spot the Lambda is tuned for. */}
+                  {(tooFew || tooMany) && (
+                    <div style={{
+                      fontSize: 11, color: '#b45309', padding: '0 14px 12px', lineHeight: 1.5,
+                    }}>
+                      {tooFew && <>צריך לפחות <strong>{STORY_GENERATE_MIN_PHOTOS}</strong> תמונות כדי לייצר סטורי קולח.</>}
+                      {tooMany && <>מקסימום <strong>{STORY_GENERATE_MAX_PHOTOS}</strong> תמונות לסטורי אחד.</>}
                     </div>
                   )}
                 </div>
@@ -5063,17 +5263,24 @@ export function Dashboard() {
               })}
             </div>
 
-            {/* Time estimate — explicit so the user knows whether to wait or
-                close the tab and check back. Stub today returns "queued" in
-                ms; the estimate is for the Phase 2 Lambda invocation. */}
-            <div style={{
-              fontSize: 12, color: textMuted, lineHeight: 1.55,
-              marginBottom: 22, padding: '10px 12px',
-              border: `1px dashed ${border}`,
-            }}>
-              <strong style={{ color: textSecondary }}>זמן רינדור משוער: דקה–שתיים</strong>
-              . הסטורי יישמר בגלריה כשיהיה מוכן ותקבל הודעה. אפשר להמשיך לעבוד בינתיים — לא חייבים להישאר במסך הזה.
-            </div>
+            {/* Time estimate — dynamic, computed from the actual photo count
+                + selected style. Updates as the photographer edits the
+                curator. Phase 2's Lambda is the source of truth; this is
+                the calibrated estimate the user plans around. */}
+            {(() => {
+              const count = (storyCandidateIds?.length ?? STORY_DEFAULT_PHOTO_BUDGET)
+              const estSec = estimateRenderSeconds(Math.max(count, STORY_MIN_PHOTOS), storyGenStyle)
+              return (
+                <div style={{
+                  fontSize: 12, color: textMuted, lineHeight: 1.55,
+                  marginBottom: 22, padding: '10px 12px',
+                  border: `1px dashed ${border}`,
+                }}>
+                  <strong style={{ color: textSecondary }}>זמן רינדור משוער: {formatStoryDuration(estSec)}</strong>
+                  &nbsp;עבור {count} תמונות בסגנון {STORY_STYLES.find(s => s.id === storyGenStyle)?.label ?? storyGenStyle}. הסטורי יישמר בגלריה כשיהיה מוכן ותקבל הודעה — אפשר לעזוב את המסך.
+                </div>
+              )
+            })()}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button
@@ -5091,21 +5298,30 @@ export function Dashboard() {
               >
                 ביטול
               </button>
-              <button
-                onClick={() => { void handleGenerateStoryConfirm() }}
-                disabled={storyGenerating}
-                style={{
-                  background: textPrimary, color: '#fff',
-                  border: `1px solid ${textPrimary}`,
-                  borderRadius: 2, padding: '11px 26px', fontSize: 11,
-                  cursor: storyGenerating ? 'wait' : 'pointer',
-                  fontFamily: 'inherit', fontWeight: 500,
-                  letterSpacing: '0.18em', textTransform: 'uppercase',
-                  opacity: storyGenerating ? 0.7 : 1,
-                }}
-              >
-                {storyGenerating ? 'מייצר…' : 'צור סטורי'}
-              </button>
+              {(() => {
+                const count = storyCandidateIds?.length ?? 0
+                const tooFew = count < STORY_GENERATE_MIN_PHOTOS
+                const tooMany = count > STORY_GENERATE_MAX_PHOTOS
+                const blocked = tooFew || tooMany
+                const disabled = storyGenerating || blocked
+                return (
+                  <button
+                    onClick={() => { void handleGenerateStoryConfirm() }}
+                    disabled={disabled}
+                    style={{
+                      background: textPrimary, color: '#fff',
+                      border: `1px solid ${textPrimary}`,
+                      borderRadius: 2, padding: '11px 26px', fontSize: 11,
+                      cursor: storyGenerating ? 'wait' : blocked ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit', fontWeight: 500,
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                      opacity: disabled ? 0.55 : 1,
+                    }}
+                  >
+                    {storyGenerating ? 'מייצר…' : `צור סטורי · ${count}`}
+                  </button>
+                )
+              })()}
             </div>
           </div>
         </div>
