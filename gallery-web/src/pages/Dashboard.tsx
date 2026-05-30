@@ -14,6 +14,7 @@ import { Viewer } from '../Viewer'
 import { useConfirm } from '../components/useConfirm'
 import {
   requestStoryGeneration,
+  pollStoryRender,
   type StoryStyle,
   STORY_STYLES,
   STORY_DEFAULT_PHOTO_BUDGET,
@@ -324,6 +325,11 @@ export function Dashboard() {
   const [storyShowAddPicker, setStoryShowAddPicker] = useState(false)
   const [storyDraggedId, setStoryDraggedId] = useState<string | null>(null)
   const [storyDragOverId, setStoryDragOverId] = useState<string | null>(null)
+  // Stories Phase 2 — polling refs. setTimeout id + the render we're polling
+  // for; mutated by the poll loop and cleared on cancel / unmount so we
+  // don't leak timers across gallery switches.
+  const storyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const storyPollRenderIdRef = useRef<string | null>(null)
 
   // Stories Phase 1 uses the existing dashboard-wide useToast() instance
   // declared near the top of the component (line ~143) — no separate hook.
