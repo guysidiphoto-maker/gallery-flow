@@ -8,6 +8,11 @@ import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import {
+  setSentryUser,
+  setSentryGallery,
+  trackAction,
+} from '../lib/sentryContext'
 
 interface Gallery {
   id: string
@@ -230,6 +235,14 @@ export function Dashboard() {
     if (!user) return
     initBusiness()
   }, [user])
+
+  // Pin the authenticated photographer onto every Sentry event captured for
+  // the remainder of the session. Previously every dashboard crash arrived
+  // anonymous and we had to cross-reference timestamps to guess who hit it.
+  useEffect(() => {
+    if (!user) return
+    setSentryUser({ id: user.id, email: user.email ?? undefined })
+  }, [user?.id, user?.email])
 
   // Pull the photographer's plan flag + current domain claim once the
   // business id is known. Both queries are scoped by RLS — the plan call
@@ -461,6 +474,10 @@ export function Dashboard() {
     setEditingGallery(g)
     setEditTab('photos')
     setStories([])
+    // Tag the rest of the Sentry session with this gallery so any
+    // subsequent exception (image fetch, publish, upload) is auto-grouped
+    // by gallery_id in the Sentry UI.
+    setSentryGallery({ id: g.id, slug: g.slug ?? null, status: g.status })
     const [imagesRes, sectionsRes, storiesRes] = await Promise.all([
       supabase
         .from('images')
@@ -499,7 +516,10 @@ export function Dashboard() {
       .select('id, name, sort_order')
       .single()
     if (error) { alert('שגיאה: ' + error.message); return }
-    if (data) setSections(prev => [...prev, data])
+    if (data) {
+      trackAction('section', 'create', { section_id: data.id, gallery_id: editingGallery.id })
+      setSections(prev => [...prev, data])
+    }
     setNewSectionName('')
     setNewSectionDesc('')
     setShowAddSetModal(false)
@@ -509,6 +529,7 @@ export function Dashboard() {
   async function renameSection(id: string, name: string) {
     const trimmed = name.trim()
     if (!trimmed) return
+    trackAction('section', 'rename', { section_id: id })
     const { error } = await supabase.from('gallery_sections').update({ name: trimmed }).eq('id', id)
     if (error) { alert('שגיאה: ' + error.message); return }
     setSections(prev => prev.map(s => s.id === id ? { ...s, name: trimmed } : s))
@@ -516,6 +537,7 @@ export function Dashboard() {
 
   async function deleteSection(id: string) {
     if (!confirm('למחוק את הקטע? התמונות שבתוכו יישארו בגלריה.')) return
+    trackAction('section', 'delete', { section_id: id })
     // First unset section_id on images so they don't disappear from the gallery
     await supabase.from('images').update({ section_id: null }).eq('section_id', id)
     const { error } = await supabase.from('gallery_sections').delete().eq('id', id)
@@ -563,6 +585,15 @@ export function Dashboard() {
     setGalleryImages(data ?? [])
     setUploading(false)
     setUploadBatch(null)
+
+    // Breadcrumb after batch so a crash in the post-upload refresh / face
+    // reindex carries the count of photos that were just uploaded.
+    trackAction('upload', 'photo', {
+      count: files.length,
+      ok: result.ok.length,
+      failed: result.failed.length,
+      gallery_id: editingGallery.id,
+    })
 
     // Re-trigger face indexing if the gallery is already live AND has face
     // recognition on. The rekognition function is idempotent — it skips
@@ -635,6 +666,15 @@ export function Dashboard() {
       alert(`הקובץ גדול מדי. המקסימום הוא ${Math.round(STORY_MAX_BYTES / 1024 / 1024)}MB.`)
       return
     }
+
+    // Breadcrumb at the point the user kicks off a story (manual upload is
+    // the web dashboard's analog of the desktop "generate story" action —
+    // both end up at the same storage path / row in `stories`).
+    trackAction('story', 'generate_request', {
+      gallery_id: editingGallery.id,
+      file_size: file.size,
+      file_type: file.type,
+    })
 
     setStoryUploading(true)
     setStoryUploadProgress({ pct: 0, filename: file.name })
@@ -836,6 +876,11 @@ export function Dashboard() {
 
   async function publishGallery() {
     if (!editingGallery) return
+    trackAction('gallery', 'publish', {
+      gallery_id: editingGallery.id,
+      previous_status: editingGallery.status,
+      image_count: editingGallery.image_count,
+    })
     await supabase.from('galleries').update({ status: 'live', published_at: new Date().toISOString() }).eq('id', editingGallery.id)
     setEditingGallery({ ...editingGallery, status: 'live', published_at: new Date().toISOString() })
 
