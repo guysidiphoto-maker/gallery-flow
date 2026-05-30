@@ -853,24 +853,28 @@ export function Dashboard() {
     if (!editingGallery) return
     const prevSettings = editingGallery.delivery_settings || {}
     const nextSettings = { ...prevSettings, [key]: value }
-    // Optimistic: reflect the change immediately so the UI feels live.
+    // Optimistic on three fronts so the UI feels live:
+    //   1. local editingGallery.delivery_settings shows the new value,
+    //   2. the Update button activates the moment the user starts editing
+    //      (was waiting for the DB ack — 200-500ms of "dead" button),
+    //   3. the Live Preview iframe gets the new ?v=... so it reloads soon.
     setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
+    setUnpublishedChanges(true)
+    setPreviewRefreshKey(k => k + 1)
     const { error } = await supabase
       .from('galleries')
       .update({ delivery_settings: nextSettings })
       .eq('id', editingGallery.id)
     if (error) {
       // Roll back to the pre-change value so the UI stops lying to the user.
+      // Leave unpublishedChanges as it was — the user intended an edit that
+      // failed; the toast tells them; the button state reflects that there
+      // is still drift the user may want to retry.
       setEditingGallery(g => g && g.id === editingGallery.id
         ? { ...g, delivery_settings: prevSettings } : g)
       showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
       console.warn('[updateGallerySetting]', key, error)
-      return
     }
-    // Success — flag the gallery as having unpublished local edits and bump
-    // the preview iframe so any open Live Preview tab reflects the change.
-    setUnpublishedChanges(true)
-    setPreviewRefreshKey(k => k + 1)
   }
 
   // Renaming the gallery touches two places: the canonical `galleries.name`
@@ -883,8 +887,12 @@ export function Dashboard() {
     const prevSettings = editingGallery.delivery_settings || {}
     const prevName = editingGallery.name
     const nextSettings = { ...prevSettings, galleryTitle: newTitle }
+    // Optimistic — same shape as updateGallerySetting. Activate the Update
+    // button on the first keystroke instead of after the DB ack.
     setEditingGallery({ ...editingGallery, name: newTitle, delivery_settings: nextSettings })
     setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: newTitle } : g))
+    setUnpublishedChanges(true)
+    setPreviewRefreshKey(k => k + 1)
     const { error } = await supabase
       .from('galleries')
       .update({ name: newTitle, delivery_settings: nextSettings })
@@ -895,11 +903,7 @@ export function Dashboard() {
       setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: prevName } : g))
       showToast({ kind: 'error', text: 'שמירת הכותרת נכשלה. נסה שוב.' })
       console.warn('[renameGalleryTitle]', error)
-      return
     }
-    // Success — see updateGallerySetting for why we bump both.
-    setUnpublishedChanges(true)
-    setPreviewRefreshKey(k => k + 1)
   }
 
   // Delete the entire gallery — sections + images cascade via FK (migration
