@@ -420,6 +420,14 @@ export function Dashboard() {
     initBusiness()
   }, [user])
 
+  // Pin the authenticated photographer onto every Sentry event captured for
+  // the remainder of the session. Previously every dashboard crash arrived
+  // anonymous and we had to cross-reference timestamps to guess who hit it.
+  useEffect(() => {
+    if (!user) return
+    setSentryUser({ id: user.id, email: user.email ?? undefined })
+  }, [user?.id, user?.email])
+
   // Pull the photographer's plan flag + current domain claim once the
   // business id is known. Both queries are scoped by RLS — the plan call
   // returns the caller's own active subscription, and the businesses row
@@ -786,6 +794,7 @@ export function Dashboard() {
   async function renameSection(id: string, name: string) {
     const trimmed = name.trim()
     if (!trimmed) return
+    trackAction('section', 'rename', { section_id: id })
     const { error } = await supabase.from('gallery_sections').update({ name: trimmed }).eq('id', id)
     if (error) {
       showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
@@ -902,6 +911,15 @@ export function Dashboard() {
     setUploadBatch(null)
     if (result.ok.length > 0) markDirty()
 
+    // Breadcrumb after batch so a crash in the post-upload refresh / face
+    // reindex carries the count of photos that were just uploaded.
+    trackAction('upload', 'photo', {
+      count: files.length,
+      ok: result.ok.length,
+      failed: result.failed.length,
+      gallery_id: editingGallery.id,
+    })
+
     // Re-trigger face indexing if the gallery is already live AND has face
     // recognition on. The rekognition function is idempotent — it skips
     // already-indexed images and only processes the new ones, so calling it
@@ -979,6 +997,15 @@ export function Dashboard() {
       showToast({ kind: 'error', text: `הקובץ גדול מדי. המקסימום הוא ${Math.round(STORY_MAX_BYTES / 1024 / 1024)}MB.` })
       return
     }
+
+    // Breadcrumb at the point the user kicks off a story (manual upload is
+    // the web dashboard's analog of the desktop "generate story" action —
+    // both end up at the same storage path / row in `stories`).
+    trackAction('story', 'generate_request', {
+      gallery_id: editingGallery.id,
+      file_size: file.size,
+      file_type: file.type,
+    })
 
     setStoryUploading(true)
     setStoryUploadProgress({ pct: 0, filename: file.name })
