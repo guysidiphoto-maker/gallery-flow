@@ -178,6 +178,14 @@ export function Dashboard() {
   // the eye is already on the button at the moment of click. Mirrors the
   // copy-link pattern on the gallery list cards.
   const [copiedInEditor, setCopiedInEditor] = useState(false)
+  // Called by every mutation that changes what the client sees (sections,
+  // photo order, uploads, top-picks, deletes, stories, …). Lights up the
+  // "שינויים שטרם פורסמו" pill + Update button and queues a Live Preview
+  // refresh. Kept inline so we never forget either side of the pair.
+  const markDirty = () => {
+    setUnpublishedChanges(true)
+    setPreviewRefreshKey(k => k + 1)
+  }
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number; description?: string | null }>>([])
   const [newSectionName, setNewSectionName] = useState('')
   const [newSectionDesc, setNewSectionDesc] = useState('')
@@ -586,6 +594,7 @@ export function Dashboard() {
       return
     }
     if (data) setSections(prev => [...prev, data])
+    markDirty()
     setNewSectionName('')
     setNewSectionDesc('')
     setShowAddSetModal(false)
@@ -622,8 +631,13 @@ export function Dashboard() {
     const trimmed = name.trim()
     if (!trimmed) return
     const { error } = await supabase.from('gallery_sections').update({ name: trimmed }).eq('id', id)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      console.warn('[renameSection]', error)
+      return
+    }
     setSections(prev => prev.map(s => s.id === id ? { ...s, name: trimmed } : s))
+    markDirty()
   }
 
   async function deleteSection(id: string) {
@@ -648,6 +662,7 @@ export function Dashboard() {
     if (activeSectionId === id) {
       setActiveSectionId(sections.find(s => s.id !== id)?.id ?? null)
     }
+    markDirty()
     if (photoIds.length > 0) {
       await supabase.from('galleries')
         .update({ image_count: Math.max(0, galleryImages.length - photoIds.length) })
@@ -699,6 +714,7 @@ export function Dashboard() {
     setGalleryImages(data ?? [])
     setUploading(false)
     setUploadBatch(null)
+    if (result.ok.length > 0) markDirty()
 
     // Re-trigger face indexing if the gallery is already live AND has face
     // recognition on. The rekognition function is idempotent — it skips
@@ -831,6 +847,7 @@ export function Dashboard() {
     setStories(prev => [...prev, inserted])
     setStoryUploadProgress({ pct: 100, filename: file.name })
     setStoryUploading(false)
+    markDirty()
     // Tiny delay so guests see the 100% bar before it disappears.
     setTimeout(() => setStoryUploadProgress(null), 600)
     if (storyFileInputRef.current) storyFileInputRef.current.value = ''
@@ -847,6 +864,7 @@ export function Dashboard() {
     setStories(prev => prev.filter(s => s.id !== storyId))
     setStoryMenuOpenId(null)
     setConfirmDeleteStoryId(null)
+    markDirty()
 
     // Delete the storage object first, then the row — same ordering as the
     // gallery-delete pipeline in cloudUpload.ts. If the object remove fails
@@ -1191,6 +1209,7 @@ export function Dashboard() {
       return
     }
     setGalleryImages(prev => prev.filter(i => !selectedImageIds.has(i.id)))
+    markDirty()
     await supabase.from('galleries')
       .update({ image_count: Math.max(0, galleryImages.length - ids.length) })
       .eq('id', editingGallery.id)
@@ -1207,6 +1226,7 @@ export function Dashboard() {
       return
     }
     setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, is_top_pick: makeTopPick } : i))
+    markDirty()
     exitSelectMode()
   }
   // Select-all should match what the photographer is LOOKING at — sections
@@ -1233,6 +1253,7 @@ export function Dashboard() {
       return
     }
     setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, is_top_pick: next } : i))
+    markDirty()
   }
   async function moveImageToSection(imageId: string, sectionId: string | null) {
     const { error } = await supabase.from('images').update({ section_id: sectionId }).eq('id', imageId)
@@ -1242,6 +1263,7 @@ export function Dashboard() {
       return
     }
     setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, section_id: sectionId } : i))
+    markDirty()
   }
   async function deleteSingleImage(imageId: string) {
     if (!editingGallery) return
@@ -1253,6 +1275,7 @@ export function Dashboard() {
       return
     }
     setGalleryImages(prev => prev.filter(i => i.id !== imageId))
+    markDirty()
     await supabase.from('galleries')
       .update({ image_count: Math.max(0, galleryImages.length - 1) })
       .eq('id', editingGallery.id)
@@ -1296,6 +1319,7 @@ export function Dashboard() {
     setGalleryImages(prev => prev.map(i =>
       idToOrder.has(i.id) ? { ...i, sort_order: idToOrder.get(i.id)! } : i
     ))
+    markDirty()
     // Persist all moves. Use allSettled instead of all so a single failed
     // UPDATE doesn't leave the rest silently mis-ordered; if any failed we
     // tell the user + log the offending ids so the next reorder can heal.
@@ -1330,6 +1354,7 @@ export function Dashboard() {
     setSections(prev => prev
       .map(s => idToOrder.has(s.id) ? { ...s, sort_order: idToOrder.get(s.id)! } : s)
       .sort((a, b) => a.sort_order - b.sort_order))
+    markDirty()
     const results = await Promise.allSettled(next.map((sec, idx) =>
       supabase.from('gallery_sections').update({ sort_order: idx * 1000 }).eq('id', sec.id)
     ))
