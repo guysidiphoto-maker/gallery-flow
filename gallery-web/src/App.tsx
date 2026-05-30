@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
+import { VariableSizeList, type ListChildComponentProps } from 'react-window'
 import { supabase, storageUrl, renderUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from './lib/publicSession'
 import { signedStorageUrl } from './lib/signedStorage'
@@ -1302,10 +1303,13 @@ export function App() {
             // Override delivery_settings with the snapshotted JSONB. The live
             // gallery row may have newer edits we explicitly want to hide.
             const snapSettings = (snap.settings ?? {}) as Partial<DeliverySettings>
+            const snapStatus = (snap.status === 'draft' || snap.status === 'live' || snap.status === 'archived')
+              ? snap.status
+              : g.status
             liveGallery = {
               ...g,
               name: snap.name ?? g.name,
-              status: snap.status ?? g.status,
+              status: snapStatus,
               delivery_settings: snapSettings as DeliverySettings,
             }
             // Rebuild sections from snapshot.section_data, preserving the

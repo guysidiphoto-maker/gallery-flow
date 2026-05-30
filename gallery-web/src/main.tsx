@@ -43,6 +43,9 @@ const EventCapturePage = lazy(() =>
 const QuestionnairePage = lazy(() =>
   import('./pages/QuestionnairePage').then(m => ({ default: m.QuestionnairePage })),
 )
+const StudioSettings = lazy(() =>
+  import('./pages/StudioSettings').then(m => ({ default: m.StudioSettings })),
+)
 
 initSentry()
 

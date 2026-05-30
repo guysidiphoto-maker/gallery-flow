@@ -412,17 +412,22 @@ function FadeUp({
   children,
   className = '',
   delay = 0,
+  style,
 }: {
   children: React.ReactNode
   className?: string
   delay?: number
+  style?: React.CSSProperties
 }) {
   const ref = useFadeUp()
+  const mergedStyle: React.CSSProperties | undefined = delay || style
+    ? { ...(delay ? { transitionDelay: `${delay}ms` } : null), ...(style || null) }
+    : undefined
   return (
     <div
       ref={ref}
       className={`fade-up ${className}`}
-      style={delay ? { transitionDelay: `${delay}ms` } : undefined}
+      style={mergedStyle}
     >
       {children}
     </div>
@@ -857,7 +862,7 @@ export function LandingPage() {
       {/* -------- FINAL CTA -------- */}
       <section className="lp-section lp-final-cta">
         <div className="lp-final-cta-glow" />
-        <FadeUp className="lp-container" style={{ textAlign: 'center' } as any}>
+        <FadeUp className="lp-container" style={{ textAlign: 'center' }}>
           <h2 className="lp-section-title">{tx.finalCta}</h2>
           {'finalSub' in tx && (
             <p className="lp-section-sub">{(tx as Record<string, string>).finalSub}</p>
