@@ -56,11 +56,13 @@ function buildRenderUrl(path: string, width = 1200, quality = 70): string {
   return `${SUPABASE_URL}/storage/v1/render/image/public/gallery-images/${path}?width=${width}&quality=${quality}&resize=contain`
 }
 
-const ACCENT = '#6366f1'
-const ACCENT_LIGHT = '#818cf8'
-const BG = '#07070d'
-const TEXT = '#f1f1f4'
-const TEXT_MUTED = 'rgba(241,241,244,0.6)'
+// Editorial palette — matches the dashboard sign-in + chapter style. No
+// purple-gradient SaaS feel; the cover photo carries the visual weight and
+// type is restrained.
+const BG = '#0a0a0f'
+const TEXT = '#f5f5f3'
+const TEXT_MUTED = 'rgba(245,245,243,0.62)'
+const HAIRLINE = 'rgba(245,245,243,0.18)'
 
 interface GalleryLite {
   id: string
@@ -112,14 +114,20 @@ async function lookupGallery(params: URLSearchParams): Promise<GalleryLite | nul
 
 async function pickCoverUrl(g: GalleryLite): Promise<string | null> {
   const settings = (g.delivery_settings ?? {}) as Record<string, unknown>
+  // Prefer the canonical storage path (Phase 6 Step 2 column); resolve via
+  // the transform URL so the OG card gets a 1200-wide version, not a 10MB
+  // original. Fall back to the legacy fully-resolved URL for galleries
+  // saved before the cover-as-path migration.
+  const path = typeof settings.coverImagePath === 'string' ? settings.coverImagePath : null
+  if (path) return buildRenderUrl(path)
   const declared = typeof settings.coverImageUrl === 'string' ? settings.coverImageUrl : null
   if (declared) return declared
   const imgs = (await sbFetch(
     `images?select=web_preview_path&gallery_id=eq.${g.id}&order=sort_order.asc&limit=1`,
   )) as Array<{ web_preview_path: string | null }> | null
-  const path = imgs?.[0]?.web_preview_path
-  if (!path) return null
-  return buildRenderUrl(path)
+  const firstPath = imgs?.[0]?.web_preview_path
+  if (!firstPath) return null
+  return buildRenderUrl(firstPath)
 }
 
 function fallbackResponse(): ImageResponse {
@@ -133,46 +141,32 @@ function fallbackResponse(): ImageResponse {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          background: `linear-gradient(135deg, ${BG} 0%, #0a0a14 100%)`,
+          background: BG,
           color: TEXT,
           fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 14,
-              background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT_LIGHT})`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 28,
-              fontWeight: 800,
-            }}
-          >
-            P
-          </div>
-          <div
-            style={{
-              fontSize: 64,
-              fontWeight: 800,
-              letterSpacing: '-0.04em',
-            }}
-          >
-            pixflow
-          </div>
-        </div>
         <div
           style={{
-            marginTop: 18,
-            fontSize: 22,
+            fontSize: 18,
+            fontWeight: 500,
+            letterSpacing: '0.32em',
             color: TEXT_MUTED,
-            letterSpacing: '0.02em',
+            textTransform: 'uppercase',
           }}
         >
-          Smart event galleries · find yourself in seconds
+          Pixflow
+        </div>
+        <div style={{ width: 36, height: 1, background: HAIRLINE, margin: '24px 0' }} />
+        <div
+          style={{
+            fontSize: 28,
+            fontWeight: 400,
+            color: TEXT,
+            letterSpacing: '-0.015em',
+          }}
+        >
+          Smart event galleries
         </div>
       </div>
     ),
@@ -202,9 +196,15 @@ export default async function handler(req: Request): Promise<Response> {
     const photoCount = Math.max(0, gallery.image_count ?? 0)
     const coverUrl = await pickCoverUrl(gallery)
 
-    // The cover sits behind everything as a soft-blurred backdrop. We don't
-    // blur in CSS (Satori doesn't support filter:blur reliably) — instead we
-    // overlay a heavy dark gradient so the imagery feels supportive, not loud.
+    // Detect Hebrew so we can flip the text-flow direction without affecting
+    // the layout. Satori supports `dir="rtl"` on individual blocks.
+    const isHebrew = /[֐-׿]/.test(title) || /[֐-׿]/.test(studio)
+    const dir: 'rtl' | 'ltr' = isHebrew ? 'rtl' : 'ltr'
+
+    // Editorial card — cover as the headline, soft dark vignette so type
+    // remains legible against any photo. No purple, no logo squircle. Studio
+    // name leads (it's the photographer's brand the client recognises),
+    // gallery name is the hero, photo count is a quiet eyebrow.
     const card = (
       <div
         style={{
@@ -229,10 +229,13 @@ export default async function handler(req: Request): Promise<Response> {
               width: '100%',
               height: '100%',
               objectFit: 'cover',
-              opacity: 0.45,
+              opacity: 0.62,
             }}
           />
         )}
+        {/* Vignette — bottom-heavy gradient so the title block stays readable
+            against any cover, with a subtle top fade so the brand stripe also
+            has contrast. Editorial palette only (no accent color). */}
         <div
           style={{
             position: 'absolute',
@@ -240,79 +243,69 @@ export default async function handler(req: Request): Promise<Response> {
             left: 0,
             width: '100%',
             height: '100%',
-            background: `linear-gradient(135deg, rgba(7,7,13,0.85) 0%, rgba(7,7,13,0.65) 50%, rgba(99,102,241,0.35) 100%)`,
+            background:
+              'linear-gradient(180deg, rgba(10,10,15,0.55) 0%, rgba(10,10,15,0.20) 28%, rgba(10,10,15,0.45) 60%, rgba(10,10,15,0.92) 100%)',
             display: 'flex',
           }}
         />
-        {/* Top brand row */}
+
+        {/* Top brand row — tracked wordmark + hairline + "shared gallery" eyebrow */}
         <div
           style={{
             position: 'relative',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             gap: 14,
-            padding: '46px 56px 0 56px',
+            padding: '40px 56px 0 56px',
           }}
         >
           <div
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: 11,
-              background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT_LIGHT})`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 22,
-              fontWeight: 800,
-              color: 'white',
-            }}
-          >
-            P
-          </div>
-          <div
-            style={{
-              fontSize: 30,
-              fontWeight: 800,
-              letterSpacing: '-0.02em',
-            }}
-          >
-            pixflow
-          </div>
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              justifyContent: 'flex-end',
               fontSize: 16,
+              fontWeight: 500,
+              letterSpacing: '0.36em',
+              textTransform: 'uppercase',
+              color: TEXT,
+            }}
+          >
+            Pixflow
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 500,
               color: TEXT_MUTED,
-              letterSpacing: '0.04em',
+              letterSpacing: '0.24em',
               textTransform: 'uppercase',
             }}
           >
-            shared gallery
+            Shared gallery
           </div>
         </div>
 
-        {/* Title block */}
+        {/* Title block — bottom-aligned, RTL-aware. Studio above, gallery
+            title as the editorial hero, photo count as the eyebrow below. */}
         <div
+          dir={dir}
           style={{
             position: 'relative',
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'flex-end',
-            padding: '0 56px 56px 56px',
+            padding: '0 56px 60px 56px',
           }}
         >
           {studio && (
             <div
               style={{
-                fontSize: 20,
-                fontWeight: 600,
+                fontSize: 18,
+                fontWeight: 500,
                 color: TEXT_MUTED,
-                marginBottom: 14,
-                letterSpacing: '0.02em',
+                marginBottom: 18,
+                letterSpacing: '0.22em',
+                textTransform: 'uppercase',
               }}
             >
               {studio}
@@ -321,38 +314,29 @@ export default async function handler(req: Request): Promise<Response> {
           <div
             style={{
               display: 'flex',
-              fontSize: 80,
-              fontWeight: 800,
-              lineHeight: 1.05,
-              letterSpacing: '-0.03em',
+              fontSize: 76,
+              fontWeight: 500,
+              lineHeight: 1.08,
+              letterSpacing: '-0.025em',
               maxWidth: '100%',
             }}
           >
             {title.length > 60 ? title.slice(0, 57) + '…' : title}
           </div>
+          {/* Hairline divider */}
+          <div style={{ width: 48, height: 1, background: HAIRLINE, margin: '22px 0' }} />
           {photoCount > 0 && (
             <div
               style={{
-                marginTop: 22,
                 display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                fontSize: 22,
+                fontSize: 16,
                 color: TEXT_MUTED,
-                fontWeight: 600,
+                fontWeight: 500,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
               }}
             >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 999,
-                  background: ACCENT_LIGHT,
-                }}
-              />
-              <span>
-                {photoCount.toLocaleString()} photos · find yours with a selfie
-              </span>
+              {photoCount.toLocaleString()} {isHebrew ? 'תמונות' : 'Photos'}
             </div>
           )}
         </div>
