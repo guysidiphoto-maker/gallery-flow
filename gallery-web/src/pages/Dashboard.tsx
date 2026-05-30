@@ -1031,7 +1031,18 @@ export function Dashboard() {
     }
   }
 
-  async function updateGallerySetting(key: string, value: unknown) {
+  // ── Settings writers (Phase 6 Step 4) ───────────────────────────────────────
+  // Both writers go through the `update_gallery_settings` RPC. The RPC is the
+  // only path the DB allows for delivery_settings writes (direct column UPDATE
+  // is revoked in migration 069), so even if a future caller forgets to
+  // pre-validate, the server-side mirror catches drift like the legacy
+  // `coverImageURL` vs `coverImageUrl` typo that fueled Phase 6.
+  //
+  // Optimistic update + rollback: we apply the patch locally before the
+  // round-trip, then reconcile with the RPC's returned `delivery_settings`
+  // (which is the post-merge JSONB) so client and server are byte-identical.
+  // On validation error we roll back and toast the first few errors.
+  async function updateGallerySettings(patch: Record<string, unknown>) {
     if (!editingGallery) return
     // Phase 6 step 4 prep — pre-validate against the shared schema before
     // any DB round-trip. The server RPC will re-validate, but doing it here
