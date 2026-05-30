@@ -1518,7 +1518,9 @@ export function Dashboard() {
             { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true, disabled: false },
             { icon: 'palette' as IconName,  label: 'מיתוג',       active: false, disabled: true },
             { icon: 'clients' as IconName,  label: 'לקוחות',      active: false, disabled: true },
-            { icon: 'help' as IconName,     label: 'עזרה',        active: false, disabled: false },
+            // 'עזרה' button removed — had no onClick / href, was a dead
+            // click target. Bring back when there's an actual help surface
+            // (mailto: studio support, docs URL, in-app help drawer).
           ].map(item => (
             <button key={item.label} style={{
               display: 'flex', alignItems: 'center', gap: 12,
