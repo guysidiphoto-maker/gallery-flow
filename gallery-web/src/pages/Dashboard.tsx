@@ -290,9 +290,8 @@ export function Dashboard() {
   const [storyGenStyle, setStoryGenStyle] = useState<StoryStyle>('clean')
   const [storyGenerating, setStoryGenerating] = useState(false)
 
-  // Toast surface for the generate flow. The ToastContainer is rendered near
-  // the bottom of the JSX tree.
-  const { showToast, ToastContainer: StoryToastContainer } = useToast()
+  // Stories Phase 1 uses the existing dashboard-wide useToast() instance
+  // declared near the top of the component (line ~143) — no separate hook.
 
   // New delivery settings state
   const [welcomeStyle, setWelcomeStyle] = useState<'mosaic' | 'cinematic' | 'minimal'>('mosaic')
@@ -5768,9 +5767,9 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Toast container — mounted last so the toasts overlay every other
-          dashboard layer. The hook handles auto-dismiss + stacking. */}
-      <StoryToastContainer />
+      {/* Existing <ToastContainer /> near the top of the JSX already covers
+          every dashboard toast — including the Stories Phase 1 generation
+          flow — so no separate Story-specific container needed. */}
       </div>
 
       {/* Confirm-modal host. Rendered at the dashboard root so every
