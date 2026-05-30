@@ -772,7 +772,8 @@ export function Dashboard() {
     // deletes every photo inside it (matching bulkDeleteSelected's row-delete
     // + image_count update). Photos are NOT moved elsewhere.
     const section = sections.find(s => s.id === id)
-    const photoIds = galleryImages.filter(i => i.section_id === id).map(i => i.id)
+    const photosToDelete = galleryImages.filter(i => i.section_id === id)
+    const photoIds = photosToDelete.map(i => i.id)
     if (!(await confirm({
       title: `למחוק את הסקשן "${section?.name ?? ''}"?`,
       body: photoIds.length > 0
@@ -787,6 +788,8 @@ export function Dashboard() {
         showToast({ kind: 'error', text: 'שגיאה במחיקת התמונות: ' + imgErr.message })
         return
       }
+      // Fire-and-forget storage purge for the section's photos.
+      void purgeStorageForImages(photosToDelete)
     }
     const { error } = await supabase.from('gallery_sections').delete().eq('id', id)
     if (error) { alert('שגיאה: ' + error.message); return }
@@ -1103,6 +1106,13 @@ export function Dashboard() {
       confirmLabel: 'מחק את הגלריה',
       danger: true,
     }))) return
+    // Snapshot the gallery's image paths BEFORE the row DELETE — once the
+    // gallery row goes, the cascading FK delete takes the images with it
+    // and we lose the paths the storage purge needs.
+    void purgeStorageForGallery(g.id).then(() => {
+      // Storage purge runs in the background. We don't await it because
+      // 5000-photo galleries take minutes to wipe; the UI shouldn't block.
+    })
     const { error } = await supabase.from('galleries').delete().eq('id', g.id)
     if (error) {
       showToast({ kind: 'error', text: 'מחיקת הגלריה נכשלה. נסה שוב.' })
