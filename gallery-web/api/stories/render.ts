@@ -27,11 +27,14 @@ const SUPABASE_ANON_KEY =
   process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
-// Phase 1 supports only the "clean" style — the only one Phase 0 implemented
-// in `gallery-web/stories-remotion/src/Clean.tsx`. Phase 2 will widen this
-// enum as more compositions land.
-const ALLOWED_STYLES = ['clean'] as const
+// All 5 styles accepted at the API boundary (matches STORY_STYLES in
+// gallery-web/src/lib/storyRender.ts). Phase 1 only renders 'clean' via
+// the spike; the others are accepted but queued — Phase 2 wires the
+// matching Remotion compositions before they actually render.
+const ALLOWED_STYLES = ['clean', 'cinematic', 'fast-social', 'elegant', 'vintage'] as const
 type AllowedStyle = typeof ALLOWED_STYLES[number]
+
+const STORY_MAX_PHOTOS = 60
 
 // Loose UUID v4-ish regex. We only need to reject obviously-malformed input
 // at the edge; Supabase's typed `eq('id', …)` will hard-reject anything that
@@ -55,7 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ── Input validation ───────────────────────────────────────────────────
-  const body = (req.body || {}) as { galleryId?: unknown; style?: unknown }
+  const body = (req.body || {}) as { galleryId?: unknown; style?: unknown; photoIds?: unknown }
   const galleryId = typeof body.galleryId === 'string' ? body.galleryId.trim() : ''
   const style = body.style
 
@@ -68,6 +71,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       error: 'invalid_style',
       allowed: ALLOWED_STYLES,
     })
+  }
+
+  // photoIds is optional. When the dashboard curates a specific shot list +
+  // order we honor it; otherwise the Phase 2 Lambda picks favorites or the
+  // first 30 (same rule the dashboard surfaces). Validate shape + per-id
+  // UUID + cap size to STORY_MAX_PHOTOS so a runaway client can't fan out.
+  let photoIds: string[] | undefined
+  if (body.photoIds !== undefined && body.photoIds !== null) {
+    if (!Array.isArray(body.photoIds)) {
+      return res.status(400).json({ ok: false, error: 'invalid_photo_ids' })
+    }
+    if (body.photoIds.length > STORY_MAX_PHOTOS) {
+      return res.status(400).json({ ok: false, error: 'too_many_photos', max: STORY_MAX_PHOTOS })
+    }
+    photoIds = []
+    for (const raw of body.photoIds) {
+      if (typeof raw !== 'string' || !UUID_RE.test(raw)) {
+        return res.status(400).json({ ok: false, error: 'invalid_photo_ids' })
+      }
+      photoIds.push(raw)
+    }
   }
 
   // ── Auth check: only the gallery owner may trigger a render ───────────
@@ -130,6 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     status: 'queued',
     galleryId,
     style,
+    photoCount: photoIds?.length ?? null,
     message: 'Lambda integration pending Phase 2',
   })
 

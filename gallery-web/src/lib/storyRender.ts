@@ -16,6 +16,32 @@ import { supabase } from '../supabase'
 // rushes past faces. Aligns with the photo-source rule in the dashboard:
 // "favorites if any, otherwise the first 30".
 export const STORY_DEFAULT_PHOTO_BUDGET = 30
+export const STORY_MIN_PHOTOS = 12
+export const STORY_MAX_PHOTOS = 60
+
+// Rough render-time estimate for the user. Calibrated to match what Phase 2's
+// Remotion Lambda will produce: a baseline cost per style + ~1.5s per extra
+// photo (transforms, transitions, encoding scale roughly linearly).
+export function estimateRenderSeconds(photoCount: number, style: StoryStyle): number {
+  const baselineByStyle: Record<StoryStyle, number> = {
+    'clean':       35,
+    'cinematic':   55, // anamorphic look + slower transitions
+    'fast-social': 25,
+    'elegant':     45,
+    'vintage':     50, // film grain + color grade
+  }
+  const base = baselineByStyle[style] ?? 35
+  return Math.round(base + Math.max(0, photoCount - 12) * 1.5)
+}
+
+// Hebrew formatter: "45 שניות" / "כדקה" / "כ-2 דקות" / "כ-1:30 דקות".
+export function formatStoryDuration(sec: number): string {
+  if (sec < 60) return `כ-${sec} שניות`
+  const minutes = Math.floor(sec / 60)
+  const rem = sec % 60
+  if (rem < 10) return `כ-${minutes} דקות`
+  return `כ-${minutes}:${String(rem).padStart(2, '0')} דקות`
+}
 
 // All five styles ported from the desktop FFmpeg renderer
 // (src/main/storyRenderer.ts). The Lambda invocation in Phase 2 will pick the
@@ -92,6 +118,11 @@ export interface RequestStoryGenerationResult {
 export async function requestStoryGeneration(
   galleryId: string,
   style: StoryStyle,
+  // Optional photoIds in render order. When omitted the server falls back
+  // to the same auto-selection rule the dashboard surfaces (favorites if
+  // any, otherwise first 30). Passing IDs gives the photographer manual
+  // curation: pick the cover, the order, the cut.
+  photoIds?: string[],
 ): Promise<RequestStoryGenerationResult> {
   // Pull the session token so the server can identify the caller. The
   // endpoint requires a Bearer token — without it we'd just get a 401.
@@ -109,7 +140,7 @@ export async function requestStoryGeneration(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify({ galleryId, style }),
+      body: JSON.stringify({ galleryId, style, photoIds }),
     })
 
     let payload: StoryRenderResponse = { ok: false }
