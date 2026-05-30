@@ -1,20 +1,47 @@
-import React from 'react'
+import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import { App } from './App'
-import { LandingPageHe } from './pages/LandingPageHe'
-import { DemoPage } from './pages/DemoPage'
-import { TermsPage } from './pages/TermsPage'
-import { PrivacyPage } from './pages/PrivacyPage'
-import { ClientPage } from './pages/ClientPage'
-import { PortfolioPage } from './pages/PortfolioPage'
-import { ClientDashboard } from './pages/ClientDashboard'
-import { Dashboard } from './pages/Dashboard'
-import { VendorPortal } from './pages/VendorPortal'
-import { EventCapturePage } from './pages/EventCapturePage'
-import { QuestionnairePage } from './pages/QuestionnairePage'
 import './styles.css'
 import { initSentry } from './sentry'
+
+// ── Route-level code splitting ───────────────────────────────────────────
+// Every non-gallery route is lazy-loaded so the public gallery viewer
+// (`App`) — the LCP-critical surface — ships the smallest possible JS.
+// Each `React.lazy(...)` becomes its own Rollup chunk; the route is only
+// fetched when its path is visited. Wrapping in `Suspense fallback={null}`
+// keeps the splash visible until the chunk + its sub-tree are ready (the
+// splash lives in index.html and is removed when React renders).
+const LandingPageHe = lazy(() =>
+  import('./pages/LandingPageHe').then(m => ({ default: m.LandingPageHe })),
+)
+const DemoPage = lazy(() =>
+  import('./pages/DemoPage').then(m => ({ default: m.DemoPage })),
+)
+const TermsPage = lazy(() =>
+  import('./pages/TermsPage').then(m => ({ default: m.TermsPage })),
+)
+const PrivacyPage = lazy(() =>
+  import('./pages/PrivacyPage').then(m => ({ default: m.PrivacyPage })),
+)
+const PortfolioPage = lazy(() =>
+  import('./pages/PortfolioPage').then(m => ({ default: m.PortfolioPage })),
+)
+const ClientDashboard = lazy(() =>
+  import('./pages/ClientDashboard').then(m => ({ default: m.ClientDashboard })),
+)
+const Dashboard = lazy(() =>
+  import('./pages/Dashboard').then(m => ({ default: m.Dashboard })),
+)
+const VendorPortal = lazy(() =>
+  import('./pages/VendorPortal').then(m => ({ default: m.VendorPortal })),
+)
+const EventCapturePage = lazy(() =>
+  import('./pages/EventCapturePage').then(m => ({ default: m.EventCapturePage })),
+)
+const QuestionnairePage = lazy(() =>
+  import('./pages/QuestionnairePage').then(m => ({ default: m.QuestionnairePage })),
+)
 
 initSentry()
 
@@ -134,7 +161,9 @@ function Router() {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <React.StrictMode>
-      <Router />
+      <Suspense fallback={null}>
+        <Router />
+      </Suspense>
     </React.StrictMode>
   </ErrorBoundary>
 )

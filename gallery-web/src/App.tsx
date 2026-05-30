@@ -1,16 +1,13 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import JSZip from 'jszip'
+import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import { supabase, storageUrl, renderUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from './lib/publicSession'
 import { signedStorageUrl } from './lib/signedStorage'
-import { preloadGalleryThumbs } from './lib/warmCache'
+import { preloadGalleryThumbs, GRID_WIDTHS } from './lib/warmCache'
 import { TurnstileWidget } from './components/TurnstileWidget'
 import { SignedImg } from './components/SignedImg'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
-import { FaceSearchExperience } from './components/FaceSearchExperience'
-import { StoryPlayer } from './components/StoryPlayer'
 import { t, type Lang } from './i18n'
 import {
   getMeta as gcGetMeta,
@@ -20,6 +17,16 @@ import {
   setHidden as gcSetHidden,
 } from './lib/galleryClient'
 import { logDownload, logBatchDownload } from './lib/activityLog'
+
+// Both surfaces only mount once a guest opts in (face search button / story
+// circle). Lazy-loading keeps their JS (camera pipeline + autoplay video
+// player) out of the gallery's initial bundle.
+const FaceSearchExperience = lazy(() =>
+  import('./components/FaceSearchExperience').then(m => ({ default: m.FaceSearchExperience })),
+)
+const StoryPlayer = lazy(() =>
+  import('./components/StoryPlayer').then(m => ({ default: m.StoryPlayer })),
+)
 
 // ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
 
@@ -175,6 +182,12 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
         <div key={ci} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap }}>
           {col.map(({ img, index }) => {
             const isSelected = selectMode && selectedIds?.has(img.id)
+            // First-row tiles are the LCP — load them eagerly with a high
+            // fetchpriority hint so the browser races them ahead of all the
+            // below-the-fold lazy tiles. `fetchpriority` is a lowercase HTML
+            // attribute (not a documented React prop yet), so we attach it
+            // via an extra spread.
+            const isAboveFold = index < cols
             return (
               <div
                 key={img.id}
@@ -188,11 +201,14 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                   // thumbnail — the big columns need that detail to stay crisp.
                   // Phones still pull a small file (sizes = the column width).
                   path={img.storage_path || img.thumbnail_path}
-                  transformWidths={[320, 640, 960, 1280]}
+                  transformWidths={GRID_WIDTHS}
                   transformQuality={70}
                   sizes={imgSizes}
                   alt=""
-                  loading="lazy"
+                  loading={isAboveFold ? 'eager' : 'lazy'}
+                  // React 18.3+ camelCases this to the DOM `fetchpriority`
+                  // attribute. High-priority hint races the LCP tiles ahead.
+                  fetchPriority={isAboveFold ? 'high' : undefined}
                   decoding="async"
                   style={{
                     width: '100%', height: 'auto', display: 'block',
@@ -1512,30 +1528,32 @@ export function App() {
         />
         {/* Face search experience — full-screen flow with camera, thinking, results */}
         {showFaceSearch && gallery && (
-          <FaceSearchExperience
-            galleryId={gallery.id}
-            backgroundImages={images.slice(0, 6)}
-            storageUrl={(path: string) => renderUrl(imgBucket, path, 1280, 65)}
-            privacyMode={facePrivacyMode}
-            lang={lang}
-            onClose={() => setShowFaceSearch(false)}
-            onSelfieCapture={(url) => setFaceSelfieUrl(url)}
-            onMatches={(ids, serverImages) => {
-              setFaceMatchIds(new Set(ids))
-              setFaceFilterActive(true)
-              setShowFaceSearch(false)
-              // In private mode the bulk image fetch was skipped, so the only
-              // images we have are the ones the server hydrated for matches.
-              if (facePrivacyMode === 'private' && serverImages.length > 0) {
-                setImages(serverImages as unknown as GalleryImage[])
-              }
-              if (ids.length > 0) setShowWelcome(false)
-            }}
-            onBrowseAll={() => {
-              setShowFaceSearch(false)
-              setShowWelcome(false)
-            }}
-          />
+          <Suspense fallback={null}>
+            <FaceSearchExperience
+              galleryId={gallery.id}
+              backgroundImages={images.slice(0, 6)}
+              storageUrl={(path: string) => renderUrl(imgBucket, path, 1280, 65)}
+              privacyMode={facePrivacyMode}
+              lang={lang}
+              onClose={() => setShowFaceSearch(false)}
+              onSelfieCapture={(url) => setFaceSelfieUrl(url)}
+              onMatches={(ids, serverImages) => {
+                setFaceMatchIds(new Set(ids))
+                setFaceFilterActive(true)
+                setShowFaceSearch(false)
+                // In private mode the bulk image fetch was skipped, so the only
+                // images we have are the ones the server hydrated for matches.
+                if (facePrivacyMode === 'private' && serverImages.length > 0) {
+                  setImages(serverImages as unknown as GalleryImage[])
+                }
+                if (ids.length > 0) setShowWelcome(false)
+              }}
+              onBrowseAll={() => {
+                setShowFaceSearch(false)
+                setShowWelcome(false)
+              }}
+            />
+          </Suspense>
         )}
       </>
     )
@@ -1889,6 +1907,10 @@ export function App() {
     }
 
     try {
+      // JSZip is only needed for the fallback path (server-side /api/gallery-zip
+      // is preferred). Dynamic import keeps ~95KB out of the LCP-critical
+      // public-viewer bundle until a guest actually batch-downloads.
+      const { default: JSZip } = await import('jszip')
       const zip = new JSZip()
       const usedNames = new Set<string>()
       for (let i = 0; i < imgs.length; i++) {
@@ -2286,12 +2308,14 @@ export function App() {
       {/* Full-screen StoryPlayer overlay. Mounted only while a story is
           active; closing returns to the gallery without losing scroll. */}
       {storyPlayerIndex !== null && stories.length > 0 && (
-        <StoryPlayer
-          stories={stories}
-          initialIndex={storyPlayerIndex}
-          storyUrl={storyUrl}
-          onClose={() => setStoryPlayerIndex(null)}
-        />
+        <Suspense fallback={null}>
+          <StoryPlayer
+            stories={stories}
+            initialIndex={storyPlayerIndex}
+            storyUrl={storyUrl}
+            onClose={() => setStoryPlayerIndex(null)}
+          />
+        </Suspense>
       )}
 
       {sections.length > 0 && sections.map(sec => {
@@ -2429,27 +2453,29 @@ export function App() {
 
       {/* Face search — full-screen experience with camera, thinking, results */}
       {showFaceSearch && gallery && (
-        <FaceSearchExperience
-          galleryId={gallery.id}
-          backgroundImages={images.slice(0, 6)}
-          storageUrl={(path: string) => storageUrl(imgBucket, path)}
-          privacyMode={facePrivacyMode}
-          onClose={() => setShowFaceSearch(false)}
-          onSelfieCapture={(url) => setFaceSelfieUrl(url)}
-          onMatches={(ids, serverImages) => {
-            setFaceMatchIds(new Set(ids))
-            setFaceFilterActive(true)
-            setShowFaceSearch(false)
-            if (facePrivacyMode === 'private' && serverImages.length > 0) {
-              setImages(serverImages as unknown as GalleryImage[])
-            }
-            if (showWelcome && ids.length > 0) setShowWelcome(false)
-          }}
-          onBrowseAll={() => {
-            setShowFaceSearch(false)
-            if (showWelcome) setShowWelcome(false)
-          }}
-        />
+        <Suspense fallback={null}>
+          <FaceSearchExperience
+            galleryId={gallery.id}
+            backgroundImages={images.slice(0, 6)}
+            storageUrl={(path: string) => storageUrl(imgBucket, path)}
+            privacyMode={facePrivacyMode}
+            onClose={() => setShowFaceSearch(false)}
+            onSelfieCapture={(url) => setFaceSelfieUrl(url)}
+            onMatches={(ids, serverImages) => {
+              setFaceMatchIds(new Set(ids))
+              setFaceFilterActive(true)
+              setShowFaceSearch(false)
+              if (facePrivacyMode === 'private' && serverImages.length > 0) {
+                setImages(serverImages as unknown as GalleryImage[])
+              }
+              if (showWelcome && ids.length > 0) setShowWelcome(false)
+            }}
+            onBrowseAll={() => {
+              setShowFaceSearch(false)
+              if (showWelcome) setShowWelcome(false)
+            }}
+          />
+        </Suspense>
       )}
 
       {/* ── HD-still-uploading toast ── */}
