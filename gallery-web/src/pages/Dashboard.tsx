@@ -1214,25 +1214,33 @@ export function Dashboard() {
           Workspace
         </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-          {[
-            { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true, disabled: false },
-            { icon: 'palette' as IconName,  label: 'מיתוג',       active: false, disabled: true },
-            { icon: 'clients' as IconName,  label: 'לקוחות',      active: false, disabled: true },
+          {([
+            { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true,  disabled: false },
+            // הגדרות סטודיו — account-level config (custom domain, identity,
+            // tokens). Sits between Galleries and the disabled future-items so
+            // it reads as the second active workspace tool, not an Account-row
+            // afterthought.
+            { icon: 'settings' as IconName, label: 'הגדרות סטודיו', active: false, disabled: false, onClick: () => { window.location.pathname = '/studio-settings' } },
+            { icon: 'palette' as IconName,  label: 'מיתוג',       active: false, disabled: true  },
+            { icon: 'clients' as IconName,  label: 'לקוחות',      active: false, disabled: true  },
             { icon: 'help' as IconName,     label: 'עזרה',        active: false, disabled: false },
-          ].map(item => (
-            <button key={item.label} style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '11px 12px', borderRadius: 4,
-              background: 'transparent',
-              border: 'none',
-              color: item.active ? textPrimary : (item.disabled ? textMuted : textSecondary),
-              fontSize: 13, fontWeight: item.active ? 600 : 400,
-              cursor: item.disabled ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit', textAlign: 'right' as const,
-              opacity: item.disabled ? 0.55 : 1,
-              transition: 'color .15s',
-              position: 'relative',
-            }}>
+          ] as { icon: IconName; label: string; active: boolean; disabled: boolean; onClick?: () => void }[]).map(item => (
+            <button
+              key={item.label}
+              onClick={item.disabled ? undefined : item.onClick}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '11px 12px', borderRadius: 4,
+                background: 'transparent',
+                border: 'none',
+                color: item.active ? textPrimary : (item.disabled ? textMuted : textSecondary),
+                fontSize: 13, fontWeight: item.active ? 600 : 400,
+                cursor: item.disabled ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit', textAlign: 'right' as const,
+                opacity: item.disabled ? 0.55 : 1,
+                transition: 'color .15s',
+                position: 'relative',
+              }}>
               {item.active && (
                 <span style={{
                   position: 'absolute', insetInlineEnd: -20, top: '50%',
@@ -3395,240 +3403,21 @@ export function Dashboard() {
                       )}
                     </Section>
 
-                    {/* ── Domain (account-level) ──────────────────────────
-                        Lives at the bottom of the gallery editor's Settings
-                        tab for now — the photographer doesn't have a
-                        dedicated Studio Settings page yet. Three states:
-                        upsell card (plan doesn't include it), input form
-                        (no domain set), DNS-pending card with copy + verify
-                        buttons, or verified card with a remove button. */}
-                    <Section eyebrow="דומיין מותאם">
-                      {!customDomainEnabled ? (
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
-                            תכנית עסקית בלבד
-                          </div>
-                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.6, marginBottom: 16 }}>
-                            חברו דומיין משלכם — למשל photos.studio-shem.co.il — ושלחו ללקוחות קישור ממותג במקום pixflow-ai.com.
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => { window.location.href = '/#pricing' }}
-                            style={{
-                              padding: '10px 18px', borderRadius: 2,
-                              background: textPrimary, color: '#fff',
-                              border: `1px solid ${textPrimary}`,
-                              fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
-                              textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'inherit',
-                            }}
-                          >
-                            שדרוג לתכנית עסקית
-                          </button>
-                        </div>
-                      ) : customDomainStatus === 'verified' && customDomain ? (
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                            <span style={{
-                              display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-                              background: statusLive,
-                            }} />
-                            <span style={{ fontSize: 13, fontWeight: 600, color: textPrimary }}>
-                              הדומיין מאומת ✓
-                            </span>
-                          </div>
-                          <a
-                            href={`https://${customDomain}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{
-                              display: 'inline-block', marginBottom: 16,
-                              fontSize: 14, color: textPrimary, textDecoration: 'underline',
-                              direction: 'ltr', unicodeBidi: 'embed',
-                            }}
-                          >
-                            {customDomain}
-                          </a>
-                          <div>
-                            <button
-                              type="button"
-                              onClick={removeCustomDomain}
-                              disabled={domainSaving}
-                              style={{
-                                padding: '10px 18px', borderRadius: 2,
-                                background: 'transparent', color: textPrimary,
-                                border: `1px solid ${border}`,
-                                fontSize: 12, fontWeight: 500, letterSpacing: '0.14em',
-                                textTransform: 'uppercase',
-                                cursor: domainSaving ? 'wait' : 'pointer', fontFamily: 'inherit',
-                                opacity: domainSaving ? 0.6 : 1,
-                              }}
-                            >
-                              {domainSaving ? 'מסיר...' : 'הסר דומיין'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : customDomainStatus === 'pending_dns' && customDomain && customDomainToken ? (
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
-                            המתנה לאימות DNS — עד 72 שעות
-                          </div>
-                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.6, marginBottom: 16 }}>
-                            הוסיפו את רשומת ה־TXT הבאה אצל ספק הדומיין שלכם. ברגע שה־DNS יתעדכן, נאמת את הבעלות אוטומטית.
-                          </div>
-
-                          {/* DNS record card */}
-                          <div style={{
-                            background: '#fff',
-                            border: `1px solid ${border}`,
-                            padding: '14px 16px',
-                            marginBottom: 16,
-                            display: 'grid',
-                            gridTemplateColumns: '88px 1fr',
-                            gap: '10px 14px',
-                            direction: 'ltr',
-                            unicodeBidi: 'embed',
-                          }}>
-                            <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', color: textMuted, textTransform: 'uppercase', textAlign: 'left' }}>Type</div>
-                            <div style={{ fontSize: 13, color: textPrimary, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>TXT</div>
-
-                            <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', color: textMuted, textTransform: 'uppercase', textAlign: 'left' }}>Name</div>
-                            <div style={{ fontSize: 13, color: textPrimary, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflowWrap: 'anywhere' }}>
-                              {`_pixflow-verify.${customDomain}`}
-                            </div>
-
-                            <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', color: textMuted, textTransform: 'uppercase', textAlign: 'left' }}>Value</div>
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                              <code style={{
-                                flex: 1,
-                                fontSize: 13, color: textPrimary,
-                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                                background: bgSubtle,
-                                padding: '6px 10px',
-                                border: `1px solid ${border}`,
-                                overflowWrap: 'anywhere',
-                              }}>
-                                {customDomainToken}
-                              </code>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  try {
-                                    await navigator.clipboard.writeText(customDomainToken)
-                                    setDomainCopied(true)
-                                    setTimeout(() => setDomainCopied(false), 1500)
-                                  } catch {
-                                    // Ignore: clipboard may be blocked. The value
-                                    // is visible on screen so the photographer
-                                    // can still copy it manually.
-                                  }
-                                }}
-                                style={{
-                                  padding: '6px 12px', borderRadius: 2,
-                                  background: 'transparent', color: textPrimary,
-                                  border: `1px solid ${border}`,
-                                  fontSize: 11, fontWeight: 500, letterSpacing: '0.12em',
-                                  textTransform: 'uppercase',
-                                  cursor: 'pointer', fontFamily: 'inherit',
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {domainCopied ? 'הועתק' : 'Copy'}
-                              </button>
-                            </div>
-                          </div>
-
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            <button
-                              type="button"
-                              onClick={recheckCustomDomain}
-                              disabled={domainSaving}
-                              style={{
-                                padding: '10px 18px', borderRadius: 2,
-                                background: textPrimary, color: '#fff',
-                                border: `1px solid ${textPrimary}`,
-                                fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
-                                textTransform: 'uppercase',
-                                cursor: domainSaving ? 'wait' : 'pointer', fontFamily: 'inherit',
-                                opacity: domainSaving ? 0.6 : 1,
-                              }}
-                            >
-                              בדוק שוב עכשיו
-                            </button>
-                            <button
-                              type="button"
-                              onClick={removeCustomDomain}
-                              disabled={domainSaving}
-                              style={{
-                                padding: '10px 18px', borderRadius: 2,
-                                background: 'transparent', color: textPrimary,
-                                border: `1px solid ${border}`,
-                                fontSize: 12, fontWeight: 500, letterSpacing: '0.14em',
-                                textTransform: 'uppercase',
-                                cursor: domainSaving ? 'wait' : 'pointer', fontFamily: 'inherit',
-                                opacity: domainSaving ? 0.6 : 1,
-                              }}
-                            >
-                              ביטול
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.6, marginBottom: 14 }}>
-                            חברו דומיין שבבעלותכם וגלריות יוצגו תחתיו במקום תחת pixflow-ai.com.
-                          </div>
-                          <label style={{ display: 'block', marginBottom: 12 }}>
-                            <span style={{
-                              fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-                              color: textMuted, textTransform: 'uppercase',
-                              display: 'block', marginBottom: 8,
-                            }}>הדומיין המותאם שלך</span>
-                            <input
-                              type="text"
-                              value={domainInput}
-                              onChange={(e) => { setDomainInput(e.target.value); setDomainError(null) }}
-                              placeholder="photos.studio-shem.co.il"
-                              dir="ltr"
-                              autoCapitalize="none"
-                              autoCorrect="off"
-                              spellCheck={false}
-                              style={{
-                                width: '100%', padding: '12px 14px', borderRadius: 2,
-                                background: '#fff', border: `1px solid ${domainError ? '#A85B5B' : border}`,
-                                color: textPrimary, fontSize: 14, fontFamily: 'inherit',
-                                outline: 'none', boxSizing: 'border-box',
-                                transition: 'border-color .15s',
-                                textAlign: 'left',
-                              }}
-                              onFocus={(e) => { if (!domainError) e.currentTarget.style.borderColor = textPrimary }}
-                              onBlur={(e) => { if (!domainError) e.currentTarget.style.borderColor = border }}
-                            />
-                          </label>
-                          {domainError && (
-                            <div style={{ fontSize: 12, color: '#A85B5B', marginBottom: 12, lineHeight: 1.5 }}>
-                              {domainError}
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={submitCustomDomain}
-                            disabled={domainSaving || !domainInput.trim()}
-                            style={{
-                              padding: '10px 18px', borderRadius: 2,
-                              background: textPrimary, color: '#fff',
-                              border: `1px solid ${textPrimary}`,
-                              fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
-                              textTransform: 'uppercase',
-                              cursor: (domainSaving || !domainInput.trim()) ? 'not-allowed' : 'pointer',
-                              fontFamily: 'inherit',
-                              opacity: (domainSaving || !domainInput.trim()) ? 0.5 : 1,
-                            }}
-                          >
-                            {domainSaving ? 'שומר...' : 'בדוק זמינות ושמור'}
-                          </button>
-                        </div>
-                      )}
-                    </Section>
+                    {/* Domain (account-level) moved to /studio-settings — see Sidebar → "הגדרות סטודיו". */}
+                    <div style={{
+                      padding: '14px 16px',
+                      background: bgSubtle,
+                      border: `1px dashed ${border}`,
+                      fontSize: 12, color: textMuted, lineHeight: 1.6,
+                    }}>
+                      דומיין מותאם הוא הגדרה ברמת הסטודיו — עבר ל
+                      <a
+                        href="/studio-settings"
+                        onClick={(e) => { e.preventDefault(); window.location.pathname = '/studio-settings' }}
+                        style={{ color: textPrimary, textDecoration: 'underline', marginInline: 4 }}
+                      >הגדרות סטודיו</a>
+                      .
+                    </div>
                   </div>
                   )
                 })()}
