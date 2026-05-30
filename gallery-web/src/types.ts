@@ -50,6 +50,13 @@ export interface Gallery {
   image_count: number
   delivery_settings: DeliverySettings
   published_at: string | null
+  /**
+   * Points at the most-recently published revision in `gallery_revisions`.
+   * NULL = gallery has never been published. Written by the gallery_publish()
+   * RPC alongside status / published_at. Phase 6 Step 5 (Phase 1) only
+   * populates this; the public viewer still reads from the live row.
+   */
+  published_revision_id?: string | null
   demo_expires_at?: string | null
   // Face search (AWS Rekognition per-gallery collection)
   face_index_enabled?: boolean

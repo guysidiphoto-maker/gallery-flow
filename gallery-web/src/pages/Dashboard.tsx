@@ -19,6 +19,9 @@ interface Gallery {
   delivery_settings?: Record<string, unknown>
   download_count?: number
   favorite_count?: number
+  // Phase 6 Step 5: pointer to the most-recent gallery_revisions row. NULL
+  // means the gallery has never been published. Filled in by gallery_publish().
+  published_revision_id?: string | null
 }
 
 interface GalleryImage {
@@ -836,8 +839,30 @@ export function Dashboard() {
 
   async function publishGallery() {
     if (!editingGallery) return
-    await supabase.from('galleries').update({ status: 'live', published_at: new Date().toISOString() }).eq('id', editingGallery.id)
-    setEditingGallery({ ...editingGallery, status: 'live', published_at: new Date().toISOString() })
+
+    // Phase 6 Step 5: publish goes through the gallery_publish() RPC, which
+    // (a) snapshots delivery_settings + typed columns + section layout into a
+    // new gallery_revisions row, then (b) flips status='live', published_at,
+    // and published_revision_id atomically. The public viewer still reads the
+    // live row — the snapshot is shadow state until the viewer cutover sprint.
+    const { data, error } = await supabase.rpc('gallery_publish', {
+      p_gallery_id: editingGallery.id,
+    })
+    if (error) {
+      console.warn('[publish]', error)
+      return
+    }
+    // RPC returns TABLE(revision_id, revision_index, published_at). PostgREST
+    // unwraps single-row TABLE results into an array; guard for either shape.
+    const row = Array.isArray(data) ? data[0] : data
+    const publishedAt = (row?.published_at as string | undefined) ?? new Date().toISOString()
+    const revisionId  = (row?.revision_id  as string | undefined) ?? null
+    setEditingGallery({
+      ...editingGallery,
+      status: 'live',
+      published_at: publishedAt,
+      published_revision_id: revisionId,
+    })
 
     // Pre-warm the CDN edge so the first guest gets cached (~50ms) thumbnails
     // instead of the slow (~1.5s) cold-origin path. Fire-and-forget.
