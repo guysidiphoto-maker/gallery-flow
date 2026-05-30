@@ -220,6 +220,10 @@ export function Dashboard() {
   // toggle. Every photo belongs to a section — there is no "all photos" view.
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null)
+  // Inline edit state for the active section's description (shown above the
+  // photo grid). null = not editing; otherwise the section id being edited.
+  const [editingSectionDescId, setEditingSectionDescId] = useState<string | null>(null)
+  const [sectionDescDraft, setSectionDescDraft] = useState('')
   const [sectionMenuOpenId, setSectionMenuOpenId] = useState<string | null>(null)
   const [showAddSetModal, setShowAddSetModal] = useState(false)
   const [activitySummary, setActivitySummary] = useState<{
@@ -664,6 +668,26 @@ export function Dashboard() {
     }
     setSections(prev => prev.map(s => s.id === id ? { ...s, name: trimmed } : s))
     markDirty()
+  }
+
+  // Inline-edit the description from the active section's header. Saves on
+  // blur / Enter. Empty string is persisted as null (no description).
+  async function saveSectionDescription(id: string, raw: string) {
+    const trimmed = raw.trim()
+    const prev = sections.find(s => s.id === id)?.description ?? null
+    const next = trimmed.length === 0 ? null : trimmed
+    if (next === prev) return
+    setSections(prevList => prevList.map(s => s.id === id ? { ...s, description: next } : s))
+    markDirty()
+    const { error } = await supabase
+      .from('gallery_sections')
+      .update({ description: next })
+      .eq('id', id)
+    if (error) {
+      setSections(prevList => prevList.map(s => s.id === id ? { ...s, description: prev } : s))
+      showToast({ kind: 'error', text: 'שמירת התיאור נכשלה.' })
+      console.warn('[saveSectionDescription]', error)
+    }
   }
 
   async function deleteSection(id: string) {
@@ -2607,27 +2631,76 @@ export function Dashboard() {
                         is gone; the entire main pane accepts drag-drop, and
                         clicking Add Media opens the native file picker. */}
                     <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      marginBottom: 24,
+                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+                      marginBottom: 24, gap: 16,
                     }}>
                       {(() => {
                         const activeSec = activeSectionId ? sections.find(s => s.id === activeSectionId) : null
                         const visibleImages = activeSectionId
                           ? (galleryImages as GalleryImage[]).filter(im => im.section_id === activeSectionId)
                           : galleryImages
+                        const editingDesc = activeSec && editingSectionDescId === activeSec.id
                         return (
-                          <h3 style={{
-                            fontSize: 22, fontWeight: 500, margin: 0,
-                            letterSpacing: '-0.015em', color: textPrimary,
-                          }}>
-                            {activeSec ? activeSec.name : 'תמונות'}
-                            <span style={{
-                              marginInlineStart: 12, color: textMuted,
-                              fontSize: 14, fontWeight: 400,
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <h3 style={{
+                              fontSize: 22, fontWeight: 500, margin: 0,
+                              letterSpacing: '-0.015em', color: textPrimary,
                             }}>
-                              {visibleImages.length}
-                            </span>
-                          </h3>
+                              {activeSec ? activeSec.name : 'תמונות'}
+                              <span style={{
+                                marginInlineStart: 12, color: textMuted,
+                                fontSize: 14, fontWeight: 400,
+                              }}>
+                                {visibleImages.length}
+                              </span>
+                            </h3>
+                            {/* Inline-editable description for the active section
+                                (shown to the client below the chapter heading). */}
+                            {activeSec && (editingDesc ? (
+                              <textarea
+                                autoFocus
+                                value={sectionDescDraft}
+                                onChange={e => setSectionDescDraft(e.target.value)}
+                                onBlur={() => {
+                                  void saveSectionDescription(activeSec.id, sectionDescDraft)
+                                  setEditingSectionDescId(null)
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Escape') { setEditingSectionDescId(null); return }
+                                  // Cmd/Ctrl+Enter commits (plain Enter inserts newline).
+                                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur()
+                                }}
+                                placeholder="תיאור לסקשן (מוצג ללקוח מתחת לכותרת הפרק)"
+                                rows={2}
+                                maxLength={500}
+                                style={{
+                                  marginTop: 8, width: '100%', maxWidth: 560,
+                                  padding: '8px 10px', borderRadius: 2,
+                                  border: `1px solid ${border}`, background: '#fff',
+                                  color: textPrimary, fontSize: 13, lineHeight: 1.45,
+                                  fontFamily: 'inherit', outline: 'none', resize: 'vertical' as const,
+                                }}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSectionDescDraft(activeSec.description ?? '')
+                                  setEditingSectionDescId(activeSec.id)
+                                }}
+                                style={{
+                                  display: 'block', marginTop: 6,
+                                  padding: 0, background: 'transparent', border: 'none',
+                                  textAlign: 'right' as const, cursor: 'text',
+                                  color: activeSec.description ? textSecondary : textMuted,
+                                  fontSize: 13, lineHeight: 1.45, fontFamily: 'inherit',
+                                  maxWidth: 560,
+                                }}
+                              >
+                                {activeSec.description || '+ הוסף תיאור לסקשן'}
+                              </button>
+                            ))}
+                          </div>
                         )
                       })()}
                       <input ref={fileInputRef} type="file" multiple accept="image/*"
@@ -3715,9 +3788,31 @@ export function Dashboard() {
                         desc="אורחים יוכלו למצוא את עצמם בסלפי. עלות: ללא תוספת טוקנים."
                         on={Boolean(ds.faceIndexEnabled)}
                         onChange={async () => {
+                          // Write the column + JSONB key in ONE update so the
+                          // two never drift (rekognition RPC reads the column;
+                          // the public viewer reads the JSONB). Was two
+                          // separate non-atomic UPDATEs that could leave the
+                          // gallery in a half-on state on transient failure.
+                          if (!editingGallery) return
                           const newVal = !ds.faceIndexEnabled
-                          await updateGallerySetting('faceIndexEnabled', newVal)
-                          await supabase.from('galleries').update({ face_index_enabled: newVal }).eq('id', editingGallery.id)
+                          const prevSettings = editingGallery.delivery_settings || {}
+                          const nextSettings = { ...prevSettings, faceIndexEnabled: newVal }
+                          setEditingGallery({
+                            ...editingGallery,
+                            face_index_enabled: newVal,
+                            delivery_settings: nextSettings,
+                          })
+                          markDirty()
+                          const { error } = await supabase
+                            .from('galleries')
+                            .update({ face_index_enabled: newVal, delivery_settings: nextSettings })
+                            .eq('id', editingGallery.id)
+                          if (error) {
+                            setEditingGallery(g => g && g.id === editingGallery.id
+                              ? { ...g, face_index_enabled: !newVal, delivery_settings: prevSettings } : g)
+                            showToast({ kind: 'error', text: 'שמירת זיהוי פנים נכשלה.' })
+                            console.warn('[face-index toggle]', error)
+                          }
                         }}
                         last
                       />
