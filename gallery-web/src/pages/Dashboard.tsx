@@ -8,6 +8,15 @@ import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import { useToast } from '../components/Toast'
+import { requestStoryGeneration, type StoryStyle } from '../lib/storyRender'
+
+// Stories Phase 1 — minimum gallery size for the "Generate story" CTA. The
+// Remotion "clean" composition needs ~12 photos to produce a coherent ~30s
+// clip (roughly 2.5s per scene at the spike's pacing). Below that we keep
+// the manual upload escape hatch but hide the automatic CTA so the
+// photographer never triggers a render that would look thin.
+const STORY_GENERATE_MIN_PHOTOS = 12
 
 interface Gallery {
   id: string
@@ -194,6 +203,17 @@ export function Dashboard() {
   const [storyMenuOpenId, setStoryMenuOpenId] = useState<string | null>(null)
   const [confirmDeleteStoryId, setConfirmDeleteStoryId] = useState<string | null>(null)
   const storyFileInputRef = useRef<HTMLInputElement>(null)
+  // Stories Phase 1 — automated generation. The CTA opens a small modal so
+  // the photographer picks a style (only "clean" exists today; Phase 2
+  // widens this). `storyGenerating` flips while the POST is in flight so we
+  // can disable the button and avoid double-fires.
+  const [showStoryStyleModal, setShowStoryStyleModal] = useState(false)
+  const [storyGenStyle, setStoryGenStyle] = useState<StoryStyle>('clean')
+  const [storyGenerating, setStoryGenerating] = useState(false)
+
+  // Toast surface for the generate flow. The ToastContainer is rendered near
+  // the bottom of the JSX tree.
+  const { showToast, ToastContainer: StoryToastContainer } = useToast()
 
   // New delivery settings state
   const [welcomeStyle, setWelcomeStyle] = useState<'mosaic' | 'cinematic' | 'minimal'>('mosaic')
@@ -882,6 +902,38 @@ export function Dashboard() {
   const faceConfirmRef   = useFocusTrap<HTMLDivElement>(showFaceConfirm, () => setShowFaceConfirm(false))
   const shareModalRef    = useFocusTrap<HTMLDivElement>(!!shareGallery, () => { if (!shareSending) setShareGallery(null) })
   const buyTokensRef     = useFocusTrap<HTMLDivElement>(showBuyTokens, () => setShowBuyTokens(false))
+  const storyStyleRef    = useFocusTrap<HTMLDivElement>(showStoryStyleModal, () => { if (!storyGenerating) setShowStoryStyleModal(false) })
+
+  // ─── Stories Phase 1: trigger automated generation ──────────────────────
+  // POSTs to /api/stories/render with the chosen style. The endpoint is a
+  // SCAFFOLD today (returns queued without invoking Lambda); Phase 2 will
+  // replace the success branch with real render polling.
+  async function handleGenerateStoryConfirm() {
+    if (!editingGallery || storyGenerating) return
+    setStoryGenerating(true)
+    // Optimistic progress toast — the photographer can keep working while
+    // the (future) Lambda render proceeds in the background.
+    showToast({ kind: 'info', text: 'מייצר סטורי — זה ייקח דקה או שתיים' })
+    const result = await requestStoryGeneration(editingGallery.id, storyGenStyle)
+    setStoryGenerating(false)
+    setShowStoryStyleModal(false)
+    if (result.ok) {
+      // Phase 1 stub: queued, no actual file yet — show success but DO NOT
+      // append to `stories` (there's nothing to append). Phase 2 will start
+      // polling here and push the finished row into state when ready.
+      showToast({
+        kind: 'success',
+        text: result.message
+          ? `הסטורי נשלח לעיבוד · ${result.message}`
+          : 'הסטורי נשלח לעיבוד',
+      })
+    } else {
+      showToast({
+        kind: 'error',
+        text: `יצירת הסטורי נכשלה: ${result.error ?? 'שגיאה לא ידועה'}`,
+      })
+    }
+  }
 
   async function sendShareEmail() {
     if (!shareGallery || !shareEmail) return
@@ -2640,21 +2692,53 @@ export function Dashboard() {
                         style={{ display: 'none' }}
                         onChange={(e) => handleStoryUpload(e.target.files)}
                       />
-                      <button
-                        onClick={() => storyFileInputRef.current?.click()}
-                        disabled={storyUploading}
-                        style={{
-                          padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-                          background: textPrimary, border: `1px solid ${textPrimary}`,
-                          color: '#fff', cursor: storyUploading ? 'wait' : 'pointer',
-                          fontFamily: 'inherit', opacity: storyUploading ? 0.6 : 1,
-                          letterSpacing: '0.18em', textTransform: 'uppercase',
-                          display: 'inline-flex', alignItems: 'center', gap: 8,
-                        }}
-                      >
-                        <Icon name="plus" size={13} strokeWidth={2} />
-                        העלאת סטורי
-                      </button>
+                      {/* CTA cluster — generate (auto, Phase 1) sits to the
+                          left of the manual upload because automatic is the
+                          headline feature; manual stays as the escape hatch
+                          when the photographer wants a hand-edited clip. */}
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                        {/* Auto-generate CTA — only renders when the gallery
+                            has enough photos for a coherent ~30s clip. The
+                            gate is intentional: rendering a story from 4
+                            images looks like a slideshow, not a story. */}
+                        {galleryImages.length >= STORY_GENERATE_MIN_PHOTOS && (
+                          <button
+                            onClick={() => {
+                              setStoryGenStyle('clean')
+                              setShowStoryStyleModal(true)
+                            }}
+                            disabled={storyGenerating || storyUploading}
+                            style={{
+                              padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                              background: 'transparent', border: `1px solid ${textPrimary}`,
+                              color: textPrimary,
+                              cursor: storyGenerating ? 'wait' : 'pointer',
+                              fontFamily: 'inherit',
+                              opacity: storyGenerating ? 0.6 : 1,
+                              letterSpacing: '0.18em', textTransform: 'uppercase',
+                              display: 'inline-flex', alignItems: 'center', gap: 8,
+                            }}
+                          >
+                            <Icon name="stories" size={13} strokeWidth={2} />
+                            צור סטורי אוטומטית
+                          </button>
+                        )}
+                        <button
+                          onClick={() => storyFileInputRef.current?.click()}
+                          disabled={storyUploading}
+                          style={{
+                            padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                            background: textPrimary, border: `1px solid ${textPrimary}`,
+                            color: '#fff', cursor: storyUploading ? 'wait' : 'pointer',
+                            fontFamily: 'inherit', opacity: storyUploading ? 0.6 : 1,
+                            letterSpacing: '0.18em', textTransform: 'uppercase',
+                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                          }}
+                        >
+                          <Icon name="plus" size={13} strokeWidth={2} />
+                          העלאת סטורי
+                        </button>
+                      </div>
                     </div>
 
                     {/* Helper copy — explains the supported formats + size limit
@@ -4866,6 +4950,122 @@ export function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* ───────── Stories Phase 1 — style picker modal ─────────
+          Confirms the style before POSTing /api/stories/render. Phase 2 will
+          extend the radio group with vintage / fast-social once those
+          Remotion compositions land. Backdrop click + Escape both dismiss
+          (the latter via the useFocusTrap above). */}
+      {showStoryStyleModal && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!storyGenerating) setShowStoryStyleModal(false)
+          }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1200,
+            background: 'rgba(20,20,19,.55)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            animation: 'overlayIn .2s ease both',
+          }}
+        >
+          <div
+            ref={storyStyleRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="story-style-heading"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff', width: 'calc(100vw - 40px)', maxWidth: 460,
+              padding: '36px 40px 32px',
+              border: `1px solid ${border}`,
+              animation: 'modalIn .25s ease both',
+            }}
+          >
+            <div style={{
+              fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+              color: textMuted, textTransform: 'uppercase', marginBottom: 14,
+            }}>
+              Story generator
+            </div>
+            <h3 id="story-style-heading" style={{
+              fontSize: 22, fontWeight: 500, margin: '0 0 14px',
+              color: textPrimary, letterSpacing: '-0.015em', lineHeight: 1.15,
+            }}>
+              איזה סגנון סטורי?
+            </h3>
+            <p style={{
+              color: textSecondary, fontSize: 14, lineHeight: 1.65, margin: '0 0 20px',
+            }}>
+              נוצר אוטומטית מהתמונות שכבר בגלריה. תהליך הרינדור לוקח דקה או שתיים — תקבל הודעה כשמוכן.
+            </p>
+
+            {/* Style picker. Phase 1 ships only "clean" — the other entries
+                will be added as new Remotion compositions go live. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+              <label style={{
+                display: 'flex', alignItems: 'flex-start', gap: 12,
+                padding: '14px 16px', border: `1px solid ${textPrimary}`,
+                cursor: 'pointer', background: bgSubtle,
+              }}>
+                <input
+                  type="radio"
+                  name="story-style"
+                  value="clean"
+                  checked={storyGenStyle === 'clean'}
+                  onChange={() => setStoryGenStyle('clean')}
+                  style={{ marginTop: 3 }}
+                />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: textPrimary, marginBottom: 2 }}>
+                    Clean — תנועה עדינה + מעברים רכים
+                  </div>
+                  <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.55 }}>
+                    Ken Burns + crossfade · 1080×1920 · ~30 שניות
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { if (!storyGenerating) setShowStoryStyleModal(false) }}
+                disabled={storyGenerating}
+                style={{
+                  background: 'transparent', color: textPrimary,
+                  border: `1px solid ${border}`,
+                  borderRadius: 2, padding: '11px 22px', fontSize: 11,
+                  cursor: storyGenerating ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500,
+                  opacity: storyGenerating ? 0.5 : 1,
+                }}
+              >
+                ביטול
+              </button>
+              <button
+                onClick={() => { void handleGenerateStoryConfirm() }}
+                disabled={storyGenerating}
+                style={{
+                  background: textPrimary, color: '#fff',
+                  border: `1px solid ${textPrimary}`,
+                  borderRadius: 2, padding: '11px 26px', fontSize: 11,
+                  cursor: storyGenerating ? 'wait' : 'pointer',
+                  fontFamily: 'inherit', fontWeight: 500,
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  opacity: storyGenerating ? 0.7 : 1,
+                }}
+              >
+                {storyGenerating ? 'מייצר...' : 'צור סטורי'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast container — mounted last so the toasts overlay every other
+          dashboard layer. The hook handles auto-dismiss + stacking. */}
+      <StoryToastContainer />
       </div>
     </div>
   )

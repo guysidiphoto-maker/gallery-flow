@@ -158,3 +158,102 @@ Sandbox + `ffmpeg-static`) before committing to a serverless rewrite.
 
 See `NOTES_ON_FFMPEG_PARITY.md` for the per-effect parity table and known
 visual gaps.
+
+---
+
+## Phase 1 — Wiring (this PR)
+
+Phase 1 connects the Dashboard to a stubbed render endpoint so the photographer
+flow ("click → choose style → see toast → story appears") is exercised end-to-end
+**without** actually invoking Remotion Lambda. The render itself is still
+deferred to Phase 2.
+
+### What shipped
+
+- **Dashboard CTA — `gallery-web/src/pages/Dashboard.tsx`**
+  - New button **"צור סטורי אוטומטית"** appears in the editor's *Stories* tab
+    next to the existing **"העלאת סטורי"** (manual upload).
+  - Gated on `galleryImages.length >= STORY_GENERATE_MIN_PHOTOS` (currently 12).
+    Below that, only the manual upload is visible — auto-rendering 4-photo
+    galleries produces a slideshow, not a story.
+  - Click opens a small style picker modal (focus-trapped, ESC/backdrop to
+    dismiss). Phase 1 has only **clean** as an option; Phase 2 will add
+    `vintage`, `fast-social`, etc. as those compositions land.
+  - Confirm → calls `requestStoryGeneration(galleryId, style)` from
+    `gallery-web/src/lib/storyRender.ts`.
+  - Toasts via the existing `useToast` hook (`gallery-web/src/components/Toast.tsx`):
+    - **In-flight**: `מייצר סטורי — זה ייקח דקה או שתיים` (info)
+    - **Success**: `הסטורי נשלח לעיבוד · <server message>` (success)
+    - **Failure**: `יצירת הסטורי נכשלה: <error>` (error)
+  - **The manual upload is untouched** — it remains the escape hatch for
+    photographers who want a hand-edited clip.
+
+- **Helper — `gallery-web/src/lib/storyRender.ts`**
+  - `requestStoryGeneration(galleryId, style)` POSTs `/api/stories/render`
+    with the caller's Supabase access token. Normalizes the server response
+    so the Dashboard JSX just branches on `result.ok`.
+
+- **Endpoint scaffold — `gallery-web/api/stories/render.ts`**
+  - `POST { galleryId: string, style: 'clean' }`.
+  - Validates `galleryId` (UUID shape) and `style` (enum).
+  - Auth: extracts the Bearer token, calls `supabase.auth.getUser`, then
+    service-role reads the gallery row + joined `businesses.user_id` to
+    confirm the caller is the owner. Wrong user → `403 not_owner`.
+  - On success: returns `{ ok: true, status: 'queued', message: 'Lambda
+    integration pending Phase 2' }` (HTTP 200). No render is performed.
+  - Includes an inline **`TODO Phase 2`** block describing the cutover.
+
+### What is stubbed vs real (Phase 1)
+
+| Surface                                       | Real / Stubbed |
+|-----------------------------------------------|----------------|
+| Dashboard CTA, modal, focus trap, toasts      | **Real**       |
+| `requestStoryGeneration` helper + fetch       | **Real**       |
+| Endpoint input validation + auth/owner check  | **Real**       |
+| Endpoint Lambda invocation + mp4 produced     | **Stubbed** — returns `queued`, no work performed |
+| `stories` row insertion + storage upload      | **Stubbed** — Dashboard does NOT append to `stories` state on Phase 1 success |
+| Progress polling / render status              | **Stubbed** — no polling endpoint yet |
+
+### Phase 2 cutover (explicit steps)
+
+When Phase 2 is ready to replace the stub, edit only
+`gallery-web/api/stories/render.ts` — the Dashboard call site and helper
+should not need to change.
+
+1. Add a `story_renders` table keyed by `(gallery_id, style)` with
+   `status` ∈ {`queued`, `rendering`, `ready`, `failed`}, `render_id`
+   (from Remotion Lambda), and `created_at`. Use it to short-circuit
+   duplicate POSTs for the same in-flight (gallery, style) pair so the
+   photographer can't double-bill themselves by clicking twice.
+2. Replace the stubbed success branch with:
+   ```ts
+   import { renderMediaOnLambda } from '@remotion/lambda/client'
+   const { renderId } = await renderMediaOnLambda({
+     region: process.env.REMOTION_AWS_REGION!,
+     functionName: process.env.REMOTION_LAMBDA_FUNCTION_NAME!,
+     serveUrl: process.env.REMOTION_LAMBDA_SERVE_URL!,
+     composition: 'Clean',
+     inputProps: { galleryId, style },
+     codec: 'h264',
+     privacy: 'public',
+   })
+   ```
+   `serveUrl` + `functionName` come from `npm run lambda:deploy` +
+   `npm run lambda:deploy-function` in this directory (see the "Lambda
+   render" section above).
+3. After Lambda finishes (either via webhook or polling), upload the
+   resulting mp4 to `{slug}/{galleryId}/story_{style}.mp4` and insert the
+   `stories` row — this is exactly what `src/render-local.ts` already
+   does for the local-CLI path, so the upload helper there can be lifted
+   into the function or extracted into a small shared module.
+4. Add `/api/stories/status?renderId=…` returning `{ status, progress,
+   storage_path }` so the Dashboard can poll and push the new row into
+   its local `stories` state when ready (replacing the Phase 1 "we don't
+   append on success" behavior).
+5. Update the Dashboard's success toast to switch from "נשלח לעיבוד" to a
+   progress indicator driven by the status endpoint.
+
+The `gallery-web/stories-remotion/src/render-local.ts` script is the
+canonical reference for what the Lambda function body needs to do — same
+download/render/upload pipeline, just hosted on Remotion Lambda instead
+of a developer Mac.
