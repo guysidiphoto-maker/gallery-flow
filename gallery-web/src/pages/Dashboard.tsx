@@ -515,12 +515,74 @@ export function Dashboard() {
   }
 
   async function deleteSection(id: string) {
-    if (!confirm('למחוק את הקטע? התמונות שבתוכו יישארו בגלריה.')) return
-    // First unset section_id on images so they don't disappear from the gallery
-    await supabase.from('images').update({ section_id: null }).eq('section_id', id)
+    if (!confirm('למחוק את הקטע? התמונות שבתוכו יעברו לקטע הראשון בגלריה.')) return
+    // Phase 6 step 3: images.section_id is NOT NULL with FK ON DELETE RESTRICT.
+    // Reparent every image in this section to the gallery's *other* first
+    // section before dropping the row. The trigger on galleries guarantees
+    // at least one default section exists; the only way `fallback` ends up
+    // null is if this is the only section in the gallery — in which case we
+    // refuse the delete (the gallery would be left with zero sections,
+    // which the trigger only enforces at INSERT time).
+    const fallback = sections.find(s => s.id !== id)
+    if (!fallback) {
+      alert('לא ניתן למחוק את הקטע האחרון בגלריה.')
+      return
+    }
+    const { error: moveErr } = await supabase
+      .from('images')
+      .update({ section_id: fallback.id })
+      .eq('section_id', id)
+    if (moveErr) { alert('שגיאה בהעברת תמונות: ' + moveErr.message); return }
     const { error } = await supabase.from('gallery_sections').delete().eq('id', id)
     if (error) { alert('שגיאה: ' + error.message); return }
     setSections(prev => prev.filter(s => s.id !== id))
+    setGalleryImages(prev => prev.map(i => i.section_id === id ? { ...i, section_id: fallback.id } : i))
+  }
+
+  /** Pick (or create) a section to attach a brand-new upload to. After Phase 6
+   *  step 3 (migration 065) every gallery has at least one section — the
+   *  `galleries_ensure_default_section` trigger creates one on INSERT, and the
+   *  backfill seeded the legacy galleries. This helper is therefore a
+   *  defensive fallback that should never need to run: it covers the
+   *  theoretical case of a pre-trigger gallery whose default section was
+   *  deleted before the DB invariant was tightened.
+   *
+   *  TODO(phase-6 step 5): retire once we've audited that no gallery exists
+   *  without at least one section, and once `record_image_upload` is the only
+   *  insert path (it already resolves NULL → first section server-side). */
+  async function ensureUploadSection(galleryId: string): Promise<string | null> {
+    // Prefer the section the user is actively viewing.
+    if (activeSectionId && sections.some(s => s.id === activeSectionId)) {
+      return activeSectionId
+    }
+    if (sections.length > 0) {
+      return [...sections].sort((a, b) => a.sort_order - b.sort_order)[0].id
+    }
+    // Defensive: the trigger should have created one, but if we got here the
+    // local cache is empty. Try the DB.
+    const { data } = await supabase
+      .from('gallery_sections')
+      .select('id, name, sort_order')
+      .eq('gallery_id', galleryId)
+      .order('sort_order', { ascending: true })
+      .limit(1)
+    if (data && data.length > 0) {
+      // Refresh the local cache so the rest of the editor sees it.
+      setSections([{ id: data[0].id, name: data[0].name, sort_order: data[0].sort_order }])
+      return data[0].id
+    }
+    // Last-ditch: create one. Should be unreachable post-migration 065.
+    const { data: inserted, error } = await supabase
+      .from('gallery_sections')
+      .insert({ gallery_id: galleryId, name: 'סקשן 1', sort_order: 0 })
+      .select('id, name, sort_order')
+      .single()
+    if (error || !inserted) {
+      console.warn('[ensureUploadSection] failed to create fallback section', error)
+      return null
+    }
+    setSections([{ id: inserted.id, name: inserted.name, sort_order: inserted.sort_order }])
+    return inserted.id
   }
 
   async function handleFileUpload(files: FileList | null) {
@@ -532,6 +594,11 @@ export function Dashboard() {
       setShowBuyTokens(true)
       return
     }
+    // Phase 6 step 3: images.section_id is NOT NULL. The server RPC will
+    // resolve NULL to the gallery's first section, but we pass the section
+    // explicitly so the upload lands where the photographer expects (the
+    // currently-active section, not whatever sort_order happens to be lowest).
+    const sectionId = await ensureUploadSection(editingGallery.id)
     setUploading(true)
     setUploadBatch({ completed: 0, total: files.length, failed: 0 })
     const result = await uploadMany(
@@ -539,6 +606,7 @@ export function Dashboard() {
       {
         galleryId: editingGallery.id,
         businessSlug,
+        sectionId,
         sortOrder: galleryImages.length,
       },
       (b) => setUploadBatch(b),
