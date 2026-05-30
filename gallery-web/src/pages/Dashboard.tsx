@@ -9,7 +9,7 @@ import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenCl
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useToast } from '../components/Toast'
-import { requestStoryGeneration, type StoryStyle } from '../lib/storyRender'
+import { requestStoryGeneration, type StoryStyle, STORY_STYLES, STORY_DEFAULT_PHOTO_BUDGET } from '../lib/storyRender'
 
 // Stories Phase 1 — minimum gallery size for the "Generate story" CTA. The
 // Remotion "clean" composition needs ~12 photos to produce a coherent ~30s
@@ -4994,37 +4994,85 @@ export function Dashboard() {
             }}>
               איזה סגנון סטורי?
             </h3>
-            <p style={{
-              color: textSecondary, fontSize: 14, lineHeight: 1.65, margin: '0 0 20px',
-            }}>
-              נוצר אוטומטית מהתמונות שכבר בגלריה. תהליך הרינדור לוקח דקה או שתיים — תקבל הודעה כשמוכן.
-            </p>
 
-            {/* Style picker. Phase 1 ships only "clean" — the other entries
-                will be added as new Remotion compositions go live. */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-              <label style={{
-                display: 'flex', alignItems: 'flex-start', gap: 12,
-                padding: '14px 16px', border: `1px solid ${textPrimary}`,
-                cursor: 'pointer', background: bgSubtle,
-              }}>
-                <input
-                  type="radio"
-                  name="story-style"
-                  value="clean"
-                  checked={storyGenStyle === 'clean'}
-                  onChange={() => setStoryGenStyle('clean')}
-                  style={{ marginTop: 3 }}
-                />
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: textPrimary, marginBottom: 2 }}>
-                    Clean — תנועה עדינה + מעברים רכים
+            {/* Photo source — transparent about which images go into the clip.
+                Favorites take priority because the photographer signalled
+                intent; otherwise we fall back to the first N photos so the
+                feature works even when nobody has curated yet. */}
+            {(() => {
+              const favoriteCount = galleryImages.filter(i => i.is_top_pick).length
+              const usingFavorites = favoriteCount > 0
+              const count = usingFavorites
+                ? favoriteCount
+                : Math.min(galleryImages.length, STORY_DEFAULT_PHOTO_BUDGET)
+              return (
+                <div style={{
+                  margin: '0 0 18px', padding: '12px 14px',
+                  background: bgSubtle, border: `1px solid ${border}`,
+                }}>
+                  <div style={{
+                    fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                    color: textMuted, textTransform: 'uppercase', marginBottom: 6,
+                  }}>תמונות בסטורי</div>
+                  <div style={{ fontSize: 13, color: textPrimary, lineHeight: 1.5 }}>
+                    {usingFavorites
+                      ? <>שימוש ב-<strong>{favoriteCount}</strong> תמונות שסימנת כ-<strong>מועדפות</strong>.</>
+                      : <>לא סומנו תמונות מועדפות — אבחר אוטומטית את <strong>{count}</strong> התמונות הראשונות בגלריה.</>}
                   </div>
-                  <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.55 }}>
-                    Ken Burns + crossfade · 1080×1920 · ~30 שניות
-                  </div>
+                  {!usingFavorites && galleryImages.length > 0 && (
+                    <div style={{ fontSize: 11, color: textMuted, marginTop: 6, lineHeight: 1.5 }}>
+                      טיפ: סמן את הצילומים החזקים שלך בכפתור המועדפים (♡) על כל תמונה, ויצירת הסטורי הבאה תשתמש בהם.
+                    </div>
+                  )}
                 </div>
-              </label>
+              )
+            })()}
+
+            {/* Style picker — all 5 desktop styles. Phase 1 only renders
+                "clean" in the stubbed endpoint; the rest will be wired as
+                their Remotion compositions land. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 18 }}>
+              {STORY_STYLES.map(s => {
+                const selected = storyGenStyle === s.id
+                return (
+                  <label key={s.id} style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 12,
+                    padding: '12px 14px',
+                    border: `1px solid ${selected ? textPrimary : border}`,
+                    background: selected ? bgSubtle : '#fff',
+                    cursor: 'pointer', transition: 'background .15s, border-color .15s',
+                  }}>
+                    <input
+                      type="radio"
+                      name="story-style"
+                      value={s.id}
+                      checked={selected}
+                      onChange={() => setStoryGenStyle(s.id)}
+                      style={{ marginTop: 3 }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: textPrimary, marginBottom: 2 }}>
+                        {s.label} <span style={{ color: textMuted, fontWeight: 400 }}>— {s.description}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.55 }}>
+                        {s.hint} · ~{s.approxDurationSec} שניות
+                      </div>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+
+            {/* Time estimate — explicit so the user knows whether to wait or
+                close the tab and check back. Stub today returns "queued" in
+                ms; the estimate is for the Phase 2 Lambda invocation. */}
+            <div style={{
+              fontSize: 12, color: textMuted, lineHeight: 1.55,
+              marginBottom: 22, padding: '10px 12px',
+              border: `1px dashed ${border}`,
+            }}>
+              <strong style={{ color: textSecondary }}>זמן רינדור משוער: דקה–שתיים</strong>
+              . הסטורי יישמר בגלריה כשיהיה מוכן ותקבל הודעה. אפשר להמשיך לעבוד בינתיים — לא חייבים להישאר במסך הזה.
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -5056,7 +5104,7 @@ export function Dashboard() {
                   opacity: storyGenerating ? 0.7 : 1,
                 }}
               >
-                {storyGenerating ? 'מייצר...' : 'צור סטורי'}
+                {storyGenerating ? 'מייצר…' : 'צור סטורי'}
               </button>
             </div>
           </div>

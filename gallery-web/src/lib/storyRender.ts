@@ -11,7 +11,63 @@
 
 import { supabase } from '../supabase'
 
-export type StoryStyle = 'clean'
+// Default photo budget when the photographer hasn't curated favorites. Tuned
+// to the 30s clip length — under 12 photos looks like a slideshow, over 30
+// rushes past faces. Aligns with the photo-source rule in the dashboard:
+// "favorites if any, otherwise the first 30".
+export const STORY_DEFAULT_PHOTO_BUDGET = 30
+
+// All five styles ported from the desktop FFmpeg renderer
+// (src/main/storyRenderer.ts). The Lambda invocation in Phase 2 will pick the
+// Remotion composition matching the style id. Order here is the order shown
+// in the dashboard's style picker.
+export type StoryStyle = 'clean' | 'cinematic' | 'fast-social' | 'elegant' | 'vintage'
+
+export interface StoryStyleMeta {
+  id: StoryStyle
+  label: string
+  description: string
+  hint: string
+  approxDurationSec: number
+}
+
+export const STORY_STYLES: ReadonlyArray<StoryStyleMeta> = [
+  {
+    id: 'clean',
+    label: 'Clean',
+    description: 'תנועה עדינה + מעברים רכים',
+    hint: 'Ken Burns + crossfade · 1080×1920',
+    approxDurationSec: 30,
+  },
+  {
+    id: 'cinematic',
+    label: 'Cinematic',
+    description: 'מסגרת רחבה, אופי קולנועי, מעברים איטיים',
+    hint: 'Anamorphic look · 1080×1920',
+    approxDurationSec: 35,
+  },
+  {
+    id: 'fast-social',
+    label: 'Fast Social',
+    description: 'קצב מהיר לאינסטגרם / טיקטוק',
+    hint: 'Quick cuts · 1080×1920',
+    approxDurationSec: 20,
+  },
+  {
+    id: 'elegant',
+    label: 'Elegant',
+    description: 'אסתטיקה רכה, רגעים נשימתיים',
+    hint: 'Slow drift · 1080×1920',
+    approxDurationSec: 35,
+  },
+  {
+    id: 'vintage',
+    label: 'Vintage',
+    description: 'גוון פילם, שריטות עדינות, אופי נוסטלגי',
+    hint: 'Film grain · 1080×1920',
+    approxDurationSec: 30,
+  },
+]
 
 export interface StoryRenderResponse {
   ok: boolean
