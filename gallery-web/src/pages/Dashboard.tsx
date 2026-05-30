@@ -166,6 +166,23 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
   document.head.appendChild(style)
 }
 
+/** Compact Hebrew progress label for the in-button status on the gallery
+ *  export action. Mirrors the phases reported by exportGalleryAsZip. */
+function exportProgressLabel(p: ExportProgress): string {
+  switch (p.phase) {
+    case 'metadata':
+      return 'טוען נתונים...'
+    case 'downloading':
+      return `מוריד ${p.current} / ${p.total}...`
+    case 'zipping':
+      return `יוצר ZIP ${p.current}%...`
+    case 'saving':
+      return 'שומר קובץ...'
+    default:
+      return 'מייצא...'
+  }
+}
+
 export function Dashboard() {
   const { user, loading } = useAuth()
   const { showToast, ToastContainer } = useToast()
@@ -360,6 +377,14 @@ export function Dashboard() {
   const [faceRecognition, setFaceRecognition] = useState(false)
   const [facePrivacyMode, setFacePrivacyMode] = useState<'open' | 'private'>('open')
   const [showFaceConfirm, setShowFaceConfirm] = useState(false)
+
+  // ── Gallery export (portable ZIP) ──────────────────────────────────────────
+  // Photographer-driven backup: button lives in the Settings tab and pulls
+  // every original through the browser, zips it with metadata.json, and
+  // triggers a download. `exporting` doubles as the disable-flag; the
+  // progress object drives the in-button status text.
+  const [exporting, setExporting] = useState(false)
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
 
   // ── Custom domain (account-level) ──────────────────────────────────────────
   // The Domain section lives at the bottom of the per-gallery Settings tab
@@ -1145,6 +1170,48 @@ export function Dashboard() {
     setGalleries(prev => prev.filter(x => x.id !== g.id))
     if (editingGallery?.id === g.id) setEditingGallery(null)
     showToast({ kind: 'success', text: `הגלריה "${g.name}" נמחקה.` })
+  }
+
+  // ── Gallery export → portable ZIP ──────────────────────────────────────────
+  // Confirm with the photographer (count + heads-up that the file will be
+  // large), then stream progress through exportGalleryAsZip. The button is
+  // disabled while in-flight. Errors surface as plain alert()s — same idiom
+  // the rest of this file uses, no toast library to introduce.
+  async function handleGalleryExport() {
+    if (!editingGallery || exporting) return
+    const count = galleryImages.length || editingGallery.image_count || 0
+    if (count === 0) {
+      alert('אין תמונות בגלריה לייצוא')
+      return
+    }
+    const ok = confirm(
+      `ייצא את כל ה-${count} תמונות? זה ייקח כמה דקות וייצור קובץ ZIP גדול.`,
+    )
+    if (!ok) return
+    setExporting(true)
+    setExportProgress({ phase: 'metadata', current: 0, total: 1 })
+    try {
+      const result = await exportGalleryAsZip(editingGallery.id, {
+        onProgress: setExportProgress,
+      })
+      const tail = result.failedCount
+        ? `\n(${result.failedCount} תמונות נכשלו ולא נכללו בקובץ)`
+        : ''
+      alert(`הייצוא הושלם: ${result.filename}${tail}`)
+    } catch (err) {
+      if (err instanceof ExportCapExceededError) {
+        alert(
+          `הגלריה גדולה מדי לייצוא בדפדפן (יותר מ-${Math.round(err.cap / 1024 / 1024 / 1024)}GB). ` +
+            `נדרשת גרסת שרת — נשלח עדכון בקרוב.`,
+        )
+      } else {
+        console.error('[exportGallery] failed:', err)
+        alert(`שגיאה בייצוא הגלריה: ${err instanceof Error ? err.message : 'unknown'}`)
+      }
+    } finally {
+      setExporting(false)
+      setExportProgress(null)
+    }
   }
 
   // ── Custom domain helpers ──────────────────────────────────────────────────
@@ -4444,6 +4511,53 @@ export function Dashboard() {
                           </div>
                         </div>
                       )}
+                    </Section>
+
+                    {/* ── Backup (per-gallery, portable ZIP) ──────────────
+                        Lets the photographer pull every original + a
+                        metadata.json sidecar in one ZIP. Important for trust
+                        + a migration safety net. Phase 1 is browser-side;
+                        for 500+-image galleries Phase 2 should spawn a
+                        server-side render to S3 + presigned URL. */}
+                    <Section eyebrow="גיבוי וייצוא">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                            ייצא את כל הגלריה כקובץ ZIP
+                          </div>
+                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.6 }}>
+                            כל המקור (או תצוגות web אם המקור לא הועלה) + metadata.json עם
+                            הגדרות הגלריה, סקציות וסדר התמונות. הקובץ נייד וניתן לשחזור בעתיד.
+                          </div>
+                        </div>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={handleGalleryExport}
+                            disabled={exporting}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 8,
+                              padding: '10px 18px', borderRadius: 2,
+                              background: exporting ? bgSubtle : textPrimary,
+                              color: exporting ? textMuted : '#fff',
+                              border: `1px solid ${exporting ? border : textPrimary}`,
+                              fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
+                              textTransform: 'uppercase',
+                              cursor: exporting ? 'wait' : 'pointer', fontFamily: 'inherit',
+                              opacity: exporting ? 0.7 : 1,
+                            }}
+                          >
+                            <Icon name="download" size={14} />
+                            <span>
+                              {exporting
+                                ? exportProgress
+                                  ? exportProgressLabel(exportProgress)
+                                  : 'מייצא...'
+                                : 'ייצא גלריה (ZIP)'}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
                     </Section>
 
                     {/* ── Domain (account-level) ──────────────────────────
