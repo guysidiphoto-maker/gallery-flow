@@ -9,6 +9,7 @@ import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenCl
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useToast } from '../components/Toast'
+import { validateDeliverySettingsPatch, summarizeValidationErrors } from '../lib/deliverySettingsSchema'
 import { Viewer } from '../Viewer'
 
 interface Gallery {
@@ -869,6 +870,16 @@ export function Dashboard() {
 
   async function updateGallerySetting(key: string, value: unknown) {
     if (!editingGallery) return
+    // Phase 6 step 4 prep — pre-validate against the shared schema before
+    // any DB round-trip. The server RPC will re-validate, but doing it here
+    // first catches typos / out-of-range values without burning a network
+    // round-trip and gives the photographer an immediate, specific message.
+    const validation = validateDeliverySettingsPatch({ [key]: value })
+    if (!validation.ok) {
+      showToast({ kind: 'error', text: summarizeValidationErrors(validation.errors) })
+      console.warn('[updateGallerySetting] validation failed', validation.errors)
+      return
+    }
     const prevSettings = editingGallery.delivery_settings || {}
     const nextSettings = { ...prevSettings, [key]: value }
     // Optimistic on three fronts so the UI feels live:
