@@ -26,6 +26,11 @@ interface GalleryImage {
   filename: string
   storage_path: string
   thumbnail_path: string | null
+  // Phase 4.2 originals-only model — the HD source object in
+  // `gallery-images`. Selected alongside the preview/thumb paths so that
+  // delete flows can purge ALL three storage objects for an image, not
+  // just the row. Nullable because pre-Phase-4.2 rows may not have one.
+  original_path?: string | null
   is_top_pick: boolean
   sort_order: number
   section_id?: string | null
@@ -464,7 +469,7 @@ export function Dashboard() {
     const [imagesRes, sectionsRes, storiesRes] = await Promise.all([
       supabase
         .from('images')
-        .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order, section_id')
+        .select('id, filename, storage_path:web_preview_path, thumbnail_path, original_path, is_top_pick, sort_order, section_id')
         .eq('gallery_id', g.id)
         .order('sort_order', { ascending: true }),
       supabase
@@ -557,7 +562,7 @@ export function Dashboard() {
     fetchTokenBalance()
     const { data } = await supabase
       .from('images')
-      .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order')
+      .select('id, filename, storage_path:web_preview_path, thumbnail_path, original_path, is_top_pick, sort_order')
       .eq('gallery_id', editingGallery.id)
       .order('sort_order', { ascending: true })
     setGalleryImages(data ?? [])
@@ -940,16 +945,63 @@ export function Dashboard() {
     setSelectMode(false)
     setSelectedImageIds(new Set())
   }
+  // Best-effort cleanup of the storage objects that backed a set of
+  // images we just deleted from the DB. The DB row is the canonical
+  // "deleted" signal — storage.remove() is non-transactional and runs
+  // in the background so the UX never blocks on it. Failures log via
+  // console.warn for a future reconciler to sweep up the orphans.
+  //
+  // Phase 4.2 dual-writes thumbnails to `gallery-images-thumbs-public`
+  // too; this helper currently only purges the primary `gallery-images`
+  // bucket. The thumbs bucket is a known follow-up (see commit message).
+  async function purgeStorageForImages(images: GalleryImage[]) {
+    const paths = new Set<string>()
+    for (const img of images) {
+      if (img.storage_path) paths.add(img.storage_path)
+      if (img.thumbnail_path) paths.add(img.thumbnail_path)
+      if (img.original_path) paths.add(img.original_path)
+    }
+    if (paths.size === 0) return
+    const all = Array.from(paths)
+    // supabase-js storage.remove() accepts up to ~1000 paths per call;
+    // 500 is a safe chunk size that leaves headroom for URL-length
+    // limits and partial-failure reporting.
+    const CHUNK = 500
+    for (let i = 0; i < all.length; i += CHUNK) {
+      const chunk = all.slice(i, i + CHUNK)
+      try {
+        const { error } = await supabase.storage.from('gallery-images').remove(chunk)
+        if (error) {
+          console.warn('[purgeStorageForImages] chunk remove failed', {
+            chunkSize: chunk.length,
+            error: error.message,
+          })
+        }
+      } catch (e) {
+        console.warn('[purgeStorageForImages] chunk remove threw', {
+          chunkSize: chunk.length,
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }
+    }
+  }
+
   async function bulkDeleteSelected() {
     if (!editingGallery || selectedImageIds.size === 0) return
     const count = selectedImageIds.size
     if (!confirm(`למחוק ${count} תמונות? פעולה זו לא ניתנת לביטול.`)) return
     const ids = Array.from(selectedImageIds)
+    // Snapshot paths from local state BEFORE the DB delete so we still
+    // have them to feed the storage purge.
+    const snap = galleryImages.filter(i => selectedImageIds.has(i.id))
     const { error } = await supabase.from('images').delete().in('id', ids)
     if (error) {
       alert('שגיאה במחיקה: ' + error.message)
       return
     }
+    // Fire-and-forget — the row delete is canonical; storage cleanup
+    // is best-effort and should never block the UI.
+    void purgeStorageForImages(snap)
     setGalleryImages(prev => prev.filter(i => !selectedImageIds.has(i.id)))
     await supabase.from('galleries')
       .update({ image_count: Math.max(0, galleryImages.length - ids.length) })
@@ -991,8 +1043,12 @@ export function Dashboard() {
   async function deleteSingleImage(imageId: string) {
     if (!editingGallery) return
     if (!confirm('למחוק את התמונה? פעולה זו לא ניתנת לביטול.')) return
+    // Snapshot the row from local state BEFORE the DB delete so we
+    // still know which storage objects to purge.
+    const snap = galleryImages.filter(i => i.id === imageId)
     const { error } = await supabase.from('images').delete().eq('id', imageId)
     if (error) { alert('שגיאה במחיקה: ' + error.message); return }
+    void purgeStorageForImages(snap)
     setGalleryImages(prev => prev.filter(i => i.id !== imageId))
     await supabase.from('galleries')
       .update({ image_count: Math.max(0, galleryImages.length - 1) })
