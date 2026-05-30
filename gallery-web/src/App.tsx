@@ -980,12 +980,16 @@ export function App() {
           const { data: bizRows } = await supabase.rpc('get_business_by_slug', { p_slug: galleryRef.businessSlug })
           const biz = bizRows?.[0]
           if (!biz) { setError('Gallery not found'); return }
+          // Migration 063 made gallery_status an enum of ('draft','live','archived').
+          // 'published' is no longer a valid value (it was a desktop-era ghost
+          // that never landed in the DB). We resolve against draft+live so the
+          // owner can deep-link into an unpublished gallery from their email.
           const { data: g } = await supabase.from('galleries').select('*')
             .eq('business_id', biz.id).eq('slug', galleryRef.gallerySlug)
-            .in('status', ['live', 'published', 'draft']).single()
+            .in('status', ['live', 'draft']).single()
           if (g) { loadGallery(g.id); return }
           const { data: byName } = await supabase.from('galleries').select('*')
-            .eq('business_id', biz.id).in('status', ['live', 'published', 'draft'])
+            .eq('business_id', biz.id).in('status', ['live', 'draft'])
             .ilike('name', galleryRef.gallerySlug.replace(/-/g, '%')).limit(1)
           if (byName?.[0]) { loadGallery(byName[0].id); return }
           setError('Gallery not found')
