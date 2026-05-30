@@ -156,7 +156,16 @@ export function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
-  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome' | 'stories'>('photos')
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome' | 'stories' | 'preview'>('photos')
+  // Live Preview pane — Phase 5. The iframe's src includes ?v=${previewRefreshKey}
+  // so bumping this number forces React to swap the iframe DOM node, which
+  // triggers a fresh navigation (sidestepping aggressive browser/CDN caches).
+  // unpublishedChanges is informational — until Phase 6 lands draft/publish
+  // snapshots, the public viewer reads delivery_settings directly so the
+  // iframe is always live; the badge just communicates that the photographer
+  // has unpublished local edits that haven't yet bumped published_at.
+  const [previewRefreshKey, setPreviewRefreshKey] = useState(0)
+  const [unpublishedChanges, setUnpublishedChanges] = useState(false)
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number; description?: string | null }>>([])
   const [newSectionName, setNewSectionName] = useState('')
   const [newSectionDesc, setNewSectionDesc] = useState('')
@@ -487,6 +496,11 @@ export function Dashboard() {
     setEditingGallery(g)
     setEditTab('photos')
     setStories([])
+    // Phase 5 — reset Live Preview state per gallery so opening a second
+    // gallery in the same session doesn't inherit the previous one's dirty
+    // flag or stale cache-buster.
+    setUnpublishedChanges(false)
+    setPreviewRefreshKey(0)
     const [imagesRes, sectionsRes, storiesRes] = await Promise.all([
       supabase
         .from('images')
@@ -860,7 +874,12 @@ export function Dashboard() {
         ? { ...g, delivery_settings: prevSettings } : g)
       showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
       console.warn('[updateGallerySetting]', key, error)
+      return
     }
+    // Success — flag the gallery as having unpublished local edits and bump
+    // the preview iframe so any open Live Preview tab reflects the change.
+    setUnpublishedChanges(true)
+    setPreviewRefreshKey(k => k + 1)
   }
 
   // Renaming the gallery touches two places: the canonical `galleries.name`
@@ -885,7 +904,11 @@ export function Dashboard() {
       setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: prevName } : g))
       showToast({ kind: 'error', text: 'שמירת הכותרת נכשלה. נסה שוב.' })
       console.warn('[renameGalleryTitle]', error)
+      return
     }
+    // Success — see updateGallerySetting for why we bump both.
+    setUnpublishedChanges(true)
+    setPreviewRefreshKey(k => k + 1)
   }
 
   // Delete the entire gallery — sections + images cascade via FK (migration
@@ -1021,6 +1044,10 @@ export function Dashboard() {
       return
     }
     setEditingGallery({ ...editingGallery, status: 'live', published_at: publishedAt })
+    // Phase 5 — clear the "unpublished changes" pill in the Live Preview pane
+    // and force the iframe to reload so it picks up the freshest snapshot.
+    setUnpublishedChanges(false)
+    setPreviewRefreshKey(k => k + 1)
     showToast({ kind: 'success', text: wasLive ? 'הגלריה עודכנה ושודרה ללקוח' : 'הגלריה פורסמה ✓' })
 
     // Pre-warm the CDN edge so the first guest gets cached (~50ms) thumbnails
@@ -2193,12 +2220,13 @@ export function Dashboard() {
                     padding: '14px 12px', borderBottom: `1px solid ${border}`,
                   }}>
                     {([
-                      { id: 'photos' as const,     icon: 'photo'    as IconName, label: 'תמונות' },
-                      { id: 'sections' as const,   icon: 'sections' as IconName, label: 'קטעים' },
-                      { id: 'stories' as const,    icon: 'stories'  as IconName, label: 'סטוריז' },
-                      { id: 'welcome' as const,    icon: 'palette'  as IconName, label: 'עיצוב' },
-                      { id: 'activities' as const, icon: 'activity' as IconName, label: 'פעילות' },
-                      { id: 'settings' as const,   icon: 'settings' as IconName, label: 'הגדרות' },
+                      { id: 'photos' as const,     icon: 'photo'     as IconName, label: 'תמונות' },
+                      { id: 'sections' as const,   icon: 'sections'  as IconName, label: 'קטעים' },
+                      { id: 'stories' as const,    icon: 'stories'   as IconName, label: 'סטוריז' },
+                      { id: 'welcome' as const,    icon: 'palette'   as IconName, label: 'עיצוב' },
+                      { id: 'preview' as const,    icon: 'arrow-out' as IconName, label: 'תצוגה חיה' },
+                      { id: 'activities' as const, icon: 'activity'  as IconName, label: 'פעילות' },
+                      { id: 'settings' as const,   icon: 'settings'  as IconName, label: 'הגדרות' },
                     ]).map(t => {
                       const active = editTab === t.id
                       return (
@@ -4378,6 +4406,104 @@ export function Dashboard() {
                       </div>
                     )}
                   </div>
+                  )
+                })()}
+
+                {/* ── Live Preview Tab ── Phase 5.
+                    Renders the gallery's public URL inside an iframe scoped to
+                    the editor's main content pane. The src carries a ?v=N cache
+                    buster (bumped on every successful save) so reloads are
+                    guaranteed even with aggressive CDN/browser caching.
+                    Until Phase 6 introduces draft/publish snapshots the public
+                    viewer reads delivery_settings directly — so the iframe IS
+                    the latest saved state; the "unpublished changes" pill is
+                    purely informational. */}
+                {editTab === 'preview' && (() => {
+                  const shareUrl = galleryShareUrl(editingGallery)
+                  const previewSrc = `${shareUrl}${shareUrl.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minHeight: '100%' }}>
+                      {/* Pane header — eyebrow label + dirty-state pill + refresh */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: 12, flexWrap: 'wrap',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+                            textTransform: 'uppercase', color: textMuted,
+                          }}>תצוגה חיה</span>
+                          {unpublishedChanges && (
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              padding: '4px 10px', borderRadius: 2,
+                              border: `1px solid ${border}`, background: bgSubtle,
+                              fontSize: 11, fontWeight: 500, color: textSecondary,
+                              fontFamily: 'inherit',
+                            }}>
+                              <span aria-hidden="true" style={{
+                                width: 7, height: 7, borderRadius: '50%',
+                                background: textMuted, display: 'inline-block',
+                              }} />
+                              שינויים שטרם פורסמו
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setPreviewRefreshKey(k => k + 1)}
+                          aria-label="רענן תצוגה חיה"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            padding: '8px 14px', borderRadius: 2,
+                            background: 'transparent', border: `1px solid ${border}`,
+                            color: textPrimary, cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: 11, fontWeight: 500,
+                            letterSpacing: '0.18em', textTransform: 'uppercase',
+                          }}
+                        >
+                          <Icon name="arrow-out" size={12} strokeWidth={1.85} />
+                          רענן
+                        </button>
+                      </div>
+
+                      {/* Iframe shell — full content width, capped at 1400px and
+                          centered so wide monitors don't stretch the preview
+                          past where it's legible. On viewports < 900px we let
+                          it fill 100% per the spec. */}
+                      <div style={{
+                        width: '100%', maxWidth: 1400, marginInline: 'auto',
+                        border: `1px solid ${border}`, background: bgSubtle,
+                      }}>
+                        <iframe
+                          key={previewRefreshKey}
+                          src={previewSrc}
+                          title="תצוגה חיה של הגלריה"
+                          style={{
+                            display: 'block', width: '100%', height: '80vh',
+                            border: 'none', background: bgSubtle,
+                          }}
+                        />
+                      </div>
+
+                      {/* Footer hint — make the URL discoverable for copy + the
+                          "open in new tab" escape hatch (some browsers throttle
+                          iframes harder than top-level navigations). */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: 12, flexWrap: 'wrap', color: textMuted,
+                        fontSize: 11, letterSpacing: '0.02em',
+                      }}>
+                        <span style={{ direction: 'ltr', unicodeBidi: 'isolate' }}>{shareUrl}</span>
+                        <a href={shareUrl} target="_blank" rel="noreferrer" style={{
+                          color: textSecondary, textDecoration: 'none',
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
+                        }}>
+                          <Icon name="arrow-out" size={11} strokeWidth={1.85} />
+                          פתח בלשונית חדשה
+                        </a>
+                      </div>
+                    </div>
                   )
                 })()}
                 </div>
