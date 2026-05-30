@@ -180,6 +180,12 @@ export function Dashboard() {
   // toggle. Every photo belongs to a section — there is no "all photos" view.
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null)
+  // Controlled draft for the section-rename input — replaces the prior
+  // uncontrolled defaultValue, which couldn't tell "user typed garbage then
+  // hit Escape" from "user typed a real value then blurred". The cancel ref
+  // is consulted by onBlur so Escape can short-circuit the save.
+  const [sectionRenameDraft, setSectionRenameDraft] = useState('')
+  const sectionRenameCancelledRef = useRef(false)
   const [sectionMenuOpenId, setSectionMenuOpenId] = useState<string | null>(null)
   const [showAddSetModal, setShowAddSetModal] = useState(false)
   const [activitySummary, setActivitySummary] = useState<{
@@ -2336,15 +2342,25 @@ export function Dashboard() {
                             {isRenaming ? (
                               <input
                                 autoFocus
-                                defaultValue={s.name}
-                                onBlur={(e) => {
-                                  const v = e.target.value.trim()
+                                value={sectionRenameDraft}
+                                onChange={(e) => setSectionRenameDraft(e.target.value)}
+                                onBlur={() => {
+                                  // Escape → cancelled flag set → don't save.
+                                  if (sectionRenameCancelledRef.current) {
+                                    sectionRenameCancelledRef.current = false
+                                    setRenamingSectionId(null)
+                                    return
+                                  }
+                                  const v = sectionRenameDraft.trim()
                                   if (v && v !== s.name) renameSection(s.id, v)
                                   setRenamingSectionId(null)
                                 }}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                                  if (e.key === 'Escape') setRenamingSectionId(null)
+                                  if (e.key === 'Escape') {
+                                    sectionRenameCancelledRef.current = true
+                                    ;(e.target as HTMLInputElement).blur()
+                                  }
                                 }}
                                 style={{
                                   flex: 1, minWidth: 0,
@@ -2388,12 +2404,20 @@ export function Dashboard() {
                               boxShadow: '0 8px 24px rgba(0,0,0,.08)', zIndex: 5,
                               minWidth: 140, padding: 4,
                             }}>
-                              <button onClick={() => { setRenamingSectionId(s.id); setSectionMenuOpenId(null) }} style={{
-                                width: '100%', textAlign: 'right' as const,
-                                padding: '8px 10px', borderRadius: 2,
-                                background: 'transparent', border: 'none', cursor: 'pointer',
-                                fontFamily: 'inherit', fontSize: 12, color: textPrimary,
-                              }}>שינוי שם</button>
+                              <button
+                                onClick={() => {
+                                  setSectionRenameDraft(s.name)
+                                  sectionRenameCancelledRef.current = false
+                                  setRenamingSectionId(s.id)
+                                  setSectionMenuOpenId(null)
+                                }}
+                                style={{
+                                  width: '100%', textAlign: 'right' as const,
+                                  padding: '8px 10px', borderRadius: 2,
+                                  background: 'transparent', border: 'none', cursor: 'pointer',
+                                  fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                }}
+                              >שינוי שם</button>
                               <button onClick={() => { deleteSection(s.id); setSectionMenuOpenId(null) }} style={{
                                 width: '100%', textAlign: 'right' as const,
                                 padding: '8px 10px', borderRadius: 2,
