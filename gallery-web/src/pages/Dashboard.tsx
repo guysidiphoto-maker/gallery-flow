@@ -8,6 +8,7 @@ import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import { validateDeliverySettingsPatch, summarizeValidationErrors } from '../lib/deliverySettingsSchema'
 
 interface Gallery {
   id: string
@@ -726,11 +727,68 @@ export function Dashboard() {
     }
   }
 
-  async function updateGallerySetting(key: string, value: unknown) {
+  // ── Settings writers (Phase 6 Step 4) ───────────────────────────────────────
+  // Both writers go through the `update_gallery_settings` RPC. The RPC is the
+  // only path the DB allows for delivery_settings writes (direct column UPDATE
+  // is revoked in migration 069), so even if a future caller forgets to
+  // pre-validate, the server-side mirror catches drift like the legacy
+  // `coverImageURL` vs `coverImageUrl` typo that fueled Phase 6.
+  //
+  // Optimistic update + rollback: we apply the patch locally before the
+  // round-trip, then reconcile with the RPC's returned `delivery_settings`
+  // (which is the post-merge JSONB) so client and server are byte-identical.
+  // On validation error we roll back and toast the first few errors.
+  async function updateGallerySettings(patch: Record<string, unknown>) {
     if (!editingGallery) return
-    const settings = { ...(editingGallery.delivery_settings || {}), [key]: value }
-    await supabase.from('galleries').update({ delivery_settings: settings }).eq('id', editingGallery.id)
-    setEditingGallery({ ...editingGallery, delivery_settings: settings })
+    const prev = editingGallery
+    // Pre-validate with the same rules the server uses. Catches typos before
+    // the RPC roundtrip so the user gets instant feedback.
+    const v = validateDeliverySettingsPatch(patch)
+    if (!v.ok) {
+      alert(summarizeValidationErrors(v.errors))
+      return
+    }
+    // Optimistic: merge locally so the UI reflects the change immediately.
+    const optimistic = { ...(editingGallery.delivery_settings || {}), ...v.patch }
+    setEditingGallery({ ...editingGallery, delivery_settings: optimistic })
+
+    const { data, error } = await supabase.rpc('update_gallery_settings', {
+      p_gallery_id: editingGallery.id,
+      p_patch: v.patch,
+    })
+
+    if (error) {
+      // Network / permission error — roll back and surface the message.
+      setEditingGallery(prev)
+      alert('שגיאה בשמירה: ' + error.message)
+      return
+    }
+
+    const result = data as {
+      ok: boolean
+      delivery_settings?: Record<string, unknown>
+      errors?: Array<{ key: string; error: string }>
+    } | null
+
+    if (!result?.ok) {
+      // Server-side validation rejected the patch. Roll back local state.
+      setEditingGallery(prev)
+      const summary = result?.errors?.length
+        ? summarizeValidationErrors(
+            result.errors.map(e => ({ key: e.key, message: `${e.key}: ${e.error}` })),
+          )
+        : 'שגיאה בשמירה'
+      alert(summary)
+      return
+    }
+
+    // Reconcile with server's view so the row in memory matches the DB.
+    setEditingGallery({ ...prev, delivery_settings: result.delivery_settings ?? optimistic })
+  }
+
+  // Single-key convenience wrapper — every existing call site uses this shape.
+  async function updateGallerySetting(key: string, value: unknown) {
+    await updateGallerySettings({ [key]: value })
   }
 
   // ── Custom domain helpers ──────────────────────────────────────────────────
