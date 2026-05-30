@@ -477,7 +477,8 @@ export function Dashboard() {
   async function createGallery() {
     if (!newName.trim()) return
     if (!businessId) {
-      alert('שגיאה: לא נמצא חשבון עסקי. נסו לרענן את הדף.')
+      console.warn('[createGallery] missing businessId')
+      showToast({ kind: 'error', text: 'שגיאה: לא נמצא חשבון עסקי. נסו לרענן את הדף.' })
       return
     }
     setCreating(true)
@@ -524,8 +525,8 @@ export function Dashboard() {
     })
     setCreating(false)
     if (error) {
-      console.error('Gallery creation failed:', error)
-      alert(`שגיאה ביצירת גלריה: ${error.message}`)
+      console.warn('[createGallery]', error)
+      showToast({ kind: 'error', text: `שגיאה ביצירת גלריה: ${error.message}` })
       return
     }
     setShowModal(false)
@@ -941,7 +942,8 @@ export function Dashboard() {
     if (dbErr) {
       // Roll back the optimistic update so the photographer can retry.
       setStories(previous)
-      alert('שגיאה במחיקה: ' + dbErr.message)
+      console.warn('[handleStoryDelete]', dbErr)
+      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + dbErr.message })
     }
   }
 
@@ -5526,7 +5528,10 @@ export function Dashboard() {
                   onClick={async () => {
                     const url = await startCheckout(pkg.planId)
                     if (url) { window.location.href = url }
-                    else { alert('שגיאה בפתיחת תשלום. נסה שוב.') }
+                    else {
+                      console.warn('[startCheckout] no url returned', { planId: pkg.planId })
+                      showToast({ kind: 'error', text: 'שגיאה בפתיחת תשלום. נסה שוב.' })
+                    }
                   }}
                   style={{
                     position: 'relative',
