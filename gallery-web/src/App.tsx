@@ -64,10 +64,16 @@ interface PublishedSnapshot {
 }
 
 // ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
+// a11y: when prefers-reduced-motion is set we skip the parallax entirely and
+// render a plain wrapper — no perspective/rotateX that can cause vestibular
+// discomfort (WCAG 2.3.3 / prefers-reduced-motion).
 
 function ScrollReveal({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    // Honour the OS reduced-motion preference before wiring the observer.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
     const el = ref.current
     if (!el) return
     const mobile = window.innerWidth < 768
@@ -646,6 +652,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
       {/* Event meta */}
       {(eventDate || eventLocation) && (
         <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .8s both' : 'none' }}>
+          {/* TODO: a11y — event meta at rgba(.25) is ~1.8:1 contrast on black. Design decision needed: raise opacity or use a larger font size to meet WCAG 3.1.4 for decorative metadata. */}
           <p style={{
             fontSize: 12, color: 'rgba(255,255,255,.25)', margin: '10px 0 0',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, letterSpacing: '0.03em',
@@ -659,6 +666,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
 
       {galleryDescription && (
         <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .85s both' : 'none' }}>
+          {/* TODO: a11y — gallery description at rgba(.22) is ~1.6:1 contrast. Needs design decision: bump opacity to at least .65 for AA compliance, or confirm this text is purely decorative and not load-bearing. */}
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,.22)', margin: '8px auto 0', maxWidth: 420 }}>
             {galleryDescription}
           </p>
@@ -748,6 +756,11 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
           opacity: 0; transition: opacity .6s ease;
         }
         .wc-col img.wc-loaded { opacity: 1; }
+        /* Reduced-motion: stop the infinite mosaic scroll (WCAG 2.3.3) */
+        @media (prefers-reduced-motion: reduce) {
+          .wc-col { animation: none !important; }
+          .hero__bg { animation: none !important; }
+        }
       `}</style>
       <div style={{
         position: 'absolute', inset: 0,
@@ -830,6 +843,11 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
             90% { opacity: 1; }
             100% { transform: translateY(-100vh) translateX(40px); opacity: 0; }
           }
+          /* Ken Burns zoom is a looping motion animation — suppress it for
+             vestibular safety (WCAG 2.3.3 / prefers-reduced-motion).       */
+          @media (prefers-reduced-motion: reduce) {
+            [style*="wcCineZoom"] { animation: wcCineFadeIn 2.5s ease .2s both !important; }
+          }
         `}</style>
         {bgSrc && (
           <div style={{
@@ -838,9 +856,13 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
             filter: isPrivate ? 'blur(50px) saturate(.2)' : 'blur(8px) saturate(1.1)',
             animation: 'wcCineFadeIn 2.5s ease .2s both, wcCineZoom 20s ease-in-out infinite alternate',
           }}>
+            {/* Cover image — meaningful alt derived from gallery title so screen
+                readers convey context rather than announcing an empty alt.
+                The image is decorative when private (blur makes it unrecognisable),
+                so alt="" is correct there. */}
             <img
               src={bgSrc}
-              alt=""
+              alt={isPrivate ? '' : `${galleryTitle} cover photo`}
               style={{
                 width: '100%', height: '100%', objectFit: 'cover', display: 'block',
                 ...(coverCrop ? { objectPosition: `${50 + (coverCrop.x || 0)}% ${50 + (coverCrop.y || 0)}%` } : {}),
@@ -969,7 +991,9 @@ function SectionNav({
 }) {
   const hasSections = sections.length > 0
   return (
-    <nav className="section-nav">
+    // role="navigation" + aria-label give screen readers a named landmark
+    // so they can jump here directly (WCAG 1.3.1, 2.4.1).
+    <nav className="section-nav" role="navigation" aria-label="Gallery sections">
       <div className="section-nav__inner">
         <div className="section-nav__items">
           {hasSections && showAllPill && (
@@ -2218,6 +2242,13 @@ export function App() {
       {/* Override the global accent CSS variable to match the photographer's
           chosen theme color. Cascades into every existing rgb(var(--accent)) ref. */}
       <style>{`:root { --accent: ${themeAccentRgb}; }`}</style>
+
+      {/* Skip link — keyboard-only shortcut past the hero to the photo grid.
+          Visible only on focus, hidden otherwise (WCAG 2.4.1 Bypass Blocks).
+          "#all-images" covers both sectioned and non-sectioned galleries. */}
+      <a href="#all-images" className="skip-link">
+        {lang === 'he' ? 'דלג לגלריה' : 'Skip to gallery'}
+      </a>
       {/* P4.5.D — Turnstile challenge modal. Renders only when the public-
           gallery-session endpoint returned `turnstile_required` for this IP.
           The widget is invisible 98% of the time (Managed mode); when it does

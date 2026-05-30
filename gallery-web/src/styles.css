@@ -2,6 +2,63 @@
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ── Skip link (WCAG 2.4.1 — Bypass Blocks) ────────────────────────────────
+   Visually hidden until focused via keyboard. Jumps past the hero section
+   directly to the photo grid so keyboard/screen-reader users don't have to
+   tab through every hero element on every page load.                         */
+.skip-link {
+  position: fixed;
+  top: 12px;
+  inset-inline-start: 12px;
+  z-index: 10000;
+  padding: 10px 20px;
+  background: #fff;
+  color: #141413;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 8px;
+  text-decoration: none;
+  box-shadow: 0 4px 24px rgba(0,0,0,.5);
+  /* Hidden until focused */
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition: opacity .15s, transform .15s;
+}
+.skip-link:focus {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  /* High-contrast focus ring so the skip link itself is keyboard-visible */
+  outline: 3px solid #6366f1;
+  outline-offset: 2px;
+}
+
+/* ── Global focus-visible ring ──────────────────────────────────────────────
+   Browsers that support :focus-visible show a ring only for keyboard nav,
+   not on mouse click. Replaces every inline `outline: none` that nuked
+   the native ring without providing an alternative (WCAG 2.4.7).            */
+:focus-visible {
+  outline: 2px solid rgba(var(--accent), 0.9);
+  outline-offset: 2px;
+}
+
+/* ── Reduced-motion — disable cosmetic animations ──────────────────────────
+   Respects the OS "reduce motion" preference (WCAG 2.3.3 / prefers-reduced-
+   motion). Keeps transitions that convey state (opacity 0→1 on load) but
+   removes running / looping animations that can trigger vestibular symptoms. */
+@media (prefers-reduced-motion: reduce) {
+  .hero__bg { animation: none; transform: scale(1.08) !important; }
+  .hero__content { animation: none; }
+  .loader { animation: none; border-top-color: rgba(var(--accent), .9); }
+  .wc-col { animation: none !important; }
+  .story-circle__ring { transition: none; }
+  /* Section nav items already use short transitions — leave them as-is. */
+  /* Scroll-reveal parallax: remove the 3D transform so the element is
+     immediately visible rather than fading/rotating in on scroll.           */
+  [style*="perspective"] { transform: none !important; opacity: 1 !important; }
+}
+
 body {
   background: #0a0a0f;
   color: #fff;
@@ -114,7 +171,8 @@ input, button, textarea, select {
 
 .pw-gate__sub {
   font-size: 14px;
-  color: rgba(255,255,255,.38);
+  /* Bumped from .38 → .62 to clear 4.5:1 on #0a0a0f (was ~2.6:1) */
+  color: rgba(255,255,255,.62);
   margin-bottom: 8px;
   letter-spacing: 0.01em;
 }
@@ -177,6 +235,12 @@ input, button, textarea, select {
 
 .pw-gate__btn:active {
   transform: scale(0.98);
+}
+
+.pw-gate__btn:focus-visible {
+  /* Explicit focus ring — the button has no outline by default */
+  outline: 2px solid rgba(var(--accent), 1);
+  outline-offset: 3px;
 }
 
 /* ── Hero ─────────────────────────────────────────────────────────────────── */
@@ -669,6 +733,10 @@ input, button, textarea, select {
 
 /* ── Footer ────────────────────────────────────────────────────────────────── */
 
+/* TODO: a11y — footer text at rgba(.14) is ~1.2:1. This is intentional branding
+   de-emphasis ("powered by" credit), but if it contains actionable text (studio
+   name link) it must reach 4.5:1. Design decision: raise to rgba(.55) minimum
+   for the link variant, keep .14 only for the pure credit label. */
 .footer {
   text-align: center;
   padding: 56px 24px 48px;
@@ -759,6 +827,16 @@ input, button, textarea, select {
   background: rgba(255,255,255,.16);
   border-color: rgba(255, 255, 255, 0.12);
   transform: scale(1.05);
+}
+
+.viewer__close:focus-visible,
+.viewer__nav:focus-visible,
+.viewer__download:focus-visible {
+  /* High-contrast box-shadow ring on the dark overlay (outline can be clipped
+     by overflow:hidden; box-shadow is not). Replaces the browser default which
+     is invisible on near-black backgrounds. */
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255,255,255,.85);
 }
 
 .viewer__nav {
@@ -981,6 +1059,11 @@ input, button, textarea, select {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.section-nav__item:focus-visible {
+  outline: 2px solid rgba(var(--accent), 0.9);
+  outline-offset: 2px;
+}
+
 .section-nav__item--active {
   color: #fff;
   background: rgba(255, 255, 255, 0.11);
@@ -999,7 +1082,8 @@ input, button, textarea, select {
   padding: 2px 7px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.45);
+  /* Bumped from .45 → .65 to clear 4.5:1 on the dark nav surface */
+  color: rgba(255, 255, 255, 0.65);
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -1086,7 +1170,8 @@ input, button, textarea, select {
 
 .gallery-toolbar__btn--ghost {
   border-color: transparent;
-  color: rgba(255, 255, 255, 0.38);
+  /* Bumped from .38 → .62 — ghost buttons were below 4.5:1 on the dark nav */
+  color: rgba(255, 255, 255, 0.62);
 }
 .gallery-toolbar__btn--ghost:hover {
   border-color: transparent;
