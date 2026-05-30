@@ -204,6 +204,11 @@ export function Dashboard() {
   // has unpublished local edits that haven't yet bumped published_at.
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0)
   const [unpublishedChanges, setUnpublishedChanges] = useState(false)
+  // Inline side-by-side preview pane — visible alongside Settings + Welcome
+  // tabs so every config tweak reflects live in the iframe without tab-
+  // switching. Default ON; a toggle in the header collapses it for full-
+  // width editing when needed.
+  const [showSidePreview, setShowSidePreview] = useState(true)
   // In-flight + just-published states for the Publish/Update button so a click
   // gives immediate visual feedback (was: silent black button → toast 200ms
   // later, easy to miss). `publishing` flips true during the await; `justPublished`
@@ -2564,6 +2569,28 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  {/* Live-preview toggle — only meaningful on Settings + Welcome
+                      tabs (where the side preview pane appears). Lets the
+                      photographer reclaim the full editor width when they want
+                      to focus, then bring the preview back in. */}
+                  {(editTab === 'settings' || editTab === 'welcome') && (
+                    <button
+                      onClick={() => setShowSidePreview(v => !v)}
+                      title={showSidePreview ? 'הסתר תצוגה חיה' : 'הצג תצוגה חיה'}
+                      style={{
+                        padding: '10px 14px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                        background: showSidePreview ? textPrimary : 'transparent',
+                        border: `1px solid ${showSidePreview ? textPrimary : border}`,
+                        color: showSidePreview ? '#fff' : textPrimary,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        letterSpacing: '0.18em', textTransform: 'uppercase',
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                      }}
+                    >
+                      <Icon name="arrow-out" size={12} strokeWidth={1.85} />
+                      Live
+                    </button>
+                  )}
                   <a href={galleryShareUrl(editingGallery)} target="_blank" style={{
                     padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
                     background: 'transparent', border: `1px solid ${border}`, color: textPrimary,
@@ -2927,8 +2954,16 @@ export function Dashboard() {
                   )}
                 </aside>
 
-                {/* ── Main content pane ──────────────────────────── */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', minWidth: 0 }}>
+                {/* ── Main content pane + optional side-preview ─────── */}
+                {(() => {
+                  const sidePreviewActive = showSidePreview &&
+                    (editTab === 'settings' || editTab === 'welcome')
+                  return (
+                <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
+                <div style={{
+                  flex: 1, overflowY: 'auto',
+                  padding: '24px 32px', minWidth: 0,
+                }}>
 
                 {/* ── Photos Tab ── */}
                 {editTab === 'photos' && (
@@ -3533,6 +3568,24 @@ export function Dashboard() {
                 {/* ── Stories Tab ── */}
                 {editTab === 'stories' && (
                   <div style={{ padding: '0 4px' }}>
+                    {/* Honest status banner — the auto-generate flow is wired
+                        end-to-end (UI → API → DB rows in story_renders) but
+                        the actual Remotion Lambda is not deployed yet. So
+                        clicking "צור סטורי" inserts a queued render-job row
+                        and returns success, but no mp4 actually lands. Be
+                        upfront about that so the photographer doesn't sit
+                        and wait for nothing. */}
+                    <div style={{
+                      marginBottom: 18, padding: '10px 14px',
+                      border: `1px dashed ${border}`, background: bgSubtle,
+                      fontSize: 12, color: textSecondary, lineHeight: 1.55,
+                    }}>
+                      <strong style={{ color: textPrimary }}>⚙ יצירה אוטומטית — בקרוב.</strong>
+                      &nbsp;התשתית (Remotion + Lambda) פרוסה בקוד ובמסד, אבל הענן עוד לא מחובר.
+                      לחיצה על "צור סטורי" תיצור בקשת רינדור בתור, אבל הסרטון עצמו לא יופיע עד שתפעיל את הענן (ראה <code>gallery-web/stories-remotion/README.md</code>).
+                      <br />
+                      בינתיים — <strong>העלאת סטורי MP4 ידנית עובדת מלא</strong> דרך הכפתור משמאל.
+                    </div>
                     {/* Top strip — heading + Upload Story CTA. Same rhythm as
                         the Photos tab so the editor feels uniform. */}
                     <div style={{
@@ -5044,7 +5097,7 @@ export function Dashboard() {
                     viewer reads delivery_settings directly — so the iframe IS
                     the latest saved state; the "unpublished changes" pill is
                     purely informational. */}
-                {editTab === 'preview' && (() => {
+                {editTab === '__never__' && (() => {  /* full-page preview tab disabled — inline split takes over */
                   const shareUrl = galleryShareUrl(editingGallery)
                   const previewSrc = `${shareUrl}${shareUrl.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
                   return (
@@ -5133,6 +5186,65 @@ export function Dashboard() {
                   )
                 })()}
                 </div>
+                {/* Side-preview iframe — auto-refreshes via previewRefreshKey
+                    on every settings save. Shown only on Settings + Welcome
+                    tabs (config-heavy surfaces); other tabs get full width. */}
+                {sidePreviewActive && (
+                  <aside style={{
+                    width: 'min(48%, 540px)', flexShrink: 0,
+                    borderInlineStart: `1px solid ${border}`,
+                    background: bgSubtle, display: 'flex', flexDirection: 'column',
+                  }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      gap: 8, padding: '12px 14px',
+                      borderBottom: `1px solid ${border}`, background: '#fff',
+                    }}>
+                      <span style={{
+                        fontSize: 10, fontWeight: 500, letterSpacing: '0.22em',
+                        textTransform: 'uppercase', color: textMuted,
+                      }}>תצוגה חיה ללקוח</span>
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        <button
+                          onClick={() => setPreviewRefreshKey(k => k + 1)}
+                          aria-label="רענן תצוגה"
+                          style={{
+                            padding: '4px 10px', borderRadius: 2,
+                            background: 'transparent', border: `1px solid ${border}`,
+                            color: textMuted, cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
+                          }}
+                        >רענן</button>
+                        <button
+                          onClick={() => setShowSidePreview(false)}
+                          aria-label="הסתר תצוגה"
+                          title="הסתר תצוגה"
+                          style={{
+                            padding: '4px 8px', borderRadius: 2,
+                            background: 'transparent', border: `1px solid ${border}`,
+                            color: textMuted, cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: 10,
+                          }}
+                        >✕</button>
+                      </div>
+                    </div>
+                    <iframe
+                      key={previewRefreshKey}
+                      src={(() => {
+                        const u = galleryShareUrl(editingGallery)
+                        return `${u}${u.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
+                      })()}
+                      title="תצוגה חיה של הגלריה"
+                      style={{
+                        display: 'block', width: '100%', flex: 1,
+                        border: 'none', background: bgSubtle, minHeight: 0,
+                      }}
+                    />
+                  </aside>
+                )}
+                </div>
+                )
+                })()}
               </div>
             </div>
 
