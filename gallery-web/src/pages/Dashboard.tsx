@@ -186,6 +186,27 @@ export function Dashboard() {
     setUnpublishedChanges(true)
     setPreviewRefreshKey(k => k + 1)
   }
+  // Multi-key variant of updateGallerySetting — used when one user action
+  // logically writes several keys at once (e.g. cover selection writing both
+  // the canonical storage path and the legacy URL fallback in the same patch).
+  // One DB round-trip, one optimistic UI update, one rollback path.
+  async function updateGallerySettings(patch: Record<string, unknown>) {
+    if (!editingGallery) return
+    const prevSettings = editingGallery.delivery_settings || {}
+    const nextSettings = { ...prevSettings, ...patch }
+    setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
+    markDirty()
+    const { error } = await supabase
+      .from('galleries')
+      .update({ delivery_settings: nextSettings })
+      .eq('id', editingGallery.id)
+    if (error) {
+      setEditingGallery(g => g && g.id === editingGallery.id
+        ? { ...g, delivery_settings: prevSettings } : g)
+      showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
+      console.warn('[updateGallerySettings]', patch, error)
+    }
+  }
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number; description?: string | null }>>([])
   const [newSectionName, setNewSectionName] = useState('')
   const [newSectionDesc, setNewSectionDesc] = useState('')
@@ -4167,8 +4188,8 @@ export function Dashboard() {
                               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                             }}>
                               <span>תמונת שער · ראש הגלריה</span>
-                              {ds.coverImageUrl && (
-                                <button onClick={() => updateGallerySetting('coverImageUrl', null)} style={{
+                              {(ds.coverImageUrl || ds.coverImagePath) && (
+                                <button onClick={() => updateGallerySettings({ coverImageUrl: null, coverImagePath: null })} style={{
                                   background: 'transparent', border: 'none', cursor: 'pointer',
                                   color: textMuted, fontFamily: 'inherit',
                                   fontSize: 9, fontWeight: 500, letterSpacing: '0.18em',
@@ -4222,10 +4243,24 @@ export function Dashboard() {
                             }}>
                               {galleryImages.slice(0, 48).map(img => {
                                 const url = imgUrl(img.storage_path)
-                                const isCover = ds.coverImageUrl === url
+                                // Prefer the canonical storage_path comparison
+                                // — the URL form drifts when buckets switch from
+                                // public to signed URLs or when VITE_SUPABASE_URL
+                                // changes per env. Fall back to URL match so
+                                // legacy galleries (no coverImagePath yet) still
+                                // highlight the right tile.
+                                const isCover =
+                                  (ds.coverImagePath as string | undefined) === img.storage_path
+                                  || ds.coverImageUrl === url
                                 return (
                                   <button key={img.id}
-                                    onClick={() => updateGallerySetting('coverImageUrl', url)}
+                                    onClick={() => updateGallerySettings({
+                                      // Path is the new canonical value; URL
+                                      // is dual-written for backward compat
+                                      // until the viewer migrates (Phase 6).
+                                      coverImagePath: img.storage_path,
+                                      coverImageUrl: url,
+                                    })}
                                     aria-label={isCover ? 'תמונת שער נוכחית' : 'הגדר כתמונת שער'}
                                     style={{
                                       padding: 0, border: 'none', background: 'transparent',
