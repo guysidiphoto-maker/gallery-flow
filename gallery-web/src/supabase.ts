@@ -15,11 +15,11 @@ export function storageUrl(bucket: string, path: string): string {
  * transformed once and then served from the edge. Used to emit a responsive
  * <img srcset> so phones download ~16KB instead of the ~74KB stored thumb.
  *
- * `format=auto` lets the Smart CDN inspect the browser's Accept header and
- * negotiate the smallest supported encoding (AVIF → WebP → JPEG). AVIF/WebP
- * typically shrink the per-image payload another 30-50% vs. JPEG at the same
- * visual quality, which compounds with the responsive srcset to cut LCP
- * bytes on mobile dramatically.
+ * Format negotiation happens implicitly via the browser's Accept header —
+ * passing an explicit `format=` value to Supabase render is currently only
+ * supported for `origin` and any other value returns 400 (every image broke
+ * when we tried `format=auto`). Modern browsers already advertise AVIF/WebP
+ * in Accept, so the CDN can pick the best encoding without us asking.
  */
 export function renderUrl(
   bucket: string,
@@ -31,5 +31,5 @@ export function renderUrl(
   // Supabase keeps the source HEIGHT — a 1600×1068 photo came back 640×1068
   // (distorted/squarish). `contain` scales proportionally to the width,
   // preserving the real aspect ratio (→ 640×427).
-  return `${SUPABASE_URL}/storage/v1/render/image/public/${bucket}/${path}?width=${width}&quality=${quality}&resize=contain&format=auto`
+  return `${SUPABASE_URL}/storage/v1/render/image/public/${bucket}/${path}?width=${width}&quality=${quality}&resize=contain`
 }
