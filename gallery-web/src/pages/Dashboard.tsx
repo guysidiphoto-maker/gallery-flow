@@ -8,6 +8,7 @@ import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import { useToast } from '../components/Toast'
 
 interface Gallery {
   id: string
@@ -122,6 +123,7 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
 
 export function Dashboard() {
   const { user, loading } = useAuth()
+  const { showToast, ToastContainer } = useToast()
   const [galleries, setGalleries] = useState<Gallery[]>([])
   // Cover-image fallback map — gallery_id → first image URL. Filled in by a
   // useEffect after galleries load. The desktop uploader doesn't set
@@ -803,9 +805,64 @@ export function Dashboard() {
 
   async function updateGallerySetting(key: string, value: unknown) {
     if (!editingGallery) return
-    const settings = { ...(editingGallery.delivery_settings || {}), [key]: value }
-    await supabase.from('galleries').update({ delivery_settings: settings }).eq('id', editingGallery.id)
-    setEditingGallery({ ...editingGallery, delivery_settings: settings })
+    const prevSettings = editingGallery.delivery_settings || {}
+    const nextSettings = { ...prevSettings, [key]: value }
+    // Optimistic: reflect the change immediately so the UI feels live.
+    setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
+    const { error } = await supabase
+      .from('galleries')
+      .update({ delivery_settings: nextSettings })
+      .eq('id', editingGallery.id)
+    if (error) {
+      // Roll back to the pre-change value so the UI stops lying to the user.
+      setEditingGallery(g => g && g.id === editingGallery.id
+        ? { ...g, delivery_settings: prevSettings } : g)
+      showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
+      console.warn('[updateGallerySetting]', key, error)
+    }
+  }
+
+  // Renaming the gallery touches two places: the canonical `galleries.name`
+  // column (what the dashboard list + editor header read), and the legacy
+  // `delivery_settings.galleryTitle` JSONB key (what the public viewer reads).
+  // Until the schema is unified (Phase 6) we write both in one round-trip so
+  // the rename stays consistent across surfaces.
+  async function renameGalleryTitle(newTitle: string) {
+    if (!editingGallery) return
+    const prevSettings = editingGallery.delivery_settings || {}
+    const prevName = editingGallery.name
+    const nextSettings = { ...prevSettings, galleryTitle: newTitle }
+    setEditingGallery({ ...editingGallery, name: newTitle, delivery_settings: nextSettings })
+    setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: newTitle } : g))
+    const { error } = await supabase
+      .from('galleries')
+      .update({ name: newTitle, delivery_settings: nextSettings })
+      .eq('id', editingGallery.id)
+    if (error) {
+      setEditingGallery(g => g && g.id === editingGallery.id
+        ? { ...g, name: prevName, delivery_settings: prevSettings } : g)
+      setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: prevName } : g))
+      showToast({ kind: 'error', text: 'שמירת הכותרת נכשלה. נסה שוב.' })
+      console.warn('[renameGalleryTitle]', error)
+    }
+  }
+
+  // Delete the entire gallery — sections + images cascade via FK (migration
+  // 042). Storage objects are left for orphan reconciliation. Confirms with a
+  // native dialog for now; Phase 3 replaces all native confirms with a styled
+  // modal.
+  async function deleteGallery(g: Gallery) {
+    const photoCountTxt = (g.image_count ?? 0).toLocaleString('he-IL')
+    if (!confirm(`למחוק את הגלריה "${g.name}" ואת ${photoCountTxt} התמונות שבה לצמיתות? לא ניתן לבטל.`)) return
+    const { error } = await supabase.from('galleries').delete().eq('id', g.id)
+    if (error) {
+      showToast({ kind: 'error', text: 'מחיקת הגלריה נכשלה. נסה שוב.' })
+      console.warn('[deleteGallery]', error)
+      return
+    }
+    setGalleries(prev => prev.filter(x => x.id !== g.id))
+    if (editingGallery?.id === g.id) setEditingGallery(null)
+    showToast({ kind: 'success', text: `הגלריה "${g.name}" נמחקה.` })
   }
 
   // ── Custom domain helpers ──────────────────────────────────────────────────
@@ -911,8 +968,19 @@ export function Dashboard() {
 
   async function publishGallery() {
     if (!editingGallery) return
-    await supabase.from('galleries').update({ status: 'live', published_at: new Date().toISOString() }).eq('id', editingGallery.id)
-    setEditingGallery({ ...editingGallery, status: 'live', published_at: new Date().toISOString() })
+    const wasLive = editingGallery.status === 'live' || editingGallery.status === 'published'
+    const publishedAt = new Date().toISOString()
+    const { error } = await supabase
+      .from('galleries')
+      .update({ status: 'live', published_at: publishedAt })
+      .eq('id', editingGallery.id)
+    if (error) {
+      showToast({ kind: 'error', text: 'הפרסום נכשל. נסה שוב.' })
+      console.warn('[publishGallery]', error)
+      return
+    }
+    setEditingGallery({ ...editingGallery, status: 'live', published_at: publishedAt })
+    showToast({ kind: 'success', text: wasLive ? 'הגלריה עודכנה ושודרה ללקוח' : 'הגלריה פורסמה ✓' })
 
     // Pre-warm the CDN edge so the first guest gets cached (~50ms) thumbnails
     // instead of the slow (~1.5s) cold-origin path. Fire-and-forget.
@@ -1148,45 +1216,56 @@ export function Dashboard() {
     )
   }
 
-  /* ---------- Sign-in screen ---------- */
+  /* ---------- Sign-in screen ----------
+     Editorial-minimal. No gradients, no squircle icons, no drop-shadowed pill
+     buttons. Cream canvas + tracked uppercase wordmark + hairline rule + an
+     outlined dark CTA that inverts on hover — the same vocabulary as the rest
+     of the dashboard. */
   if (!user) {
     return (
       <div style={{
-        background: `radial-gradient(ellipse at 50% 0%, rgba(45,196,121,.08) 0%, ${bg} 60%)`,
-        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'inherit', direction: 'rtl',
+        background: bg, minHeight: '100vh',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'inherit', direction: 'rtl', padding: 24,
       }}>
-        <div style={{
-          textAlign: 'center', maxWidth: 440, padding: 48,
-          animation: 'fadeInUp .5s ease both',
-        }}>
+        <div style={{ textAlign: 'center', maxWidth: 420, width: '100%' }}>
           <div style={{
-            width: 80, height: 80, borderRadius: 24, margin: '0 auto 24px',
-            background: `linear-gradient(135deg, ${accent}, #a78bfa)`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 36, boxShadow: `0 8px 32px ${accentGlow}`,
+            fontSize: 11, fontWeight: 500, letterSpacing: '0.32em',
+            textTransform: 'uppercase', color: textMuted, marginBottom: 28,
           }}>
-            📸
+            Pixflow
           </div>
-          <h1 style={{ color: textPrimary, fontSize: 32, fontWeight: 800, marginBottom: 12, letterSpacing: '-0.02em' }}>
-            ברוכים הבאים ל-Pixflow
+          <div style={{ width: 28, height: 1, background: border, margin: '0 auto 28px' }} />
+          <h1 style={{
+            fontFamily: 'inherit', fontSize: 28, fontWeight: 400,
+            color: textPrimary, letterSpacing: '-0.015em', lineHeight: 1.2,
+            margin: '0 0 14px',
+          }}>
+            כניסה לחשבון
           </h1>
-          <p style={{ color: textSecondary, fontSize: 16, marginBottom: 40, lineHeight: 1.7 }}>
-            התחברו כדי לנהל את הגלריות שלכם
+          <p style={{
+            fontSize: 13, color: textSecondary, lineHeight: 1.6,
+            margin: '0 0 40px',
+          }}>
+            ניהול הגלריות, פרסום ושיתוף עם הלקוחות.
           </p>
           <button
             onClick={signInWithGoogle}
+            onMouseEnter={(e) => { e.currentTarget.style.background = textPrimary; e.currentTarget.style.color = '#fff' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = textPrimary }}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: 12,
-              background: '#fff', color: '#1a1a2e', border: 'none', borderRadius: 14,
-              padding: '16px 36px', fontSize: 16, fontWeight: 600, cursor: 'pointer',
-              fontFamily: 'inherit', transition: 'transform .15s, box-shadow .15s',
-              boxShadow: '0 4px 16px rgba(0,0,0,.3)',
+              display: 'inline-flex', alignItems: 'center', gap: 10,
+              background: 'transparent', color: textPrimary,
+              border: `1px solid ${textPrimary}`, borderRadius: 2,
+              padding: '14px 30px', fontSize: 11, fontWeight: 500,
+              cursor: 'pointer', fontFamily: 'inherit',
+              letterSpacing: '0.18em', textTransform: 'uppercase',
+              transition: 'background .15s, color .15s',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,.4)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,.3)'; }}
           >
-            <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59a14.5 14.5 0 010-9.18l-7.98-6.19a24.08 24.08 0 000 21.56l7.98-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+            <svg width="13" height="13" viewBox="0 0 48 48" aria-hidden="true" fill="currentColor">
+              <path d="M44.5 20H24v8.5h11.8C34.7 33.9 30 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/>
+            </svg>
             התחברות עם Google
           </button>
         </div>
@@ -1218,6 +1297,9 @@ export function Dashboard() {
       direction: 'rtl', color: textPrimary,
       display: 'flex',
     }}>
+      {/* In-app toasts (replaces silent alert() / vanished error states). */}
+      <ToastContainer />
+
       {/* ======= Sidebar ======= */}
       {/* Mobile backdrop — visible only when the drawer is open under 900px */}
       {sidebarOpen && (
@@ -1725,6 +1807,32 @@ export function Dashboard() {
                         <Icon name="photo" size={36} strokeWidth={1.2} />
                       </div>
                     )}
+                    {/* Destructive: delete the gallery. Visible on hover for
+                        every gallery (live + draft) so abandoned tests can be
+                        cleaned up. Native confirm() for now; Phase 3 swaps for
+                        a styled modal. */}
+                    {isHovered && (
+                      <div style={{
+                        position: 'absolute', top: 12, insetInlineEnd: 12,
+                      }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); void deleteGallery(g) }}
+                          title="מחק גלריה"
+                          aria-label="מחק גלריה"
+                          style={{
+                            width: 34, height: 34, borderRadius: 2,
+                            background: 'rgba(255,255,255,.96)',
+                            border: `1px solid rgba(20,20,19,.08)`,
+                            color: '#c0392b', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            backdropFilter: 'blur(8px)',
+                            boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+                          }}
+                        >
+                          <Icon name="trash" size={14} strokeWidth={1.85} />
+                        </button>
+                      </div>
+                    )}
                     {/* Hover action row — only on live galleries */}
                     {isLive && isHovered && (
                       <div style={{
@@ -1890,14 +1998,38 @@ export function Dashboard() {
                     <Icon name="arrow-out" size={13} strokeWidth={1.85} />
                     Preview
                   </a>
-                  {editingGallery.status !== 'live' && (
-                    <button onClick={publishGallery} style={{
-                      padding: '10px 22px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-                      background: textPrimary, border: `1px solid ${textPrimary}`,
-                      color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
-                      letterSpacing: '0.18em', textTransform: 'uppercase',
-                    }}>Publish</button>
+                  {/* Copy share link — useful right after the first publish too. */}
+                  {isLiveStatus && (
+                    <button
+                      onClick={() => {
+                        const url = galleryShareUrl(editingGallery)
+                        navigator.clipboard.writeText(url).then(
+                          () => showToast({ kind: 'success', text: 'הקישור הועתק ✓' }),
+                          () => showToast({ kind: 'error', text: 'לא הצלחנו להעתיק. העתק ידנית מהדפדפן.' }),
+                        )
+                        void warmGalleryCache(editingGallery.id)
+                      }}
+                      style={{
+                        padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                        background: 'transparent', border: `1px solid ${border}`, color: textPrimary,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        letterSpacing: '0.18em', textTransform: 'uppercase',
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                      }}
+                    >
+                      <Icon name="copy" size={13} strokeWidth={1.85} />
+                      Copy Link
+                    </button>
                   )}
+                  {/* Publish OR Update — always visible. Drafts get "Publish",
+                      live galleries get "Update" so the photographer always has
+                      a clear "push my changes" action and visual confirmation. */}
+                  <button onClick={publishGallery} style={{
+                    padding: '10px 22px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                    background: textPrimary, border: `1px solid ${textPrimary}`,
+                    color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                  }}>{isLiveStatus ? 'Update' : 'Publish'}</button>
                 </div>
               </div>
 
@@ -3875,7 +4007,7 @@ export function Dashboard() {
                           <input
                             type="text"
                             value={(ds.galleryTitle as string) || editingGallery.name}
-                            onChange={e => updateGallerySetting('galleryTitle', e.target.value)}
+                            onChange={e => renameGalleryTitle(e.target.value)}
                             style={inputBase}
                             onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
                             onBlur={e => { e.currentTarget.style.borderColor = border }}
@@ -3889,6 +4021,19 @@ export function Dashboard() {
                             onChange={e => updateGallerySetting('clientName', e.target.value)}
                             placeholder="לדוגמה: יוסי ומיכל"
                             style={inputBase}
+                            onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
+                            onBlur={e => { e.currentTarget.style.borderColor = border }}
+                          />
+                        </label>
+                        <label style={{ display: 'block' }}>
+                          <span style={{ ...labelStyle }}>תיאור האלבום</span>
+                          <textarea
+                            value={(ds.galleryDescription as string) || ''}
+                            onChange={e => updateGallerySetting('galleryDescription', e.target.value)}
+                            placeholder="טקסט קצר שמופיע ללקוח על הגלריה — מקום, סיפור, הוקרה."
+                            rows={3}
+                            maxLength={500}
+                            style={{ ...inputBase, resize: 'vertical' as const, minHeight: 72, fontFamily: 'inherit', lineHeight: 1.45 }}
                             onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
                             onBlur={e => { e.currentTarget.style.borderColor = border }}
                           />
@@ -4212,24 +4357,30 @@ export function Dashboard() {
             <div style={{
               display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12,
             }}>
-              {[
-                { email: 'demo@example.com', count: 24, date: '21.04.2026' },
-                { email: 'guest@gmail.com', count: 12, date: '20.04.2026' },
-                { email: 'couple@mail.com', count: 48, date: '19.04.2026' },
-              ].map((d, i) => (
+              {/* Placeholder rows for the upcoming "download tracking" feature.
+                  Visually mocked with skeleton bars instead of fake emails — so
+                  the photographer can't mistake them for real activity. */}
+              {[0, 1, 2].map((i) => (
                 <div key={i} style={{
                   padding: '14px 16px', borderRadius: 12,
                   background: 'rgba(255,255,255,.02)', border: `1px solid rgba(0,0,0,.03)`,
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  opacity: 0.55,
                 }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: textPrimary, marginBottom: 2 }}>{d.email}</div>
-                    <div style={{ fontSize: 10, color: textMuted }}>{d.date}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      height: 10, width: '60%', borderRadius: 4,
+                      background: border, marginBottom: 6,
+                    }} />
+                    <div style={{
+                      height: 8, width: '30%', borderRadius: 4,
+                      background: border,
+                    }} />
                   </div>
                   <div style={{
-                    fontSize: 16, fontWeight: 800, color: accentLight,
-                    background: 'rgba(45,196,121,.1)', padding: '4px 10px', borderRadius: 8,
-                  }}>{d.count}</div>
+                    height: 22, width: 36, borderRadius: 8,
+                    background: 'rgba(45,196,121,.1)',
+                  }} />
                 </div>
               ))}
             </div>
