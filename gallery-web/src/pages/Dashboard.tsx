@@ -145,8 +145,9 @@ export function Dashboard() {
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number }>>([])
   const [newSectionName, setNewSectionName] = useState('')
   const [newSectionDesc, setNewSectionDesc] = useState('')
-  // Sidebar Set behavior: active filter (null = "All photos"), inline-rename
-  // target, and the "+ Add Set" modal toggle. Mirrors Pixieset's pattern.
+  // Sidebar Set behavior: the active section (null only for an empty gallery
+  // with no sections yet), inline-rename target, and the "+ Add Set" modal
+  // toggle. Every photo belongs to a section — there is no "all photos" view.
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null)
   const [sectionMenuOpenId, setSectionMenuOpenId] = useState<string | null>(null)
@@ -482,8 +483,36 @@ export function Dashboard() {
         .eq('gallery_id', g.id)
         .order('created_at', { ascending: true }),
     ])
-    setGalleryImages(imagesRes.data ?? [])
-    setSections(sectionsRes.data ?? [])
+    const imgs = imagesRes.data ?? []
+    let secs = sectionsRes.data ?? []
+
+    // New model: every photo belongs to a section (no "all photos" catch-all).
+    // Self-heal legacy/loose photos — any image without a section gets folded
+    // into the first section (creating one if the gallery has none) so nothing
+    // is hidden now that the All-Photos view is gone.
+    const loose = imgs.filter(i => i.section_id == null)
+    if (loose.length > 0) {
+      let target = secs[0]
+      if (!target) {
+        const { data } = await supabase
+          .from('gallery_sections')
+          .insert({ gallery_id: g.id, name: 'סקשן 1', sort_order: 0 })
+          .select('id, name, sort_order')
+          .single()
+        if (data) { secs = [data]; target = data }
+      }
+      if (target) {
+        await supabase.from('images')
+          .update({ section_id: target.id })
+          .eq('gallery_id', g.id)
+          .is('section_id', null)
+        loose.forEach(i => { i.section_id = target!.id })
+      }
+    }
+
+    setGalleryImages(imgs)
+    setSections(secs)
+    setActiveSectionId(secs[0]?.id ?? null)
     setStories(storiesRes.data ?? [])
   }
 
@@ -506,6 +535,28 @@ export function Dashboard() {
     if (data) setActiveSectionId(data.id)
   }
 
+  // Every upload belongs to a section — there is no "all photos" catch-all.
+  // If no section is active yet (e.g. a brand-new gallery), create a default
+  // one on the fly so the first upload still works without forcing the user
+  // to make a set first. Returns the section the new photos should land in.
+  async function ensureUploadSection(): Promise<string | null> {
+    if (activeSectionId) return activeSectionId
+    if (!editingGallery) return null
+    const { data, error } = await supabase
+      .from('gallery_sections')
+      .insert({
+        gallery_id: editingGallery.id,
+        name: `סקשן ${sections.length + 1}`,
+        sort_order: sections.length,
+      })
+      .select('id, name, sort_order')
+      .single()
+    if (error) { alert('שגיאה ביצירת סקשן: ' + error.message); return null }
+    setSections(prev => [...prev, data])
+    setActiveSectionId(data.id)
+    return data.id
+  }
+
   async function renameSection(id: string, name: string) {
     const trimmed = name.trim()
     if (!trimmed) return
@@ -515,12 +566,33 @@ export function Dashboard() {
   }
 
   async function deleteSection(id: string) {
-    if (!confirm('למחוק את הקטע? התמונות שבתוכו יישארו בגלריה.')) return
-    // First unset section_id on images so they don't disappear from the gallery
-    await supabase.from('images').update({ section_id: null }).eq('section_id', id)
+    if (!editingGallery) return
+    // Each section is a self-contained gallery: deleting it permanently
+    // deletes every photo inside it (matching bulkDeleteSelected's row-delete
+    // + image_count update). Photos are NOT moved elsewhere.
+    const section = sections.find(s => s.id === id)
+    const photoIds = galleryImages.filter(i => i.section_id === id).map(i => i.id)
+    const msg = photoIds.length > 0
+      ? `למחוק את הסקשן "${section?.name ?? ''}" ואת ${photoIds.length} התמונות שבו? פעולה זו לא ניתנת לביטול.`
+      : `למחוק את הסקשן "${section?.name ?? ''}"?`
+    if (!confirm(msg)) return
+    if (photoIds.length > 0) {
+      const { error: imgErr } = await supabase.from('images').delete().in('id', photoIds)
+      if (imgErr) { alert('שגיאה במחיקת התמונות: ' + imgErr.message); return }
+    }
     const { error } = await supabase.from('gallery_sections').delete().eq('id', id)
     if (error) { alert('שגיאה: ' + error.message); return }
+    setGalleryImages(prev => prev.filter(i => i.section_id !== id))
     setSections(prev => prev.filter(s => s.id !== id))
+    if (activeSectionId === id) {
+      setActiveSectionId(sections.find(s => s.id !== id)?.id ?? null)
+    }
+    if (photoIds.length > 0) {
+      await supabase.from('galleries')
+        .update({ image_count: Math.max(0, galleryImages.length - photoIds.length) })
+        .eq('id', editingGallery.id)
+    }
+    fetchGalleries()
   }
 
   async function handleFileUpload(files: FileList | null) {
@@ -532,6 +604,8 @@ export function Dashboard() {
       setShowBuyTokens(true)
       return
     }
+    // Photos land in the active section (or a freshly-created default one).
+    const targetSectionId = await ensureUploadSection()
     setUploading(true)
     setUploadBatch({ completed: 0, total: files.length, failed: 0 })
     const result = await uploadMany(
@@ -539,6 +613,7 @@ export function Dashboard() {
       {
         galleryId: editingGallery.id,
         businessSlug,
+        sectionId: targetSectionId,
         sortOrder: galleryImages.length,
       },
       (b) => setUploadBatch(b),
@@ -557,7 +632,7 @@ export function Dashboard() {
     fetchTokenBalance()
     const { data } = await supabase
       .from('images')
-      .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order')
+      .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order, section_id')
       .eq('gallery_id', editingGallery.id)
       .order('sort_order', { ascending: true })
     setGalleryImages(data ?? [])
@@ -1919,24 +1994,6 @@ export function Dashboard() {
                       </button>
                     </div>
 
-                    {/* "All photos" — pseudo-section that ignores section_id. */}
-                    <button onClick={() => setActiveSectionId(null)} style={{
-                      width: '100%', textAlign: 'right' as const,
-                      padding: '10px 12px', borderRadius: 2,
-                      background: activeSectionId === null ? bgSubtle : 'transparent',
-                      border: 'none', cursor: 'pointer',
-                      fontFamily: 'inherit', fontSize: 13,
-                      fontWeight: activeSectionId === null ? 600 : 500,
-                      color: textPrimary,
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      transition: 'background .15s',
-                    }}>
-                      <span>כל התמונות</span>
-                      <span style={{ color: textMuted, fontSize: 12, fontWeight: 400 }}>
-                        {galleryImages.length}
-                      </span>
-                    </button>
-
                     {/* Sets — drag handle, name (or rename input), count, "..." menu */}
                     {sections.map(s => {
                       const isActive = activeSectionId === s.id
@@ -2066,7 +2123,7 @@ export function Dashboard() {
                             fontSize: 22, fontWeight: 500, margin: 0,
                             letterSpacing: '-0.015em', color: textPrimary,
                           }}>
-                            {activeSec ? activeSec.name : 'כל התמונות'}
+                            {activeSec ? activeSec.name : 'תמונות'}
                             <span style={{
                               marginInlineStart: 12, color: textMuted,
                               fontSize: 14, fontWeight: 400,
@@ -2418,12 +2475,6 @@ export function Dashboard() {
                                         padding: '8px 10px 4px', fontSize: 9, fontWeight: 500,
                                         letterSpacing: '0.18em', textTransform: 'uppercase', color: textMuted,
                                       }}>העבר לסט</div>
-                                      <button onClick={() => { moveImageToSection(img.id, null); setImageMenuOpenId(null) }} style={{
-                                        width: '100%', textAlign: 'right' as const, padding: '8px 10px',
-                                        background: img.section_id === null ? bgSubtle : 'transparent',
-                                        border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                                        fontSize: 12, color: textPrimary,
-                                      }}>ללא סט</button>
                                       {sections.map(s => (
                                         <button key={s.id}
                                           onClick={() => { moveImageToSection(img.id, s.id); setImageMenuOpenId(null) }}
