@@ -156,7 +156,9 @@ export function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
-  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome' | 'stories' | 'preview'>('photos')
+  // 'sections' removed (was a redundant editor tab — sections live in the
+  // Photos-tab sidebar). 'preview' is Phase 5's Live Preview iframe.
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'welcome' | 'stories' | 'preview'>('photos')
   // Live Preview pane — Phase 5. The iframe's src includes ?v=${previewRefreshKey}
   // so bumping this number forces React to swap the iframe DOM node, which
   // triggers a fresh navigation (sidestepping aggressive browser/CDN caches).
@@ -2221,7 +2223,9 @@ export function Dashboard() {
                   }}>
                     {([
                       { id: 'photos' as const,     icon: 'photo'     as IconName, label: 'תמונות' },
-                      { id: 'sections' as const,   icon: 'sections'  as IconName, label: 'קטעים' },
+                      // Sections tab removed — sections are managed inline in
+                      // the Photos tab's sidebar (add / rename / delete / drag-
+                      // reorder), so a dedicated tab was redundant.
                       { id: 'stories' as const,    icon: 'stories'   as IconName, label: 'סטוריז' },
                       { id: 'welcome' as const,    icon: 'palette'   as IconName, label: 'עיצוב' },
                       { id: 'preview' as const,    icon: 'arrow-out' as IconName, label: 'תצוגה חיה' },
@@ -2900,98 +2904,9 @@ export function Dashboard() {
                   </div>
                 )}
 
-                {/* ── Sections Tab ── */}
-                {editTab === 'sections' && (
-                  <div style={{ padding: '0 4px' }}>
-                    <p style={{ fontSize: 13, color: textSecondary, marginBottom: 22, lineHeight: 1.6 }}>
-                      ארגן את הגלריה לקטעים — "יום 1", "טקס", "רחבה" — והאורחים יוכלו לדפדף ביניהם בקלות.
-                    </p>
-
-                    {/* Add new section */}
-                    <div style={{
-                      display: 'flex', gap: 10, marginBottom: 22,
-                      padding: '14px 16px', borderRadius: 14,
-                      background: card, border: `1px solid ${border}`,
-                    }}>
-                      <input
-                        type="text"
-                        value={newSectionName}
-                        onChange={e => setNewSectionName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') addSection() }}
-                        placeholder="שם קטע חדש (למשל: יום 1)"
-                        style={{
-                          flex: 1, padding: '10px 14px', borderRadius: 10,
-                          background: 'rgba(0,0,0,.03)', border: `1px solid ${border}`,
-                          color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
-                        }}
-                      />
-                      <button
-                        onClick={addSection}
-                        disabled={!newSectionName.trim()}
-                        style={{
-                          padding: '10px 20px', borderRadius: 10,
-                          background: newSectionName.trim()
-                            ? `linear-gradient(135deg, ${accent}, ${accentLight})`
-                            : 'rgba(45,196,121,.4)',
-                          border: 'none', color: '#fff', fontSize: 13, fontWeight: 600,
-                          cursor: newSectionName.trim() ? 'pointer' : 'not-allowed',
-                          fontFamily: 'inherit', transition: 'all .15s',
-                        }}
-                      >
-                        הוסף
-                      </button>
-                    </div>
-
-                    {/* Sections list */}
-                    {sections.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '52px 20px', color: textMuted }}>
-                        <div style={{ marginBottom: 14, color: textMuted, opacity: 0.55, display: 'flex', justifyContent: 'center' }}>
-                          <Icon name="sections" size={36} strokeWidth={1.4} />
-                        </div>
-                        <div style={{ fontSize: 14 }}>עדיין אין קטעים. הוסף את הקטע הראשון למעלה.</div>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {sections.map(s => (
-                          <div key={s.id} style={{
-                            display: 'flex', alignItems: 'center', gap: 12,
-                            padding: '12px 16px', borderRadius: 12,
-                            background: card, border: `1px solid ${border}`,
-                            transition: 'border-color .15s',
-                          }}>
-                            <span style={{ color: textMuted, display: 'inline-flex' }}>
-                              <Icon name="sections" size={16} strokeWidth={1.85} />
-                            </span>
-                            <input
-                              type="text"
-                              defaultValue={s.name}
-                              onBlur={e => { if (e.target.value.trim() && e.target.value.trim() !== s.name) renameSection(s.id, e.target.value) }}
-                              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                              style={{
-                                flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                                color: textPrimary, fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
-                                padding: '4px 0',
-                              }}
-                            />
-                            <button
-                              onClick={() => deleteSection(s.id)}
-                              title="מחק"
-                              style={{
-                                background: 'transparent', border: `1px solid ${border}`, borderRadius: 8,
-                                color: '#fca5a5', padding: '6px 10px', fontSize: 12, cursor: 'pointer',
-                                fontFamily: 'inherit', transition: 'all .15s',
-                              }}
-                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,.35)' }}
-                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = border }}
-                            >
-                              מחק
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* Sections panel removed — duplicated the Photos-tab sidebar
+                    section list (add / rename / delete / drag-reorder), and
+                    the dashboard had no second-class section editor anymore. */}
 
                 {/* ── Stories Tab ── */}
                 {editTab === 'stories' && (
