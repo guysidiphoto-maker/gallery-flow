@@ -984,7 +984,14 @@ export function Dashboard() {
   // modal.
   async function deleteGallery(g: Gallery) {
     const photoCountTxt = (g.image_count ?? 0).toLocaleString('he-IL')
-    if (!confirm(`למחוק את הגלריה "${g.name}" ואת ${photoCountTxt} התמונות שבה לצמיתות? לא ניתן לבטל.`)) return
+    if (!(await confirm({
+      title: `למחוק את הגלריה "${g.name}"?`,
+      body: (g.image_count ?? 0) > 0
+        ? `${photoCountTxt} תמונות יימחקו לצמיתות. לא ניתן לבטל.`
+        : 'לא ניתן לבטל.',
+      confirmLabel: 'מחק את הגלריה',
+      danger: true,
+    }))) return
     const { error } = await supabase.from('galleries').delete().eq('id', g.id)
     if (error) {
       showToast({ kind: 'error', text: 'מחיקת הגלריה נכשלה. נסה שוב.' })
