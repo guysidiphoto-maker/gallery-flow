@@ -1387,7 +1387,10 @@ export function App() {
   // ── Resolve settings with backward-compatible defaults ──────────────────
   const raw: Partial<DeliverySettings> = (gallery.delivery_settings || {}) as Partial<DeliverySettings>
 
-  const accessType       = s(raw, 'accessType', 'public')
+  // Phase 6 Step 2: prefer typed column, fall back to JSONB during dual-read.
+  // gallery.access_type is the migrated source of truth; rawSettings.accessType
+  // remains populated by current writes until Step 4's RPC dual-writes both.
+  const accessType       = (gallery.access_type ?? s(raw, 'accessType', 'public')) as string
   const galleryTitle     = s(raw, 'galleryTitle', '') || gallery.name
   const clientName       = s(raw, 'clientName', '') || gallery.client_name
   const coverImageId     = s(raw, 'coverImageId', null)
@@ -1513,8 +1516,8 @@ export function App() {
           welcomeMessage={(rawSettings as Record<string, unknown>).welcomeMessage as string || ''}
           textAnimation={((rawSettings as Record<string, unknown>).welcomeTextAnimation as 'blur' | 'typewriter' | 'slide') || 'blur'}
           animationSpeed={((rawSettings as Record<string, unknown>).welcomeAnimationSpeed as 'slow' | 'normal' | 'fast') || 'normal'}
-          eventDate={rawSettings.eventDate || ''}
-          eventLocation={rawSettings.eventLocation || ''}
+          eventDate={(gallery.event_date ?? rawSettings.eventDate) || ''}
+          eventLocation={(gallery.event_location ?? rawSettings.eventLocation) || ''}
           clientName={clientName || ''}
           studioName={studioName}
           studioWebsite={studioWebsite}

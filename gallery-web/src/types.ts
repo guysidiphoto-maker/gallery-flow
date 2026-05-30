@@ -64,6 +64,14 @@ export interface Gallery {
   face_index_enabled?: boolean
   face_index_status?: 'pending' | 'indexing' | 'done' | 'failed' | null
   face_indexed_count?: number
+  // Phase 6 Step 2 — promoted typed columns. All nullable for the dual-read
+  // transition; reads prefer the column and fall back to delivery_settings.
+  // Writes still go through delivery_settings until Step 4's RPC lands.
+  event_date?: string | null
+  event_type?: string | null
+  event_location?: string | null
+  access_type?: 'public' | 'password' | 'code' | null
+  client_code_hash?: string | null
 }
 
 export interface GalleryImage {
