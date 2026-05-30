@@ -2330,7 +2330,7 @@ export function Dashboard() {
           </div>
         ) : (
           /* ======= Gallery grid ======= */
-          <div style={{
+          <div className="dash-gallery-grid" style={{
             display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 32,
           }}>
             {galleries.map((g, idx) => {
@@ -2526,6 +2526,7 @@ export function Dashboard() {
               role="dialog"
               aria-modal="true"
               aria-labelledby="gallery-editor-heading"
+              className="dash-editor-modal"
               style={{
                 background: bg,
                 width: 'calc(100vw - 32px)', maxWidth: 1440,
@@ -2537,11 +2538,13 @@ export function Dashboard() {
               {/* Editor header — name + status pill on the right (RTL),
                   Preview + Share/Publish on the left. Mirrors Pixieset's
                   rhythm exactly. */}
-              <div style={{
-                padding: '18px 32px', borderBottom: `1px solid ${border}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: bgSubtle,
-              }}>
+              <div
+                className="dash-editor-header"
+                style={{
+                  padding: '18px 32px', borderBottom: `1px solid ${border}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: bgSubtle,
+                }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                   <button onClick={() => setEditingGallery(null)} aria-label="חזרה" style={{
                     background: 'none', border: 'none', color: textSecondary, cursor: 'pointer',
@@ -2707,10 +2710,12 @@ export function Dashboard() {
               {/* Editor body — split layout. Sidebar holds cover preview +
                   vertical icon tabs (mirrors Pixieset). Main area holds the
                   active tab's content. RTL flow keeps the sidebar visually
-                  on the right side of the modal — natural for Hebrew users. */}
-              <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+                  on the right side of the modal — natural for Hebrew users.
+                  Below 900px (`.dash-editor-body` in styles.css) this stack
+                  flips to column so the sidebar becomes a slim top strip. */}
+              <div className="dash-editor-body" style={{ flex: 1, display: 'flex', minHeight: 0 }}>
                 {/* ── Sidebar ─────────────────────────────────── */}
-                <aside style={{
+                <aside className="dash-editor-sidebar" style={{
                   width: 260, flexShrink: 0,
                   borderInlineStart: `1px solid ${border}`,
                   background: bg,
@@ -3738,7 +3743,7 @@ export function Dashboard() {
                         </div>
                       </div>
                     ) : (
-                      <div style={{
+                      <div className="dash-stories-grid" style={{
                         display: 'grid',
                         gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
                         gap: 12,
@@ -4523,7 +4528,7 @@ export function Dashboard() {
                           </div>
 
                           {/* DNS record card */}
-                          <div style={{
+                          <div className="dash-dns-grid" style={{
                             background: '#fff',
                             border: `1px solid ${border}`,
                             padding: '14px 16px',
@@ -4759,7 +4764,7 @@ export function Dashboard() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
                         <div>
                           <div style={{ ...labelStyle }}>סגנון מסך פתיחה</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                          <div className="dash-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                             {([
                               { id: 'mosaic' as const,    label: 'מוזאיקה', desc: 'תמונות גוללות ברקע',           icon: 'sections' as IconName },
                               { id: 'cinematic' as const, label: 'קולנועי', desc: 'תמונת רקע עם אפקט זום',     icon: 'photo'    as IconName },
@@ -5265,6 +5270,7 @@ export function Dashboard() {
                   aria-modal="true"
                   aria-labelledby="add-set-heading"
                   onClick={e => e.stopPropagation()}
+                  className="dash-mobile-modal"
                   style={{
                     background: '#fff',
                     width: 'calc(100vw - 40px)', maxWidth: 480,
@@ -5340,7 +5346,7 @@ export function Dashboard() {
                     התיאור מוצג ללקוחות שלך כשהם רואים את הקטע הזה — מצוין לסטוריטלינג.
                   </p>
 
-                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <div className="dash-modal-actions" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                     <button onClick={() => setShowAddSetModal(false)} style={{
                       padding: '10px 22px', borderRadius: 2,
                       background: 'transparent', border: `1px solid ${border}`,
@@ -5538,7 +5544,7 @@ export function Dashboard() {
               }}>
                 סגנון מסך פתיחה
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              <div className="dash-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 {([
                   { value: 'mosaic' as const,    label: 'פסיפס',    icon: 'sections' as IconName },
                   { value: 'cinematic' as const, label: 'קולנועי', icon: 'photo'    as IconName },
@@ -5574,7 +5580,7 @@ export function Dashboard() {
               }}>
                 תצוגת פיד
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              <div className="dash-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 {([
                   { value: 'grid' as const,     label: 'רשת',     icon: 'gallery'  as IconName },
                   { value: 'masonry' as const,  label: 'אבן',     icon: 'sections' as IconName },
@@ -5662,7 +5668,7 @@ export function Dashboard() {
                   }}>
                     מצב פרטיות
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div className="dash-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     {([
                       { id: 'open' as const,    label: 'פתוח',  desc: 'כולם רואים את כל התמונות' },
                       { id: 'private' as const, label: 'פרטי',  desc: 'כל אורח רואה רק את התמונות שלו' },
@@ -5754,7 +5760,7 @@ export function Dashboard() {
               </div>
             ))}
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 32, justifyContent: 'flex-end' }}>
+            <div className="dash-modal-actions" style={{ display: 'flex', gap: 10, marginTop: 32, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setShowModal(false)}
                 style={{
@@ -5811,6 +5817,7 @@ export function Dashboard() {
                 aria-modal="true"
                 aria-labelledby="face-confirm-heading"
                 onClick={(e) => e.stopPropagation()}
+                className="dash-mobile-modal"
                 style={{
                   background: '#fff', width: 'calc(100vw - 40px)', maxWidth: 460,
                   padding: '36px 40px 32px',
@@ -5847,7 +5854,7 @@ export function Dashboard() {
                 }}>
                   ההעלאה תהיה איטית מעט יותר כי כל תמונה עוברת אינדוקס. אפשר להפעיל ולהשבית בכל רגע.
                 </div>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <div className="dash-modal-actions" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                   <button
                     onClick={() => setShowFaceConfirm(false)}
                     style={{
