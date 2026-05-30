@@ -956,34 +956,61 @@ export function Dashboard() {
   // bucket. The thumbs bucket is a known follow-up (see commit message).
   async function purgeStorageForImages(images: GalleryImage[]) {
     const paths = new Set<string>()
+    const thumbPaths = new Set<string>()
     for (const img of images) {
       if (img.storage_path) paths.add(img.storage_path)
-      if (img.thumbnail_path) paths.add(img.thumbnail_path)
+      if (img.thumbnail_path) {
+        paths.add(img.thumbnail_path)
+        // Phase 4.2 dual-writes thumbnails to the public bucket for crawlers /
+        // OG previews. Same key, different bucket — wipe both so the public
+        // bucket doesn't accrue orphans too.
+        thumbPaths.add(img.thumbnail_path)
+      }
       if (img.original_path) paths.add(img.original_path)
     }
-    if (paths.size === 0) return
-    const all = Array.from(paths)
+    if (paths.size === 0 && thumbPaths.size === 0) return
     // supabase-js storage.remove() accepts up to ~1000 paths per call;
     // 500 is a safe chunk size that leaves headroom for URL-length
     // limits and partial-failure reporting.
     const CHUNK = 500
-    for (let i = 0; i < all.length; i += CHUNK) {
-      const chunk = all.slice(i, i + CHUNK)
-      try {
-        const { error } = await supabase.storage.from('gallery-images').remove(chunk)
-        if (error) {
-          console.warn('[purgeStorageForImages] chunk remove failed', {
-            chunkSize: chunk.length,
-            error: error.message,
+    async function purgeBucket(bucket: string, all: string[]) {
+      for (let i = 0; i < all.length; i += CHUNK) {
+        const chunk = all.slice(i, i + CHUNK)
+        try {
+          const { error } = await supabase.storage.from(bucket).remove(chunk)
+          if (error) {
+            console.warn('[purgeStorageForImages] chunk remove failed', {
+              bucket, chunkSize: chunk.length, error: error.message,
+            })
+          }
+        } catch (e) {
+          console.warn('[purgeStorageForImages] chunk remove threw', {
+            bucket, chunkSize: chunk.length,
+            error: e instanceof Error ? e.message : String(e),
           })
         }
-      } catch (e) {
-        console.warn('[purgeStorageForImages] chunk remove threw', {
-          chunkSize: chunk.length,
-          error: e instanceof Error ? e.message : String(e),
-        })
       }
     }
+    await Promise.all([
+      purgeBucket('gallery-images', Array.from(paths)),
+      purgeBucket('gallery-images-thumbs-public', Array.from(thumbPaths)),
+    ])
+  }
+
+  // Helper for whole-gallery deletes that don't carry the per-image local
+  // state — selects all the gallery's image paths via the service-readable
+  // images.select(), then hands the list to purgeStorageForImages. Best-
+  // effort; never throws, never blocks the gallery delete itself.
+  async function purgeStorageForGallery(galleryId: string) {
+    const { data, error } = await supabase
+      .from('images')
+      .select('id, filename, storage_path:web_preview_path, thumbnail_path, original_path, is_top_pick, sort_order, section_id')
+      .eq('gallery_id', galleryId)
+    if (error || !data) {
+      console.warn('[purgeStorageForGallery] could not list images', error)
+      return
+    }
+    await purgeStorageForImages(data as GalleryImage[])
   }
 
   async function bulkDeleteSelected() {
