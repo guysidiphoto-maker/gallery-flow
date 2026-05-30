@@ -197,6 +197,11 @@ export function Dashboard() {
   // per-tile "..." menu.
   const [draggedImageId, setDraggedImageId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  // Section drag-reorder — mirrors the image-tile pattern but operates on the
+  // sidebar section list. Sort order persists to gallery_sections.sort_order
+  // and the row order updates optimistically as the user drags.
+  const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null)
+  const [sectionDragOverId, setSectionDragOverId] = useState<string | null>(null)
   // Design tab — Pixieset's pattern: 5 horizontal sub-tabs at the top of
   // the right pane. Cover holds the welcome screen + cover image picker;
   // Typography/Color/Grid/Nav write to delivery_settings JSONB so they
@@ -1254,6 +1259,36 @@ export function Dashboard() {
       console.warn('[reorderImage] failed ids', failedIds)
     }
   }
+  // Section drag-reorder — moves a dragged section before/at the position of
+  // the drop target, renumbers all sections with a 1000-step gap, and
+  // persists in parallel (Promise.allSettled so a single failed UPDATE
+  // surfaces instead of silently leaving the DB out of order).
+  async function reorderSection(draggedId: string, targetId: string) {
+    if (draggedId === targetId) return
+    const ordered = sections.slice().sort((a, b) => a.sort_order - b.sort_order)
+    const fromIdx = ordered.findIndex(s => s.id === draggedId)
+    const toIdx = ordered.findIndex(s => s.id === targetId)
+    if (fromIdx === -1 || toIdx === -1) return
+    const next = ordered.slice()
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    const idToOrder = new Map<string, number>()
+    next.forEach((sec, idx) => idToOrder.set(sec.id, idx * 1000))
+    setSections(prev => prev
+      .map(s => idToOrder.has(s.id) ? { ...s, sort_order: idToOrder.get(s.id)! } : s)
+      .sort((a, b) => a.sort_order - b.sort_order))
+    const results = await Promise.allSettled(next.map((sec, idx) =>
+      supabase.from('gallery_sections').update({ sort_order: idx * 1000 }).eq('id', sec.id)
+    ))
+    const failedIds = results
+      .map((r, i) => (r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error)) ? next[i].id : null)
+      .filter((x): x is string => x !== null)
+    if (failedIds.length > 0) {
+      showToast({ kind: 'error', text: `סידור ${failedIds.length} סקשנים לא נשמר. רענן את הגלריה.` })
+      console.warn('[reorderSection] failed ids', failedIds)
+    }
+  }
+
   // Keyboard alternative for drag-reorder. Moves the image one step up
   // or down within the visible list. Wired into the per-tile "..." menu
   // so screen reader / keyboard users get the same control as mouse users.
@@ -2217,12 +2252,43 @@ export function Dashboard() {
                       const count = (galleryImages as GalleryImage[]).filter(im => im.section_id === s.id).length
                       const isRenaming = renamingSectionId === s.id
                       const isMenuOpen = sectionMenuOpenId === s.id
+                      const isDragSource = draggedSectionId === s.id
+                      const isDropTarget = sectionDragOverId === s.id && draggedSectionId && draggedSectionId !== s.id
                       return (
-                        <div key={s.id} style={{
-                          position: 'relative',
-                          background: isActive ? bgSubtle : 'transparent',
-                          transition: 'background .15s',
-                        }}>
+                        <div
+                          key={s.id}
+                          draggable={!isRenaming}
+                          onDragStart={(e) => {
+                            if (isRenaming) return
+                            setDraggedSectionId(s.id)
+                            e.dataTransfer.effectAllowed = 'move'
+                            try { e.dataTransfer.setData('text/plain', s.id) } catch {}
+                          }}
+                          onDragOver={(e) => {
+                            if (!draggedSectionId || draggedSectionId === s.id) return
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                            if (sectionDragOverId !== s.id) setSectionDragOverId(s.id)
+                          }}
+                          onDragLeave={() => {
+                            if (sectionDragOverId === s.id) setSectionDragOverId(null)
+                          }}
+                          onDrop={(e) => {
+                            if (!draggedSectionId) return
+                            e.preventDefault()
+                            const src = draggedSectionId
+                            setDraggedSectionId(null); setSectionDragOverId(null)
+                            if (src && src !== s.id) void reorderSection(src, s.id)
+                          }}
+                          onDragEnd={() => { setDraggedSectionId(null); setSectionDragOverId(null) }}
+                          style={{
+                            position: 'relative',
+                            background: isDropTarget ? bgSubtle : (isActive ? bgSubtle : 'transparent'),
+                            opacity: isDragSource ? 0.4 : 1,
+                            transition: 'background .15s, opacity .15s',
+                            cursor: isRenaming ? 'text' : 'grab',
+                            borderTop: isDropTarget ? `1px solid ${textPrimary}` : '1px solid transparent',
+                          }}>
                           {/* Section row — select-section action (outer button)
                               and the three-dot menu (sibling button). Was
                               previously a button nested inside another button,
