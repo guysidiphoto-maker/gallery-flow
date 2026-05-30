@@ -21,6 +21,40 @@ import {
 } from './lib/galleryClient'
 import { logDownload, logBatchDownload } from './lib/activityLog'
 
+// ─── Phase 6 step 5 phase 2 — published-snapshot cutover flag ──────────────
+// When `VITE_USE_PUBLISHED_SNAPSHOT` is the string `'true'` AND the gallery
+// has a non-null `published_revision_id`, the viewer reads delivery_settings
+// + sections from the gallery_revisions snapshot (via the
+// `gallery_get_published_snapshot` RPC) instead of the live row. This lets
+// photographers edit a published gallery without leaking unpublished changes
+// to clients — the snapshot only updates when Publish is clicked.
+//
+// Default is OFF (legacy behaviour) so the rollback is a single env-var flip.
+// Image rows are intentionally NOT snapshotted: gallery_get_images still
+// returns the live image set, so photos uploaded post-publish remain visible.
+const USE_PUBLISHED_SNAPSHOT =
+  (import.meta.env.VITE_USE_PUBLISHED_SNAPSHOT as string | undefined) === 'true'
+
+interface PublishedSnapshot {
+  revision_id: string
+  revision_index: number
+  settings: Record<string, unknown> | null
+  section_data: Array<{
+    id: string
+    name: string
+    slug?: string | null
+    sort_order?: number | null
+    description?: string | null
+  }> | null
+  name: string | null
+  status: string | null
+  access_type: string | null
+  event_date: string | null
+  event_type: string | null
+  event_location: string | null
+  created_at: string
+}
+
 // ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
 
 function ScrollReveal({ children }: { children: React.ReactNode }) {
@@ -1105,9 +1139,68 @@ export function App() {
         .eq('gallery_id', id)
         .order('sort_order', { ascending: true }),
     ])
+
+    // ── Phase 6 step 5 phase 2 — snapshot override ─────────────────────────
+    // When the cutover flag is on AND the gallery has been published at least
+    // once, the viewer reads delivery_settings + sections from the immutable
+    // gallery_revisions snapshot instead of the live row. The photographer
+    // can keep editing the live row freely; clients see the last-published
+    // state until the next Publish writes a new revision.
+    //
+    // Fallbacks (any of the below leaves the legacy live read intact):
+    //   • Flag off (default).
+    //   • Gallery has no published_revision_id yet.
+    //   • RPC errored or returned no rows.
+    let liveSections = (secsRes.data || []) as GallerySection[]
+    let liveGallery = g
+    const publishedRevisionId = (meta as { published_revision_id?: string | null }).published_revision_id ?? null
+    if (USE_PUBLISHED_SNAPSHOT && publishedRevisionId) {
+      try {
+        const { data: snapRows, error: snapErr } = await supabase.rpc(
+          'gallery_get_published_snapshot',
+          { p_gallery_id: id },
+        )
+        if (snapErr) {
+          console.warn('[snapshot] rpc_error — falling back to live read', snapErr.message)
+        } else {
+          const snap = Array.isArray(snapRows) ? (snapRows[0] as PublishedSnapshot | undefined) : (snapRows as PublishedSnapshot | undefined)
+          if (snap) {
+            // Override delivery_settings with the snapshotted JSONB. The live
+            // gallery row may have newer edits we explicitly want to hide.
+            const snapSettings = (snap.settings ?? {}) as Partial<DeliverySettings>
+            liveGallery = {
+              ...g,
+              name: snap.name ?? g.name,
+              status: snap.status ?? g.status,
+              delivery_settings: snapSettings as DeliverySettings,
+            }
+            // Rebuild sections from snapshot.section_data, preserving the
+            // snapshot's ordering. Newer sections added post-publish are
+            // intentionally absent — photographer must re-publish to expose
+            // them to clients.
+            if (Array.isArray(snap.section_data)) {
+              liveSections = snap.section_data
+                .slice()
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                .map(s => ({
+                  id: s.id,
+                  name: s.name,
+                  slug: s.slug ?? null,
+                  sort_order: s.sort_order ?? 0,
+                }))
+            }
+          } else {
+            console.warn('[snapshot] no_row_for_published_revision_id — falling back to live read')
+          }
+        }
+      } catch (e) {
+        console.warn('[snapshot] threw — falling back to live read', e)
+      }
+    }
+
     setImages(firstImgs)
-    setSections(secsRes.data || [])
-    setGallery(g)
+    setSections(liveSections)
+    setGallery(liveGallery)
 
     // Stream the remaining pages in the background (best-effort), appending in
     // order. Runs while the guest is still on the welcome/cover screen.
