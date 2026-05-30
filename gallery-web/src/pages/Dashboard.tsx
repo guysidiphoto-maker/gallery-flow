@@ -8,6 +8,7 @@ import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import { useToast } from '../components/Toast'
 
 interface Gallery {
   id: string
@@ -858,6 +859,55 @@ export function Dashboard() {
     fetchGalleries()
   }
 
+  // Toast surface — used by duplicate-gallery (success + failure) and any
+  // other coarse feedback that shouldn't block with an alert. Rendered once
+  // via <ToastContainer/> near the bottom of the dashboard tree.
+  const { showToast, ToastContainer } = useToast()
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
+
+  // Clone an existing gallery's SETTINGS + SECTIONS into a fresh draft.
+  // Prompts for the new name (defaults to "<source name> (עותק)"), calls the
+  // duplicate_gallery RPC, refreshes the list, and opens the editor on the
+  // new draft so the photographer can immediately tweak + upload. Photos are
+  // NOT copied — each event has its own shoot.
+  async function duplicateGallery(source: Gallery) {
+    const proposed = window.prompt(
+      'שם הגלריה החדשה',
+      `${source.name} (עותק)`,
+    )
+    if (proposed === null) return
+    const trimmed = proposed.trim()
+    if (!trimmed) {
+      showToast({ kind: 'error', text: 'יש להזין שם לגלריה החדשה' })
+      return
+    }
+    setDuplicatingId(source.id)
+    const { data, error } = await supabase.rpc('duplicate_gallery', {
+      p_source_gallery_id: source.id,
+      p_new_name: trimmed,
+    })
+    setDuplicatingId(null)
+    if (error) {
+      console.error('[duplicate-gallery] rpc failed', error)
+      showToast({ kind: 'error', text: 'שכפול הגלריה נכשל. נסו שוב.' })
+      return
+    }
+    const newId = typeof data === 'string' ? data : null
+    showToast({ kind: 'success', text: `הגלריה "${trimmed}" נוצרה` })
+    await fetchGalleries()
+    if (newId) {
+      // Open the editor for the new draft. We re-fetch from the DB so we
+      // get the slug + delivery_settings that the RPC + slug trigger
+      // produced, rather than reconstructing them client-side.
+      const { data: fresh } = await supabase
+        .from('galleries')
+        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+        .eq('id', newId)
+        .maybeSingle()
+      if (fresh) openGalleryEditor(fresh as Gallery)
+    }
+  }
+
   const [copiedGalleryId, setCopiedGalleryId] = useState<string | null>(null)
   const [shareGallery, setShareGallery] = useState<Gallery | null>(null)
   const [shareEmail, setShareEmail] = useState('')
@@ -1650,43 +1700,71 @@ export function Dashboard() {
                         <Icon name="photo" size={36} strokeWidth={1.2} />
                       </div>
                     )}
-                    {/* Hover action row — only on live galleries */}
-                    {isLive && isHovered && (
+                    {/* Hover action row.
+                        Copy-link + Send-email are only meaningful on live
+                        galleries (drafts have no public URL yet). Duplicate is
+                        available for ANY gallery — that's the whole point:
+                        photographers want to clone a template, whether it's a
+                        live wedding from last month or a draft they prepped. */}
+                    {isHovered && (
                       <div style={{
                         position: 'absolute', bottom: 12, insetInlineStart: 12,
                         display: 'flex', gap: 6,
                       }}>
+                        {isLive && (
+                          <>
+                            <button
+                              onClick={(e) => copyGalleryLink(g.id, e)}
+                              title="העתק קישור"
+                              aria-label={copiedGalleryId === g.id ? 'הקישור הועתק' : 'העתק קישור'}
+                              style={{
+                                width: 34, height: 34, borderRadius: 2,
+                                background: 'rgba(255,255,255,.96)',
+                                border: `1px solid rgba(20,20,19,.08)`,
+                                color: textPrimary, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                backdropFilter: 'blur(8px)',
+                                boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+                              }}
+                            >
+                              <Icon name={copiedGalleryId === g.id ? 'check' : 'copy'} size={14} strokeWidth={1.85} />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openEmailShare(g) }}
+                              title="שלח במייל ללקוח"
+                              aria-label="שלח במייל ללקוח"
+                              style={{
+                                width: 34, height: 34, borderRadius: 2,
+                                background: 'rgba(255,255,255,.96)',
+                                border: `1px solid rgba(20,20,19,.08)`,
+                                color: textPrimary, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                backdropFilter: 'blur(8px)',
+                                boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+                              }}
+                            >
+                              <Icon name="mail" size={14} strokeWidth={1.85} />
+                            </button>
+                          </>
+                        )}
                         <button
-                          onClick={(e) => copyGalleryLink(g.id, e)}
-                          title="העתק קישור"
-                          aria-label={copiedGalleryId === g.id ? 'הקישור הועתק' : 'העתק קישור'}
+                          onClick={(e) => { e.stopPropagation(); duplicateGallery(g) }}
+                          disabled={duplicatingId === g.id}
+                          title="שכפל גלריה"
+                          aria-label="שכפל גלריה"
                           style={{
                             width: 34, height: 34, borderRadius: 2,
                             background: 'rgba(255,255,255,.96)',
                             border: `1px solid rgba(20,20,19,.08)`,
-                            color: textPrimary, cursor: 'pointer',
+                            color: textPrimary,
+                            cursor: duplicatingId === g.id ? 'wait' : 'pointer',
+                            opacity: duplicatingId === g.id ? 0.6 : 1,
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             backdropFilter: 'blur(8px)',
                             boxShadow: '0 1px 3px rgba(0,0,0,.06)',
                           }}
                         >
-                          <Icon name={copiedGalleryId === g.id ? 'check' : 'copy'} size={14} strokeWidth={1.85} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); openEmailShare(g) }}
-                          title="שלח במייל ללקוח"
-                          aria-label="שלח במייל ללקוח"
-                          style={{
-                            width: 34, height: 34, borderRadius: 2,
-                            background: 'rgba(255,255,255,.96)',
-                            border: `1px solid rgba(20,20,19,.08)`,
-                            color: textPrimary, cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            backdropFilter: 'blur(8px)',
-                            boxShadow: '0 1px 3px rgba(0,0,0,.06)',
-                          }}
-                        >
-                          <Icon name="mail" size={14} strokeWidth={1.85} />
+                          <Icon name="duplicate" size={14} strokeWidth={1.85} />
                         </button>
                       </div>
                     )}
@@ -4867,6 +4945,10 @@ export function Dashboard() {
         </div>
       )}
       </div>
+      {/* Global toast surface — used by duplicate-gallery success/failure
+          and any future coarse feedback. Positioned fixed by the component
+          itself, so where in the tree it lives doesn't matter visually. */}
+      <ToastContainer />
     </div>
   )
 }
