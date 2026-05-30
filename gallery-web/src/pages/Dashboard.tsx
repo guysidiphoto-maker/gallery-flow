@@ -26,6 +26,10 @@ interface Gallery {
   delivery_settings?: Record<string, unknown>
   download_count?: number
   favorite_count?: number
+  // Mirrors the galleries.face_index_enabled column. Stored alongside the
+  // legacy delivery_settings.faceIndexEnabled JSONB key — the column is the
+  // canonical source for the rekognition RPC, JSONB for the public viewer.
+  face_index_enabled?: boolean | null
 }
 
 interface GalleryImage {
@@ -1158,7 +1162,7 @@ export function Dashboard() {
 
   async function publishGallery() {
     if (!editingGallery) return
-    const wasLive = editingGallery.status === 'live' || editingGallery.status === 'published'
+    const wasLive = editingGallery.status === 'live'
     const publishedAt = new Date().toISOString()
     // Flip publishing on so the button's label + spinner reflect the in-flight
     // request immediately — important because the supabase call can take
