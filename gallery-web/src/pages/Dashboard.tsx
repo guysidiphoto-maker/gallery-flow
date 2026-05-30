@@ -5883,11 +5883,20 @@ export function Dashboard() {
             onClick={(e) => e.stopPropagation()}
             style={{
               background: '#fff', width: 'calc(100vw - 40px)', maxWidth: 460,
-              padding: '36px 40px 32px',
+              maxHeight: 'calc(100vh - 32px)',
+              display: 'flex', flexDirection: 'column',
               border: `1px solid ${border}`,
               animation: 'modalIn .25s ease both',
             }}
           >
+            {/* Scrollable body — the modal got tall enough on small viewports
+                that the footer buttons fell off-screen and were unclickable.
+                Splitting into body + sticky footer keeps the CTAs always
+                reachable regardless of how many photos are in the curator. */}
+            <div style={{
+              flex: 1, minHeight: 0, overflowY: 'auto',
+              padding: '24px 28px 12px',
+            }}>
             <div style={{
               fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
               color: textMuted, textTransform: 'uppercase', marginBottom: 14,
@@ -6146,7 +6155,15 @@ export function Dashboard() {
               )
             })()}
 
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            </div>
+            {/* Sticky footer — always visible. Hairline divider keeps it
+                visually attached to the scrollable body above. */}
+            <div style={{
+              display: 'flex', gap: 10, justifyContent: 'flex-end',
+              padding: '14px 28px 18px',
+              borderTop: `1px solid ${border}`, background: '#fff',
+              flexShrink: 0,
+            }}>
               <button
                 onClick={() => { if (!storyGenerating) setShowStoryStyleModal(false) }}
                 disabled={storyGenerating}
