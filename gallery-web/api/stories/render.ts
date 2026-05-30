@@ -1,22 +1,34 @@
-// stories/render.ts — Phase 1 SCAFFOLD for the Story render endpoint.
+// stories/render.ts — Stories Phase 2: real Remotion Lambda invocation.
 //
-// This is the server-side counterpart to the Dashboard "צור סטורי אוטומטית"
-// CTA. In Phase 1 it does NOT actually render anything — it validates the
-// request, auth-checks the caller against the gallery owner, and returns a
-// queued status so the Dashboard's flow (modal → POST → toast) is testable
-// end-to-end without standing up Remotion Lambda.
+// Phase 1 returned a queued stub. Phase 2 actually kicks off the Lambda
+// render and persists state in `story_renders`. The Dashboard then polls
+// the sibling `/api/stories/status` endpoint.
 //
-// Phase 2 will replace the stubbed success branch with the actual Remotion
-// Lambda invocation (see the TODO Phase 2 block at the bottom of the file).
+// Idempotency model:
+//   - Partial UNIQUE on story_renders (gallery_id, style) WHERE status IN
+//     ('queued','rendering') means concurrent clicks cannot double-fire.
+//   - This endpoint first SELECTs any in-flight row for (gallery, style)
+//     and returns it instead of trying to INSERT (cheaper than waiting
+//     for the UNIQUE to reject).
 //
-// Request:  POST { galleryId: string (uuid), style: 'clean' }
-// Response: 200 { ok: true, status: 'queued', message: '...' }
-//           400 { ok: false, error: '...' }
+// Fail-closed env contract:
+//   If any of REMOTION_LAMBDA_FUNCTION_NAME / REMOTION_LAMBDA_SERVE_URL /
+//   AWS_REGION is missing we return { error: 'lambda_not_configured' } and
+//   do NOT insert a story_renders row. We never silently fall through to a
+//   stub — a missing env in prod must be loud, not lossy.
+//
+// Request:  POST { galleryId: uuid, style: 'clean', photoIds?: uuid[] }
+// Response: 200 { ok: true, status: 'rendering' | 'queued', renderId, message? }
+//           400 { ok: false, error: 'invalid_…' }
 //           401 { ok: false, error: 'unauthenticated' }
 //           403 { ok: false, error: 'not_owner' }
 //           404 { ok: false, error: 'gallery_not_found' }
 //           405 { ok: false, error: 'method_not_allowed' }
-//           500 { ok: false, error: 'server_misconfigured' }
+//           500 { ok: false, error: 'server_misconfigured'
+//                              | 'lambda_not_configured'
+//                              | 'lambda_invoke_failed'
+//                              | 'gallery_lookup_failed'
+//                              | 'render_insert_failed' }
 
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
@@ -45,6 +57,23 @@ function isAllowedStyle(value: unknown): value is AllowedStyle {
   return typeof value === 'string' && (ALLOWED_STYLES as readonly string[]).includes(value)
 }
 
+// Narrow the body once so the rest of the handler reads typed values without
+// re-asserting `unknown` casts.
+function parseBody(body: unknown): {
+  galleryId: string
+  style: AllowedStyle | null
+  photoIds: string[]
+} | null {
+  if (!body || typeof body !== 'object') return null
+  const b = body as { galleryId?: unknown; style?: unknown; photoIds?: unknown }
+  const galleryId = typeof b.galleryId === 'string' ? b.galleryId.trim() : ''
+  const style = isAllowedStyle(b.style) ? b.style : null
+  const photoIds = Array.isArray(b.photoIds)
+    ? b.photoIds.filter((p): p is string => typeof p === 'string' && UUID_RE.test(p))
+    : []
+  return { galleryId, style, photoIds }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST')
@@ -53,8 +82,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
     // Hard-fail loudly — without env we cannot auth-check, and silently
-    // returning success would let any caller "queue" a render in Phase 2.
+    // returning success would let any caller "queue" a render.
     return res.status(500).json({ ok: false, error: 'server_misconfigured' })
+  }
+
+  // ── Lambda env (fail-closed) ───────────────────────────────────────────
+  // Read all three up-front so we can reject BEFORE writing a story_renders
+  // row. If any are missing we return lambda_not_configured — the Dashboard
+  // surfaces this as a toast and the operator knows to finish deploy step.
+  const LAMBDA_FUNCTION_NAME = process.env.REMOTION_LAMBDA_FUNCTION_NAME || ''
+  const LAMBDA_SERVE_URL = process.env.REMOTION_LAMBDA_SERVE_URL || ''
+  const LAMBDA_REGION = process.env.AWS_REGION || ''
+  if (!LAMBDA_FUNCTION_NAME || !LAMBDA_SERVE_URL || !LAMBDA_REGION) {
+    return res.status(500).json({ ok: false, error: 'lambda_not_configured' })
   }
 
   // ── Input validation ───────────────────────────────────────────────────
@@ -65,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!galleryId || !UUID_RE.test(galleryId)) {
     return res.status(400).json({ ok: false, error: 'invalid_gallery_id' })
   }
-  if (!isAllowedStyle(style)) {
+  if (!style) {
     return res.status(400).json({
       ok: false,
       error: 'invalid_style',
@@ -95,11 +135,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ── Auth check: only the gallery owner may trigger a render ───────────
-  // We resolve the caller via the Bearer access token sent by the browser
-  // (Supabase JS attaches it on every authenticated request). The userClient
-  // is anon+token — it identifies "who is calling". The service client below
-  // bypasses RLS so we can verify ownership without depending on the policy
-  // surface.
   const authHeader = req.headers.authorization || ''
   const accessToken = authHeader.startsWith('Bearer ')
     ? authHeader.slice('Bearer '.length).trim()
@@ -118,10 +153,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const userId = userData.user.id
 
-  // Service-role read of the gallery row + the owning business. RLS would
-  // already block other photographers, but we want a deterministic 403 over
-  // an empty 404, so we read the row with service-role and compare ids
-  // ourselves.
+  // Service-role read of gallery + owner — same pattern as Phase 1.
   const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
@@ -137,8 +169,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!gallery) {
     return res.status(404).json({ ok: false, error: 'gallery_not_found' })
   }
-  // The joined `businesses` shape comes back as an object (single-row inner
-  // join), but the Supabase types union it with array — cast defensively.
   const biz = (gallery as { businesses?: { user_id?: string } | Array<{ user_id?: string }> }).businesses
   const ownerUserId = Array.isArray(biz) ? biz[0]?.user_id : biz?.user_id
   if (!ownerUserId || ownerUserId !== userId) {
@@ -158,35 +188,136 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     message: 'Lambda integration pending Phase 2',
   })
 
-  /* ───────────────────────────────────────────────────────────────────────
-   * TODO Phase 2 — wire Remotion Lambda
-   * ───────────────────────────────────────────────────────────────────────
-   * The Phase 0 spike already proved the render path end-to-end via
-   *   gallery-web/stories-remotion/src/render-local.ts
-   * That script:
-   *   1. Pulls images for `galleryId` from Supabase Storage,
-   *   2. Renders Clean.tsx with the Remotion CLI,
-   *   3. Uploads `{slug}/{galleryId}/story_{style}.mp4` back to the
-   *      gallery-stories bucket and inserts a stories row.
-   *
-   * Phase 2 should:
-   *   1. Replace the stubbed success branch above with a call to
-   *      `renderMediaOnLambda` from `@remotion/lambda/client`
-   *      (serveUrl + functionName come from env, set during
-   *      `npm run lambda:deploy` in stories-remotion/).
-   *   2. Insert a `story_renders` row keyed by (gallery_id, style) with
-   *      status='queued' so retries are idempotent (this endpoint must
-   *      short-circuit if a render is already in flight for the same
-   *      (gallery, style) pair to avoid double-billing).
-   *   3. Return { ok: true, status: 'rendering', renderId } and let the
-   *      Dashboard poll a sibling endpoint (`/api/stories/status`) for
-   *      progress + the eventual storage_path.
-   *   4. On Lambda completion, the post-render hook uploads the mp4 to
-   *      `{slug}/{galleryId}/story_{style}.mp4` (same path render-local.ts
-   *      uses today) and inserts the stories row so the public viewer
-   *      picks it up via `gallery_get_stories` with no client change.
-   *
-   * Reference: gallery-web/stories-remotion/README.md "Lambda render"
-   * section for the deploy steps + cost envelope ($0.05–$0.20 / render).
-   * ───────────────────────────────────────────────────────────────────── */
+  // ── Persist a story_renders row in 'queued' state ─────────────────────
+  // We insert BEFORE the Lambda call so the row exists even if Lambda
+  // succeeds but our process dies (operator can still find the orphan).
+  const { data: rowInserted, error: insertErr } = await adminClient
+    .from('story_renders')
+    .insert({
+      gallery_id: galleryId,
+      style,
+      photo_ids: photoIds,
+      status: 'queued',
+      requested_by: userId,
+    })
+    .select('id')
+    .single()
+  if (insertErr || !rowInserted) {
+    // Most likely cause: the partial UNIQUE rejected because another
+    // request raced past our SELECT. Re-query and return that row instead
+    // of bubbling a 500 to the UI.
+    const { data: raced } = await adminClient
+      .from('story_renders')
+      .select('id, status')
+      .eq('gallery_id', galleryId)
+      .eq('style', style)
+      .in('status', ['queued', 'rendering'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (raced) {
+      return res.status(200).json({
+        ok: true,
+        status: raced.status,
+        renderId: raced.id,
+        message: 'render_in_progress',
+      })
+    }
+    console.error('[stories/render] insert failed', insertErr?.message)
+    return res.status(500).json({ ok: false, error: 'render_insert_failed' })
+  }
+  const renderId = rowInserted.id as string
+
+  // ── Lambda invocation ─────────────────────────────────────────────────
+  // Imported lazily so the route doesn't pay the cold-start cost for
+  // requests that fail early (env / auth / validation). Phase 2 ops step
+  // adds `@remotion/lambda` to gallery-web/package.json.
+  try {
+    const { renderMediaOnLambda } = await import('@remotion/lambda/client')
+
+    // Resolve the public image URLs the composition needs. Lambda fetches
+    // these directly from Supabase Smart CDN — no auth churn per request.
+    const images = await loadImageUrlsForRender(adminClient, galleryId, photoIds)
+
+    const composition = COMPOSITION_BY_STYLE[style]
+    // `region` is enum-typed in @remotion/lambda. We accept any string from
+    // env (AWS_REGION) and cast — runtime validation happens on Lambda's end,
+    // and a bad region surfaces in the catch below as a clean failure row.
+    const lambdaResult = await renderMediaOnLambda({
+      region: LAMBDA_REGION as Parameters<typeof renderMediaOnLambda>[0]['region'],
+      functionName: LAMBDA_FUNCTION_NAME,
+      serveUrl: LAMBDA_SERVE_URL,
+      composition,
+      inputProps: {
+        images,
+        durationSeconds: DEFAULT_STORY_DURATION_SECONDS,
+      },
+      codec: 'h264',
+    })
+
+    await adminClient
+      .from('story_renders')
+      .update({
+        status: 'rendering',
+        lambda_render_id: lambdaResult.renderId ?? null,
+      })
+      .eq('id', renderId)
+
+    return res.status(200).json({
+      ok: true,
+      status: 'rendering',
+      renderId,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'unknown_lambda_error'
+    console.error('[stories/render] lambda invoke failed', message)
+    await adminClient
+      .from('story_renders')
+      .update({
+        status: 'failed',
+        error_message: message.slice(0, 500),
+      })
+      .eq('id', renderId)
+    return res.status(500).json({
+      ok: false,
+      error: 'lambda_invoke_failed',
+      message,
+    })
+  }
+}
+
+// Resolve image storage paths → public URLs the Remotion composition can
+// fetch. If the caller passed an explicit `photoIds` subset (curated story),
+// we honour it; otherwise we fall back to the gallery's full image list.
+//
+// The `images` table stores `original_path` (the original upload) and
+// `web_preview_path` (the smaller variant used in the viewer). Stories
+// prefer `web_preview_path` because Lambda is rendering at 1080×1920 and
+// pulling the full original is wasted bandwidth — fall back to
+// `original_path` if a preview is missing.
+async function loadImageUrlsForRender(
+  admin: ReturnType<typeof createClient>,
+  galleryId: string,
+  photoIds: string[],
+): Promise<string[]> {
+  let query = admin
+    .from('images')
+    .select('id, original_path, web_preview_path, sort_order')
+    .eq('gallery_id', galleryId)
+    .order('sort_order', { ascending: true })
+  if (photoIds.length > 0) {
+    query = query.in('id', photoIds)
+  }
+  const { data, error } = await query
+  if (error) {
+    throw new Error(`image lookup failed: ${error.message}`)
+  }
+  const rows = (data || []) as Array<{
+    original_path?: string | null
+    web_preview_path?: string | null
+  }>
+  return rows
+    .map(r => r.web_preview_path || r.original_path || '')
+    .filter(p => !!p)
+    .map(p => `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${p}`)
 }

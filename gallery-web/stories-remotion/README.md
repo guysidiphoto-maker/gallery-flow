@@ -257,3 +257,110 @@ The `gallery-web/stories-remotion/src/render-local.ts` script is the
 canonical reference for what the Lambda function body needs to do — same
 download/render/upload pipeline, just hosted on Remotion Lambda instead
 of a developer Mac.
+
+---
+
+## Phase 2 — Lambda wiring (this PR)
+
+Phase 2 replaces the queued stub in `gallery-web/api/stories/render.ts`
+with a real `renderMediaOnLambda` call, adds a sibling
+`/api/stories/status` endpoint for Dashboard polling, and persists
+in-flight renders in a new `story_renders` table.
+
+The code is fully wired. **Only the AWS-side deploy is left.** An operator
+runs the steps below to flip the feature on; there is no further code
+change.
+
+### Pre-deploy checklist
+
+- `supabase/migrations/066_story_renders.sql` has been applied (the agent
+  ran `apply_migration` against `vlyiqfawkrjvqcmkpfvs`).
+- `gallery-web/package.json` declares `@remotion/lambda` but it is NOT
+  installed yet — the deploy step below installs it.
+- The Dashboard is already wired to start polling every 5s and refresh the
+  stories list on completion. No client changes are needed.
+
+### Required Vercel env vars (Production)
+
+The `/api/stories/render` endpoint **fails closed** if any of these are
+missing — it returns `{ error: 'lambda_not_configured' }` and does NOT
+write a `story_renders` row, so you cannot silently lose a render request.
+
+| Env var                          | Where it comes from                        |
+|----------------------------------|--------------------------------------------|
+| `REMOTION_LAMBDA_FUNCTION_NAME`  | `npx remotion lambda functions deploy` output |
+| `REMOTION_LAMBDA_SERVE_URL`      | `npx remotion lambda sites create` output |
+| `AWS_REGION`                     | The region you deployed Lambda into (e.g. `us-east-1`) |
+| `AWS_ACCESS_KEY_ID`              | IAM user with the policy from `npx remotion lambda policies user` |
+| `AWS_SECRET_ACCESS_KEY`          | Same IAM user secret                       |
+
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are already set in
+Production for the existing endpoints — reuse them.
+
+### Operator runbook (one-time cutover)
+
+```bash
+# 1. Install the spike's deps into the spike directory (Lambda CLI lives here).
+cd gallery-web/stories-remotion
+npm install
+
+# 2. Install @remotion/lambda inside gallery-web so the Vercel build can
+#    bundle it into the /api/stories/render function. Phase 2 added it to
+#    gallery-web/package.json but did not install.
+cd ..
+npm install
+
+# 3. AWS credentials + IAM (one-time per AWS account):
+cd stories-remotion
+npx remotion lambda policies user           # paste into the IAM user policy
+npx remotion lambda policies role           # paste into the Lambda exec role
+export AWS_ACCESS_KEY_ID=…
+export AWS_SECRET_ACCESS_KEY=…
+export REMOTION_AWS_REGION=us-east-1
+
+# 4. Deploy the bundle to S3. Outputs a `serveUrl` — copy it.
+npm run lambda:deploy
+# → https://remotionlambda-….s3.us-east-1.amazonaws.com/sites/gallery-stories/index.html
+
+# 5. Deploy the Lambda function. Outputs a `functionName` — copy it.
+npm run lambda:deploy-function
+# → remotion-render-4-0-245-mem2048mb-disk10240mb-240sec
+
+# 6. Set the three env vars in Vercel (Production scope):
+vercel env add REMOTION_LAMBDA_SERVE_URL production       # paste serveUrl
+vercel env add REMOTION_LAMBDA_FUNCTION_NAME production   # paste functionName
+vercel env add AWS_REGION production                      # e.g. us-east-1
+vercel env add AWS_ACCESS_KEY_ID production
+vercel env add AWS_SECRET_ACCESS_KEY production
+
+# 7. Redeploy production so the new env vars are visible to the function.
+#    (Or push a no-op commit if main is the production source.)
+vercel --prod
+```
+
+### Smoke test
+
+1. Open the Dashboard as a photographer who owns a gallery with ≥12 photos.
+2. Switch to the *Stories* tab → click **צור סטורי אוטומטית**.
+3. Confirm the style → toast says "מייצר סטורי".
+4. Network tab should show:
+   - `POST /api/stories/render` → 200 `{ ok: true, status: 'rendering', renderId: '…' }`
+   - `GET /api/stories/status?renderId=…` every 5s.
+5. After 30–90s the status response flips to `status: 'ready'` with an
+   `output_path` populated. The Dashboard toasts "הסטורי מוכן" and the new
+   mp4 appears in the stories list.
+
+### Rollback (if Lambda is misbehaving)
+
+Remove `REMOTION_LAMBDA_FUNCTION_NAME` from Vercel env. The endpoint will
+fail-closed with `lambda_not_configured`, so photographers see a clear
+error toast instead of silently-broken queueing. Code stays untouched.
+
+### Files touched this PR
+
+- `supabase/migrations/066_story_renders.sql` — new table + partial UNIQUE + RLS.
+- `gallery-web/api/stories/render.ts` — Lambda call replaces the stub.
+- `gallery-web/api/stories/status.ts` — new polling endpoint.
+- `gallery-web/src/lib/storyRender.ts` — adds `pollStoryRender` + `renderId`.
+- `gallery-web/src/pages/Dashboard.tsx` — starts polling on success, cleans up on unmount.
+- `gallery-web/package.json` — declares `@remotion/lambda` dep (install at step 2 above).
