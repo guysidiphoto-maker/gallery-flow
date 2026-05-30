@@ -3616,9 +3616,31 @@ export function Dashboard() {
                         desc="אורחים יוכלו למצוא את עצמם בסלפי. עלות: ללא תוספת טוקנים."
                         on={Boolean(ds.faceIndexEnabled)}
                         onChange={async () => {
+                          // Write the column + JSONB key in ONE update so the
+                          // two never drift (rekognition RPC reads the column;
+                          // the public viewer reads the JSONB). Was two
+                          // separate non-atomic UPDATEs that could leave the
+                          // gallery in a half-on state on transient failure.
+                          if (!editingGallery) return
                           const newVal = !ds.faceIndexEnabled
-                          await updateGallerySetting('faceIndexEnabled', newVal)
-                          await supabase.from('galleries').update({ face_index_enabled: newVal }).eq('id', editingGallery.id)
+                          const prevSettings = editingGallery.delivery_settings || {}
+                          const nextSettings = { ...prevSettings, faceIndexEnabled: newVal }
+                          setEditingGallery({
+                            ...editingGallery,
+                            face_index_enabled: newVal,
+                            delivery_settings: nextSettings,
+                          })
+                          markDirty()
+                          const { error } = await supabase
+                            .from('galleries')
+                            .update({ face_index_enabled: newVal, delivery_settings: nextSettings })
+                            .eq('id', editingGallery.id)
+                          if (error) {
+                            setEditingGallery(g => g && g.id === editingGallery.id
+                              ? { ...g, face_index_enabled: !newVal, delivery_settings: prevSettings } : g)
+                            showToast({ kind: 'error', text: 'שמירת זיהוי פנים נכשלה.' })
+                            console.warn('[face-index toggle]', error)
+                          }
                         }}
                         last
                       />
