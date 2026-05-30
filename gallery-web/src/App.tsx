@@ -865,65 +865,52 @@ export function App() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
   const [dlProgress, setDlProgress] = useState<string | null>(null)
-  // Default anchor: real all-images section if no sections, else the first
-  // section. Initialized in an effect once gallery data is loaded.
+  // The chapter currently in view, as a `section-<id>` anchor. Kept up to date
+  // by the scroll-spy observer and used to highlight the matching pill. Starts
+  // at 'all-images' until the first chapter scrolls into view.
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<string>('all-images')
 
-  // Active section view: when set, the page renders ONLY this section's grid
-  // (replaces the stacked-sections layout). Tapping a pill swaps content,
-  // tapping the gallery title returns to the all-sections view.
-  // null = default stacked-sections layout (safe; this is the historic
-  // behavior, no risk of regressing the live gallery).
-  const [activeSectionView, setActiveSectionView] = useState<string | null>(() => {
-    try {
-      const params = new URLSearchParams(window.location.search)
-      return params.get('section')
-    } catch {
-      return null
-    }
-  })
+  // Sections render as stacked "chapters" (every section one after another,
+  // Pic-Time style). The pills are quick-jump navigation, not tabs — so we no
+  // longer isolate a single section. A shared ?section=<slug> link scrolls to
+  // that chapter instead. The deep-link target is captured ONCE at mount, here,
+  // before the URL-sync effect below can rewrite the query string.
+  const deepLinkSectionRef = useRef<string | null>(
+    (() => {
+      try { return new URLSearchParams(window.location.search).get('section') } catch { return null }
+    })()
+  )
 
-  // Mirror activeSectionView onto ?section=<slug> (preferred) or <id>
-  // (fallback) so refreshes / shares stay on the same section. Wrapped in
-  // try/catch so a malformed URL never takes the page down.
+  // Keep ?section=<slug> in sync with the chapter currently in view (driven by
+  // the scroll-spy anchor) so a refresh or shared link lands on the same
+  // chapter. replaceState never adds history entries; pure UX nicety, so the
+  // whole thing is wrapped in try/catch and never load-bearing.
   useEffect(() => {
     try {
       const url = new URL(window.location.href)
-      if (activeSectionView) {
-        // Prefer the slug if we have it (much friendlier shareable URL),
-        // fall back to the raw UUID otherwise.
-        const sec = sections.find(s => s.id === activeSectionView || s.slug === activeSectionView)
-        const param = sec?.slug || activeSectionView
-        url.searchParams.set('section', param)
-      } else {
-        url.searchParams.delete('section')
-      }
+      const secId = activeSectionAnchor.replace(/^section-/, '')
+      const sec = sections.find(s => s.id === secId)
+      if (sec) url.searchParams.set('section', sec.slug || sec.id)
+      else url.searchParams.delete('section')
       window.history.replaceState(null, '', url.toString())
     } catch { /* ignore — url sync is a UX nicety, never load-bearing */ }
-  }, [activeSectionView, sections])
+  }, [activeSectionAnchor, sections])
 
-  // When loading from a URL with ?section=<slug>, resolve the slug back to
-  // the canonical section id so the rest of the component (which keys on id)
-  // works without per-call slug lookups.
+  // Deep-link: ?section=<slug|id> scrolls to that chapter once the grid has
+  // painted. Honored once, using the value captured at mount (above) so the
+  // URL-sync effect can't clear it first.
   useEffect(() => {
-    if (!activeSectionView || sections.length === 0) return
-    const matchById = sections.find(s => s.id === activeSectionView)
-    if (matchById) return
-    const matchBySlug = sections.find(s => s.slug === activeSectionView)
-    if (matchBySlug) setActiveSectionView(matchBySlug.id)
-  }, [sections, activeSectionView])
-
-  // Auto-select the first section once gallery data is loaded, IF and only
-  // if (a) the gallery actually has sections, (b) we don't already have a
-  // valid active view from the URL. Galleries without sections keep
-  // activeSectionView = null and render the all-photos layout.
-  useEffect(() => {
-    if (sections.length === 0) return
-    setActiveSectionView(prev => {
-      if (prev && sections.some(s => s.id === prev)) return prev
-      return sections[0].id
-    })
-  }, [sections])
+    if (showWelcome || images.length === 0 || sections.length === 0) return
+    const param = deepLinkSectionRef.current
+    if (!param) return
+    const sec = sections.find(s => s.id === param || s.slug === param)
+    if (!sec) return
+    deepLinkSectionRef.current = null
+    const t = setTimeout(() => {
+      document.getElementById(`section-${sec.id}`)?.scrollIntoView({ behavior: 'auto', block: 'start' })
+    }, 60)
+    return () => clearTimeout(t)
+  }, [showWelcome, images.length, sections])
   const [viewerRole, setViewerRole] = useState<'none' | 'client' | 'guest'>('none')
   const [clientCodeInput, setClientCodeInput] = useState('')
   const [clientCodeError, setClientCodeError] = useState(false)
@@ -2213,16 +2200,12 @@ export function App() {
           }, {})}
           showAllPill={false}
           totalCount={images.length}
-          activeId={activeSectionView ? `section-${activeSectionView}` : 'all-images'}
+          activeId={activeSectionAnchor}
           onJump={(id) => {
-            // Tapping a section pill SWAPS the visible grid to just that
-            // section's photos and resets scroll to the top. Tapping the
-            // "All Photos" pill (id === 'all-images') goes back to the
-            // stacked-sections layout. Defensive: any unexpected id (e.g.
-            // a stale section_id) leaves the rendering untouched.
-            const sectionId = id === 'all-images' ? null : id.replace(/^section-/, '')
-            setActiveSectionView(sectionId)
-            window.scrollTo({ top: 0, behavior: 'auto' })
+            // Chapters are stacked, so a pill is a quick-jump: scroll to that
+            // chapter's block (scroll-margin-top clears the sticky nav).
+            // Scroll-spy then keeps the active pill in sync as the user reads.
+            document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           }}
           /* Stories moved out of the header into the Instagram-style circle
              row below the hero — the center slot crowded the section pills. */
@@ -2312,19 +2295,13 @@ export function App() {
       )}
 
       {sections.length > 0 && sections.map(sec => {
-        // Single-section view: only render the active section's grid.
-        // Switching pills swaps the visible grid by re-running this filter.
-        // A section with zero matching images renders null; the all-photos
-        // safety-net block below kicks in if every section ends up empty.
-        // Face filter applies inside each section: visibleImages is already
-        // filtered by faceMatchIds when the filter is on, so each section
-        // shows only the matched photos that belong to it. Sections with no
-        // matches render null and disappear from the layout. While face
-        // filter is on we ignore activeSectionView so matches show across
-        // all sections — otherwise a guest who searched their face would
-        // only ever see matches inside the currently-pinned section.
-        const faceFilterOn = !!(faceMatchIds && faceFilterActive)
-        if (activeSectionView && sec.id !== activeSectionView && !faceFilterOn) return null
+        // Chapters: every section renders as its own stacked block, one after
+        // another. A section with zero matching images renders null; the
+        // all-photos safety-net block below kicks in if every section ends up
+        // empty. Face filter applies inside each section — visibleImages is
+        // already filtered by faceMatchIds when the filter is on, so each
+        // chapter shows only the matched photos that belong to it, and chapters
+        // with no matches disappear from the layout.
         const sectionImages = visibleImages.filter(img => img.section_id === sec.id)
         if (sectionImages.length === 0) return null
         return (
