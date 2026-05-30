@@ -133,6 +133,7 @@ function Router() {
   if (path === '/') return <LandingPageHe />
   if (path === '/demo') return <DemoPage />
   if (path === '/dashboard') return <Dashboard />
+  if (path === '/studio-settings') return <StudioSettings />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
   // Questionnaire
