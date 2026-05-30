@@ -8,6 +8,7 @@ import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import { useConfirm } from '../components/useConfirm'
 
 interface Gallery {
   id: string
@@ -122,6 +123,10 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
 
 export function Dashboard() {
   const { user, loading } = useAuth()
+  // Promise-based replacement for native window.confirm(). Render
+  // <ConfirmHost /> near the root and call `await confirm({…})` from any
+  // destructive handler. See gallery-web/src/components/useConfirm.ts.
+  const { confirm, ConfirmHost } = useConfirm()
   const [galleries, setGalleries] = useState<Gallery[]>([])
   // Cover-image fallback map — gallery_id → first image URL. Filled in by a
   // useEffect after galleries load. The desktop uploader doesn't set
@@ -515,7 +520,12 @@ export function Dashboard() {
   }
 
   async function deleteSection(id: string) {
-    if (!confirm('למחוק את הקטע? התמונות שבתוכו יישארו בגלריה.')) return
+    if (!(await confirm({
+      title: 'למחוק את הסקשן?',
+      body: 'התמונות שבתוכו יישארו בגלריה.',
+      confirmLabel: 'מחק',
+      danger: true,
+    }))) return
     // First unset section_id on images so they don't disappear from the gallery
     await supabase.from('images').update({ section_id: null }).eq('section_id', id)
     const { error } = await supabase.from('gallery_sections').delete().eq('id', id)
@@ -943,7 +953,12 @@ export function Dashboard() {
   async function bulkDeleteSelected() {
     if (!editingGallery || selectedImageIds.size === 0) return
     const count = selectedImageIds.size
-    if (!confirm(`למחוק ${count} תמונות? פעולה זו לא ניתנת לביטול.`)) return
+    if (!(await confirm({
+      title: `למחוק ${count} תמונות?`,
+      body: 'פעולה זו לא ניתנת לביטול.',
+      confirmLabel: 'מחק',
+      danger: true,
+    }))) return
     const ids = Array.from(selectedImageIds)
     const { error } = await supabase.from('images').delete().in('id', ids)
     if (error) {
@@ -990,7 +1005,12 @@ export function Dashboard() {
   }
   async function deleteSingleImage(imageId: string) {
     if (!editingGallery) return
-    if (!confirm('למחוק את התמונה? פעולה זו לא ניתנת לביטול.')) return
+    if (!(await confirm({
+      title: 'למחוק את התמונה?',
+      body: 'פעולה זו לא ניתנת לביטול.',
+      confirmLabel: 'מחק',
+      danger: true,
+    }))) return
     const { error } = await supabase.from('images').delete().eq('id', imageId)
     if (error) { alert('שגיאה במחיקה: ' + error.message); return }
     setGalleryImages(prev => prev.filter(i => i.id !== imageId))
@@ -4867,6 +4887,13 @@ export function Dashboard() {
         </div>
       )}
       </div>
+
+      {/* Confirm-modal host. Rendered at the dashboard root so every
+          destructive handler (deleteSection / bulkDeleteSelected /
+          deleteSingleImage / …) can await a styled, RTL-correct confirm
+          instead of the native window.confirm() dialog. See
+          components/useConfirm.ts. */}
+      <ConfirmHost />
     </div>
   )
 }
