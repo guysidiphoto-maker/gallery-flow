@@ -1079,10 +1079,12 @@ export function Dashboard() {
         setShareSent(true)
         setTimeout(() => { setShareGallery(null); setShareSent(false) }, 1800)
       } else {
-        alert('שגיאה בשליחה: ' + (res.error || 'לא ידוע'))
+        showToast({ kind: 'error', text: 'שגיאה בשליחה: ' + (res.error || 'לא ידוע') })
       }
     } catch (err) {
-      alert('שגיאה: ' + (err instanceof Error ? err.message : String(err)))
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast({ kind: 'error', text: 'שגיאה: ' + msg })
+      console.warn('[sendGalleryShareEmail]', err)
     } finally {
       setShareSending(false)
     }
@@ -1149,8 +1151,14 @@ export function Dashboard() {
     setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, is_top_pick: makeTopPick } : i))
     exitSelectMode()
   }
+  // Select-all should match what the photographer is LOOKING at — sections
+  // act as separate galleries (no "all photos" anymore), so selecting across
+  // sections would silently bulk-delete invisible photos.
   function selectAllImages() {
-    setSelectedImageIds(new Set(galleryImages.map(i => i.id)))
+    const visible = activeSectionId
+      ? galleryImages.filter(i => i.section_id === activeSectionId)
+      : galleryImages
+    setSelectedImageIds(new Set(visible.map(i => i.id)))
   }
 
   // Single-image actions — invoked from the per-tile hover overlay so the
@@ -1230,9 +1238,21 @@ export function Dashboard() {
     setGalleryImages(prev => prev.map(i =>
       idToOrder.has(i.id) ? { ...i, sort_order: idToOrder.get(i.id)! } : i
     ))
-    await Promise.all(next.map((img, idx) =>
+    // Persist all moves. Use allSettled instead of all so a single failed
+    // UPDATE doesn't leave the rest silently mis-ordered; if any failed we
+    // tell the user + log the offending ids so the next reorder can heal.
+    // (Phase 6 will replace this with one batched RPC; this is the safer
+    // intermediate step.)
+    const results = await Promise.allSettled(next.map((img, idx) =>
       supabase.from('images').update({ sort_order: idx * 1000 }).eq('id', img.id)
     ))
+    const failedIds = results
+      .map((r, i) => (r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error)) ? next[i].id : null)
+      .filter((x): x is string => x !== null)
+    if (failedIds.length > 0) {
+      showToast({ kind: 'error', text: `סידור ${failedIds.length} תמונות לא נשמר. גלריה תרענן.` })
+      console.warn('[reorderImage] failed ids', failedIds)
+    }
   }
   // Keyboard alternative for drag-reorder. Moves the image one step up
   // or down within the visible list. Wired into the per-tile "..." menu
