@@ -236,13 +236,26 @@ export function Dashboard() {
   // the eye is already on the button at the moment of click. Mirrors the
   // copy-link pattern on the gallery list cards.
   const [copiedInEditor, setCopiedInEditor] = useState(false)
+  // Debounced preview refresh — typing in an input fires onChange per
+  // keystroke; bumping the iframe key each time forced a navigation that
+  // stole focus from the active text field after every character. Holding
+  // the bump for ~800ms of idle keystrokes keeps the input usable and
+  // still feels live to the eye on the preview.
+  const previewRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleSidePreviewRefresh = () => {
+    if (previewRefreshTimerRef.current) clearTimeout(previewRefreshTimerRef.current)
+    previewRefreshTimerRef.current = setTimeout(() => {
+      previewRefreshTimerRef.current = null
+      setPreviewRefreshKey(k => k + 1)
+    }, 800)
+  }
   // Called by every mutation that changes what the client sees (sections,
   // photo order, uploads, top-picks, deletes, stories, …). Lights up the
   // "שינויים שטרם פורסמו" pill + Update button and queues a Live Preview
-  // refresh. Kept inline so we never forget either side of the pair.
+  // refresh (debounced so typing doesn't reload the iframe per keystroke).
   const markDirty = () => {
     setUnpublishedChanges(true)
-    setPreviewRefreshKey(k => k + 1)
+    scheduleSidePreviewRefresh()
   }
   // Multi-key variant of updateGallerySetting — used when one user action
   // logically writes several keys at once (e.g. cover selection writing both
@@ -1094,7 +1107,7 @@ export function Dashboard() {
     //   3. the Live Preview iframe gets the new ?v=... so it reloads soon.
     setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
     setUnpublishedChanges(true)
-    setPreviewRefreshKey(k => k + 1)
+    scheduleSidePreviewRefresh()
     const { error } = await supabase
       .from('galleries')
       .update({ delivery_settings: nextSettings })
@@ -1126,7 +1139,7 @@ export function Dashboard() {
     setEditingGallery({ ...editingGallery, name: newTitle, delivery_settings: nextSettings })
     setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: newTitle } : g))
     setUnpublishedChanges(true)
-    setPreviewRefreshKey(k => k + 1)
+    scheduleSidePreviewRefresh()
     const { error } = await supabase
       .from('galleries')
       .update({ name: newTitle, delivery_settings: nextSettings })
