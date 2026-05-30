@@ -1414,10 +1414,9 @@ export function Dashboard() {
     fetchGalleries()
   }
 
-  // Toast surface — used by duplicate-gallery (success + failure) and any
-  // other coarse feedback that shouldn't block with an alert. Rendered once
-  // via <ToastContainer/> near the bottom of the dashboard tree.
-  const { showToast, ToastContainer } = useToast()
+  // Dashboard-wide useToast() instance is declared near line 188; the
+  // duplicate-gallery flow shares it. Just need the per-card "duplicating"
+  // marker locally so the spinner stays scoped.
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
 
   // Clone an existing gallery's SETTINGS + SECTIONS into a fresh draft.
