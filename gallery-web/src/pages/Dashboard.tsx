@@ -286,7 +286,9 @@ export function Dashboard() {
   // Stories Phase 1 — automated generation. The CTA opens a small modal so
   // the photographer picks a style (only "clean" exists today; Phase 2
   // widens this). `storyGenerating` flips while the POST is in flight so we
-  // can disable the button and avoid double-fires.
+  // can disable the button and avoid double-fires. The min-photos gate keeps
+  // 4-photo galleries from getting a clip that looks like a slideshow.
+  const STORY_GENERATE_MIN_PHOTOS = 12
   const [showStoryStyleModal, setShowStoryStyleModal] = useState(false)
   const [storyGenStyle, setStoryGenStyle] = useState<StoryStyle>('clean')
   const [storyGenerating, setStoryGenerating] = useState(false)
