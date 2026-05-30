@@ -42,11 +42,20 @@ export interface DeliverySettings {
   autoGenerateStories?: boolean
 }
 
+/** Canonical gallery lifecycle states. Mirrors the postgres enum
+ *  `gallery_status` introduced in migration 063_gallery_status_enum.sql.
+ *  - 'draft'    — editing, not visible to clients (or parked from a previous
+ *                 publishing/failed pipeline state, see last_publish_error).
+ *  - 'live'     — publicly visible at the slug. Gated by RLS on anon reads.
+ *  - 'archived' — soft-deleted; retained for restore, not visible.
+ */
+export type GalleryStatus = 'draft' | 'live' | 'archived'
+
 export interface Gallery {
   id: string
   name: string
   client_name: string | null
-  status: string
+  status: GalleryStatus
   image_count: number
   delivery_settings: DeliverySettings
   published_at: string | null

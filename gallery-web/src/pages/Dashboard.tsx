@@ -12,13 +12,16 @@ import { useToast } from '../components/Toast'
 import { Viewer } from '../Viewer'
 import { useConfirm } from '../components/useConfirm'
 
+// Mirrors the postgres enum gallery_status (migration 063).
+type GalleryStatus = 'draft' | 'live' | 'archived'
+
 interface Gallery {
   id: string
   name: string
   slug?: string | null
   image_count: number
   published_at: string | null
-  status: string
+  status: GalleryStatus
   delivery_settings?: Record<string, unknown>
   download_count?: number
   favorite_count?: number
@@ -1547,10 +1550,11 @@ export function Dashboard() {
   const displayName = user.user_metadata?.full_name || user.user_metadata?.name || user.email
 
   const totalPhotos = galleries.reduce((sum, g) => sum + (g.image_count ?? 0), 0)
-  // "Live" matches both 'published' (web) and 'live' (desktop) statuses.
-  // Without including 'live', desktop-published galleries are counted as
-  // drafts in the stats row even though their cards say PUBLISHED.
-  const publishedCount = galleries.filter((g) => g.status === 'published' || g.status === 'live').length
+  // Single canonical "publicly visible" state since migration 063. The
+  // previous `=== 'live' || === 'published'` dual-check was a desktop-era
+  // leftover; the backfill normalised 'published' rows to 'live' and the
+  // gallery_status enum has no 'published' value.
+  const publishedCount = galleries.filter((g) => g.status === 'live').length
   const draftCount = galleries.length - publishedCount
 
   const statCards: { label: string; value: number | string; icon: IconName; color: string }[] = [
@@ -2040,7 +2044,7 @@ export function Dashboard() {
           }}>
             {galleries.map((g, idx) => {
               const isHovered = hoveredCard === g.id
-              const isLive = g.status === 'live' || g.status === 'published'
+              const isLive = g.status === 'live'
               const explicitCover = ((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl as string | undefined) || null
               const cover = explicitCover || coverFallback[g.id] || null
               return (
@@ -2218,7 +2222,7 @@ export function Dashboard() {
           const editorCover = ((editingGallery.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl as string | undefined)
             || coverFallback[editingGallery.id]
             || null
-          const isLiveStatus = editingGallery.status === 'live' || editingGallery.status === 'published'
+          const isLiveStatus = editingGallery.status === 'live'
           return (
           <div style={{
             position: 'fixed', inset: 0, zIndex: 1000,
