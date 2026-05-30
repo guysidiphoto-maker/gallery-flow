@@ -11,6 +11,7 @@ import { useFocusTrap } from '../lib/useFocusTrap'
 import { useToast } from '../components/Toast'
 import { Viewer } from '../Viewer'
 import { useConfirm } from '../components/useConfirm'
+import { requestStoryGeneration, type StoryStyle } from '../lib/storyRender'
 
 // Mirrors the postgres enum gallery_status (migration 063).
 type GalleryStatus = 'draft' | 'live' | 'archived'
