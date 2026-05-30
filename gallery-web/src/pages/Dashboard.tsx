@@ -8,6 +8,7 @@ import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import { useToast } from '../components/Toast'
 
 interface Gallery {
   id: string
@@ -122,6 +123,9 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
 
 export function Dashboard() {
   const { user, loading } = useAuth()
+  // In-app notification surface — replaces native alert() across the page so
+  // failures stay inside the dark Pixflow UI instead of OS chrome.
+  const { showToast, ToastContainer } = useToast()
   const [galleries, setGalleries] = useState<Gallery[]>([])
   // Cover-image fallback map — gallery_id → first image URL. Filled in by a
   // useEffect after galleries load. The desktop uploader doesn't set
@@ -392,7 +396,8 @@ export function Dashboard() {
   async function createGallery() {
     if (!newName.trim()) return
     if (!businessId) {
-      alert('שגיאה: לא נמצא חשבון עסקי. נסו לרענן את הדף.')
+      console.warn('[createGallery] missing businessId')
+      showToast({ kind: 'error', text: 'שגיאה: לא נמצא חשבון עסקי. נסו לרענן את הדף.' })
       return
     }
     setCreating(true)
@@ -439,8 +444,8 @@ export function Dashboard() {
     })
     setCreating(false)
     if (error) {
-      console.error('Gallery creation failed:', error)
-      alert(`שגיאה ביצירת גלריה: ${error.message}`)
+      console.warn('[createGallery]', error)
+      showToast({ kind: 'error', text: `שגיאה ביצירת גלריה: ${error.message}` })
       return
     }
     setShowModal(false)
@@ -498,7 +503,11 @@ export function Dashboard() {
       })
       .select('id, name, sort_order')
       .single()
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      console.warn('[addSection]', error)
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      return
+    }
     if (data) setSections(prev => [...prev, data])
     setNewSectionName('')
     setNewSectionDesc('')
@@ -510,7 +519,11 @@ export function Dashboard() {
     const trimmed = name.trim()
     if (!trimmed) return
     const { error } = await supabase.from('gallery_sections').update({ name: trimmed }).eq('id', id)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      console.warn('[renameSection]', error)
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      return
+    }
     setSections(prev => prev.map(s => s.id === id ? { ...s, name: trimmed } : s))
   }
 
@@ -519,7 +532,11 @@ export function Dashboard() {
     // First unset section_id on images so they don't disappear from the gallery
     await supabase.from('images').update({ section_id: null }).eq('section_id', id)
     const { error } = await supabase.from('gallery_sections').delete().eq('id', id)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      console.warn('[deleteSection]', error)
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      return
+    }
     setSections(prev => prev.filter(s => s.id !== id))
   }
 
@@ -528,7 +545,8 @@ export function Dashboard() {
     if (tokenBalance < files.length) {
       const wanted = files.length
       const have = tokenBalance
-      alert(`אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}. רכוש חבילה כדי להמשיך.`)
+      console.warn('[handleFileUpload] insufficient tokens', { wanted, have })
+      showToast({ kind: 'info', text: `אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}. רכוש חבילה כדי להמשיך.` })
       setShowBuyTokens(true)
       return
     }
@@ -547,10 +565,12 @@ export function Dashboard() {
     if (result.failed.length > 0) {
       const insufficient = result.failed.find(f => f.error.includes('insufficient_tokens'))
       if (insufficient) {
-        alert('הטוקנים נגמרו באמצע ההעלאה. רכוש חבילה כדי להמשיך עם השאר.')
+        console.warn('[handleFileUpload] ran out of tokens mid-upload', result.failed)
+        showToast({ kind: 'info', text: 'הטוקנים נגמרו באמצע ההעלאה. רכוש חבילה כדי להמשיך עם השאר.' })
         setShowBuyTokens(true)
       } else {
-        alert(`${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.`)
+        console.warn('[handleFileUpload] partial failure', result.failed)
+        showToast({ kind: 'error', text: `${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.` })
       }
     }
     // Refresh balance + image list
@@ -628,11 +648,13 @@ export function Dashboard() {
     if (!files || files.length === 0 || !editingGallery || !businessSlug) return
     const file = files[0]
     if (file.type !== 'video/mp4' && !file.name.toLowerCase().endsWith('.mp4')) {
-      alert('יש להעלות קובץ MP4 בלבד.')
+      console.warn('[handleStoryUpload] non-mp4 file rejected', { type: file.type, name: file.name })
+      showToast({ kind: 'error', text: 'יש להעלות קובץ MP4 בלבד.' })
       return
     }
     if (file.size > STORY_MAX_BYTES) {
-      alert(`הקובץ גדול מדי. המקסימום הוא ${Math.round(STORY_MAX_BYTES / 1024 / 1024)}MB.`)
+      console.warn('[handleStoryUpload] file too large', { size: file.size, max: STORY_MAX_BYTES })
+      showToast({ kind: 'error', text: `הקובץ גדול מדי. המקסימום הוא ${Math.round(STORY_MAX_BYTES / 1024 / 1024)}MB.` })
       return
     }
 
@@ -659,7 +681,8 @@ export function Dashboard() {
     if (uploadErr) {
       setStoryUploading(false)
       setStoryUploadProgress(null)
-      alert('שגיאה בהעלאה: ' + uploadErr.message)
+      console.warn('[handleStoryUpload] storage upload failed', uploadErr)
+      showToast({ kind: 'error', text: 'שגיאה בהעלאה: ' + uploadErr.message })
       return
     }
 
@@ -680,7 +703,8 @@ export function Dashboard() {
       await supabase.storage.from(STORY_BUCKET).remove([storagePath])
       setStoryUploading(false)
       setStoryUploadProgress(null)
-      alert('שגיאה בשמירת הסטורי: ' + (insertErr?.message ?? 'unknown'))
+      console.warn('[handleStoryUpload] insert failed, storage rolled back', insertErr)
+      showToast({ kind: 'error', text: 'שגיאה בשמירת הסטורי: ' + (insertErr?.message ?? 'unknown') })
       return
     }
 
@@ -722,7 +746,8 @@ export function Dashboard() {
     if (dbErr) {
       // Roll back the optimistic update so the photographer can retry.
       setStories(previous)
-      alert('שגיאה במחיקה: ' + dbErr.message)
+      console.warn('[handleStoryDelete]', dbErr)
+      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + dbErr.message })
     }
   }
 
@@ -900,10 +925,12 @@ export function Dashboard() {
         setShareSent(true)
         setTimeout(() => { setShareGallery(null); setShareSent(false) }, 1800)
       } else {
-        alert('שגיאה בשליחה: ' + (res.error || 'לא ידוע'))
+        console.warn('[sendShareEmail] response error', res.error)
+        showToast({ kind: 'error', text: 'שגיאה בשליחה: ' + (res.error || 'לא ידוע') })
       }
     } catch (err) {
-      alert('שגיאה: ' + (err instanceof Error ? err.message : String(err)))
+      console.warn('[sendShareEmail] threw', err)
+      showToast({ kind: 'error', text: 'שגיאה: ' + (err instanceof Error ? err.message : String(err)) })
     } finally {
       setShareSending(false)
     }
@@ -947,7 +974,8 @@ export function Dashboard() {
     const ids = Array.from(selectedImageIds)
     const { error } = await supabase.from('images').delete().in('id', ids)
     if (error) {
-      alert('שגיאה במחיקה: ' + error.message)
+      console.warn('[bulkDeleteSelected]', error)
+      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + error.message })
       return
     }
     setGalleryImages(prev => prev.filter(i => !selectedImageIds.has(i.id)))
@@ -962,7 +990,8 @@ export function Dashboard() {
     const ids = Array.from(selectedImageIds)
     const { error } = await supabase.from('images').update({ is_top_pick: makeTopPick }).in('id', ids)
     if (error) {
-      alert('שגיאה: ' + error.message)
+      console.warn('[bulkToggleTopPick]', error)
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
       return
     }
     setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, is_top_pick: makeTopPick } : i))
@@ -980,19 +1009,31 @@ export function Dashboard() {
     if (!img) return
     const next = !img.is_top_pick
     const { error } = await supabase.from('images').update({ is_top_pick: next }).eq('id', imageId)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      console.warn('[toggleSingleTopPick]', error)
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      return
+    }
     setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, is_top_pick: next } : i))
   }
   async function moveImageToSection(imageId: string, sectionId: string | null) {
     const { error } = await supabase.from('images').update({ section_id: sectionId }).eq('id', imageId)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      console.warn('[moveImageToSection]', error)
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      return
+    }
     setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, section_id: sectionId } : i))
   }
   async function deleteSingleImage(imageId: string) {
     if (!editingGallery) return
     if (!confirm('למחוק את התמונה? פעולה זו לא ניתנת לביטול.')) return
     const { error } = await supabase.from('images').delete().eq('id', imageId)
-    if (error) { alert('שגיאה במחיקה: ' + error.message); return }
+    if (error) {
+      console.warn('[deleteSingleImage]', error)
+      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + error.message })
+      return
+    }
     setGalleryImages(prev => prev.filter(i => i.id !== imageId))
     await supabase.from('galleries')
       .update({ image_count: Math.max(0, galleryImages.length - 1) })
@@ -4821,7 +4862,10 @@ export function Dashboard() {
                   onClick={async () => {
                     const url = await startCheckout(pkg.planId)
                     if (url) { window.location.href = url }
-                    else { alert('שגיאה בפתיחת תשלום. נסה שוב.') }
+                    else {
+                      console.warn('[startCheckout] no url returned', { planId: pkg.planId })
+                      showToast({ kind: 'error', text: 'שגיאה בפתיחת תשלום. נסה שוב.' })
+                    }
                   }}
                   style={{
                     position: 'relative',
@@ -4867,6 +4911,7 @@ export function Dashboard() {
         </div>
       )}
       </div>
+      <ToastContainer />
     </div>
   )
 }
