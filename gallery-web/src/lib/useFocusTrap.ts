@@ -27,6 +27,14 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
 ) {
   const containerRef = useRef<T | null>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
+  // Keep onEscape in a ref so an unstable inline callback at the call site
+  // (e.g. `() => setShowX(false)` re-created every render) doesn't re-run the
+  // effect below — re-running it stole focus from any active input on every
+  // parent state change, breaking every text input inside the trapped modal
+  // (one keystroke → setState → re-render → effect re-run → focus jumps to
+  // the first focusable element in the dialog).
+  const onEscapeRef = useRef(onEscape)
+  useEffect(() => { onEscapeRef.current = onEscape }, [onEscape])
 
   useEffect(() => {
     if (!active) return
@@ -45,7 +53,9 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
     })
 
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && onEscape) { e.stopPropagation(); onEscape(); return }
+      if (e.key === 'Escape' && onEscapeRef.current) {
+        e.stopPropagation(); onEscapeRef.current(); return
+      }
       if (e.key !== 'Tab') return
       const focusables = Array.from(container!.querySelectorAll<HTMLElement>(FOCUSABLE))
         .filter(el => el.offsetParent !== null) // visible only
@@ -71,7 +81,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
       const prev = previouslyFocused.current
       if (prev && typeof prev.focus === 'function') prev.focus()
     }
-  }, [active, onEscape])
+  }, [active])
 
   return containerRef
 }
