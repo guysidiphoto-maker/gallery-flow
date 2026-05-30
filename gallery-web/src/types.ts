@@ -88,6 +88,7 @@ export interface GallerySection {
   name: string
   slug?: string | null
   sort_order: number
+  description?: string | null
 }
 
 // ─── Event Lead Capture ─────────────────────────────────────────────────────

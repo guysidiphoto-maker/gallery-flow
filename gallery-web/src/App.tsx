@@ -1088,7 +1088,7 @@ export function App() {
       // to wait on token issuance for what is essentially a label.
       supabase
         .from('gallery_sections')
-        .select('id, name, slug, sort_order')
+        .select('id, name, slug, sort_order, description')
         .eq('gallery_id', id)
         .order('sort_order', { ascending: true }),
     ])
@@ -2310,6 +2310,9 @@ export function App() {
               <span className="gallery-section__name">{sec.name}</span>
               <span className="gallery-section__count">{sectionImages.length} {sectionImages.length === 1 ? 'photo' : 'photos'}</span>
             </h2>
+            {sec.description && (
+              <p className="gallery-section__description">{sec.description}</p>
+            )}
             <MasonryGrid
               images={sectionImages}
               imgBucket={imgBucket}

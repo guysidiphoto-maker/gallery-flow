@@ -901,8 +901,21 @@ input, button, textarea, select {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* Optional photographer-written sub-line under the chapter heading. Treated as
+   an editorial caption: muted, narrow column, set inside the section block so
+   it sits between the heading and the masonry grid. */
+.gallery-section__description {
+  margin: 0 0 24px;
+  max-width: 56ch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 400;
+}
+
 @media (max-width: 640px) {
   .gallery-section { margin-top: 40px; }
+  .gallery-section__description { font-size: 13px; margin-bottom: 18px; }
 }
 
 /* ── Sticky section nav (Pixieset-style anchor + scroll-spy) ───────────── */

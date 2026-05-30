@@ -9,6 +9,7 @@ import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenCl
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useToast } from '../components/Toast'
+import { Viewer } from '../Viewer'
 
 interface Gallery {
   id: string
@@ -144,7 +145,7 @@ export function Dashboard() {
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
   const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome' | 'stories'>('photos')
-  const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number }>>([])
+  const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number; description?: string | null }>>([])
   const [newSectionName, setNewSectionName] = useState('')
   const [newSectionDesc, setNewSectionDesc] = useState('')
   // Sidebar Set behavior: the active section (null only for an empty gallery
@@ -165,6 +166,11 @@ export function Dashboard() {
   const [activityLoading, setActivityLoading] = useState(false)
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set())
+  // Lightbox state — opens when the photographer clicks a photo (outside of
+  // select mode). Snapshotted at click time so next/prev stays scoped to the
+  // active section's grid even if state changes mid-view.
+  const [viewerImages, setViewerImages] = useState<GalleryImage[] | null>(null)
+  const [viewerIndex, setViewerIndex] = useState<number>(0)
   const [selectMode, setSelectMode] = useState(false)
   // Photo-grid view state — hovered tile + open per-tile menu + grid size
   // (Pixieset offers Regular/Large) + sort order.
@@ -472,7 +478,7 @@ export function Dashboard() {
         .order('sort_order', { ascending: true }),
       supabase
         .from('gallery_sections')
-        .select('id, name, sort_order')
+        .select('id, name, sort_order, description')
         .eq('gallery_id', g.id)
         .order('sort_order', { ascending: true }),
       // Stories — fetched alongside images so switching to the Stories tab
@@ -499,7 +505,7 @@ export function Dashboard() {
         const { data } = await supabase
           .from('gallery_sections')
           .insert({ gallery_id: g.id, name: 'סקשן 1', sort_order: 0 })
-          .select('id, name, sort_order')
+          .select('id, name, sort_order, description')
           .single()
         if (data) { secs = [data]; target = data }
       }
@@ -520,16 +526,22 @@ export function Dashboard() {
 
   async function addSection() {
     if (!editingGallery || !newSectionName.trim()) return
+    const trimmedDesc = newSectionDesc.trim()
     const { data, error } = await supabase
       .from('gallery_sections')
       .insert({
         gallery_id: editingGallery.id,
         name: newSectionName.trim(),
+        description: trimmedDesc || null,
         sort_order: sections.length,
       })
-      .select('id, name, sort_order')
+      .select('id, name, sort_order, description')
       .single()
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      showToast({ kind: 'error', text: 'יצירת הסקשן נכשלה. נסה שוב.' })
+      console.warn('[addSection]', error)
+      return
+    }
     if (data) setSections(prev => [...prev, data])
     setNewSectionName('')
     setNewSectionDesc('')
@@ -551,9 +563,13 @@ export function Dashboard() {
         name: `סקשן ${sections.length + 1}`,
         sort_order: sections.length,
       })
-      .select('id, name, sort_order')
+      .select('id, name, sort_order, description')
       .single()
-    if (error) { alert('שגיאה ביצירת סקשן: ' + error.message); return null }
+    if (error) {
+      showToast({ kind: 'error', text: 'יצירת הסקשן נכשלה. נסה שוב.' })
+      console.warn('[ensureUploadSection]', error)
+      return null
+    }
     setSections(prev => [...prev, data])
     setActiveSectionId(data.id)
     return data.id
@@ -704,12 +720,18 @@ export function Dashboard() {
   async function handleStoryUpload(files: FileList | null) {
     if (!files || files.length === 0 || !editingGallery || !businessSlug) return
     const file = files[0]
+    if (files.length > 1) {
+      // Owner picked multiple files in the native picker; we only render one
+      // story at a time today (server-side generation lands in a later phase).
+      // Tell the photographer instead of silently dropping the rest.
+      showToast({ kind: 'info', text: `מעלה את הקובץ הראשון בלבד (${file.name}). העלאה מרובה תתווסף עם יצירת הסטוריז האוטומטית.` })
+    }
     if (file.type !== 'video/mp4' && !file.name.toLowerCase().endsWith('.mp4')) {
-      alert('יש להעלות קובץ MP4 בלבד.')
+      showToast({ kind: 'error', text: 'יש להעלות קובץ MP4 בלבד.' })
       return
     }
     if (file.size > STORY_MAX_BYTES) {
-      alert(`הקובץ גדול מדי. המקסימום הוא ${Math.round(STORY_MAX_BYTES / 1024 / 1024)}MB.`)
+      showToast({ kind: 'error', text: `הקובץ גדול מדי. המקסימום הוא ${Math.round(STORY_MAX_BYTES / 1024 / 1024)}MB.` })
       return
     }
 
@@ -1299,6 +1321,21 @@ export function Dashboard() {
     }}>
       {/* In-app toasts (replaces silent alert() / vanished error states). */}
       <ToastContainer />
+
+      {/* Lightbox — full-screen photo preview. Mounted only when open, so the
+          dashboard pays nothing for it most of the time. */}
+      {viewerImages && (
+        <Viewer
+          images={viewerImages}
+          index={viewerIndex}
+          imgBucket="gallery-images"
+          allowDownloads
+          downloadLabel="הורד"
+          onClose={() => setViewerImages(null)}
+          onNavigate={(i) => setViewerIndex(i)}
+          onDownload={(img) => { void downloadOriginal(img.id) }}
+        />
+      )}
 
       {/* ======= Sidebar ======= */}
       {/* Mobile backdrop — visible only when the drawer is open under 900px */}
@@ -2470,17 +2507,30 @@ export function Dashboard() {
                               onMouseEnter={() => setHoveredImageId(img.id)}
                               onMouseLeave={() => { setHoveredImageId(null); }}
                               onClick={(e) => {
+                                e.stopPropagation()
                                 if (selectMode) {
+                                  // In select mode, click toggles selection.
                                   setSelectedImageIds(prev => {
                                     const next = new Set(prev)
                                     if (next.has(img.id)) next.delete(img.id); else next.add(img.id)
                                     if (next.size === 0) setSelectMode(false)
                                     return next
                                   })
-                                } else {
-                                  setSelectMode(true); setSelectedImageIds(new Set([img.id]))
+                                  return
                                 }
-                                e.stopPropagation()
+                                // Otherwise: open the lightbox scoped to the
+                                // currently-visible grid (active section's
+                                // images, sorted as rendered). The lightbox
+                                // navigates within this snapshot.
+                                const visible = activeSectionId
+                                  ? galleryImages.filter(i => i.section_id === activeSectionId)
+                                  : galleryImages
+                                const sorted = visible.slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                                const idx = sorted.findIndex(i => i.id === img.id)
+                                if (idx >= 0) {
+                                  setViewerImages(sorted)
+                                  setViewerIndex(idx)
+                                }
                               }}
                               style={{
                                 position: 'relative', aspectRatio: '1',
@@ -2607,12 +2657,15 @@ export function Dashboard() {
                                         padding: '8px 10px 4px', fontSize: 9, fontWeight: 500,
                                         letterSpacing: '0.18em', textTransform: 'uppercase', color: textMuted,
                                       }}>העבר לסט</div>
-                                      {sections.map(s => (
+                                      {/* Don't offer the current section as a destination — moving a
+                                          photo to where it already lives is a wasted round-trip and
+                                          made the menu visually noisy. */}
+                                      {sections.filter(s => s.id !== img.section_id).map(s => (
                                         <button key={s.id}
                                           onClick={() => { moveImageToSection(img.id, s.id); setImageMenuOpenId(null) }}
                                           style={{
                                             width: '100%', textAlign: 'right' as const, padding: '8px 10px',
-                                            background: img.section_id === s.id ? bgSubtle : 'transparent',
+                                            background: 'transparent',
                                             border: 'none', cursor: 'pointer', fontFamily: 'inherit',
                                             fontSize: 12, color: textPrimary,
                                           }}>{s.name}</button>
