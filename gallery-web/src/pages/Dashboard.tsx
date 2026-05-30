@@ -9,7 +9,7 @@ import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenCl
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useToast } from '../components/Toast'
-import { requestStoryGeneration, type StoryStyle } from '../lib/storyRender'
+import { requestStoryGeneration, pollStoryRender, type StoryStyle } from '../lib/storyRender'
 
 // Stories Phase 1 — minimum gallery size for the "Generate story" CTA. The
 // Remotion "clean" composition needs ~12 photos to produce a coherent ~30s
@@ -210,6 +210,12 @@ export function Dashboard() {
   const [showStoryStyleModal, setShowStoryStyleModal] = useState(false)
   const [storyGenStyle, setStoryGenStyle] = useState<StoryStyle>('clean')
   const [storyGenerating, setStoryGenerating] = useState(false)
+  // Phase 2 — handle for the active polling loop so we can cancel on unmount
+  // / gallery switch. We track an interval id PLUS the renderId we're polling
+  // so a second click (different gallery, say) cleanly replaces the loop
+  // instead of stacking timers.
+  const storyPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const storyPollRenderIdRef = useRef<string | null>(null)
 
   // Toast surface for the generate flow. The ToastContainer is rendered near
   // the bottom of the JSX tree.
@@ -326,6 +332,27 @@ export function Dashboard() {
     })()
     return () => { cancelled = true }
   }, [galleries])
+
+  // Stories Phase 2 — cancel any in-flight render poll when the editor
+  // closes or the user switches to another gallery. We can't put this inside
+  // handleGenerateStoryConfirm because the React closure there is gone by
+  // the time the editor unmounts.
+  useEffect(() => {
+    if (!editingGallery) {
+      if (storyPollTimerRef.current) {
+        clearInterval(storyPollTimerRef.current)
+        storyPollTimerRef.current = null
+      }
+      storyPollRenderIdRef.current = null
+    }
+    return () => {
+      if (storyPollTimerRef.current) {
+        clearInterval(storyPollTimerRef.current)
+        storyPollTimerRef.current = null
+      }
+      storyPollRenderIdRef.current = null
+    }
+  }, [editingGallery?.id])
 
   // Lazy-load activity summary when the tab opens. Re-fetches when switching
   // galleries, but caches per-gallery within the editor session.
@@ -904,29 +931,87 @@ export function Dashboard() {
   const buyTokensRef     = useFocusTrap<HTMLDivElement>(showBuyTokens, () => setShowBuyTokens(false))
   const storyStyleRef    = useFocusTrap<HTMLDivElement>(showStoryStyleModal, () => { if (!storyGenerating) setShowStoryStyleModal(false) })
 
-  // ─── Stories Phase 1: trigger automated generation ──────────────────────
-  // POSTs to /api/stories/render with the chosen style. The endpoint is a
-  // SCAFFOLD today (returns queued without invoking Lambda); Phase 2 will
-  // replace the success branch with real render polling.
+  // ─── Stories Phase 2: trigger Lambda render + poll for completion ──────
+  // POSTs to /api/stories/render which now actually invokes Remotion Lambda
+  // and returns a renderId. We then poll /api/stories/status every 5s and
+  // refresh the stories list when status flips to 'ready'.
+  //
+  // Cleanup: any active poll is cancelled when the gallery editor closes
+  // (see the useEffect below). The pollers themselves are no-ops once they
+  // see 'ready' or 'failed' so they self-terminate normally.
+
+  function stopStoryPoll() {
+    if (storyPollTimerRef.current) {
+      clearInterval(storyPollTimerRef.current)
+      storyPollTimerRef.current = null
+    }
+    storyPollRenderIdRef.current = null
+  }
+
+  // Re-fetch the stories list from the DB. Called when the poll lands on
+  // 'ready' — the status endpoint has already inserted the public row, so a
+  // simple SELECT brings the new mp4 into view alongside the existing ones.
+  async function refreshStoriesForCurrentGallery() {
+    if (!editingGallery) return
+    const { data } = await supabase
+      .from('stories')
+      .select('id, style, storage_path, duration, created_at')
+      .eq('gallery_id', editingGallery.id)
+      .order('created_at', { ascending: true })
+    setStories(data ?? [])
+  }
+
+  function startStoryPoll(renderId: string) {
+    // Replace any prior timer — we only ever follow one render at a time per
+    // editor session. The new one supersedes the old.
+    stopStoryPoll()
+    storyPollRenderIdRef.current = renderId
+    storyPollTimerRef.current = setInterval(() => {
+      const activeId = storyPollRenderIdRef.current
+      if (!activeId) {
+        stopStoryPoll()
+        return
+      }
+      void pollStoryRender(activeId).then(snapshot => {
+        // Guard against late ticks after the user navigated away.
+        if (storyPollRenderIdRef.current !== activeId) return
+        if (snapshot.status === 'ready') {
+          stopStoryPoll()
+          void refreshStoriesForCurrentGallery()
+          showToast({ kind: 'success', text: 'הסטורי מוכן' })
+        } else if (snapshot.status === 'failed') {
+          stopStoryPoll()
+          showToast({
+            kind: 'error',
+            text: `יצירת הסטורי נכשלה: ${snapshot.error_message ?? snapshot.error ?? 'שגיאה לא ידועה'}`,
+          })
+        }
+        // 'queued' / 'rendering' → keep polling. No-op here.
+      })
+    }, 5000)
+  }
+
   async function handleGenerateStoryConfirm() {
     if (!editingGallery || storyGenerating) return
     setStoryGenerating(true)
     // Optimistic progress toast — the photographer can keep working while
-    // the (future) Lambda render proceeds in the background.
+    // the Lambda render proceeds in the background.
     showToast({ kind: 'info', text: 'מייצר סטורי — זה ייקח דקה או שתיים' })
     const result = await requestStoryGeneration(editingGallery.id, storyGenStyle)
     setStoryGenerating(false)
     setShowStoryStyleModal(false)
     if (result.ok) {
-      // Phase 1 stub: queued, no actual file yet — show success but DO NOT
-      // append to `stories` (there's nothing to append). Phase 2 will start
-      // polling here and push the finished row into state when ready.
       showToast({
         kind: 'success',
-        text: result.message
-          ? `הסטורי נשלח לעיבוד · ${result.message}`
+        text: result.message === 'render_in_progress'
+          ? 'הסטורי כבר בעיבוד — נמשיך לעקוב'
           : 'הסטורי נשלח לעיבוד',
       })
+      // Kick off polling. We persist renderId in a ref so the cleanup
+      // useEffect below can cancel it when the editor closes.
+      if (result.renderId) {
+        startStoryPoll(result.renderId)
+      }
     } else {
       showToast({
         kind: 'error',

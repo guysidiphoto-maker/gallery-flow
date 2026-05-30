@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.89.0",
+    "@remotion/lambda": "^4.0.245",
     "@sentry/react": "^10.50.0",
     "@studio-freight/lenis": "^1.0.42",
     "@supabase/supabase-js": "^2.101.1",
