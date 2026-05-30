@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { FixedSizeGrid, type GridChildComponentProps } from 'react-window'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany } from '../lib/uploadPipeline'
@@ -1674,6 +1675,7 @@ export function Dashboard() {
   // image with a 1000-step gap so subsequent moves don't collide.
   async function reorderImage(draggedId: string, targetId: string) {
     if (draggedId === targetId) return
+    if (!editingGallery) return
     const visible = (activeSectionId
       ? galleryImages.filter(i => i.section_id === activeSectionId)
       : galleryImages
@@ -1686,6 +1688,9 @@ export function Dashboard() {
     next.splice(toIdx, 0, moved)
     const idToOrder = new Map<string, number>()
     next.forEach((img, idx) => { idToOrder.set(img.id, idx * 1000) })
+    // Optimistic state update — paint the new order immediately, then
+    // reconcile with the server. If the RPC fails the user sees a brief
+    // flicker when we revert on partial-failure (see below).
     setGalleryImages(prev => prev.map(i =>
       idToOrder.has(i.id) ? { ...i, sort_order: idToOrder.get(i.id)! } : i
     ))
@@ -3162,13 +3167,18 @@ export function Dashboard() {
                         return (a.sort_order ?? 0) - (b.sort_order ?? 0)
                       })
                       const minCell = gridSize === 'large' ? 220 : 140
-                      return visibleImages.length > 0 && (
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(auto-fill, minmax(${minCell}px, 1fr))`,
-                        gap: 4,
-                      }}>
-                        {visibleImages.map(img => {
+                      // Virtualize past 300 photos — see App.tsx for the
+                      // same threshold + rationale. Below 300 we keep CSS
+                      // grid for the auto-fill behaviour photographers
+                      // already know; past it, react-window's FixedSizeGrid
+                      // mounts only the visible square tiles (~3-5 rows).
+                      const VIRTUALIZE_THRESHOLD = 300
+                      const shouldVirtualizeDashboard =
+                        visibleImages.length > VIRTUALIZE_THRESHOLD
+                      // Tile renderer — shared between the non-virtualized
+                      // grid and the FixedSizeGrid cell renderer so per-tile
+                      // UX (drag, hover overlay, menu) is identical.
+                      const renderTile = (img: GalleryImage) => {
                           const isSelected = selectedImageIds.has(img.id)
                           const isHovered = hoveredImageId === img.id
                           const isMenuOpen = imageMenuOpenId === img.id
@@ -3434,9 +3444,64 @@ export function Dashboard() {
                               )}
                             </div>
                           )
-                        })}
-                      </div>
-                      )
+                        }
+                      if (!visibleImages.length) return null
+                      if (!shouldVirtualizeDashboard) {
+                        return (
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(auto-fill, minmax(${minCell}px, 1fr))`,
+                            gap: 4,
+                          }}>
+                            {visibleImages.map(img => renderTile(img))}
+                          </div>
+                        )
+                      }
+                      // Virtualized path. FixedSizeGrid needs concrete
+                      // pixel dimensions; we read the container width from
+                      // window.innerWidth minus the sidebar+padding budget
+                      // (~360px on the dashboard layout). This is a heuristic
+                      // — for pixel-perfect sizing we'd plumb a ResizeObserver
+                      // through, but the visible difference is one tile per
+                      // row at most, and FixedSizeGrid handles overflow.
+                      const VirtualPhotoGrid = () => {
+                        // tile size = minCell; row height = same (square)
+                        // viewport budget: open dashboard tab is roughly
+                        // viewportHeight - 280px of chrome (tabs + filters).
+                        const w = typeof window === 'undefined' ? 1200 : Math.max(360, window.innerWidth - 360)
+                        const h = typeof window === 'undefined' ? 800 : Math.max(400, window.innerHeight - 280)
+                        const colCount = Math.max(1, Math.floor((w + 4) / (minCell + 4)))
+                        const rowCount = Math.ceil(visibleImages.length / colCount)
+                        const Cell = ({ columnIndex, rowIndex, style }: GridChildComponentProps) => {
+                          const idx = rowIndex * colCount + columnIndex
+                          const img = visibleImages[idx]
+                          if (!img) return <div style={style} />
+                          // react-window's `style` positions the cell; the
+                          // inner tile is what renderTile returns. Wrap so
+                          // the tile gets the absolute position from
+                          // react-window without breaking its own
+                          // position: relative for menu/checkbox overlays.
+                          return (
+                            <div style={{ ...style, padding: 2 }}>
+                              {renderTile(img)}
+                            </div>
+                          )
+                        }
+                        return (
+                          <FixedSizeGrid
+                            columnCount={colCount}
+                            rowCount={rowCount}
+                            columnWidth={minCell + 4}
+                            rowHeight={minCell + 4}
+                            height={h}
+                            width={w}
+                            overscanRowCount={2}
+                          >
+                            {Cell}
+                          </FixedSizeGrid>
+                        )
+                      }
+                      return <VirtualPhotoGrid />
                     })()}
                     {galleryImages.length === 0 && !uploading && (
                       <div style={{
