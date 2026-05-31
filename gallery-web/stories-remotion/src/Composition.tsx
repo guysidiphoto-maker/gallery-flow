@@ -67,7 +67,8 @@ export const CleanComposition: React.FC = () => (
               p.motionMode ?? 'subtle',
             );
       return {
-        durationInFrames: computeTotalFrames(scenes, CLEAN_OUTPUT.fps),
+        // Pass brand through so intro+outro frames are reserved when set.
+        durationInFrames: computeTotalFrames(scenes, CLEAN_OUTPUT.fps, p.brand),
       };
     }}
   />

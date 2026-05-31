@@ -13,10 +13,16 @@
  * jitter the FFmpeg side mitigated with WORK_W=2160/WORK_H=3840 + scale down.
  *
  * Composition input props:
- *   { images: string[], durationSeconds?: number, motionMode?: 'none'|'subtle'|'dynamic' }
+ *   { images: string[], durationSeconds?: number, motionMode?: 'none'|'subtle'|'dynamic',
+ *     brand?: BrandKit }
  *
  * Image URLs may be local file URLs (file://) when running locally, or
  * public Supabase URLs when running on Lambda.
+ *
+ * Brand integration (opt-in): when `brand` is provided, the composition wraps
+ * the photo sequence with an intro card (1.5s), an outro card (2.0s), and a
+ * subtle bottom-right watermark across the body. With no brand prop the
+ * composition behaves identically to the original photo-only spike.
  */
 
 import React from 'react';
@@ -57,6 +63,21 @@ const PAN_ZOOM = 1.04;
 // canvas we keep the same final 30px drift.
 const DRIFT_PX_FINAL = 30;
 
+// ── Brand integration constants ─────────────────────────────────────────────
+//
+// Total runtime extension when a brand is set: INTRO_SEC + OUTRO_SEC = 3.5s.
+// The brand→photo crossfade and photo→outro crossfade overlap by
+// BRAND_CROSSFADE_SEC and are absorbed into the intro/outro durations, so the
+// photo body keeps its original total duration math (see buildScenes).
+
+const INTRO_SEC = 1.5;
+const OUTRO_SEC = 2.0;
+const BRAND_CROSSFADE_SEC = 0.4; // matches TRANSITION_DURATION_SEC for visual continuity
+const DEFAULT_INK = '#0a0a0f';
+const DEFAULT_PAPER = '#ffffff';
+const WATERMARK_OPACITY = 0.2;
+const WATERMARK_SCALE_OF_WIDTH = 0.08; // 8% of frame width
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type MotionMode = 'none' | 'subtle' | 'dynamic';
@@ -84,12 +105,62 @@ export interface SceneSpec {
   motionType: MotionType;
 }
 
+/**
+ * BrandKit — minimal shape consumed by the composition.
+ *
+ * Mirrors `gallery-web/src/lib/brandKit.ts` from `feat/web-brand-kit-page`.
+ * Defined locally here so the spike has no build-time coupling to that
+ * branch; once merged, this interface can be replaced with a re-export.
+ *
+ * Every field is optional so the composition can degrade gracefully:
+ *   - no logo + no studio_name → no intro card, no outro card, no watermark
+ *   - logo only                → intro/outro show logo; tagline/signature skipped
+ *   - studio_name only         → intro/outro show typography only
+ *
+ * Backwards compat: omit the `brand` prop entirely and the composition behaves
+ * exactly as the original photo-only spike.
+ */
+export interface BrandKit {
+  studio_name?: string;
+  logo?: {
+    url?: string;
+  };
+  colors?: {
+    primary?: string;
+    ink?: string;
+    paper?: string;
+  };
+  voice?: {
+    tagline?: string;
+    signature?: string;
+  };
+  social?: {
+    instagram?: string;
+    tiktok?: string;
+    website?: string;
+  };
+}
+
 export interface CleanProps {
   images: string[];
   /** Optional pre-built scene list. If absent, every image becomes a portrait scene. */
   scenes?: SceneSpec[];
   durationSeconds?: number;
   motionMode?: MotionMode;
+  /**
+   * Optional brand kit. When provided AND it carries at least a logo URL or a
+   * studio_name, an intro card (1.5s), an outro card (2.0s), and a subtle
+   * bottom-right watermark are layered around the photo sequence.
+   */
+  brand?: BrandKit;
+}
+
+/** True when there is enough brand data to render any branded surface. */
+function hasUsableBrand(brand?: BrandKit): brand is BrandKit {
+  if (!brand) return false;
+  const hasLogo = !!brand.logo?.url;
+  const hasName = !!(brand.studio_name && brand.studio_name.trim());
+  return hasLogo || hasName;
 }
 
 // ── Pure scene builder (mirrors desktop buildSceneGroups) ───────────────────
@@ -417,6 +488,283 @@ const CrossfadeScene: React.FC<{
   );
 };
 
+// ── Brand surfaces: intro card, outro card, watermark ──────────────────────
+
+/**
+ * IntroCard — branded opener shown before the first photo.
+ *
+ * Timing (frames are computed against `useVideoConfig().fps`):
+ *   - 0.0s: solid brand background appears
+ *   - 0.4s: logo fades in (200ms)
+ *   - 0.8s: studio name + tagline fade in (200ms)
+ *   - 1.4s → 1.5s: card fades out (crossfades into first photo)
+ *
+ * If the brand has no logo, the logo block is skipped (typography only).
+ * If the brand has no studio_name, the typography block is skipped.
+ */
+const IntroCard: React.FC<{ brand: BrandKit; durationFrames: number }> = ({
+  brand,
+  durationFrames,
+}) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const bg = brand.colors?.ink || DEFAULT_INK;
+  const fg = brand.colors?.paper || DEFAULT_PAPER;
+  const accent = brand.colors?.primary || fg;
+  const logoUrl = brand.logo?.url;
+  const name = brand.studio_name?.trim();
+  const tagline = brand.voice?.tagline?.trim();
+
+  const fadeInFrames = Math.round(0.2 * fps);
+  const logoStart = Math.round(0.4 * fps);
+  const typoStart = Math.round(0.8 * fps);
+  const fadeOutStart = durationFrames - Math.round(BRAND_CROSSFADE_SEC * fps);
+
+  const logoOpacity = interpolate(
+    frame,
+    [logoStart, logoStart + fadeInFrames],
+    [0, 1],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+  );
+  const typoOpacity = interpolate(
+    frame,
+    [typoStart, typoStart + fadeInFrames],
+    [0, 1],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+  );
+  const cardOpacity = interpolate(
+    frame,
+    [fadeOutStart, durationFrames],
+    [1, 0],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+  );
+
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: bg,
+        opacity: cardOpacity,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: 'Heebo, system-ui, -apple-system, "Segoe UI", sans-serif',
+        textAlign: 'center',
+        padding: 80,
+      }}
+    >
+      {logoUrl ? (
+        <Img
+          src={logoUrl}
+          style={{
+            maxWidth: '40%',
+            maxHeight: '32%',
+            objectFit: 'contain',
+            opacity: logoOpacity,
+            marginBottom: 48,
+          }}
+        />
+      ) : null}
+      {name ? (
+        <div style={{ opacity: typoOpacity }}>
+          <div
+            style={{
+              color: fg,
+              fontSize: 64,
+              fontWeight: 700,
+              letterSpacing: -1,
+              lineHeight: 1.1,
+            }}
+          >
+            {name}
+          </div>
+          {tagline ? (
+            <div
+              style={{
+                color: accent,
+                fontSize: 28,
+                fontWeight: 400,
+                marginTop: 16,
+                lineHeight: 1.3,
+                opacity: 0.85,
+              }}
+            >
+              {tagline}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+
+/**
+ * OutroCard — branded closer shown after the last photo.
+ *
+ * Timing:
+ *   - 0.0s → 0.4s: card fades in (crossfades from last photo)
+ *   - 0.5s: logo + thank-you/tagline visible at full opacity
+ *   - 2.0s: hard cut to end of composition
+ *
+ * Content priority:
+ *   - If `voice.signature` is set, use it as the headline.
+ *   - Else if `studio_name` is set, headline is "תודה · {studio_name}".
+ *   - Else if `voice.tagline` is set, use it.
+ *   - Else logo-only.
+ *
+ * Social handles are listed below at smaller size when present.
+ */
+const OutroCard: React.FC<{ brand: BrandKit; durationFrames: number }> = ({
+  brand,
+  durationFrames,
+}) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const bg = brand.colors?.ink || DEFAULT_INK;
+  const fg = brand.colors?.paper || DEFAULT_PAPER;
+  const accent = brand.colors?.primary || fg;
+  const logoUrl = brand.logo?.url;
+  const name = brand.studio_name?.trim();
+  const tagline = brand.voice?.tagline?.trim();
+  const signature = brand.voice?.signature?.trim();
+
+  const headline = signature
+    ? signature
+    : name
+      ? `תודה · ${name}`
+      : tagline || null;
+
+  const fadeInFrames = Math.round(BRAND_CROSSFADE_SEC * fps);
+  const cardOpacity = interpolate(frame, [0, fadeInFrames], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+
+  const socialEntries = brand.social
+    ? [
+        brand.social.instagram ? `@${brand.social.instagram.replace(/^@/, '')}` : null,
+        brand.social.tiktok ? `@${brand.social.tiktok.replace(/^@/, '')} (TikTok)` : null,
+        brand.social.website ? brand.social.website.replace(/^https?:\/\//, '') : null,
+      ].filter((x): x is string => !!x)
+    : [];
+
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: bg,
+        opacity: cardOpacity,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: 'Heebo, system-ui, -apple-system, "Segoe UI", sans-serif',
+        textAlign: 'center',
+        padding: 80,
+      }}
+    >
+      {logoUrl ? (
+        <Img
+          src={logoUrl}
+          style={{
+            maxWidth: '28%',
+            maxHeight: '22%',
+            objectFit: 'contain',
+            marginBottom: 40,
+          }}
+        />
+      ) : null}
+      {headline ? (
+        <div
+          style={{
+            color: fg,
+            fontSize: 48,
+            fontWeight: 600,
+            letterSpacing: -0.5,
+            lineHeight: 1.2,
+          }}
+        >
+          {headline}
+        </div>
+      ) : null}
+      {socialEntries.length > 0 ? (
+        <div
+          style={{
+            color: accent,
+            fontSize: 22,
+            fontWeight: 400,
+            marginTop: 32,
+            opacity: 0.8,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+          }}
+        >
+          {socialEntries.map((s, i) => (
+            <div key={i}>{s}</div>
+          ))}
+        </div>
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+
+/**
+ * Watermark — bottom-right brand mark layered over the photo sequence.
+ *
+ * - Renders logo at 8% of frame width, 20% opacity.
+ * - If brand has no logo but has studio_name, renders text mark instead.
+ * - If brand has neither, this component is skipped at the call site.
+ */
+const Watermark: React.FC<{ brand: BrandKit }> = ({ brand }) => {
+  const logoUrl = brand.logo?.url;
+  const name = brand.studio_name?.trim();
+  const fg = brand.colors?.paper || DEFAULT_PAPER;
+  const widthPx = Math.round(OUT_W * WATERMARK_SCALE_OF_WIDTH);
+
+  if (!logoUrl && !name) return null;
+
+  return (
+    <AbsoluteFill
+      style={{
+        pointerEvents: 'none',
+        opacity: WATERMARK_OPACITY,
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'flex-end',
+        padding: 28,
+      }}
+    >
+      {logoUrl ? (
+        <Img
+          src={logoUrl}
+          style={{
+            width: widthPx,
+            height: 'auto',
+            maxHeight: widthPx,
+            objectFit: 'contain',
+            // soft drop-shadow keeps the mark readable on bright photos
+            filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.45))',
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            color: fg,
+            fontFamily: 'Heebo, system-ui, -apple-system, "Segoe UI", sans-serif',
+            fontSize: 18,
+            fontWeight: 500,
+            textShadow: '0 1px 2px rgba(0,0,0,0.45)',
+          }}
+        >
+          {name}
+        </div>
+      )}
+    </AbsoluteFill>
+  );
+};
+
 // ── Top-level composition ───────────────────────────────────────────────────
 
 export const Clean: React.FC<CleanProps> = ({
@@ -424,6 +772,7 @@ export const Clean: React.FC<CleanProps> = ({
   scenes: providedScenes,
   durationSeconds = 30,
   motionMode = 'subtle',
+  brand,
 }) => {
   const { fps } = useVideoConfig();
 
@@ -441,10 +790,30 @@ export const Clean: React.FC<CleanProps> = ({
         );
 
   const fadeFrames = Math.round(TRANSITION_DURATION_SEC * fps);
-  let cursor = 0;
+  const brandOn = hasUsableBrand(brand);
+  const introFrames = brandOn ? Math.round(INTRO_SEC * fps) : 0;
+  const outroFrames = brandOn ? Math.round(OUTRO_SEC * fps) : 0;
+  const brandFadeFrames = brandOn ? Math.round(BRAND_CROSSFADE_SEC * fps) : 0;
+
+  // Photo body begins after the intro card, overlapping by BRAND_CROSSFADE_SEC
+  // so the intro's fade-out crossfades into the first photo's fade-in.
+  const photoBodyStart = brandOn ? introFrames - brandFadeFrames : 0;
+  let cursor = photoBodyStart;
+
+  // Compute the absolute frame at which the photo body ends so the outro can
+  // start one crossfade earlier and absorb the overlap.
+  const photoBodyFrames = computePhotoBodyFrames(scenes, fps);
+  const photoBodyEnd = photoBodyStart + photoBodyFrames;
+  const outroStart = brandOn ? photoBodyEnd - brandFadeFrames : photoBodyEnd;
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
+      {brandOn ? (
+        <Sequence from={0} durationInFrames={introFrames} layout="none">
+          <IntroCard brand={brand!} durationFrames={introFrames} />
+        </Sequence>
+      ) : null}
+
       {scenes.map((scene, idx) => {
         const sceneFrames = Math.round(scene.durationSec * fps);
         const from = cursor;
@@ -459,17 +828,67 @@ export const Clean: React.FC<CleanProps> = ({
           </Sequence>
         );
       })}
+
+      {brandOn ? (
+        <Sequence
+          from={photoBodyStart}
+          durationInFrames={Math.max(1, photoBodyFrames)}
+          layout="none"
+        >
+          <Watermark brand={brand!} />
+        </Sequence>
+      ) : null}
+
+      {brandOn ? (
+        <Sequence from={outroStart} durationInFrames={outroFrames} layout="none">
+          <OutroCard brand={brand!} durationFrames={outroFrames} />
+        </Sequence>
+      ) : null}
     </AbsoluteFill>
   );
 };
 
 // ── Helpers exported for the renderer scripts ──────────────────────────────
 
-export function computeTotalFrames(scenes: SceneSpec[], fps: number = FPS): number {
+/**
+ * Photo-body length only — no intro/outro. Equal to the FFmpeg
+ * `xfade offset=cumDuration - td` chain: `sum(scene) - (n-1)*0.4`.
+ */
+export function computePhotoBodyFrames(scenes: SceneSpec[], fps: number = FPS): number {
   if (scenes.length === 0) return 0;
   const sumScenes = scenes.reduce((s, sc) => s + Math.round(sc.durationSec * fps), 0);
   const overlap = (scenes.length - 1) * Math.round(TRANSITION_DURATION_SEC * fps);
   return Math.max(1, sumScenes - overlap);
 }
 
+/**
+ * Total composition length including the brand intro + outro when a brand kit
+ * is supplied (and has at least a logo or studio name). Intro/outro each
+ * overlap with the body by BRAND_CROSSFADE_SEC; the net runtime extension is
+ * therefore `INTRO_SEC + OUTRO_SEC - 2*BRAND_CROSSFADE_SEC`.
+ *
+ * Callers without a brand pass `brand: undefined` and the function reduces to
+ * the original photo-only frame count — keeps timeline math backwards
+ * compatible.
+ */
+export function computeTotalFrames(
+  scenes: SceneSpec[],
+  fps: number = FPS,
+  brand?: BrandKit,
+): number {
+  const body = computePhotoBodyFrames(scenes, fps);
+  if (!hasUsableBrand(brand)) return body;
+  const intro = Math.round(INTRO_SEC * fps);
+  const outro = Math.round(OUTRO_SEC * fps);
+  const overlap = 2 * Math.round(BRAND_CROSSFADE_SEC * fps);
+  return Math.max(1, body + intro + outro - overlap);
+}
+
 export const CLEAN_OUTPUT = { width: OUT_W, height: OUT_H, fps: FPS } as const;
+export const BRAND_TIMING = {
+  introSec: INTRO_SEC,
+  outroSec: OUTRO_SEC,
+  crossfadeSec: BRAND_CROSSFADE_SEC,
+  /** Net runtime extension when brand is on. */
+  extensionSec: INTRO_SEC + OUTRO_SEC - 2 * BRAND_CROSSFADE_SEC,
+} as const;

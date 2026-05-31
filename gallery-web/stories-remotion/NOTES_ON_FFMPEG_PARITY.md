@@ -141,9 +141,76 @@ with `mix-blend-mode` or via an SVG `<feColorMatrix>` filter, NOT post-encode
 ## Out of scope for Phase 0
 
 - Fast Social vertical scroll mode (`renderScrollVideo`)
-- Branded outro (`renderOutroScene`) — logo fade-in/out grid
 - HEIC → JPEG conversion (desktop uses macOS `sips`; Lambda will need
   Sharp or a libheif wrapper, or we require callers to pre-convert)
 - Audio (none in current desktop pipeline either)
 
 All of the above need their own parity tables before Phase 1 ships.
+
+---
+
+## Brand integration
+
+> **Status**: shipped in `Clean.tsx` as an opt-in surface. No equivalent in
+> the desktop FFmpeg renderer — desktop only has `renderOutroScene` which is
+> a logo fade-in/out *grid*. The Remotion intro/outro are richer (background,
+> typography, social handles) and the watermark is brand-new.
+
+### What the surfaces add
+
+| Surface         | When                        | Duration | Content                                                                                                        |
+|-----------------|-----------------------------|----------|----------------------------------------------------------------------------------------------------------------|
+| `IntroCard`     | Before first photo          | 1.5 s    | Brand-ink background; logo fade-in at 0.4s; studio name + tagline fade-in at 0.8s; cross-fade to first photo at 1.4s. |
+| `Watermark`     | Across the entire body      | n/a      | Logo (or studio-name text fallback) bottom-right, 20% opacity, scaled to 8% of frame width (~86 px on 1080 wide). Drop-shadow keeps it readable on bright photos. |
+| `OutroCard`     | After last photo            | 2.0 s    | Brand-ink background; logo + headline ("תודה · {studio_name}" or `voice.signature` or `voice.tagline`); optional social handles below. |
+
+The intro fades into the photo body over 0.4 s (matches `TRANSITION_DURATION_SEC`)
+and the photo body fades into the outro over the same 0.4 s, so the net
+runtime extension is:
+
+```
+extension = INTRO_SEC + OUTRO_SEC - 2 * BRAND_CROSSFADE_SEC
+          = 1.5 + 2.0 - 2 * 0.4
+          = 2.7 s
+```
+
+`computeTotalFrames(scenes, fps, brand)` and the `<Composition>`'s
+`calculateMetadata` both account for this, so callers don't need to adjust
+their `durationSeconds` argument — pass the desired *photo* duration and the
+composition will be longer when a brand is provided. Existing "30 s story"
+math is therefore unchanged for opt-out callers; opt-in callers should
+document the actual rendered runtime as ~32.7 s.
+
+### Graceful degradation
+
+Brand integration is fully opt-in and degrades field-by-field:
+
+| Brand state                                  | Visible surfaces                                                            |
+|----------------------------------------------|-----------------------------------------------------------------------------|
+| `brand` prop omitted                         | None. Pure photo-only sequence (Phase 0 default).                           |
+| `brand` present, no logo + no studio_name    | `hasUsableBrand()` returns false → no intro, no outro, no watermark.        |
+| Logo only                                    | Intro + outro show logo; typography blocks skipped. Watermark shows logo.   |
+| Studio name only                             | Intro + outro show typography on `colors.ink` background; no logo image. Watermark shows text. |
+| Colors omitted                               | Falls back to `#0a0a0f` ink + `#ffffff` paper. Primary defaults to paper.   |
+| Voice / social omitted                       | Skipped silently. Outro headline falls back to "תודה · {studio_name}".      |
+
+### Why CSS Heebo is safe for Hebrew
+
+The intro/outro typography uses `font-family: 'Heebo, system-ui, …'`. Headless
+Chromium under Remotion ships system fallbacks that cover Hebrew at the OS
+level; Heebo is preferred because it's the canonical dashboard font on
+gallery-web. If a Lambda layer doesn't have Heebo installed, system Hebrew
+fallbacks will still render correctly — there is no `?` glyph risk for
+Hebrew tagline / signature strings.
+
+### Data source (`render-local.ts`)
+
+`render-local.ts` accepts a new `--business-id <uuid>` flag. When passed, it:
+
+1. Tries to read from a future `brand_kits` table keyed by `business_id`.
+2. Falls back to the existing `businesses` table (logo_url, business_name)
+   and synthesizes a minimal BrandKit. Brand surfaces still render — just
+   without colors, tagline, or social handles.
+
+When `--business-id` is omitted, no brand fetch happens and the render is
+identical to the original photo-only spike.
