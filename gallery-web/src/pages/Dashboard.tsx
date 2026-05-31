@@ -30,6 +30,7 @@ import {
   estimateRenderSeconds,
   formatStoryDuration,
 } from '../lib/storyRender'
+import { applyBrandKitToGalleryDefaults, getBrandKit } from '../lib/brandKit'
 
 // Mirrors the postgres enum gallery_status (migration 063).
 type GalleryStatus = 'draft' | 'live' | 'archived'
@@ -621,6 +622,12 @@ export function Dashboard() {
       return
     }
     setCreating(true)
+    // Brand Kit projection — when the photographer has set apply_to_galleries
+    // in /brand-kit, brandDefaults carries studioName / logoUrl / welcomeMessage
+    // pulled from their central identity. The spread order below lets per-
+    // gallery defaults still win over brand defaults if they're non-empty.
+    const brand = await getBrandKit(businessId)
+    const brandDefaults = applyBrandKitToGalleryDefaults(brand)
     const { error } = await supabase.from('galleries').insert({
       name: newName.trim(),
       business_id: businessId,
@@ -660,6 +667,7 @@ export function Dashboard() {
         galleryCode: requireGalleryCode ? galleryCode : '',
         trackDownloads,
         feedLayout,
+        ...brandDefaults,
       },
     })
     setCreating(false)
@@ -2114,14 +2122,17 @@ export function Dashboard() {
         </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
           {[
-            { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true, disabled: false },
-            { icon: 'palette' as IconName,  label: 'מיתוג',       active: false, disabled: true },
-            { icon: 'clients' as IconName,  label: 'לקוחות',      active: false, disabled: true },
-            // 'עזרה' button removed — had no onClick / href, was a dead
-            // click target. Bring back when there's an actual help surface
-            // (mailto: studio support, docs URL, in-app help drawer).
+            { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true, disabled: false, href: undefined as string | undefined },
+            { icon: 'palette' as IconName, label: 'Brand Kit',  active: false, disabled: false, href: '/brand-kit' as string | undefined },
+            { icon: 'clients' as IconName,  label: 'לקוחות',      active: false, disabled: true, href: undefined as string | undefined },
           ].map(item => (
-            <button key={item.label} style={{
+            <button
+              key={item.label}
+              onClick={() => {
+                if (item.disabled || !item.href) return
+                window.location.pathname = item.href
+              }}
+              style={{
               display: 'flex', alignItems: 'center', gap: 12,
               padding: '11px 12px', borderRadius: 4,
               background: 'transparent',

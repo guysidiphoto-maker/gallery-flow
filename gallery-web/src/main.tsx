@@ -46,6 +46,9 @@ const QuestionnairePage = lazy(() =>
 const StudioSettings = lazy(() =>
   import('./pages/StudioSettings').then(m => ({ default: m.StudioSettings })),
 )
+const BrandKit = lazy(() =>
+  import('./pages/BrandKit').then(m => ({ default: m.BrandKit })),
+)
 
 initSentry()
 
@@ -216,6 +219,7 @@ function Router() {
   if (path === '/demo') return <DemoPage />
   if (path === '/dashboard') return <Dashboard />
   if (path === '/studio-settings') return <StudioSettings />
+  if (path === '/brand-kit') return <BrandKit />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
   // Questionnaire
