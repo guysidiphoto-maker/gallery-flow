@@ -13,6 +13,12 @@ import { useToast } from '../components/Toast'
 import { validateDeliverySettingsPatch, summarizeValidationErrors } from '../lib/deliverySettingsSchema'
 import { Viewer } from '../Viewer'
 import { useConfirm } from '../components/useConfirm'
+import { setSentryUser, trackAction } from '../lib/sentryContext'
+import {
+  exportGalleryAsZip,
+  ExportCapExceededError,
+  type ExportProgress,
+} from '../lib/galleryExport'
 import {
   requestStoryGeneration,
   pollStoryRender,
@@ -1113,7 +1119,7 @@ export function Dashboard() {
   // round-trip, then reconcile with the RPC's returned `delivery_settings`
   // (which is the post-merge JSONB) so client and server are byte-identical.
   // On validation error we roll back and toast the first few errors.
-  async function updateGallerySettings(patch: Record<string, unknown>) {
+  async function updateGallerySetting(key: string, value: unknown) {
     if (!editingGallery) return
     // Phase 6 step 4 prep — pre-validate against the shared schema before
     // any DB round-trip. The server RPC will re-validate, but doing it here
@@ -1224,9 +1230,11 @@ export function Dashboard() {
       alert('אין תמונות בגלריה לייצוא')
       return
     }
-    const ok = confirm(
-      `ייצא את כל ה-${count} תמונות? זה ייקח כמה דקות וייצור קובץ ZIP גדול.`,
-    )
+    const ok = await confirm({
+      title: 'ייצוא הגלריה',
+      body: `ייצא את כל ה-${count} תמונות? זה ייקח כמה דקות וייצור קובץ ZIP גדול.`,
+      confirmLabel: 'ייצא',
+    })
     if (!ok) return
     setExporting(true)
     setExportProgress({ phase: 'metadata', current: 0, total: 1 })
@@ -5327,8 +5335,8 @@ export function Dashboard() {
                     viewer reads delivery_settings directly — so the iframe IS
                     the latest saved state; the "unpublished changes" pill is
                     purely informational. */}
-                {editTab === '__never__' && (() => {  /* full-page preview tab disabled — inline split takes over */
-                  const shareUrl = galleryShareUrl(editingGallery)
+                {false && editingGallery && (() => {  /* full-page preview tab disabled — inline split takes over */
+                  const shareUrl = galleryShareUrl(editingGallery!)
                   const previewSrc = `${shareUrl}${shareUrl.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minHeight: '100%' }}>
