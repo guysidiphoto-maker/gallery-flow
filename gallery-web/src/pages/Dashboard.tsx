@@ -1121,6 +1121,24 @@ export function Dashboard() {
   // pre-validate, the server-side mirror catches drift like the legacy
   // `coverImageURL` vs `coverImageUrl` typo that fueled Phase 6.
   //
+  // Per-key debounce timers for text-input writes. Without these, every
+  // keystroke in a description / title / message field fires a Supabase
+  // round-trip AND queues an iframe reload — typing a 50-char description
+  // would burn 50 DB writes + 50 public-viewer reloads against the live
+  // CDN. With debouncing, local state updates instantly (UI stays snappy)
+  // and the DB write + preview refresh happen ~600ms after the user pauses.
+  const settingWriteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  // Fields whose values change one-character-at-a-time. Anything else
+  // (toggle, dropdown, picker) writes synchronously since each click is a
+  // discrete intent the photographer expects to persist immediately.
+  const TEXT_INPUT_KEYS = useMemo(() => new Set([
+    'galleryTitle', 'galleryDescription', 'welcomeMessage',
+    'clientName', 'studioName', 'studioWebsite',
+    'eventLocation', 'eventType',
+    'password', 'clientCode', 'galleryCode',
+    'watermarkText', 'logoUrl', 'themeColor',
+  ]), [])
+
   // Optimistic update + rollback: we apply the patch locally before the
   // round-trip, then reconcile with the RPC's returned `delivery_settings`
   // (which is the post-merge JSONB) so client and server are byte-identical.
@@ -1147,19 +1165,34 @@ export function Dashboard() {
     //      React state — no iframe reload, no network.
     setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
     setUnpublishedChanges(true)
-    const { error } = await supabase
-      .from('galleries')
-      .update({ delivery_settings: nextSettings })
-      .eq('id', editingGallery.id)
-    if (error) {
-      // Roll back to the pre-change value so the UI stops lying to the user.
-      // Leave unpublishedChanges as it was — the user intended an edit that
-      // failed; the toast tells them; the button state reflects that there
-      // is still drift the user may want to retry.
-      setEditingGallery(g => g && g.id === editingGallery.id
-        ? { ...g, delivery_settings: prevSettings } : g)
-      showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
-      console.warn('[updateGallerySetting]', key, error)
+
+    const galleryId = editingGallery.id
+    const flushWrite = async () => {
+      const { error } = await supabase
+        .from('galleries')
+        .update({ delivery_settings: nextSettings })
+        .eq('id', galleryId)
+      if (error) {
+        // Roll back to the pre-change value so the UI stops lying.
+        setEditingGallery(g => g && g.id === galleryId
+          ? { ...g, delivery_settings: prevSettings } : g)
+        showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
+        console.warn('[updateGallerySetting]', key, error)
+      }
+    }
+
+    if (TEXT_INPUT_KEYS.has(key)) {
+      // Coalesce keystrokes — cancel the prior pending write for THIS key,
+      // schedule a fresh one. Other keys' pending writes are untouched.
+      const existing = settingWriteTimersRef.current.get(key)
+      if (existing) clearTimeout(existing)
+      const timer = setTimeout(() => {
+        settingWriteTimersRef.current.delete(key)
+        void flushWrite()
+      }, 600)
+      settingWriteTimersRef.current.set(key, timer)
+    } else {
+      await flushWrite()
     }
   }
 
@@ -5231,26 +5264,54 @@ export function Dashboard() {
                                   <option key={name} value={name}>{name}</option>
                                 ))}
                               </select>
-                              {/* Preview line — uses the gallery's actual title /
-                                  description so the photographer sees their own
-                                  content rendered in the chosen font. Falls back
-                                  to a representative placeholder if those fields
-                                  aren't set yet. */}
-                              <div style={{
-                                marginTop: 12, padding: '20px 18px',
-                                background: bgSubtle, border: `1px solid ${border}`,
-                                fontFamily: `'${current}', sans-serif`,
-                                fontSize: f.key === 'headingFont' ? 24 : 14,
-                                fontWeight: f.key === 'headingFont' ? 500 : 400,
-                                color: textPrimary,
-                                letterSpacing: f.key === 'headingFont' ? '-0.015em' : '0',
-                                lineHeight: f.key === 'headingFont' ? 1.15 : 1.5,
-                                whiteSpace: 'pre-wrap' as const,
-                              }}>
-                                {f.key === 'headingFont'
-                                  ? ((ds.galleryTitle as string)?.trim() || editingGallery.name || 'הגלריה של יוסי ומיכל')
-                                  : ((ds.galleryDescription as string)?.trim() || 'תיאור קצר של האירוע מופיע כאן בגוף הטקסט.')}
-                              </div>
+                              {/* Editable WYSIWYG preview — typing here updates
+                                  galleryTitle / galleryDescription live, rendered
+                                  in the currently-selected font so the
+                                  photographer sees the change in situ. Saves on
+                                  blur (the debounced live-preview iframe will
+                                  pick it up automatically). */}
+                              {f.key === 'headingFont' ? (
+                                <input
+                                  type="text"
+                                  value={(ds.galleryTitle as string) || ''}
+                                  onChange={e => updateGallerySetting('galleryTitle', e.target.value)}
+                                  placeholder={editingGallery.name || 'הקלידי כותרת לגלריה'}
+                                  maxLength={120}
+                                  dir="auto"
+                                  style={{
+                                    marginTop: 12, padding: '20px 18px', width: '100%',
+                                    background: bgSubtle, border: `1px solid ${border}`,
+                                    fontFamily: `'${current}', sans-serif`,
+                                    fontSize: 24, fontWeight: 500,
+                                    color: textPrimary, letterSpacing: '-0.015em',
+                                    lineHeight: 1.15, outline: 'none',
+                                    boxSizing: 'border-box' as const,
+                                  }}
+                                  onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
+                                  onBlur={e => { e.currentTarget.style.borderColor = border }}
+                                />
+                              ) : (
+                                <textarea
+                                  value={(ds.galleryDescription as string) || ''}
+                                  onChange={e => updateGallerySetting('galleryDescription', e.target.value)}
+                                  placeholder="תיאור קצר של האירוע מופיע כאן בגוף הטקסט."
+                                  rows={3}
+                                  maxLength={500}
+                                  dir="auto"
+                                  style={{
+                                    marginTop: 12, padding: '20px 18px', width: '100%',
+                                    background: bgSubtle, border: `1px solid ${border}`,
+                                    fontFamily: `'${current}', sans-serif`,
+                                    fontSize: 14, fontWeight: 400,
+                                    color: textPrimary, letterSpacing: '0',
+                                    lineHeight: 1.5, outline: 'none',
+                                    resize: 'vertical' as const, minHeight: 72,
+                                    boxSizing: 'border-box' as const,
+                                  }}
+                                  onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
+                                  onBlur={e => { e.currentTarget.style.borderColor = border }}
+                                />
+                              )}
                             </div>
                           )
                         })}
