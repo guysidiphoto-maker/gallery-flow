@@ -138,8 +138,29 @@ const RULES: Record<string, FieldRule> = {
   showFooterCredit:     boolean('קרדיט תחתון'),
   themeColor:           maxLength('צבע ערכת נושא', 32),
 
+  // Typography
+  headingFont:          maxLength('פונט כותרות', 60),
+  bodyFont:             maxLength('פונט גוף', 60),
+
+  // Watermark — overrides the studio Brand Kit per-gallery. Accept legacy
+  // single-text key plus the brand-kit shape (source/scale/opacity/contrast).
+  watermarkEnabled:     boolean('סימן מים מופעל'),
+  watermarkText:        maxLength('טקסט סימן מים', 120),
+  watermarkPosition:    oneOf('מיקום סימן מים', ['tl','tc','tr','cl','cc','cr','bl','bc','br'] as const),
+  watermarkSource:      oneOf('מקור סימן מים', ['logo','studio_name','custom_text'] as const),
+  watermarkScalePercent:    (v) => v === null || v === undefined ? null
+                            : (typeof v === 'number' && v >= 1 && v <= 50)
+                              ? null
+                              : 'סקלת סימן מים: בין 1% ל-50%',
+  watermarkOpacityPercent:  (v) => v === null || v === undefined ? null
+                            : (typeof v === 'number' && v >= 1 && v <= 100)
+                              ? null
+                              : 'שקיפות סימן מים: בין 1% ל-100%',
+  watermarkContrastAware:   boolean('סימן מים מודע ניגודיות'),
+
   // Layout
   layoutMode:           oneOf('פריסה', ['1-col', '2-col', '3-col'] as const),
+  navStyle:             oneOf('סגנון ניווט', ['top', 'side'] as const),
   imageSpacing:         oneOf('רווח תמונות', ['none', 'small', 'medium'] as const),
   cornerStyle:          oneOf('סגנון פינות', ['sharp', 'rounded'] as const),
   feedLayout:           oneOf('פריסת פיד', ['grid', 'masonry', 'carousel'] as const),
