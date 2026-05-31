@@ -138,3 +138,25 @@ export async function signedStorageUrl(
 export function clearSignedUrlCache(): void {
   cache.clear()
 }
+
+/**
+ * Returns a /api/watermark URL for a full-resolution download when the
+ * gallery has watermarking enabled. The endpoint fetches the original via
+ * service-role, composites the studio's brand-kit watermark, and streams
+ * the marked JPEG/PNG back. On its own failure path it returns the
+ * unmarked original — a missing watermark is always preferable to a 500.
+ *
+ * Browsing surfaces (thumbnails, web previews, lightbox) should NOT call
+ * this — they keep using signedStorageUrl() so the gallery stays clean.
+ * Only the explicit "Download" button + ZIP path route through here.
+ *
+ * The endpoint authenticates with the public-viewer token (pvt) that the
+ * SPA has already cached in sessionStorage for the active anonymous
+ * viewer; we read it the same way signedStorageUrl does.
+ */
+export function signedWatermarkedUrl(path: string, businessId: string, pvt?: string): string {
+  const token = (pvt ?? readPublicViewerToken()).trim()
+  const params = new URLSearchParams({ image: path, business: businessId })
+  if (token) params.set('pvt', token)
+  return `/api/watermark?${params.toString()}`
+}

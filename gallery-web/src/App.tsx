@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } fro
 import { VariableSizeList, type ListChildComponentProps } from 'react-window'
 import { supabase, storageUrl, renderUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from './lib/publicSession'
-import { signedStorageUrl } from './lib/signedStorage'
+import { signedStorageUrl, signedWatermarkedUrl } from './lib/signedStorage'
 import { preloadGalleryThumbs, GRID_WIDTHS } from './lib/warmCache'
 import { TurnstileWidget } from './components/TurnstileWidget'
 import { SignedImg } from './components/SignedImg'
@@ -1922,8 +1922,17 @@ export function App() {
 
   function downloadUrl(img: GalleryImage) {
     // 'original' and 'high' → serve original full-res file when available
-    if (downloadQuality === 'original' || downloadQuality === 'high') return originalUrl(img)
-    // 'web' → compressed web preview
+    const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+    const path = wantsHd
+      ? (img.original_uploaded && img.original_path ? img.original_path : img.storage_path)
+      : img.storage_path
+    // Route the full-res download through the watermark engine when the
+    // gallery has watermarking enabled. Browse surfaces (thumbs, lightbox)
+    // still use the clean storage URL — only this download helper opts in.
+    if (watermarkEnabled && gallery?.business_id) {
+      return signedWatermarkedUrl(path, gallery.business_id)
+    }
+    if (wantsHd) return originalUrl(img)
     return webUrl(img)
   }
 
@@ -1947,11 +1956,23 @@ export function App() {
    *  click is invisible next to the actual download. */
   async function resolveDownloadUrl(img: GalleryImage): Promise<{ url: string; downgraded: boolean }> {
     const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+    // Watermark gate: photographer's per-gallery toggle (with brand-kit
+    // fallback handled server-side in /api/watermark). We only route the
+    // FULL-RESOLUTION download through the engine; thumbs + web previews
+    // keep streaming clean so browsing the gallery stays untouched.
+    const businessId = gallery?.business_id ?? ''
+    const watermarkPath = (path: string): string =>
+      watermarkEnabled && businessId
+        ? signedWatermarkedUrl(path, businessId)
+        : '' // empty signals "no watermark wrap — use the signed/public URL"
+
     if (!wantsHd || !img.original_path) {
       // P4.5.D: when flag is on, route through signedStorageUrl. When flag
       // off, signedStorageUrl short-circuits to public URL — same behavior
       // as today (originalUrl/webUrl return public URLs).
       const path = wantsHd ? (img.original_uploaded ? img.original_path! : img.storage_path) : img.storage_path
+      const wm = watermarkPath(path)
+      if (wm) return { url: wm, downgraded: false }
       const url = await signedStorageUrl(imgBucket, path)
       return { url, downgraded: false }
     }
@@ -1961,14 +1982,20 @@ export function App() {
     try {
       const head = await fetch(headCandidate, { method: 'HEAD' })
       if (head.ok) {
+        const wm = watermarkPath(img.original_path)
+        if (wm) return { url: wm, downgraded: false }
         const url = await signedStorageUrl(imgBucket, img.original_path)
         return { url, downgraded: false }
       }
     } catch {
       // Network blip — assume present and let the actual download surface any real error.
+      const wm = watermarkPath(img.original_path)
+      if (wm) return { url: wm, downgraded: false }
       const url = await signedStorageUrl(imgBucket, img.original_path)
       return { url, downgraded: false }
     }
+    const wmFallback = watermarkPath(img.storage_path)
+    if (wmFallback) return { url: wmFallback, downgraded: true }
     const fallbackUrl = await signedStorageUrl(imgBucket, img.storage_path)
     return { url: fallbackUrl, downgraded: true }
   }
@@ -2115,6 +2142,12 @@ export function App() {
             pvt,
             quality: wantsHd ? 'original' : 'web',
             filenameStem: safeTitle,
+            // Tell the ZIP endpoint to route each image through the
+            // watermark engine before adding it to the archive. The flag is
+            // honored server-side; if /api/gallery-zip doesn't yet
+            // understand it the field is ignored and we get clean originals
+            // (same as today) — never a 500.
+            watermark: watermarkEnabled,
           }),
         })
         if (!res.ok) throw new Error(`zip_${res.status}`)
