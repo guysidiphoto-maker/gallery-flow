@@ -1600,9 +1600,12 @@ export function Dashboard() {
         startStoryPoll(result.renderId)
       }
     } else {
+      // Prefer the localized userError (Hebrew, no infra terms). Fall back to
+      // the raw error code only if for some reason the helper didn't supply
+      // one — this should not happen in practice but keeps the toast useful.
       showToast({
         kind: 'error',
-        text: `יצירת הסטורי נכשלה: ${result.error ?? 'שגיאה לא ידועה'}`,
+        text: result.userError ?? `יצירת הסטורי נכשלה: ${result.error ?? 'שגיאה לא ידועה'}`,
       })
     }
   }

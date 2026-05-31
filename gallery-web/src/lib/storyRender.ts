@@ -96,7 +96,7 @@ export const STORY_STYLES: ReadonlyArray<StoryStyleMeta> = [
   },
 ]
 
-export type StoryRenderStatus = 'queued' | 'rendering' | 'ready' | 'failed'
+export type StoryRenderStatus = 'queued' | 'rendering' | 'ready' | 'failed' | 'completed'
 
 export interface StoryRenderResponse {
   ok: boolean
@@ -104,6 +104,11 @@ export interface StoryRenderResponse {
   renderId?: string
   message?: string
   error?: string
+  /** Populated by the Vercel-Functions renderer when status='completed'. */
+  outputUrl?: string | null
+  outputPath?: string | null
+  durationSeconds?: number
+  fileSizeBytes?: number
 }
 
 export interface RequestStoryGenerationResult {
@@ -113,6 +118,38 @@ export interface RequestStoryGenerationResult {
   renderId?: string
   message?: string
   error?: string
+  /** Human-readable Hebrew error for the toast. Hides infrastructure codes. */
+  userError?: string
+}
+
+// Map server-side error codes → Hebrew copy the Dashboard toast can show
+// verbatim. The point is to avoid leaking infrastructure details ("Lambda",
+// "Chromium", "Vercel") to non-technical photographers. New codes default to
+// a generic message + the raw code in the console for debugging.
+function localizeRenderError(code?: string): string {
+  switch (code) {
+    case 'unauthenticated':
+      return 'נדרשת התחברות מחדש'
+    case 'not_owner':
+      return 'אין הרשאה לייצר סטורי לגלריה הזו'
+    case 'gallery_not_found':
+      return 'הגלריה לא נמצאה'
+    case 'invalid_gallery_id':
+    case 'invalid_style':
+    case 'invalid_photo_ids':
+    case 'too_many_photos':
+      return 'נתוני הבקשה אינם תקינים'
+    case 'server_misconfigured':
+    case 'renderer_not_ready':
+      return 'ייצור סטורי לא זמין כרגע, נסי שוב בעוד דקה'
+    case 'render_failed':
+      return 'הייצור נכשל — אפשר לנסות שוב'
+    case 'gallery_lookup_failed':
+    case 'render_insert_failed':
+      return 'שגיאה זמנית, נסי שוב'
+    default:
+      return 'יצירת הסטורי נכשלה'
+  }
 }
 
 /**
@@ -161,10 +198,12 @@ export async function requestStoryGeneration(
     }
 
     if (!resp.ok || !payload.ok) {
+      const code = payload.error || `http_${resp.status}`
       return {
         ok: false,
         status: payload.status ?? 'failed',
-        error: payload.error || `http_${resp.status}`,
+        error: code,
+        userError: localizeRenderError(code),
         message: payload.message,
         renderId: payload.renderId,
       }
@@ -178,7 +217,12 @@ export async function requestStoryGeneration(
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'network_error'
-    return { ok: false, status: 'failed', error: msg }
+    return {
+      ok: false,
+      status: 'failed',
+      error: msg,
+      userError: localizeRenderError(msg),
+    }
   }
 }
 

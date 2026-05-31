@@ -5,16 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/bundle-stories.mjs",
     "build": "vite build",
     "preview": "vite preview",
+    "bundle:stories": "node scripts/bundle-stories.mjs",
     "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test --config tests/e2e/playwright.config.ts --ui",
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.89.0",
-    "@remotion/lambda": "^4.0.245",
+    "@remotion/bundler": "^4.0.245",
+    "@remotion/renderer": "^4.0.245",
     "@sentry/react": "^10.50.0",
+    "@sparticuz/chromium": "^131.0.1",
     "@studio-freight/lenis": "^1.0.42",
     "@supabase/supabase-js": "^2.101.1",
     "@types/archiver": "^7.0.0",
@@ -26,6 +30,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-window": "^1.8.11",
+    "remotion": "^4.0.245",
     "sharp": "^0.33.5"
   },
   "devDependencies": {
