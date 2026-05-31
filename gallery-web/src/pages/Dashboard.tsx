@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { FixedSizeGrid, type GridChildComponentProps } from 'react-window'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany } from '../lib/uploadPipeline'
@@ -8,6 +9,37 @@ import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import { useToast } from '../components/Toast'
+import { validateDeliverySettingsPatch, summarizeValidationErrors } from '../lib/deliverySettingsSchema'
+import { Viewer } from '../Viewer'
+import { useConfirm } from '../components/useConfirm'
+import { setSentryUser, trackAction } from '../lib/sentryContext'
+import {
+  exportGalleryAsZip,
+  ExportCapExceededError,
+  type ExportProgress,
+} from '../lib/galleryExport'
+import {
+  requestStoryGeneration,
+  pollStoryRender,
+  type StoryStyle,
+  STORY_STYLES,
+  STORY_DEFAULT_PHOTO_BUDGET,
+  STORY_MIN_PHOTOS,
+  STORY_MAX_PHOTOS,
+  estimateRenderSeconds,
+  formatStoryDuration,
+} from '../lib/storyRender'
+import { applyBrandKitToGalleryDefaults, getBrandKit } from '../lib/brandKit'
+
+// Mirrors the postgres enum gallery_status (migration 063).
+type GalleryStatus = 'draft' | 'live' | 'archived'
+
+// Stories Phase 1 — bounds for the "Generate story" CTA. The Remotion clean
+// composition needs ~12 photos for a coherent ~30s clip and caps at 60 so a
+// 4000-photo gallery can't queue a runaway Lambda render.
+const STORY_GENERATE_MIN_PHOTOS = STORY_MIN_PHOTOS
+const STORY_GENERATE_MAX_PHOTOS = STORY_MAX_PHOTOS
 
 interface Gallery {
   id: string
@@ -15,10 +47,14 @@ interface Gallery {
   slug?: string | null
   image_count: number
   published_at: string | null
-  status: string
+  status: GalleryStatus
   delivery_settings?: Record<string, unknown>
   download_count?: number
   favorite_count?: number
+  // Mirrors the galleries.face_index_enabled column. Stored alongside the
+  // legacy delivery_settings.faceIndexEnabled JSONB key — the column is the
+  // canonical source for the rekognition RPC, JSONB for the public viewer.
+  face_index_enabled?: boolean | null
 }
 
 interface GalleryImage {
@@ -26,6 +62,11 @@ interface GalleryImage {
   filename: string
   storage_path: string
   thumbnail_path: string | null
+  // Phase 4.2 originals-only model — the HD source object in
+  // `gallery-images`. Selected alongside the preview/thumb paths so that
+  // delete flows can purge ALL three storage objects for an image, not
+  // just the row. Nullable because pre-Phase-4.2 rows may not have one.
+  original_path?: string | null
   is_top_pick: boolean
   sort_order: number
   section_id?: string | null
@@ -86,17 +127,29 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
     /* Sidebar mobile transformation. Above 900px the sidebar is a permanent
        sticky 240px column. Below 900px it becomes an off-canvas drawer that
        slides in from the right (RTL); the hamburger button in the topbar
-       toggles it; a backdrop dims the rest. */
+       toggles it; a backdrop dims the rest.
+
+       Use logical inset (inset-inline-end) + translate by 100% — under
+       direction: rtl, translateX(100%) flips to LEFT, which moves the drawer
+       INTO view (the inverse of what we want). The translate value below uses
+       the keyword "100%" on a transformed offset that is direction-aware via
+       writing-mode-neutral logical property fallbacks; cleaner: just use a
+       conditional class that swaps the offscreen position to the inline end. */
     @media (max-width: 900px) {
       .dash-sidebar {
         position: fixed !important;
-        right: 0 !important;
+        inset-inline-end: 0 !important;
         top: 0 !important;
         height: 100vh !important;
-        transform: translateX(100%);
+        /* Hide off-canvas by translating away from the inline-end edge. In RTL
+           this is to the right (positive X); in LTR to the left (negative X).
+           Using a CSS custom property keeps it direction-aware in one place. */
+        --dash-drawer-hide: translateX(100%);
+        transform: var(--dash-drawer-hide);
         transition: transform .25s cubic-bezier(.4,0,.2,1);
         box-shadow: -8px 0 32px rgba(0,0,0,.4);
       }
+      [dir="rtl"] .dash-sidebar { --dash-drawer-hide: translateX(-100%); }
       .dash-sidebar.dash-sidebar--open {
         transform: translateX(0);
       }
@@ -120,8 +173,30 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
   document.head.appendChild(style)
 }
 
+/** Compact Hebrew progress label for the in-button status on the gallery
+ *  export action. Mirrors the phases reported by exportGalleryAsZip. */
+function exportProgressLabel(p: ExportProgress): string {
+  switch (p.phase) {
+    case 'metadata':
+      return 'טוען נתונים...'
+    case 'downloading':
+      return `מוריד ${p.current} / ${p.total}...`
+    case 'zipping':
+      return `יוצר ZIP ${p.current}%...`
+    case 'saving':
+      return 'שומר קובץ...'
+    default:
+      return 'מייצא...'
+  }
+}
+
 export function Dashboard() {
   const { user, loading } = useAuth()
+  const { showToast, ToastContainer } = useToast()
+  // Promise-based replacement for native window.confirm(). Render
+  // <ConfirmHost /> near the root and call `await confirm({…})` from any
+  // destructive handler. See gallery-web/src/components/useConfirm.ts.
+  const { confirm, ConfirmHost } = useConfirm()
   const [galleries, setGalleries] = useState<Gallery[]>([])
   // Cover-image fallback map — gallery_id → first image URL. Filled in by a
   // useEffect after galleries load. The desktop uploader doesn't set
@@ -141,8 +216,76 @@ export function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
-  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'sections' | 'welcome' | 'stories'>('photos')
-  const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number }>>([])
+  // 'sections' removed (was a redundant editor tab — sections live in the
+  // Photos-tab sidebar). 'preview' is Phase 5's Live Preview iframe.
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'welcome' | 'stories' | 'preview'>('photos')
+  // Live Preview pane — Phase 5. The iframe's src includes ?v=${previewRefreshKey}
+  // so bumping this number forces React to swap the iframe DOM node, which
+  // triggers a fresh navigation (sidestepping aggressive browser/CDN caches).
+  // unpublishedChanges is informational — until Phase 6 lands draft/publish
+  // snapshots, the public viewer reads delivery_settings directly so the
+  // iframe is always live; the badge just communicates that the photographer
+  // has unpublished local edits that haven't yet bumped published_at.
+  const [previewRefreshKey, setPreviewRefreshKey] = useState(0)
+  const [unpublishedChanges, setUnpublishedChanges] = useState(false)
+  // Inline side-by-side preview pane — visible alongside Settings + Welcome
+  // tabs so every config tweak reflects live in the iframe without tab-
+  // switching. Default ON; a toggle in the header collapses it for full-
+  // width editing when needed.
+  const [showSidePreview, setShowSidePreview] = useState(true)
+  // In-flight + just-published states for the Publish/Update button so a click
+  // gives immediate visual feedback (was: silent black button → toast 200ms
+  // later, easy to miss). `publishing` flips true during the await; `justPublished`
+  // briefly shows a confirmation label that auto-dismisses.
+  const [publishing, setPublishing] = useState(false)
+  const [justPublished, setJustPublished] = useState(false)
+  // Inline confirmation for the Copy Link button — the toast is great but
+  // the eye is already on the button at the moment of click. Mirrors the
+  // copy-link pattern on the gallery list cards.
+  const [copiedInEditor, setCopiedInEditor] = useState(false)
+  // Debounced preview refresh — typing in an input fires onChange per
+  // keystroke; bumping the iframe key each time forced a navigation that
+  // stole focus from the active text field after every character. Holding
+  // the bump for ~800ms of idle keystrokes keeps the input usable and
+  // still feels live to the eye on the preview.
+  const previewRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleSidePreviewRefresh = () => {
+    if (previewRefreshTimerRef.current) clearTimeout(previewRefreshTimerRef.current)
+    previewRefreshTimerRef.current = setTimeout(() => {
+      previewRefreshTimerRef.current = null
+      setPreviewRefreshKey(k => k + 1)
+    }, 800)
+  }
+  // Called by every mutation that changes what the client sees (sections,
+  // photo order, uploads, top-picks, deletes, stories, …). Lights up the
+  // "שינויים שטרם פורסמו" pill + Update button and queues a Live Preview
+  // refresh (debounced so typing doesn't reload the iframe per keystroke).
+  const markDirty = () => {
+    setUnpublishedChanges(true)
+    scheduleSidePreviewRefresh()
+  }
+  // Multi-key variant of updateGallerySetting — used when one user action
+  // logically writes several keys at once (e.g. cover selection writing both
+  // the canonical storage path and the legacy URL fallback in the same patch).
+  // One DB round-trip, one optimistic UI update, one rollback path.
+  async function updateGallerySettings(patch: Record<string, unknown>) {
+    if (!editingGallery) return
+    const prevSettings = editingGallery.delivery_settings || {}
+    const nextSettings = { ...prevSettings, ...patch }
+    setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
+    markDirty()
+    const { error } = await supabase
+      .from('galleries')
+      .update({ delivery_settings: nextSettings })
+      .eq('id', editingGallery.id)
+    if (error) {
+      setEditingGallery(g => g && g.id === editingGallery.id
+        ? { ...g, delivery_settings: prevSettings } : g)
+      showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
+      console.warn('[updateGallerySettings]', patch, error)
+    }
+  }
+  const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number; description?: string | null }>>([])
   const [newSectionName, setNewSectionName] = useState('')
   const [newSectionDesc, setNewSectionDesc] = useState('')
   // Sidebar Set behavior: the active section (null only for an empty gallery
@@ -150,6 +293,16 @@ export function Dashboard() {
   // toggle. Every photo belongs to a section — there is no "all photos" view.
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null)
+  // Inline edit state for the active section's description (shown above the
+  // photo grid). null = not editing; otherwise the section id being edited.
+  const [editingSectionDescId, setEditingSectionDescId] = useState<string | null>(null)
+  const [sectionDescDraft, setSectionDescDraft] = useState('')
+  // Controlled draft for the section-rename input — replaces the prior
+  // uncontrolled defaultValue, which couldn't tell "user typed garbage then
+  // hit Escape" from "user typed a real value then blurred". The cancel ref
+  // is consulted by onBlur so Escape can short-circuit the save.
+  const [sectionRenameDraft, setSectionRenameDraft] = useState('')
+  const sectionRenameCancelledRef = useRef(false)
   const [sectionMenuOpenId, setSectionMenuOpenId] = useState<string | null>(null)
   const [showAddSetModal, setShowAddSetModal] = useState(false)
   const [activitySummary, setActivitySummary] = useState<{
@@ -163,6 +316,11 @@ export function Dashboard() {
   const [activityLoading, setActivityLoading] = useState(false)
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set())
+  // Lightbox state — opens when the photographer clicks a photo (outside of
+  // select mode). Snapshotted at click time so next/prev stays scoped to the
+  // active section's grid even if state changes mid-view.
+  const [viewerImages, setViewerImages] = useState<GalleryImage[] | null>(null)
+  const [viewerIndex, setViewerIndex] = useState<number>(0)
   const [selectMode, setSelectMode] = useState(false)
   // Photo-grid view state — hovered tile + open per-tile menu + grid size
   // (Pixieset offers Regular/Large) + sort order.
@@ -177,6 +335,11 @@ export function Dashboard() {
   // per-tile "..." menu.
   const [draggedImageId, setDraggedImageId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  // Section drag-reorder — mirrors the image-tile pattern but operates on the
+  // sidebar section list. Sort order persists to gallery_sections.sort_order
+  // and the row order updates optimistically as the user drags.
+  const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null)
+  const [sectionDragOverId, setSectionDragOverId] = useState<string | null>(null)
   // Design tab — Pixieset's pattern: 5 horizontal sub-tabs at the top of
   // the right pane. Cover holds the welcome screen + cover image picker;
   // Typography/Color/Grid/Nav write to delivery_settings JSONB so they
@@ -195,6 +358,30 @@ export function Dashboard() {
   const [storyMenuOpenId, setStoryMenuOpenId] = useState<string | null>(null)
   const [confirmDeleteStoryId, setConfirmDeleteStoryId] = useState<string | null>(null)
   const storyFileInputRef = useRef<HTMLInputElement>(null)
+  // Stories Phase 1 — automated generation. The CTA opens a small modal so
+  // the photographer picks a style (only "clean" exists today; Phase 2
+  // widens this). `storyGenerating` flips while the POST is in flight so we
+  // can disable the button and avoid double-fires. The min-photos gate keeps
+  // 4-photo galleries from getting a clip that looks like a slideshow.
+  const STORY_GENERATE_MIN_PHOTOS = 12
+  const [showStoryStyleModal, setShowStoryStyleModal] = useState(false)
+  const [storyGenStyle, setStoryGenStyle] = useState<StoryStyle>('clean')
+  const [storyGenerating, setStoryGenerating] = useState(false)
+  // Curated shot list for the story. null = use defaults (favorites if any,
+  // else first 30). When the photographer touches the curator (remove, drag,
+  // add) this becomes an explicit ordered list of image ids.
+  const [storyCandidateIds, setStoryCandidateIds] = useState<string[] | null>(null)
+  const [storyShowAddPicker, setStoryShowAddPicker] = useState(false)
+  const [storyDraggedId, setStoryDraggedId] = useState<string | null>(null)
+  const [storyDragOverId, setStoryDragOverId] = useState<string | null>(null)
+  // Stories Phase 2 — polling refs. setTimeout id + the render we're polling
+  // for; mutated by the poll loop and cleared on cancel / unmount so we
+  // don't leak timers across gallery switches.
+  const storyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const storyPollRenderIdRef = useRef<string | null>(null)
+
+  // Stories Phase 1 uses the existing dashboard-wide useToast() instance
+  // declared near the top of the component (line ~143) — no separate hook.
 
   // New delivery settings state
   const [welcomeStyle, setWelcomeStyle] = useState<'mosaic' | 'cinematic' | 'minimal'>('mosaic')
@@ -210,6 +397,14 @@ export function Dashboard() {
   const [faceRecognition, setFaceRecognition] = useState(false)
   const [facePrivacyMode, setFacePrivacyMode] = useState<'open' | 'private'>('open')
   const [showFaceConfirm, setShowFaceConfirm] = useState(false)
+
+  // ── Gallery export (portable ZIP) ──────────────────────────────────────────
+  // Photographer-driven backup: button lives in the Settings tab and pulls
+  // every original through the browser, zips it with metadata.json, and
+  // triggers a download. `exporting` doubles as the disable-flag; the
+  // progress object drives the in-button status text.
+  const [exporting, setExporting] = useState(false)
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
 
   // ── Custom domain (account-level) ──────────────────────────────────────────
   // The Domain section lives at the bottom of the per-gallery Settings tab
@@ -231,6 +426,14 @@ export function Dashboard() {
     if (!user) return
     initBusiness()
   }, [user])
+
+  // Pin the authenticated photographer onto every Sentry event captured for
+  // the remainder of the session. Previously every dashboard crash arrived
+  // anonymous and we had to cross-reference timestamps to guess who hit it.
+  useEffect(() => {
+    if (!user) return
+    setSentryUser({ id: user.id, email: user.email ?? undefined })
+  }, [user?.id, user?.email])
 
   // Pull the photographer's plan flag + current domain claim once the
   // business id is known. Both queries are scoped by RLS — the plan call
@@ -307,6 +510,27 @@ export function Dashboard() {
     })()
     return () => { cancelled = true }
   }, [galleries])
+
+  // Stories Phase 2 — cancel any in-flight render poll when the editor
+  // closes or the user switches to another gallery. We can't put this inside
+  // handleGenerateStoryConfirm because the React closure there is gone by
+  // the time the editor unmounts.
+  useEffect(() => {
+    if (!editingGallery) {
+      if (storyPollTimerRef.current) {
+        clearInterval(storyPollTimerRef.current)
+        storyPollTimerRef.current = null
+      }
+      storyPollRenderIdRef.current = null
+    }
+    return () => {
+      if (storyPollTimerRef.current) {
+        clearInterval(storyPollTimerRef.current)
+        storyPollTimerRef.current = null
+      }
+      storyPollRenderIdRef.current = null
+    }
+  }, [editingGallery?.id])
 
   // Lazy-load activity summary when the tab opens. Re-fetches when switching
   // galleries, but caches per-gallery within the editor session.
@@ -393,10 +617,17 @@ export function Dashboard() {
   async function createGallery() {
     if (!newName.trim()) return
     if (!businessId) {
-      alert('שגיאה: לא נמצא חשבון עסקי. נסו לרענן את הדף.')
+      console.warn('[createGallery] missing businessId')
+      showToast({ kind: 'error', text: 'שגיאה: לא נמצא חשבון עסקי. נסו לרענן את הדף.' })
       return
     }
     setCreating(true)
+    // Brand Kit projection — when the photographer has set apply_to_galleries
+    // in /brand-kit, brandDefaults carries studioName / logoUrl / welcomeMessage
+    // pulled from their central identity. The spread order below lets per-
+    // gallery defaults still win over brand defaults if they're non-empty.
+    const brand = await getBrandKit(businessId)
+    const brandDefaults = applyBrandKitToGalleryDefaults(brand)
     const { error } = await supabase.from('galleries').insert({
       name: newName.trim(),
       business_id: businessId,
@@ -436,12 +667,13 @@ export function Dashboard() {
         galleryCode: requireGalleryCode ? galleryCode : '',
         trackDownloads,
         feedLayout,
+        ...brandDefaults,
       },
     })
     setCreating(false)
     if (error) {
-      console.error('Gallery creation failed:', error)
-      alert(`שגיאה ביצירת גלריה: ${error.message}`)
+      console.warn('[createGallery]', error)
+      showToast({ kind: 'error', text: `שגיאה ביצירת גלריה: ${error.message}` })
       return
     }
     setShowModal(false)
@@ -462,15 +694,20 @@ export function Dashboard() {
     setEditingGallery(g)
     setEditTab('photos')
     setStories([])
+    // Phase 5 — reset Live Preview state per gallery so opening a second
+    // gallery in the same session doesn't inherit the previous one's dirty
+    // flag or stale cache-buster.
+    setUnpublishedChanges(false)
+    setPreviewRefreshKey(0)
     const [imagesRes, sectionsRes, storiesRes] = await Promise.all([
       supabase
         .from('images')
-        .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order, section_id')
+        .select('id, filename, storage_path:web_preview_path, thumbnail_path, original_path, is_top_pick, sort_order, section_id')
         .eq('gallery_id', g.id)
         .order('sort_order', { ascending: true }),
       supabase
         .from('gallery_sections')
-        .select('id, name, sort_order')
+        .select('id, name, sort_order, description')
         .eq('gallery_id', g.id)
         .order('sort_order', { ascending: true }),
       // Stories — fetched alongside images so switching to the Stories tab
@@ -497,7 +734,7 @@ export function Dashboard() {
         const { data } = await supabase
           .from('gallery_sections')
           .insert({ gallery_id: g.id, name: 'סקשן 1', sort_order: 0 })
-          .select('id, name, sort_order')
+          .select('id, name, sort_order, description')
           .single()
         if (data) { secs = [data]; target = data }
       }
@@ -518,17 +755,24 @@ export function Dashboard() {
 
   async function addSection() {
     if (!editingGallery || !newSectionName.trim()) return
+    const trimmedDesc = newSectionDesc.trim()
     const { data, error } = await supabase
       .from('gallery_sections')
       .insert({
         gallery_id: editingGallery.id,
         name: newSectionName.trim(),
+        description: trimmedDesc || null,
         sort_order: sections.length,
       })
-      .select('id, name, sort_order')
+      .select('id, name, sort_order, description')
       .single()
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      showToast({ kind: 'error', text: 'יצירת הסקשן נכשלה. נסה שוב.' })
+      console.warn('[addSection]', error)
+      return
+    }
     if (data) setSections(prev => [...prev, data])
+    markDirty()
     setNewSectionName('')
     setNewSectionDesc('')
     setShowAddSetModal(false)
@@ -549,9 +793,13 @@ export function Dashboard() {
         name: `סקשן ${sections.length + 1}`,
         sort_order: sections.length,
       })
-      .select('id, name, sort_order')
+      .select('id, name, sort_order, description')
       .single()
-    if (error) { alert('שגיאה ביצירת סקשן: ' + error.message); return null }
+    if (error) {
+      showToast({ kind: 'error', text: 'יצירת הסקשן נכשלה. נסה שוב.' })
+      console.warn('[ensureUploadSection]', error)
+      return null
+    }
     setSections(prev => [...prev, data])
     setActiveSectionId(data.id)
     return data.id
@@ -560,9 +808,35 @@ export function Dashboard() {
   async function renameSection(id: string, name: string) {
     const trimmed = name.trim()
     if (!trimmed) return
+    trackAction('section', 'rename', { section_id: id })
     const { error } = await supabase.from('gallery_sections').update({ name: trimmed }).eq('id', id)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      console.warn('[renameSection]', error)
+      return
+    }
     setSections(prev => prev.map(s => s.id === id ? { ...s, name: trimmed } : s))
+    markDirty()
+  }
+
+  // Inline-edit the description from the active section's header. Saves on
+  // blur / Enter. Empty string is persisted as null (no description).
+  async function saveSectionDescription(id: string, raw: string) {
+    const trimmed = raw.trim()
+    const prev = sections.find(s => s.id === id)?.description ?? null
+    const next = trimmed.length === 0 ? null : trimmed
+    if (next === prev) return
+    setSections(prevList => prevList.map(s => s.id === id ? { ...s, description: next } : s))
+    markDirty()
+    const { error } = await supabase
+      .from('gallery_sections')
+      .update({ description: next })
+      .eq('id', id)
+    if (error) {
+      setSections(prevList => prevList.map(s => s.id === id ? { ...s, description: prev } : s))
+      showToast({ kind: 'error', text: 'שמירת התיאור נכשלה.' })
+      console.warn('[saveSectionDescription]', error)
+    }
   }
 
   async function deleteSection(id: string) {
@@ -571,14 +845,24 @@ export function Dashboard() {
     // deletes every photo inside it (matching bulkDeleteSelected's row-delete
     // + image_count update). Photos are NOT moved elsewhere.
     const section = sections.find(s => s.id === id)
-    const photoIds = galleryImages.filter(i => i.section_id === id).map(i => i.id)
-    const msg = photoIds.length > 0
-      ? `למחוק את הסקשן "${section?.name ?? ''}" ואת ${photoIds.length} התמונות שבו? פעולה זו לא ניתנת לביטול.`
-      : `למחוק את הסקשן "${section?.name ?? ''}"?`
-    if (!confirm(msg)) return
+    const photosToDelete = galleryImages.filter(i => i.section_id === id)
+    const photoIds = photosToDelete.map(i => i.id)
+    if (!(await confirm({
+      title: `למחוק את הסקשן "${section?.name ?? ''}"?`,
+      body: photoIds.length > 0
+        ? `${photoIds.length} תמונות יימחקו לצמיתות. לא ניתן לבטל.`
+        : undefined,
+      confirmLabel: 'מחק',
+      danger: true,
+    }))) return
     if (photoIds.length > 0) {
       const { error: imgErr } = await supabase.from('images').delete().in('id', photoIds)
-      if (imgErr) { alert('שגיאה במחיקת התמונות: ' + imgErr.message); return }
+      if (imgErr) {
+        showToast({ kind: 'error', text: 'שגיאה במחיקת התמונות: ' + imgErr.message })
+        return
+      }
+      // Fire-and-forget storage purge for the section's photos.
+      void purgeStorageForImages(photosToDelete)
     }
     const { error } = await supabase.from('gallery_sections').delete().eq('id', id)
     if (error) { alert('שגיאה: ' + error.message); return }
@@ -587,6 +871,7 @@ export function Dashboard() {
     if (activeSectionId === id) {
       setActiveSectionId(sections.find(s => s.id !== id)?.id ?? null)
     }
+    markDirty()
     if (photoIds.length > 0) {
       await supabase.from('galleries')
         .update({ image_count: Math.max(0, galleryImages.length - photoIds.length) })
@@ -600,7 +885,7 @@ export function Dashboard() {
     if (tokenBalance < files.length) {
       const wanted = files.length
       const have = tokenBalance
-      alert(`אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}. רכוש חבילה כדי להמשיך.`)
+      showToast({ kind: 'error', text: `אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}. רכוש חבילה כדי להמשיך.` })
       setShowBuyTokens(true)
       return
     }
@@ -622,10 +907,10 @@ export function Dashboard() {
     if (result.failed.length > 0) {
       const insufficient = result.failed.find(f => f.error.includes('insufficient_tokens'))
       if (insufficient) {
-        alert('הטוקנים נגמרו באמצע ההעלאה. רכוש חבילה כדי להמשיך עם השאר.')
+        showToast({ kind: 'error', text: 'הטוקנים נגמרו באמצע ההעלאה. רכוש חבילה כדי להמשיך עם השאר.' })
         setShowBuyTokens(true)
       } else {
-        alert(`${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.`)
+        showToast({ kind: 'error', text: `${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.` })
       }
     }
     // Refresh balance + image list
@@ -638,6 +923,16 @@ export function Dashboard() {
     setGalleryImages(data ?? [])
     setUploading(false)
     setUploadBatch(null)
+    if (result.ok.length > 0) markDirty()
+
+    // Breadcrumb after batch so a crash in the post-upload refresh / face
+    // reindex carries the count of photos that were just uploaded.
+    trackAction('upload', 'photo', {
+      count: files.length,
+      ok: result.ok.length,
+      failed: result.failed.length,
+      gallery_id: editingGallery.id,
+    })
 
     // Re-trigger face indexing if the gallery is already live AND has face
     // recognition on. The rekognition function is idempotent — it skips
@@ -702,14 +997,29 @@ export function Dashboard() {
   async function handleStoryUpload(files: FileList | null) {
     if (!files || files.length === 0 || !editingGallery || !businessSlug) return
     const file = files[0]
+    if (files.length > 1) {
+      // Owner picked multiple files in the native picker; we only render one
+      // story at a time today (server-side generation lands in a later phase).
+      // Tell the photographer instead of silently dropping the rest.
+      showToast({ kind: 'info', text: `מעלה את הקובץ הראשון בלבד (${file.name}). העלאה מרובה תתווסף עם יצירת הסטוריז האוטומטית.` })
+    }
     if (file.type !== 'video/mp4' && !file.name.toLowerCase().endsWith('.mp4')) {
-      alert('יש להעלות קובץ MP4 בלבד.')
+      showToast({ kind: 'error', text: 'יש להעלות קובץ MP4 בלבד.' })
       return
     }
     if (file.size > STORY_MAX_BYTES) {
-      alert(`הקובץ גדול מדי. המקסימום הוא ${Math.round(STORY_MAX_BYTES / 1024 / 1024)}MB.`)
+      showToast({ kind: 'error', text: `הקובץ גדול מדי. המקסימום הוא ${Math.round(STORY_MAX_BYTES / 1024 / 1024)}MB.` })
       return
     }
+
+    // Breadcrumb at the point the user kicks off a story (manual upload is
+    // the web dashboard's analog of the desktop "generate story" action —
+    // both end up at the same storage path / row in `stories`).
+    trackAction('story', 'generate_request', {
+      gallery_id: editingGallery.id,
+      file_size: file.size,
+      file_type: file.type,
+    })
 
     setStoryUploading(true)
     setStoryUploadProgress({ pct: 0, filename: file.name })
@@ -734,7 +1044,8 @@ export function Dashboard() {
     if (uploadErr) {
       setStoryUploading(false)
       setStoryUploadProgress(null)
-      alert('שגיאה בהעלאה: ' + uploadErr.message)
+      showToast({ kind: 'error', text: 'שגיאה בהעלאה: ' + uploadErr.message })
+      console.warn('[handleStoryUpload]', uploadErr)
       return
     }
 
@@ -755,13 +1066,15 @@ export function Dashboard() {
       await supabase.storage.from(STORY_BUCKET).remove([storagePath])
       setStoryUploading(false)
       setStoryUploadProgress(null)
-      alert('שגיאה בשמירת הסטורי: ' + (insertErr?.message ?? 'unknown'))
+      showToast({ kind: 'error', text: 'שגיאה בשמירת הסטורי: ' + (insertErr?.message ?? 'unknown') })
+      console.warn('[story-insert]', insertErr)
       return
     }
 
     setStories(prev => [...prev, inserted])
     setStoryUploadProgress({ pct: 100, filename: file.name })
     setStoryUploading(false)
+    markDirty()
     // Tiny delay so guests see the 100% bar before it disappears.
     setTimeout(() => setStoryUploadProgress(null), 600)
     if (storyFileInputRef.current) storyFileInputRef.current.value = ''
@@ -778,6 +1091,7 @@ export function Dashboard() {
     setStories(prev => prev.filter(s => s.id !== storyId))
     setStoryMenuOpenId(null)
     setConfirmDeleteStoryId(null)
+    markDirty()
 
     // Delete the storage object first, then the row — same ordering as the
     // gallery-delete pipeline in cloudUpload.ts. If the object remove fails
@@ -797,15 +1111,163 @@ export function Dashboard() {
     if (dbErr) {
       // Roll back the optimistic update so the photographer can retry.
       setStories(previous)
-      alert('שגיאה במחיקה: ' + dbErr.message)
+      console.warn('[handleStoryDelete]', dbErr)
+      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + dbErr.message })
     }
   }
 
+  // ── Settings writers (Phase 6 Step 4) ───────────────────────────────────────
+  // Both writers go through the `update_gallery_settings` RPC. The RPC is the
+  // only path the DB allows for delivery_settings writes (direct column UPDATE
+  // is revoked in migration 069), so even if a future caller forgets to
+  // pre-validate, the server-side mirror catches drift like the legacy
+  // `coverImageURL` vs `coverImageUrl` typo that fueled Phase 6.
+  //
+  // Optimistic update + rollback: we apply the patch locally before the
+  // round-trip, then reconcile with the RPC's returned `delivery_settings`
+  // (which is the post-merge JSONB) so client and server are byte-identical.
+  // On validation error we roll back and toast the first few errors.
   async function updateGallerySetting(key: string, value: unknown) {
     if (!editingGallery) return
-    const settings = { ...(editingGallery.delivery_settings || {}), [key]: value }
-    await supabase.from('galleries').update({ delivery_settings: settings }).eq('id', editingGallery.id)
-    setEditingGallery({ ...editingGallery, delivery_settings: settings })
+    // Phase 6 step 4 prep — pre-validate against the shared schema before
+    // any DB round-trip. The server RPC will re-validate, but doing it here
+    // first catches typos / out-of-range values without burning a network
+    // round-trip and gives the photographer an immediate, specific message.
+    const validation = validateDeliverySettingsPatch({ [key]: value })
+    if (!validation.ok) {
+      showToast({ kind: 'error', text: summarizeValidationErrors(validation.errors) })
+      console.warn('[updateGallerySetting] validation failed', validation.errors)
+      return
+    }
+    const prevSettings = editingGallery.delivery_settings || {}
+    const nextSettings = { ...prevSettings, [key]: value }
+    // Optimistic on three fronts so the UI feels live:
+    //   1. local editingGallery.delivery_settings shows the new value,
+    //   2. the Update button activates the moment the user starts editing
+    //      (was waiting for the DB ack — 200-500ms of "dead" button),
+    //   3. the Live Preview iframe gets the new ?v=... so it reloads soon.
+    setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
+    setUnpublishedChanges(true)
+    scheduleSidePreviewRefresh()
+    const { error } = await supabase
+      .from('galleries')
+      .update({ delivery_settings: nextSettings })
+      .eq('id', editingGallery.id)
+    if (error) {
+      // Roll back to the pre-change value so the UI stops lying to the user.
+      // Leave unpublishedChanges as it was — the user intended an edit that
+      // failed; the toast tells them; the button state reflects that there
+      // is still drift the user may want to retry.
+      setEditingGallery(g => g && g.id === editingGallery.id
+        ? { ...g, delivery_settings: prevSettings } : g)
+      showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
+      console.warn('[updateGallerySetting]', key, error)
+    }
+  }
+
+  // Renaming the gallery touches two places: the canonical `galleries.name`
+  // column (what the dashboard list + editor header read), and the legacy
+  // `delivery_settings.galleryTitle` JSONB key (what the public viewer reads).
+  // Until the schema is unified (Phase 6) we write both in one round-trip so
+  // the rename stays consistent across surfaces.
+  async function renameGalleryTitle(newTitle: string) {
+    if (!editingGallery) return
+    const prevSettings = editingGallery.delivery_settings || {}
+    const prevName = editingGallery.name
+    const nextSettings = { ...prevSettings, galleryTitle: newTitle }
+    // Optimistic — same shape as updateGallerySetting. Activate the Update
+    // button on the first keystroke instead of after the DB ack.
+    setEditingGallery({ ...editingGallery, name: newTitle, delivery_settings: nextSettings })
+    setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: newTitle } : g))
+    setUnpublishedChanges(true)
+    scheduleSidePreviewRefresh()
+    const { error } = await supabase
+      .from('galleries')
+      .update({ name: newTitle, delivery_settings: nextSettings })
+      .eq('id', editingGallery.id)
+    if (error) {
+      setEditingGallery(g => g && g.id === editingGallery.id
+        ? { ...g, name: prevName, delivery_settings: prevSettings } : g)
+      setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: prevName } : g))
+      showToast({ kind: 'error', text: 'שמירת הכותרת נכשלה. נסה שוב.' })
+      console.warn('[renameGalleryTitle]', error)
+    }
+  }
+
+  // Delete the entire gallery — sections + images cascade via FK (migration
+  // 042). Storage objects are left for orphan reconciliation. Confirms with a
+  // native dialog for now; Phase 3 replaces all native confirms with a styled
+  // modal.
+  async function deleteGallery(g: Gallery) {
+    const photoCountTxt = (g.image_count ?? 0).toLocaleString('he-IL')
+    if (!(await confirm({
+      title: `למחוק את הגלריה "${g.name}"?`,
+      body: (g.image_count ?? 0) > 0
+        ? `${photoCountTxt} תמונות יימחקו לצמיתות. לא ניתן לבטל.`
+        : 'לא ניתן לבטל.',
+      confirmLabel: 'מחק את הגלריה',
+      danger: true,
+    }))) return
+    // Snapshot the gallery's image paths BEFORE the row DELETE — once the
+    // gallery row goes, the cascading FK delete takes the images with it
+    // and we lose the paths the storage purge needs.
+    void purgeStorageForGallery(g.id).then(() => {
+      // Storage purge runs in the background. We don't await it because
+      // 5000-photo galleries take minutes to wipe; the UI shouldn't block.
+    })
+    const { error } = await supabase.from('galleries').delete().eq('id', g.id)
+    if (error) {
+      showToast({ kind: 'error', text: 'מחיקת הגלריה נכשלה. נסה שוב.' })
+      console.warn('[deleteGallery]', error)
+      return
+    }
+    setGalleries(prev => prev.filter(x => x.id !== g.id))
+    if (editingGallery?.id === g.id) setEditingGallery(null)
+    showToast({ kind: 'success', text: `הגלריה "${g.name}" נמחקה.` })
+  }
+
+  // ── Gallery export → portable ZIP ──────────────────────────────────────────
+  // Confirm with the photographer (count + heads-up that the file will be
+  // large), then stream progress through exportGalleryAsZip. The button is
+  // disabled while in-flight. Errors surface as plain alert()s — same idiom
+  // the rest of this file uses, no toast library to introduce.
+  async function handleGalleryExport() {
+    if (!editingGallery || exporting) return
+    const count = galleryImages.length || editingGallery.image_count || 0
+    if (count === 0) {
+      alert('אין תמונות בגלריה לייצוא')
+      return
+    }
+    const ok = await confirm({
+      title: 'ייצוא הגלריה',
+      body: `ייצא את כל ה-${count} תמונות? זה ייקח כמה דקות וייצור קובץ ZIP גדול.`,
+      confirmLabel: 'ייצא',
+    })
+    if (!ok) return
+    setExporting(true)
+    setExportProgress({ phase: 'metadata', current: 0, total: 1 })
+    try {
+      const result = await exportGalleryAsZip(editingGallery.id, {
+        onProgress: setExportProgress,
+      })
+      const tail = result.failedCount
+        ? `\n(${result.failedCount} תמונות נכשלו ולא נכללו בקובץ)`
+        : ''
+      alert(`הייצוא הושלם: ${result.filename}${tail}`)
+    } catch (err) {
+      if (err instanceof ExportCapExceededError) {
+        alert(
+          `הגלריה גדולה מדי לייצוא בדפדפן (יותר מ-${Math.round(err.cap / 1024 / 1024 / 1024)}GB). ` +
+            `נדרשת גרסת שרת — נשלח עדכון בקרוב.`,
+        )
+      } else {
+        console.error('[exportGallery] failed:', err)
+        alert(`שגיאה בייצוא הגלריה: ${err instanceof Error ? err.message : 'unknown'}`)
+      }
+    } finally {
+      setExporting(false)
+      setExportProgress(null)
+    }
   }
 
   // ── Custom domain helpers ──────────────────────────────────────────────────
@@ -820,12 +1282,22 @@ export function Dashboard() {
       setDomainError('יש להזין דומיין')
       return
     }
+    // Client-side format check — avoids a network round-trip for the obvious
+    // bad inputs (https://, trailing slash, leading dot, spaces, single-label
+    // hosts like "localhost"). Server-side validation in the RPC remains the
+    // source of truth; this just gives instant feedback for the easy cases.
+    const VALID_DOMAIN = /^(?!-)([a-z0-9-]{1,63}(?<!-)\.)+[a-z]{2,63}$/
+    if (!VALID_DOMAIN.test(candidate)) {
+      setDomainError('דומיין לא תקין — דוגמה: photos.studio.co.il')
+      return
+    }
     setDomainSaving(true)
     setDomainError(null)
     try {
       const { data, error } = await supabase.rpc('set_business_custom_domain', { p_domain: candidate })
       if (error) {
-        setDomainError('שגיאה בשמירה — נסו שוב')
+        setDomainError(`שגיאה בשמירה — ${error.message}`)
+        console.warn('[set_business_custom_domain]', error)
         return
       }
       const result = data as {
@@ -911,8 +1383,33 @@ export function Dashboard() {
 
   async function publishGallery() {
     if (!editingGallery) return
-    await supabase.from('galleries').update({ status: 'live', published_at: new Date().toISOString() }).eq('id', editingGallery.id)
-    setEditingGallery({ ...editingGallery, status: 'live', published_at: new Date().toISOString() })
+    const wasLive = editingGallery.status === 'live'
+    const publishedAt = new Date().toISOString()
+    // Flip publishing on so the button's label + spinner reflect the in-flight
+    // request immediately — important because the supabase call can take
+    // 200-600ms and previously the button looked dead during that window.
+    setPublishing(true)
+    const { error } = await supabase
+      .from('galleries')
+      .update({ status: 'live', published_at: publishedAt })
+      .eq('id', editingGallery.id)
+    setPublishing(false)
+    if (error) {
+      showToast({ kind: 'error', text: 'הפרסום נכשל. נסה שוב.' })
+      console.warn('[publishGallery]', error)
+      return
+    }
+    setEditingGallery({ ...editingGallery, status: 'live', published_at: publishedAt })
+    // Phase 5 — clear the "unpublished changes" pill in the Live Preview pane
+    // and force the iframe to reload so it picks up the freshest snapshot.
+    setUnpublishedChanges(false)
+    setPreviewRefreshKey(k => k + 1)
+    // Inline button feedback — briefly turns the button into a "✓ עודכן"
+    // confirmation, then back to the resting state. Survives alongside the
+    // toast so both screen-reading users and eyes-on-button users get a hit.
+    setJustPublished(true)
+    setTimeout(() => setJustPublished(false), 1800)
+    showToast({ kind: 'success', text: wasLive ? 'הגלריה עודכנה ושודרה ללקוח' : 'הגלריה פורסמה ✓' })
 
     // Pre-warm the CDN edge so the first guest gets cached (~50ms) thumbnails
     // instead of the slow (~1.5s) cold-origin path. Fire-and-forget.
@@ -933,6 +1430,54 @@ export function Dashboard() {
     fetchGalleries()
   }
 
+  // Dashboard-wide useToast() instance is declared near line 188; the
+  // duplicate-gallery flow shares it. Just need the per-card "duplicating"
+  // marker locally so the spinner stays scoped.
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
+
+  // Clone an existing gallery's SETTINGS + SECTIONS into a fresh draft.
+  // Prompts for the new name (defaults to "<source name> (עותק)"), calls the
+  // duplicate_gallery RPC, refreshes the list, and opens the editor on the
+  // new draft so the photographer can immediately tweak + upload. Photos are
+  // NOT copied — each event has its own shoot.
+  async function duplicateGallery(source: Gallery) {
+    const proposed = window.prompt(
+      'שם הגלריה החדשה',
+      `${source.name} (עותק)`,
+    )
+    if (proposed === null) return
+    const trimmed = proposed.trim()
+    if (!trimmed) {
+      showToast({ kind: 'error', text: 'יש להזין שם לגלריה החדשה' })
+      return
+    }
+    setDuplicatingId(source.id)
+    const { data, error } = await supabase.rpc('duplicate_gallery', {
+      p_source_gallery_id: source.id,
+      p_new_name: trimmed,
+    })
+    setDuplicatingId(null)
+    if (error) {
+      console.error('[duplicate-gallery] rpc failed', error)
+      showToast({ kind: 'error', text: 'שכפול הגלריה נכשל. נסו שוב.' })
+      return
+    }
+    const newId = typeof data === 'string' ? data : null
+    showToast({ kind: 'success', text: `הגלריה "${trimmed}" נוצרה` })
+    await fetchGalleries()
+    if (newId) {
+      // Open the editor for the new draft. We re-fetch from the DB so we
+      // get the slug + delivery_settings that the RPC + slug trigger
+      // produced, rather than reconstructing them client-side.
+      const { data: fresh } = await supabase
+        .from('galleries')
+        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+        .eq('id', newId)
+        .maybeSingle()
+      if (fresh) openGalleryEditor(fresh as Gallery)
+    }
+  }
+
   const [copiedGalleryId, setCopiedGalleryId] = useState<string | null>(null)
   const [shareGallery, setShareGallery] = useState<Gallery | null>(null)
   const [shareEmail, setShareEmail] = useState('')
@@ -940,6 +1485,12 @@ export function Dashboard() {
   const [shareMessage, setShareMessage] = useState('')
   const [shareSending, setShareSending] = useState(false)
   const [shareSent, setShareSent] = useState(false)
+  // Preview-before-send: holds the rendered HTML returned from the edge
+  // function so the photographer can see the email exactly as the client
+  // will receive it. `previewLoading` is its in-flight flag; `previewHtml`
+  // null means the preview modal is closed.
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   function openEmailShare(g: Gallery) {
     setShareGallery(g)
@@ -957,6 +1508,104 @@ export function Dashboard() {
   const faceConfirmRef   = useFocusTrap<HTMLDivElement>(showFaceConfirm, () => setShowFaceConfirm(false))
   const shareModalRef    = useFocusTrap<HTMLDivElement>(!!shareGallery, () => { if (!shareSending) setShareGallery(null) })
   const buyTokensRef     = useFocusTrap<HTMLDivElement>(showBuyTokens, () => setShowBuyTokens(false))
+  const storyStyleRef    = useFocusTrap<HTMLDivElement>(showStoryStyleModal, () => { if (!storyGenerating) setShowStoryStyleModal(false) })
+
+  // ─── Stories Phase 2: trigger Lambda render + poll for completion ──────
+  // POSTs to /api/stories/render which now actually invokes Remotion Lambda
+  // and returns a renderId. We then poll /api/stories/status every 5s and
+  // refresh the stories list when status flips to 'ready'.
+  //
+  // Cleanup: any active poll is cancelled when the gallery editor closes
+  // (see the useEffect below). The pollers themselves are no-ops once they
+  // see 'ready' or 'failed' so they self-terminate normally.
+
+  function stopStoryPoll() {
+    if (storyPollTimerRef.current) {
+      clearInterval(storyPollTimerRef.current)
+      storyPollTimerRef.current = null
+    }
+    storyPollRenderIdRef.current = null
+  }
+
+  // Re-fetch the stories list from the DB. Called when the poll lands on
+  // 'ready' — the status endpoint has already inserted the public row, so a
+  // simple SELECT brings the new mp4 into view alongside the existing ones.
+  async function refreshStoriesForCurrentGallery() {
+    if (!editingGallery) return
+    const { data } = await supabase
+      .from('stories')
+      .select('id, style, storage_path, duration, created_at')
+      .eq('gallery_id', editingGallery.id)
+      .order('created_at', { ascending: true })
+    setStories(data ?? [])
+  }
+
+  function startStoryPoll(renderId: string) {
+    // Replace any prior timer — we only ever follow one render at a time per
+    // editor session. The new one supersedes the old.
+    stopStoryPoll()
+    storyPollRenderIdRef.current = renderId
+    storyPollTimerRef.current = setInterval(() => {
+      const activeId = storyPollRenderIdRef.current
+      if (!activeId) {
+        stopStoryPoll()
+        return
+      }
+      void pollStoryRender(activeId).then(snapshot => {
+        // Guard against late ticks after the user navigated away.
+        if (storyPollRenderIdRef.current !== activeId) return
+        if (snapshot.status === 'ready') {
+          stopStoryPoll()
+          void refreshStoriesForCurrentGallery()
+          showToast({ kind: 'success', text: 'הסטורי מוכן' })
+        } else if (snapshot.status === 'failed') {
+          stopStoryPoll()
+          showToast({
+            kind: 'error',
+            text: `יצירת הסטורי נכשלה: ${snapshot.error_message ?? snapshot.error ?? 'שגיאה לא ידועה'}`,
+          })
+        }
+        // 'queued' / 'rendering' → keep polling. No-op here.
+      })
+    }, 5000)
+  }
+
+  async function handleGenerateStoryConfirm() {
+    if (!editingGallery || storyGenerating) return
+    // Pull the curated list — order matters. If the photographer hasn't
+    // touched the curator we still send the defaults explicitly (rather
+    // than letting the server re-derive) so the rendered clip exactly
+    // matches the preview the dashboard showed them.
+    const photoIds = storyCandidateIds && storyCandidateIds.length >= STORY_GENERATE_MIN_PHOTOS
+      ? storyCandidateIds
+      : undefined
+    setStoryGenerating(true)
+    // Optimistic progress toast — the photographer can keep working while
+    // the (future) Lambda render proceeds in the background.
+    const estSec = estimateRenderSeconds(photoIds?.length ?? STORY_DEFAULT_PHOTO_BUDGET, storyGenStyle)
+    showToast({ kind: 'info', text: `מייצר סטורי — ${formatStoryDuration(estSec)}` })
+    const result = await requestStoryGeneration(editingGallery.id, storyGenStyle, photoIds)
+    setStoryGenerating(false)
+    setShowStoryStyleModal(false)
+    if (result.ok) {
+      showToast({
+        kind: 'success',
+        text: result.message === 'render_in_progress'
+          ? 'הסטורי כבר בעיבוד — נמשיך לעקוב'
+          : 'הסטורי נשלח לעיבוד',
+      })
+      // Kick off polling. We persist renderId in a ref so the cleanup
+      // useEffect below can cancel it when the editor closes.
+      if (result.renderId) {
+        startStoryPoll(result.renderId)
+      }
+    } else {
+      showToast({
+        kind: 'error',
+        text: `יצירת הסטורי נכשלה: ${result.error ?? 'שגיאה לא ידועה'}`,
+      })
+    }
+  }
 
   async function sendShareEmail() {
     if (!shareGallery || !shareEmail) return
@@ -975,12 +1624,41 @@ export function Dashboard() {
         setShareSent(true)
         setTimeout(() => { setShareGallery(null); setShareSent(false) }, 1800)
       } else {
-        alert('שגיאה בשליחה: ' + (res.error || 'לא ידוע'))
+        showToast({ kind: 'error', text: 'שגיאה בשליחה: ' + (res.error || 'לא ידוע') })
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast({ kind: 'error', text: 'שגיאה: ' + msg })
+      console.warn('[sendGalleryShareEmail]', err)
+    } finally {
+      setShareSending(false)
+    }
+  }
+
+  // Render the email (without sending) and open it in a sandboxed iframe so
+  // the photographer can verify wording, brand colors, and CTA before any
+  // client gets it. The edge function runs the same composer the send path
+  // uses, so what they see is byte-identical to what's queued in Resend.
+  async function previewShareEmail() {
+    if (!shareGallery || previewLoading) return
+    setPreviewLoading(true)
+    try {
+      const { previewGalleryShareEmail } = await import('../lib/shareGallery')
+      const res = await previewGalleryShareEmail({
+        galleryId: shareGallery.id,
+        recipientEmail: shareEmail || undefined,
+        subject: shareSubject || undefined,
+        message: shareMessage || undefined,
+      })
+      if (res.ok && res.html) {
+        setPreviewHtml(res.html)
+      } else {
+        alert('שגיאה בתצוגה מקדימה: ' + (res.error || 'לא ידוע'))
       }
     } catch (err) {
       alert('שגיאה: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
-      setShareSending(false)
+      setPreviewLoading(false)
     }
   }
 
@@ -1015,17 +1693,98 @@ export function Dashboard() {
     setSelectMode(false)
     setSelectedImageIds(new Set())
   }
+  // Best-effort cleanup of the storage objects that backed a set of
+  // images we just deleted from the DB. The DB row is the canonical
+  // "deleted" signal — storage.remove() is non-transactional and runs
+  // in the background so the UX never blocks on it. Failures log via
+  // console.warn for a future reconciler to sweep up the orphans.
+  //
+  // Phase 4.2 dual-writes thumbnails to `gallery-images-thumbs-public`
+  // too; this helper currently only purges the primary `gallery-images`
+  // bucket. The thumbs bucket is a known follow-up (see commit message).
+  async function purgeStorageForImages(images: GalleryImage[]) {
+    const paths = new Set<string>()
+    const thumbPaths = new Set<string>()
+    for (const img of images) {
+      if (img.storage_path) paths.add(img.storage_path)
+      if (img.thumbnail_path) {
+        paths.add(img.thumbnail_path)
+        // Phase 4.2 dual-writes thumbnails to the public bucket for crawlers /
+        // OG previews. Same key, different bucket — wipe both so the public
+        // bucket doesn't accrue orphans too.
+        thumbPaths.add(img.thumbnail_path)
+      }
+      if (img.original_path) paths.add(img.original_path)
+    }
+    if (paths.size === 0 && thumbPaths.size === 0) return
+    // supabase-js storage.remove() accepts up to ~1000 paths per call;
+    // 500 is a safe chunk size that leaves headroom for URL-length
+    // limits and partial-failure reporting.
+    const CHUNK = 500
+    async function purgeBucket(bucket: string, all: string[]) {
+      for (let i = 0; i < all.length; i += CHUNK) {
+        const chunk = all.slice(i, i + CHUNK)
+        try {
+          const { error } = await supabase.storage.from(bucket).remove(chunk)
+          if (error) {
+            console.warn('[purgeStorageForImages] chunk remove failed', {
+              bucket, chunkSize: chunk.length, error: error.message,
+            })
+          }
+        } catch (e) {
+          console.warn('[purgeStorageForImages] chunk remove threw', {
+            bucket, chunkSize: chunk.length,
+            error: e instanceof Error ? e.message : String(e),
+          })
+        }
+      }
+    }
+    await Promise.all([
+      purgeBucket('gallery-images', Array.from(paths)),
+      purgeBucket('gallery-images-thumbs-public', Array.from(thumbPaths)),
+    ])
+  }
+
+  // Helper for whole-gallery deletes that don't carry the per-image local
+  // state — selects all the gallery's image paths via the service-readable
+  // images.select(), then hands the list to purgeStorageForImages. Best-
+  // effort; never throws, never blocks the gallery delete itself.
+  async function purgeStorageForGallery(galleryId: string) {
+    const { data, error } = await supabase
+      .from('images')
+      .select('id, filename, storage_path:web_preview_path, thumbnail_path, original_path, is_top_pick, sort_order, section_id')
+      .eq('gallery_id', galleryId)
+    if (error || !data) {
+      console.warn('[purgeStorageForGallery] could not list images', error)
+      return
+    }
+    await purgeStorageForImages(data as GalleryImage[])
+  }
+
   async function bulkDeleteSelected() {
     if (!editingGallery || selectedImageIds.size === 0) return
     const count = selectedImageIds.size
-    if (!confirm(`למחוק ${count} תמונות? פעולה זו לא ניתנת לביטול.`)) return
+    if (!(await confirm({
+      title: `למחוק ${count} תמונות?`,
+      body: 'פעולה זו לא ניתנת לביטול.',
+      confirmLabel: 'מחק',
+      danger: true,
+    }))) return
     const ids = Array.from(selectedImageIds)
+    // Snapshot paths from local state BEFORE the DB delete so we still
+    // have them to feed the storage purge.
+    const snap = galleryImages.filter(i => selectedImageIds.has(i.id))
     const { error } = await supabase.from('images').delete().in('id', ids)
     if (error) {
-      alert('שגיאה במחיקה: ' + error.message)
+      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + error.message })
+      console.warn('[bulkDelete]', error)
       return
     }
+    // Fire-and-forget — the row delete is canonical; storage cleanup
+    // is best-effort and should never block the UI.
+    void purgeStorageForImages(snap)
     setGalleryImages(prev => prev.filter(i => !selectedImageIds.has(i.id)))
+    markDirty()
     await supabase.from('galleries')
       .update({ image_count: Math.max(0, galleryImages.length - ids.length) })
       .eq('id', editingGallery.id)
@@ -1037,14 +1796,22 @@ export function Dashboard() {
     const ids = Array.from(selectedImageIds)
     const { error } = await supabase.from('images').update({ is_top_pick: makeTopPick }).in('id', ids)
     if (error) {
-      alert('שגיאה: ' + error.message)
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      console.warn('[bulkToggleTopPick]', error)
       return
     }
     setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, is_top_pick: makeTopPick } : i))
+    markDirty()
     exitSelectMode()
   }
+  // Select-all should match what the photographer is LOOKING at — sections
+  // act as separate galleries (no "all photos" anymore), so selecting across
+  // sections would silently bulk-delete invisible photos.
   function selectAllImages() {
-    setSelectedImageIds(new Set(galleryImages.map(i => i.id)))
+    const visible = activeSectionId
+      ? galleryImages.filter(i => i.section_id === activeSectionId)
+      : galleryImages
+    setSelectedImageIds(new Set(visible.map(i => i.id)))
   }
 
   // Single-image actions — invoked from the per-tile hover overlay so the
@@ -1055,20 +1822,40 @@ export function Dashboard() {
     if (!img) return
     const next = !img.is_top_pick
     const { error } = await supabase.from('images').update({ is_top_pick: next }).eq('id', imageId)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      console.warn('[toggleSingleTopPick]', error)
+      return
+    }
     setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, is_top_pick: next } : i))
+    markDirty()
   }
   async function moveImageToSection(imageId: string, sectionId: string | null) {
     const { error } = await supabase.from('images').update({ section_id: sectionId }).eq('id', imageId)
-    if (error) { alert('שגיאה: ' + error.message); return }
+    if (error) {
+      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
+      console.warn('[moveImageToSection]', error)
+      return
+    }
     setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, section_id: sectionId } : i))
+    markDirty()
   }
   async function deleteSingleImage(imageId: string) {
     if (!editingGallery) return
-    if (!confirm('למחוק את התמונה? פעולה זו לא ניתנת לביטול.')) return
+    if (!(await confirm({
+      title: 'למחוק את התמונה?',
+      body: 'פעולה זו לא ניתנת לביטול.',
+      confirmLabel: 'מחק',
+      danger: true,
+    }))) return
     const { error } = await supabase.from('images').delete().eq('id', imageId)
-    if (error) { alert('שגיאה במחיקה: ' + error.message); return }
+    if (error) {
+      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + error.message })
+      console.warn('[deleteSingleImage]', error)
+      return
+    }
     setGalleryImages(prev => prev.filter(i => i.id !== imageId))
+    markDirty()
     await supabase.from('galleries')
       .update({ image_count: Math.max(0, galleryImages.length - 1) })
       .eq('id', editingGallery.id)
@@ -1097,6 +1884,7 @@ export function Dashboard() {
   // image with a 1000-step gap so subsequent moves don't collide.
   async function reorderImage(draggedId: string, targetId: string) {
     if (draggedId === targetId) return
+    if (!editingGallery) return
     const visible = (activeSectionId
       ? galleryImages.filter(i => i.section_id === activeSectionId)
       : galleryImages
@@ -1109,13 +1897,60 @@ export function Dashboard() {
     next.splice(toIdx, 0, moved)
     const idToOrder = new Map<string, number>()
     next.forEach((img, idx) => { idToOrder.set(img.id, idx * 1000) })
+    // Optimistic state update — paint the new order immediately, then
+    // reconcile with the server. If the RPC fails the user sees a brief
+    // flicker when we revert on partial-failure (see below).
     setGalleryImages(prev => prev.map(i =>
       idToOrder.has(i.id) ? { ...i, sort_order: idToOrder.get(i.id)! } : i
     ))
-    await Promise.all(next.map((img, idx) =>
+    markDirty()
+    // Persist all moves. Use allSettled instead of all so a single failed
+    // UPDATE doesn't leave the rest silently mis-ordered; if any failed we
+    // tell the user + log the offending ids so the next reorder can heal.
+    // (Phase 6 will replace this with one batched RPC; this is the safer
+    // intermediate step.)
+    const results = await Promise.allSettled(next.map((img, idx) =>
       supabase.from('images').update({ sort_order: idx * 1000 }).eq('id', img.id)
     ))
+    const failedIds = results
+      .map((r, i) => (r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error)) ? next[i].id : null)
+      .filter((x): x is string => x !== null)
+    if (failedIds.length > 0) {
+      showToast({ kind: 'error', text: `סידור ${failedIds.length} תמונות לא נשמר. גלריה תרענן.` })
+      console.warn('[reorderImage] failed ids', failedIds)
+    }
   }
+  // Section drag-reorder — moves a dragged section before/at the position of
+  // the drop target, renumbers all sections with a 1000-step gap, and
+  // persists in parallel (Promise.allSettled so a single failed UPDATE
+  // surfaces instead of silently leaving the DB out of order).
+  async function reorderSection(draggedId: string, targetId: string) {
+    if (draggedId === targetId) return
+    const ordered = sections.slice().sort((a, b) => a.sort_order - b.sort_order)
+    const fromIdx = ordered.findIndex(s => s.id === draggedId)
+    const toIdx = ordered.findIndex(s => s.id === targetId)
+    if (fromIdx === -1 || toIdx === -1) return
+    const next = ordered.slice()
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    const idToOrder = new Map<string, number>()
+    next.forEach((sec, idx) => idToOrder.set(sec.id, idx * 1000))
+    setSections(prev => prev
+      .map(s => idToOrder.has(s.id) ? { ...s, sort_order: idToOrder.get(s.id)! } : s)
+      .sort((a, b) => a.sort_order - b.sort_order))
+    markDirty()
+    const results = await Promise.allSettled(next.map((sec, idx) =>
+      supabase.from('gallery_sections').update({ sort_order: idx * 1000 }).eq('id', sec.id)
+    ))
+    const failedIds = results
+      .map((r, i) => (r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error)) ? next[i].id : null)
+      .filter((x): x is string => x !== null)
+    if (failedIds.length > 0) {
+      showToast({ kind: 'error', text: `סידור ${failedIds.length} סקשנים לא נשמר. רענן את הגלריה.` })
+      console.warn('[reorderSection] failed ids', failedIds)
+    }
+  }
+
   // Keyboard alternative for drag-reorder. Moves the image one step up
   // or down within the visible list. Wired into the per-tile "..." menu
   // so screen reader / keyboard users get the same control as mouse users.
@@ -1148,45 +1983,56 @@ export function Dashboard() {
     )
   }
 
-  /* ---------- Sign-in screen ---------- */
+  /* ---------- Sign-in screen ----------
+     Editorial-minimal. No gradients, no squircle icons, no drop-shadowed pill
+     buttons. Cream canvas + tracked uppercase wordmark + hairline rule + an
+     outlined dark CTA that inverts on hover — the same vocabulary as the rest
+     of the dashboard. */
   if (!user) {
     return (
       <div style={{
-        background: `radial-gradient(ellipse at 50% 0%, rgba(45,196,121,.08) 0%, ${bg} 60%)`,
-        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'inherit', direction: 'rtl',
+        background: bg, minHeight: '100vh',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'inherit', direction: 'rtl', padding: 24,
       }}>
-        <div style={{
-          textAlign: 'center', maxWidth: 440, padding: 48,
-          animation: 'fadeInUp .5s ease both',
-        }}>
+        <div style={{ textAlign: 'center', maxWidth: 420, width: '100%' }}>
           <div style={{
-            width: 80, height: 80, borderRadius: 24, margin: '0 auto 24px',
-            background: `linear-gradient(135deg, ${accent}, #a78bfa)`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 36, boxShadow: `0 8px 32px ${accentGlow}`,
+            fontSize: 11, fontWeight: 500, letterSpacing: '0.32em',
+            textTransform: 'uppercase', color: textMuted, marginBottom: 28,
           }}>
-            📸
+            Pixflow
           </div>
-          <h1 style={{ color: textPrimary, fontSize: 32, fontWeight: 800, marginBottom: 12, letterSpacing: '-0.02em' }}>
-            ברוכים הבאים ל-Pixflow
+          <div style={{ width: 28, height: 1, background: border, margin: '0 auto 28px' }} />
+          <h1 style={{
+            fontFamily: 'inherit', fontSize: 28, fontWeight: 400,
+            color: textPrimary, letterSpacing: '-0.015em', lineHeight: 1.2,
+            margin: '0 0 14px',
+          }}>
+            כניסה לחשבון
           </h1>
-          <p style={{ color: textSecondary, fontSize: 16, marginBottom: 40, lineHeight: 1.7 }}>
-            התחברו כדי לנהל את הגלריות שלכם
+          <p style={{
+            fontSize: 13, color: textSecondary, lineHeight: 1.6,
+            margin: '0 0 40px',
+          }}>
+            ניהול הגלריות, פרסום ושיתוף עם הלקוחות.
           </p>
           <button
             onClick={signInWithGoogle}
+            onMouseEnter={(e) => { e.currentTarget.style.background = textPrimary; e.currentTarget.style.color = '#fff' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = textPrimary }}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: 12,
-              background: '#fff', color: '#1a1a2e', border: 'none', borderRadius: 14,
-              padding: '16px 36px', fontSize: 16, fontWeight: 600, cursor: 'pointer',
-              fontFamily: 'inherit', transition: 'transform .15s, box-shadow .15s',
-              boxShadow: '0 4px 16px rgba(0,0,0,.3)',
+              display: 'inline-flex', alignItems: 'center', gap: 10,
+              background: 'transparent', color: textPrimary,
+              border: `1px solid ${textPrimary}`, borderRadius: 2,
+              padding: '14px 30px', fontSize: 11, fontWeight: 500,
+              cursor: 'pointer', fontFamily: 'inherit',
+              letterSpacing: '0.18em', textTransform: 'uppercase',
+              transition: 'background .15s, color .15s',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,.4)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,.3)'; }}
           >
-            <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59a14.5 14.5 0 010-9.18l-7.98-6.19a24.08 24.08 0 000 21.56l7.98-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+            <svg width="13" height="13" viewBox="0 0 48 48" aria-hidden="true" fill="currentColor">
+              <path d="M44.5 20H24v8.5h11.8C34.7 33.9 30 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/>
+            </svg>
             התחברות עם Google
           </button>
         </div>
@@ -1199,10 +2045,11 @@ export function Dashboard() {
   const displayName = user.user_metadata?.full_name || user.user_metadata?.name || user.email
 
   const totalPhotos = galleries.reduce((sum, g) => sum + (g.image_count ?? 0), 0)
-  // "Live" matches both 'published' (web) and 'live' (desktop) statuses.
-  // Without including 'live', desktop-published galleries are counted as
-  // drafts in the stats row even though their cards say PUBLISHED.
-  const publishedCount = galleries.filter((g) => g.status === 'published' || g.status === 'live').length
+  // Single canonical "publicly visible" state since migration 063. The
+  // previous `=== 'live' || === 'published'` dual-check was a desktop-era
+  // leftover; the backfill normalised 'published' rows to 'live' and the
+  // gallery_status enum has no 'published' value.
+  const publishedCount = galleries.filter((g) => g.status === 'live').length
   const draftCount = galleries.length - publishedCount
 
   const statCards: { label: string; value: number | string; icon: IconName; color: string }[] = [
@@ -1218,6 +2065,24 @@ export function Dashboard() {
       direction: 'rtl', color: textPrimary,
       display: 'flex',
     }}>
+      {/* In-app toasts (replaces silent alert() / vanished error states). */}
+      <ToastContainer />
+
+      {/* Lightbox — full-screen photo preview. Mounted only when open, so the
+          dashboard pays nothing for it most of the time. */}
+      {viewerImages && (
+        <Viewer
+          images={viewerImages}
+          index={viewerIndex}
+          imgBucket="gallery-images"
+          allowDownloads
+          downloadLabel="הורד"
+          onClose={() => setViewerImages(null)}
+          onNavigate={(i) => setViewerIndex(i)}
+          onDownload={(img) => { void downloadOriginal(img.id) }}
+        />
+      )}
+
       {/* ======= Sidebar ======= */}
       {/* Mobile backdrop — visible only when the drawer is open under 900px */}
       {sidebarOpen && (
@@ -1290,12 +2155,17 @@ export function Dashboard() {
         </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
           {[
-            { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true, disabled: false },
-            { icon: 'palette' as IconName,  label: 'מיתוג',       active: false, disabled: true },
-            { icon: 'clients' as IconName,  label: 'לקוחות',      active: false, disabled: true },
-            { icon: 'help' as IconName,     label: 'עזרה',        active: false, disabled: false },
+            { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true, disabled: false, href: undefined as string | undefined },
+            { icon: 'palette' as IconName, label: 'Brand Kit',  active: false, disabled: false, href: '/brand-kit' as string | undefined },
+            { icon: 'clients' as IconName,  label: 'לקוחות',      active: false, disabled: true, href: undefined as string | undefined },
           ].map(item => (
-            <button key={item.label} style={{
+            <button
+              key={item.label}
+              onClick={() => {
+                if (item.disabled || !item.href) return
+                window.location.pathname = item.href
+              }}
+              style={{
               display: 'flex', alignItems: 'center', gap: 12,
               padding: '11px 12px', borderRadius: 4,
               background: 'transparent',
@@ -1667,12 +2537,12 @@ export function Dashboard() {
           </div>
         ) : (
           /* ======= Gallery grid ======= */
-          <div style={{
+          <div className="dash-gallery-grid" style={{
             display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 32,
           }}>
             {galleries.map((g, idx) => {
               const isHovered = hoveredCard === g.id
-              const isLive = g.status === 'live' || g.status === 'published'
+              const isLive = g.status === 'live'
               const explicitCover = ((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl as string | undefined) || null
               const cover = explicitCover || coverFallback[g.id] || null
               return (
@@ -1725,43 +2595,92 @@ export function Dashboard() {
                         <Icon name="photo" size={36} strokeWidth={1.2} />
                       </div>
                     )}
+                    {/* Destructive: delete the gallery. Visible on hover for
+                        every gallery (live + draft) so abandoned tests can be
+                        cleaned up. Native confirm() for now; Phase 3 swaps for
+                        a styled modal. */}
+                    {isHovered && (
+                      <div style={{
+                        position: 'absolute', top: 12, insetInlineEnd: 12,
+                      }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); void deleteGallery(g) }}
+                          title="מחק גלריה"
+                          aria-label="מחק גלריה"
+                          style={{
+                            width: 34, height: 34, borderRadius: 2,
+                            background: 'rgba(255,255,255,.96)',
+                            border: `1px solid rgba(20,20,19,.08)`,
+                            color: '#c0392b', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            backdropFilter: 'blur(8px)',
+                            boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+                          }}
+                        >
+                          <Icon name="trash" size={14} strokeWidth={1.85} />
+                        </button>
+                      </div>
+                    )}
                     {/* Hover action row — only on live galleries */}
                     {isLive && isHovered && (
                       <div style={{
                         position: 'absolute', bottom: 12, insetInlineStart: 12,
                         display: 'flex', gap: 6,
                       }}>
+                        {isLive && (
+                          <>
+                            <button
+                              onClick={(e) => copyGalleryLink(g.id, e)}
+                              title="העתק קישור"
+                              aria-label={copiedGalleryId === g.id ? 'הקישור הועתק' : 'העתק קישור'}
+                              style={{
+                                width: 34, height: 34, borderRadius: 2,
+                                background: 'rgba(255,255,255,.96)',
+                                border: `1px solid rgba(20,20,19,.08)`,
+                                color: textPrimary, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                backdropFilter: 'blur(8px)',
+                                boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+                              }}
+                            >
+                              <Icon name={copiedGalleryId === g.id ? 'check' : 'copy'} size={14} strokeWidth={1.85} />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openEmailShare(g) }}
+                              title="שלח במייל ללקוח"
+                              aria-label="שלח במייל ללקוח"
+                              style={{
+                                width: 34, height: 34, borderRadius: 2,
+                                background: 'rgba(255,255,255,.96)',
+                                border: `1px solid rgba(20,20,19,.08)`,
+                                color: textPrimary, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                backdropFilter: 'blur(8px)',
+                                boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+                              }}
+                            >
+                              <Icon name="mail" size={14} strokeWidth={1.85} />
+                            </button>
+                          </>
+                        )}
                         <button
-                          onClick={(e) => copyGalleryLink(g.id, e)}
-                          title="העתק קישור"
-                          aria-label={copiedGalleryId === g.id ? 'הקישור הועתק' : 'העתק קישור'}
+                          onClick={(e) => { e.stopPropagation(); duplicateGallery(g) }}
+                          disabled={duplicatingId === g.id}
+                          title="שכפל גלריה"
+                          aria-label="שכפל גלריה"
                           style={{
                             width: 34, height: 34, borderRadius: 2,
                             background: 'rgba(255,255,255,.96)',
                             border: `1px solid rgba(20,20,19,.08)`,
-                            color: textPrimary, cursor: 'pointer',
+                            color: textPrimary,
+                            cursor: duplicatingId === g.id ? 'wait' : 'pointer',
+                            opacity: duplicatingId === g.id ? 0.6 : 1,
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             backdropFilter: 'blur(8px)',
                             boxShadow: '0 1px 3px rgba(0,0,0,.06)',
                           }}
                         >
-                          <Icon name={copiedGalleryId === g.id ? 'check' : 'copy'} size={14} strokeWidth={1.85} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); openEmailShare(g) }}
-                          title="שלח במייל ללקוח"
-                          aria-label="שלח במייל ללקוח"
-                          style={{
-                            width: 34, height: 34, borderRadius: 2,
-                            background: 'rgba(255,255,255,.96)',
-                            border: `1px solid rgba(20,20,19,.08)`,
-                            color: textPrimary, cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            backdropFilter: 'blur(8px)',
-                            boxShadow: '0 1px 3px rgba(0,0,0,.06)',
-                          }}
-                        >
-                          <Icon name="mail" size={14} strokeWidth={1.85} />
+                          <Icon name="duplicate" size={14} strokeWidth={1.85} />
                         </button>
                       </div>
                     )}
@@ -1824,7 +2743,7 @@ export function Dashboard() {
           const editorCover = ((editingGallery.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl as string | undefined)
             || coverFallback[editingGallery.id]
             || null
-          const isLiveStatus = editingGallery.status === 'live' || editingGallery.status === 'published'
+          const isLiveStatus = editingGallery.status === 'live'
           return (
           <div style={{
             position: 'fixed', inset: 0, zIndex: 1000,
@@ -1837,6 +2756,7 @@ export function Dashboard() {
               role="dialog"
               aria-modal="true"
               aria-labelledby="gallery-editor-heading"
+              className="dash-editor-modal"
               style={{
                 background: bg,
                 width: 'calc(100vw - 32px)', maxWidth: 1440,
@@ -1848,11 +2768,13 @@ export function Dashboard() {
               {/* Editor header — name + status pill on the right (RTL),
                   Preview + Share/Publish on the left. Mirrors Pixieset's
                   rhythm exactly. */}
-              <div style={{
-                padding: '18px 32px', borderBottom: `1px solid ${border}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: bgSubtle,
-              }}>
+              <div
+                className="dash-editor-header"
+                style={{
+                  padding: '18px 32px', borderBottom: `1px solid ${border}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: bgSubtle,
+                }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                   <button onClick={() => setEditingGallery(null)} aria-label="חזרה" style={{
                     background: 'none', border: 'none', color: textSecondary, cursor: 'pointer',
@@ -1880,6 +2802,28 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  {/* Live-preview toggle — only meaningful on Settings + Welcome
+                      tabs (where the side preview pane appears). Lets the
+                      photographer reclaim the full editor width when they want
+                      to focus, then bring the preview back in. */}
+                  {(editTab === 'settings' || editTab === 'welcome') && (
+                    <button
+                      onClick={() => setShowSidePreview(v => !v)}
+                      title={showSidePreview ? 'הסתר תצוגה חיה' : 'הצג תצוגה חיה'}
+                      style={{
+                        padding: '10px 14px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                        background: showSidePreview ? textPrimary : 'transparent',
+                        border: `1px solid ${showSidePreview ? textPrimary : border}`,
+                        color: showSidePreview ? '#fff' : textPrimary,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        letterSpacing: '0.18em', textTransform: 'uppercase',
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                      }}
+                    >
+                      <Icon name="arrow-out" size={12} strokeWidth={1.85} />
+                      Live
+                    </button>
+                  )}
                   <a href={galleryShareUrl(editingGallery)} target="_blank" style={{
                     padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
                     background: 'transparent', border: `1px solid ${border}`, color: textPrimary,
@@ -1890,24 +2834,118 @@ export function Dashboard() {
                     <Icon name="arrow-out" size={13} strokeWidth={1.85} />
                     Preview
                   </a>
-                  {editingGallery.status !== 'live' && (
-                    <button onClick={publishGallery} style={{
-                      padding: '10px 22px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-                      background: textPrimary, border: `1px solid ${textPrimary}`,
-                      color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
-                      letterSpacing: '0.18em', textTransform: 'uppercase',
-                    }}>Publish</button>
+                  {/* Copy share link — useful right after the first publish too.
+                      Inline label/icon flip on success so the eye on the button
+                      gets immediate confirmation (toast remains for redundancy). */}
+                  {isLiveStatus && (
+                    <button
+                      onClick={() => {
+                        const url = galleryShareUrl(editingGallery)
+                        navigator.clipboard.writeText(url).then(
+                          () => {
+                            setCopiedInEditor(true)
+                            setTimeout(() => setCopiedInEditor(false), 1800)
+                            showToast({ kind: 'success', text: 'הקישור הועתק ✓' })
+                          },
+                          () => showToast({ kind: 'error', text: 'לא הצלחנו להעתיק. העתק ידנית מהדפדפן.' }),
+                        )
+                        void warmGalleryCache(editingGallery.id)
+                      }}
+                      aria-live="polite"
+                      style={{
+                        padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                        background: copiedInEditor ? 'rgba(45,196,121,.10)' : 'transparent',
+                        border: `1px solid ${copiedInEditor ? 'rgba(45,196,121,.45)' : border}`,
+                        color: copiedInEditor ? '#1b8a4e' : textPrimary,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        letterSpacing: '0.18em', textTransform: 'uppercase',
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                        transition: 'background .15s, border-color .15s, color .15s',
+                      }}
+                    >
+                      <Icon name={copiedInEditor ? 'check' : 'copy'} size={13} strokeWidth={1.85} />
+                      {copiedInEditor ? 'הקישור הועתק' : 'Copy Link'}
+                    </button>
                   )}
+                  {/* Publish (drafts) or Update (live). Visual states designed
+                      to be undeniable at a glance:
+                      - clean live   → outlined + heavily muted (opacity .4),
+                                       dashed border, "מעודכן" — unmistakably idle
+                      - dirty/draft  → strong filled-black + amber dot + "Update*"
+                                       so even at a distance the user sees "act"
+                      - publishing   → "מפרסם…" + disabled (no double-fire)
+                      - just shipped → "✓ עודכן" sage tint for 1.8s */}
+                  {(() => {
+                    const isDraft = !isLiveStatus
+                    const hasWork = isDraft || unpublishedChanges
+                    const disabled = !hasWork || publishing
+                    const baseLabel = publishing
+                      ? 'מפרסם…'
+                      : justPublished
+                        ? (isDraft ? '✓ פורסם' : '✓ עודכן')
+                        : (isDraft ? 'Publish' : (hasWork ? 'Update' : 'מעודכן'))
+                    const filled = hasWork && !justPublished && !publishing
+                    const successTint = justPublished
+                    return (
+                      <>
+                        {/* External "dirty" indicator — extra signal beyond the
+                            button color so the photographer can't miss the fact
+                            that there are unsaved changes ready to publish. */}
+                        {hasWork && !justPublished && !publishing && (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            fontSize: 11, fontWeight: 500, color: '#b45309',
+                            letterSpacing: '0.06em',
+                          }}>
+                            <span style={{
+                              width: 8, height: 8, borderRadius: '50%',
+                              background: '#d97706',
+                              boxShadow: '0 0 0 3px rgba(217,119,6,.18)',
+                            }} />
+                            {isDraft ? 'טיוטה' : 'שינויים שטרם פורסמו'}
+                          </span>
+                        )}
+                        <button
+                          onClick={publishGallery}
+                          disabled={disabled}
+                          aria-live="polite"
+                          style={{
+                            padding: '10px 22px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                            background: successTint
+                              ? 'rgba(45,196,121,.12)'
+                              : filled ? textPrimary : 'transparent',
+                            border: successTint
+                              ? `1px solid rgba(45,196,121,.5)`
+                              : filled
+                                ? `1px solid ${textPrimary}`
+                                : `1px dashed ${border}`,
+                            color: successTint
+                              ? '#1b8a4e'
+                              : filled ? '#fff' : textMuted,
+                            cursor: disabled ? 'default' : 'pointer',
+                            opacity: disabled && !successTint && !publishing ? 0.45 : 1,
+                            fontFamily: 'inherit',
+                            letterSpacing: '0.18em', textTransform: 'uppercase',
+                            transition: 'background .15s, border-color .15s, color .15s, opacity .15s, box-shadow .15s',
+                            minWidth: 110,
+                            boxShadow: filled && !publishing ? '0 1px 0 rgba(20,20,19,.18), 0 4px 14px rgba(20,20,19,.12)' : 'none',
+                          }}
+                        >{baseLabel}</button>
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
 
               {/* Editor body — split layout. Sidebar holds cover preview +
                   vertical icon tabs (mirrors Pixieset). Main area holds the
                   active tab's content. RTL flow keeps the sidebar visually
-                  on the right side of the modal — natural for Hebrew users. */}
-              <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+                  on the right side of the modal — natural for Hebrew users.
+                  Below 900px (`.dash-editor-body` in styles.css) this stack
+                  flips to column so the sidebar becomes a slim top strip. */}
+              <div className="dash-editor-body" style={{ flex: 1, display: 'flex', minHeight: 0 }}>
                 {/* ── Sidebar ─────────────────────────────────── */}
-                <aside style={{
+                <aside className="dash-editor-sidebar" style={{
                   width: 260, flexShrink: 0,
                   borderInlineStart: `1px solid ${border}`,
                   background: bg,
@@ -1941,12 +2979,15 @@ export function Dashboard() {
                     padding: '14px 12px', borderBottom: `1px solid ${border}`,
                   }}>
                     {([
-                      { id: 'photos' as const,     icon: 'photo'    as IconName, label: 'תמונות' },
-                      { id: 'sections' as const,   icon: 'sections' as IconName, label: 'קטעים' },
-                      { id: 'stories' as const,    icon: 'stories'  as IconName, label: 'סטוריז' },
-                      { id: 'welcome' as const,    icon: 'palette'  as IconName, label: 'עיצוב' },
-                      { id: 'activities' as const, icon: 'activity' as IconName, label: 'פעילות' },
-                      { id: 'settings' as const,   icon: 'settings' as IconName, label: 'הגדרות' },
+                      { id: 'photos' as const,     icon: 'photo'     as IconName, label: 'תמונות' },
+                      // Sections tab removed — sections are managed inline in
+                      // the Photos tab's sidebar (add / rename / delete / drag-
+                      // reorder), so a dedicated tab was redundant.
+                      { id: 'stories' as const,    icon: 'stories'   as IconName, label: 'סטוריז' },
+                      { id: 'welcome' as const,    icon: 'palette'   as IconName, label: 'עיצוב' },
+                      { id: 'preview' as const,    icon: 'arrow-out' as IconName, label: 'תצוגה חיה' },
+                      { id: 'activities' as const, icon: 'activity'  as IconName, label: 'פעילות' },
+                      { id: 'settings' as const,   icon: 'settings'  as IconName, label: 'הגדרות' },
                     ]).map(t => {
                       const active = editTab === t.id
                       return (
@@ -2000,15 +3041,51 @@ export function Dashboard() {
                       const count = (galleryImages as GalleryImage[]).filter(im => im.section_id === s.id).length
                       const isRenaming = renamingSectionId === s.id
                       const isMenuOpen = sectionMenuOpenId === s.id
+                      const isDragSource = draggedSectionId === s.id
+                      const isDropTarget = sectionDragOverId === s.id && draggedSectionId && draggedSectionId !== s.id
                       return (
-                        <div key={s.id} style={{
-                          position: 'relative',
-                          background: isActive ? bgSubtle : 'transparent',
-                          transition: 'background .15s',
-                        }}>
+                        <div
+                          key={s.id}
+                          draggable={!isRenaming}
+                          onDragStart={(e) => {
+                            if (isRenaming) return
+                            setDraggedSectionId(s.id)
+                            e.dataTransfer.effectAllowed = 'move'
+                            try { e.dataTransfer.setData('text/plain', s.id) } catch {}
+                          }}
+                          onDragOver={(e) => {
+                            if (!draggedSectionId || draggedSectionId === s.id) return
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                            if (sectionDragOverId !== s.id) setSectionDragOverId(s.id)
+                          }}
+                          onDragLeave={() => {
+                            if (sectionDragOverId === s.id) setSectionDragOverId(null)
+                          }}
+                          onDrop={(e) => {
+                            if (!draggedSectionId) return
+                            e.preventDefault()
+                            const src = draggedSectionId
+                            setDraggedSectionId(null); setSectionDragOverId(null)
+                            if (src && src !== s.id) void reorderSection(src, s.id)
+                          }}
+                          onDragEnd={() => { setDraggedSectionId(null); setSectionDragOverId(null) }}
+                          style={{
+                            position: 'relative',
+                            background: isDropTarget ? bgSubtle : (isActive ? bgSubtle : 'transparent'),
+                            opacity: isDragSource ? 0.4 : 1,
+                            transition: 'background .15s, opacity .15s',
+                            cursor: isRenaming ? 'text' : 'grab',
+                            borderTop: isDropTarget ? `1px solid ${textPrimary}` : '1px solid transparent',
+                          }}>
+                          {/* Section row — select-section action (outer button)
+                              and the three-dot menu (sibling button). Was
+                              previously a button nested inside another button,
+                              which is invalid HTML and confused screen readers
+                              with two overlapping click targets. */}
                           <button onClick={() => { setActiveSectionId(s.id); setSectionMenuOpenId(null) }} style={{
                             width: '100%', textAlign: 'right' as const,
-                            padding: '10px 12px', borderRadius: 2,
+                            padding: '10px 36px 10px 12px', borderRadius: 2,
                             background: 'transparent', border: 'none', cursor: 'pointer',
                             fontFamily: 'inherit', fontSize: 13,
                             fontWeight: isActive ? 600 : 500,
@@ -2023,15 +3100,26 @@ export function Dashboard() {
                             {isRenaming ? (
                               <input
                                 autoFocus
-                                defaultValue={s.name}
-                                onBlur={(e) => {
-                                  const v = e.target.value.trim()
+                                value={sectionRenameDraft}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => setSectionRenameDraft(e.target.value)}
+                                onBlur={() => {
+                                  // Escape → cancelled flag set → don't save.
+                                  if (sectionRenameCancelledRef.current) {
+                                    sectionRenameCancelledRef.current = false
+                                    setRenamingSectionId(null)
+                                    return
+                                  }
+                                  const v = sectionRenameDraft.trim()
                                   if (v && v !== s.name) renameSection(s.id, v)
                                   setRenamingSectionId(null)
                                 }}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                                  if (e.key === 'Escape') setRenamingSectionId(null)
+                                  if (e.key === 'Escape') {
+                                    sectionRenameCancelledRef.current = true
+                                    ;(e.target as HTMLInputElement).blur()
+                                  }
                                 }}
                                 style={{
                                   flex: 1, minWidth: 0,
@@ -2048,25 +3136,22 @@ export function Dashboard() {
                             <span style={{ color: textMuted, fontSize: 12, fontWeight: 400 }}>
                               {count}
                             </span>
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              onClick={(e) => { e.stopPropagation(); setSectionMenuOpenId(isMenuOpen ? null : s.id) }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault(); e.stopPropagation()
-                                  setSectionMenuOpenId(isMenuOpen ? null : s.id)
-                                }
-                              }}
-                              style={{
-                                color: textMuted, cursor: 'pointer',
-                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                width: 24, height: 24, borderRadius: 2,
-                              }}
-                              aria-label="עוד"
-                            >
-                              <Icon name="menu" size={14} strokeWidth={1.85} />
-                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSectionMenuOpenId(isMenuOpen ? null : s.id) }}
+                            aria-label="עוד פעולות לסקשן"
+                            aria-haspopup="menu"
+                            aria-expanded={isMenuOpen}
+                            style={{
+                              position: 'absolute', top: 8, insetInlineEnd: 6,
+                              width: 24, height: 24, borderRadius: 2,
+                              background: 'transparent', border: 'none', cursor: 'pointer',
+                              color: textMuted,
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >
+                            <Icon name="menu" size={14} strokeWidth={1.85} />
                           </button>
                           {isMenuOpen && (
                             <div style={{
@@ -2075,12 +3160,20 @@ export function Dashboard() {
                               boxShadow: '0 8px 24px rgba(0,0,0,.08)', zIndex: 5,
                               minWidth: 140, padding: 4,
                             }}>
-                              <button onClick={() => { setRenamingSectionId(s.id); setSectionMenuOpenId(null) }} style={{
-                                width: '100%', textAlign: 'right' as const,
-                                padding: '8px 10px', borderRadius: 2,
-                                background: 'transparent', border: 'none', cursor: 'pointer',
-                                fontFamily: 'inherit', fontSize: 12, color: textPrimary,
-                              }}>שינוי שם</button>
+                              <button
+                                onClick={() => {
+                                  setSectionRenameDraft(s.name)
+                                  sectionRenameCancelledRef.current = false
+                                  setRenamingSectionId(s.id)
+                                  setSectionMenuOpenId(null)
+                                }}
+                                style={{
+                                  width: '100%', textAlign: 'right' as const,
+                                  padding: '8px 10px', borderRadius: 2,
+                                  background: 'transparent', border: 'none', cursor: 'pointer',
+                                  fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                }}
+                              >שינוי שם</button>
                               <button onClick={() => { deleteSection(s.id); setSectionMenuOpenId(null) }} style={{
                                 width: '100%', textAlign: 'right' as const,
                                 padding: '8px 10px', borderRadius: 2,
@@ -2096,8 +3189,16 @@ export function Dashboard() {
                   )}
                 </aside>
 
-                {/* ── Main content pane ──────────────────────────── */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', minWidth: 0 }}>
+                {/* ── Main content pane + optional side-preview ─────── */}
+                {(() => {
+                  const sidePreviewActive = showSidePreview &&
+                    (editTab === 'settings' || editTab === 'welcome')
+                  return (
+                <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
+                <div style={{
+                  flex: 1, overflowY: 'auto',
+                  padding: '24px 32px', minWidth: 0,
+                }}>
 
                 {/* ── Photos Tab ── */}
                 {editTab === 'photos' && (
@@ -2110,27 +3211,76 @@ export function Dashboard() {
                         is gone; the entire main pane accepts drag-drop, and
                         clicking Add Media opens the native file picker. */}
                     <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      marginBottom: 24,
+                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+                      marginBottom: 24, gap: 16,
                     }}>
                       {(() => {
                         const activeSec = activeSectionId ? sections.find(s => s.id === activeSectionId) : null
                         const visibleImages = activeSectionId
                           ? (galleryImages as GalleryImage[]).filter(im => im.section_id === activeSectionId)
                           : galleryImages
+                        const editingDesc = activeSec && editingSectionDescId === activeSec.id
                         return (
-                          <h3 style={{
-                            fontSize: 22, fontWeight: 500, margin: 0,
-                            letterSpacing: '-0.015em', color: textPrimary,
-                          }}>
-                            {activeSec ? activeSec.name : 'תמונות'}
-                            <span style={{
-                              marginInlineStart: 12, color: textMuted,
-                              fontSize: 14, fontWeight: 400,
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <h3 style={{
+                              fontSize: 22, fontWeight: 500, margin: 0,
+                              letterSpacing: '-0.015em', color: textPrimary,
                             }}>
-                              {visibleImages.length}
-                            </span>
-                          </h3>
+                              {activeSec ? activeSec.name : 'תמונות'}
+                              <span style={{
+                                marginInlineStart: 12, color: textMuted,
+                                fontSize: 14, fontWeight: 400,
+                              }}>
+                                {visibleImages.length}
+                              </span>
+                            </h3>
+                            {/* Inline-editable description for the active section
+                                (shown to the client below the chapter heading). */}
+                            {activeSec && (editingDesc ? (
+                              <textarea
+                                autoFocus
+                                value={sectionDescDraft}
+                                onChange={e => setSectionDescDraft(e.target.value)}
+                                onBlur={() => {
+                                  void saveSectionDescription(activeSec.id, sectionDescDraft)
+                                  setEditingSectionDescId(null)
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Escape') { setEditingSectionDescId(null); return }
+                                  // Cmd/Ctrl+Enter commits (plain Enter inserts newline).
+                                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur()
+                                }}
+                                placeholder="תיאור לסקשן (מוצג ללקוח מתחת לכותרת הפרק)"
+                                rows={2}
+                                maxLength={500}
+                                style={{
+                                  marginTop: 8, width: '100%', maxWidth: 560,
+                                  padding: '8px 10px', borderRadius: 2,
+                                  border: `1px solid ${border}`, background: '#fff',
+                                  color: textPrimary, fontSize: 13, lineHeight: 1.45,
+                                  fontFamily: 'inherit', outline: 'none', resize: 'vertical' as const,
+                                }}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSectionDescDraft(activeSec.description ?? '')
+                                  setEditingSectionDescId(activeSec.id)
+                                }}
+                                style={{
+                                  display: 'block', marginTop: 6,
+                                  padding: 0, background: 'transparent', border: 'none',
+                                  textAlign: 'right' as const, cursor: 'text',
+                                  color: activeSec.description ? textSecondary : textMuted,
+                                  fontSize: 13, lineHeight: 1.45, fontFamily: 'inherit',
+                                  maxWidth: 560,
+                                }}
+                              >
+                                {activeSec.description || '+ הוסף תיאור לסקשן'}
+                              </button>
+                            ))}
+                          </div>
                         )
                       })()}
                       <input ref={fileInputRef} type="file" multiple accept="image/*"
@@ -2287,13 +3437,18 @@ export function Dashboard() {
                         return (a.sort_order ?? 0) - (b.sort_order ?? 0)
                       })
                       const minCell = gridSize === 'large' ? 220 : 140
-                      return visibleImages.length > 0 && (
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(auto-fill, minmax(${minCell}px, 1fr))`,
-                        gap: 4,
-                      }}>
-                        {visibleImages.map(img => {
+                      // Virtualize past 300 photos — see App.tsx for the
+                      // same threshold + rationale. Below 300 we keep CSS
+                      // grid for the auto-fill behaviour photographers
+                      // already know; past it, react-window's FixedSizeGrid
+                      // mounts only the visible square tiles (~3-5 rows).
+                      const VIRTUALIZE_THRESHOLD = 300
+                      const shouldVirtualizeDashboard =
+                        visibleImages.length > VIRTUALIZE_THRESHOLD
+                      // Tile renderer — shared between the non-virtualized
+                      // grid and the FixedSizeGrid cell renderer so per-tile
+                      // UX (drag, hover overlay, menu) is identical.
+                      const renderTile = (img: GalleryImage) => {
                           const isSelected = selectedImageIds.has(img.id)
                           const isHovered = hoveredImageId === img.id
                           const isMenuOpen = imageMenuOpenId === img.id
@@ -2338,17 +3493,30 @@ export function Dashboard() {
                               onMouseEnter={() => setHoveredImageId(img.id)}
                               onMouseLeave={() => { setHoveredImageId(null); }}
                               onClick={(e) => {
+                                e.stopPropagation()
                                 if (selectMode) {
+                                  // In select mode, click toggles selection.
                                   setSelectedImageIds(prev => {
                                     const next = new Set(prev)
                                     if (next.has(img.id)) next.delete(img.id); else next.add(img.id)
                                     if (next.size === 0) setSelectMode(false)
                                     return next
                                   })
-                                } else {
-                                  setSelectMode(true); setSelectedImageIds(new Set([img.id]))
+                                  return
                                 }
-                                e.stopPropagation()
+                                // Otherwise: open the lightbox scoped to the
+                                // currently-visible grid (active section's
+                                // images, sorted as rendered). The lightbox
+                                // navigates within this snapshot.
+                                const visible = activeSectionId
+                                  ? galleryImages.filter(i => i.section_id === activeSectionId)
+                                  : galleryImages
+                                const sorted = visible.slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                                const idx = sorted.findIndex(i => i.id === img.id)
+                                if (idx >= 0) {
+                                  setViewerImages(sorted)
+                                  setViewerIndex(idx)
+                                }
                               }}
                               style={{
                                 position: 'relative', aspectRatio: '1',
@@ -2475,12 +3643,15 @@ export function Dashboard() {
                                         padding: '8px 10px 4px', fontSize: 9, fontWeight: 500,
                                         letterSpacing: '0.18em', textTransform: 'uppercase', color: textMuted,
                                       }}>העבר לסט</div>
-                                      {sections.map(s => (
+                                      {/* Don't offer the current section as a destination — moving a
+                                          photo to where it already lives is a wasted round-trip and
+                                          made the menu visually noisy. */}
+                                      {sections.filter(s => s.id !== img.section_id).map(s => (
                                         <button key={s.id}
                                           onClick={() => { moveImageToSection(img.id, s.id); setImageMenuOpenId(null) }}
                                           style={{
                                             width: '100%', textAlign: 'right' as const, padding: '8px 10px',
-                                            background: img.section_id === s.id ? bgSubtle : 'transparent',
+                                            background: 'transparent',
                                             border: 'none', cursor: 'pointer', fontFamily: 'inherit',
                                             fontSize: 12, color: textPrimary,
                                           }}>{s.name}</button>
@@ -2543,9 +3714,64 @@ export function Dashboard() {
                               )}
                             </div>
                           )
-                        })}
-                      </div>
-                      )
+                        }
+                      if (!visibleImages.length) return null
+                      if (!shouldVirtualizeDashboard) {
+                        return (
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(auto-fill, minmax(${minCell}px, 1fr))`,
+                            gap: 4,
+                          }}>
+                            {visibleImages.map(img => renderTile(img))}
+                          </div>
+                        )
+                      }
+                      // Virtualized path. FixedSizeGrid needs concrete
+                      // pixel dimensions; we read the container width from
+                      // window.innerWidth minus the sidebar+padding budget
+                      // (~360px on the dashboard layout). This is a heuristic
+                      // — for pixel-perfect sizing we'd plumb a ResizeObserver
+                      // through, but the visible difference is one tile per
+                      // row at most, and FixedSizeGrid handles overflow.
+                      const VirtualPhotoGrid = () => {
+                        // tile size = minCell; row height = same (square)
+                        // viewport budget: open dashboard tab is roughly
+                        // viewportHeight - 280px of chrome (tabs + filters).
+                        const w = typeof window === 'undefined' ? 1200 : Math.max(360, window.innerWidth - 360)
+                        const h = typeof window === 'undefined' ? 800 : Math.max(400, window.innerHeight - 280)
+                        const colCount = Math.max(1, Math.floor((w + 4) / (minCell + 4)))
+                        const rowCount = Math.ceil(visibleImages.length / colCount)
+                        const Cell = ({ columnIndex, rowIndex, style }: GridChildComponentProps) => {
+                          const idx = rowIndex * colCount + columnIndex
+                          const img = visibleImages[idx]
+                          if (!img) return <div style={style} />
+                          // react-window's `style` positions the cell; the
+                          // inner tile is what renderTile returns. Wrap so
+                          // the tile gets the absolute position from
+                          // react-window without breaking its own
+                          // position: relative for menu/checkbox overlays.
+                          return (
+                            <div style={{ ...style, padding: 2 }}>
+                              {renderTile(img)}
+                            </div>
+                          )
+                        }
+                        return (
+                          <FixedSizeGrid
+                            columnCount={colCount}
+                            rowCount={rowCount}
+                            columnWidth={minCell + 4}
+                            rowHeight={minCell + 4}
+                            height={h}
+                            width={w}
+                            overscanRowCount={2}
+                          >
+                            {Cell}
+                          </FixedSizeGrid>
+                        )
+                      }
+                      return <VirtualPhotoGrid />
                     })()}
                     {galleryImages.length === 0 && !uploading && (
                       <div style={{
@@ -2570,102 +3796,31 @@ export function Dashboard() {
                   </div>
                 )}
 
-                {/* ── Sections Tab ── */}
-                {editTab === 'sections' && (
-                  <div style={{ padding: '0 4px' }}>
-                    <p style={{ fontSize: 13, color: textSecondary, marginBottom: 22, lineHeight: 1.6 }}>
-                      ארגן את הגלריה לקטעים — "יום 1", "טקס", "רחבה" — והאורחים יוכלו לדפדף ביניהם בקלות.
-                    </p>
-
-                    {/* Add new section */}
-                    <div style={{
-                      display: 'flex', gap: 10, marginBottom: 22,
-                      padding: '14px 16px', borderRadius: 14,
-                      background: card, border: `1px solid ${border}`,
-                    }}>
-                      <input
-                        type="text"
-                        value={newSectionName}
-                        onChange={e => setNewSectionName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') addSection() }}
-                        placeholder="שם קטע חדש (למשל: יום 1)"
-                        style={{
-                          flex: 1, padding: '10px 14px', borderRadius: 10,
-                          background: 'rgba(0,0,0,.03)', border: `1px solid ${border}`,
-                          color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
-                        }}
-                      />
-                      <button
-                        onClick={addSection}
-                        disabled={!newSectionName.trim()}
-                        style={{
-                          padding: '10px 20px', borderRadius: 10,
-                          background: newSectionName.trim()
-                            ? `linear-gradient(135deg, ${accent}, ${accentLight})`
-                            : 'rgba(45,196,121,.4)',
-                          border: 'none', color: '#fff', fontSize: 13, fontWeight: 600,
-                          cursor: newSectionName.trim() ? 'pointer' : 'not-allowed',
-                          fontFamily: 'inherit', transition: 'all .15s',
-                        }}
-                      >
-                        הוסף
-                      </button>
-                    </div>
-
-                    {/* Sections list */}
-                    {sections.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '52px 20px', color: textMuted }}>
-                        <div style={{ marginBottom: 14, color: textMuted, opacity: 0.55, display: 'flex', justifyContent: 'center' }}>
-                          <Icon name="sections" size={36} strokeWidth={1.4} />
-                        </div>
-                        <div style={{ fontSize: 14 }}>עדיין אין קטעים. הוסף את הקטע הראשון למעלה.</div>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {sections.map(s => (
-                          <div key={s.id} style={{
-                            display: 'flex', alignItems: 'center', gap: 12,
-                            padding: '12px 16px', borderRadius: 12,
-                            background: card, border: `1px solid ${border}`,
-                            transition: 'border-color .15s',
-                          }}>
-                            <span style={{ color: textMuted, display: 'inline-flex' }}>
-                              <Icon name="sections" size={16} strokeWidth={1.85} />
-                            </span>
-                            <input
-                              type="text"
-                              defaultValue={s.name}
-                              onBlur={e => { if (e.target.value.trim() && e.target.value.trim() !== s.name) renameSection(s.id, e.target.value) }}
-                              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                              style={{
-                                flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                                color: textPrimary, fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
-                                padding: '4px 0',
-                              }}
-                            />
-                            <button
-                              onClick={() => deleteSection(s.id)}
-                              title="מחק"
-                              style={{
-                                background: 'transparent', border: `1px solid ${border}`, borderRadius: 8,
-                                color: '#fca5a5', padding: '6px 10px', fontSize: 12, cursor: 'pointer',
-                                fontFamily: 'inherit', transition: 'all .15s',
-                              }}
-                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,.35)' }}
-                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = border }}
-                            >
-                              מחק
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* Sections panel removed — duplicated the Photos-tab sidebar
+                    section list (add / rename / delete / drag-reorder), and
+                    the dashboard had no second-class section editor anymore. */}
 
                 {/* ── Stories Tab ── */}
                 {editTab === 'stories' && (
                   <div style={{ padding: '0 4px' }}>
+                    {/* Honest status banner — the auto-generate flow is wired
+                        end-to-end (UI → API → DB rows in story_renders) but
+                        the actual Remotion Lambda is not deployed yet. So
+                        clicking "צור סטורי" inserts a queued render-job row
+                        and returns success, but no mp4 actually lands. Be
+                        upfront about that so the photographer doesn't sit
+                        and wait for nothing. */}
+                    <div style={{
+                      marginBottom: 18, padding: '10px 14px',
+                      border: `1px dashed ${border}`, background: bgSubtle,
+                      fontSize: 12, color: textSecondary, lineHeight: 1.55,
+                    }}>
+                      <strong style={{ color: textPrimary }}>⚙ יצירה אוטומטית — בקרוב.</strong>
+                      &nbsp;התשתית (Remotion + Lambda) פרוסה בקוד ובמסד, אבל הענן עוד לא מחובר.
+                      לחיצה על "צור סטורי" תיצור בקשת רינדור בתור, אבל הסרטון עצמו לא יופיע עד שתפעיל את הענן (ראה <code>gallery-web/stories-remotion/README.md</code>).
+                      <br />
+                      בינתיים — <strong>העלאת סטורי MP4 ידנית עובדת מלא</strong> דרך הכפתור משמאל.
+                    </div>
                     {/* Top strip — heading + Upload Story CTA. Same rhythm as
                         the Photos tab so the editor feels uniform. */}
                     <div style={{
@@ -2691,21 +3846,70 @@ export function Dashboard() {
                         style={{ display: 'none' }}
                         onChange={(e) => handleStoryUpload(e.target.files)}
                       />
-                      <button
-                        onClick={() => storyFileInputRef.current?.click()}
-                        disabled={storyUploading}
-                        style={{
-                          padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-                          background: textPrimary, border: `1px solid ${textPrimary}`,
-                          color: '#fff', cursor: storyUploading ? 'wait' : 'pointer',
-                          fontFamily: 'inherit', opacity: storyUploading ? 0.6 : 1,
-                          letterSpacing: '0.18em', textTransform: 'uppercase',
-                          display: 'inline-flex', alignItems: 'center', gap: 8,
-                        }}
-                      >
-                        <Icon name="plus" size={13} strokeWidth={2} />
-                        העלאת סטורי
-                      </button>
+                      {/* CTA cluster — generate (auto, Phase 1) sits to the
+                          left of the manual upload because automatic is the
+                          headline feature; manual stays as the escape hatch
+                          when the photographer wants a hand-edited clip. */}
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                        {/* Auto-generate CTA — only renders when the gallery
+                            has enough photos for a coherent ~30s clip. The
+                            gate is intentional: rendering a story from 4
+                            images looks like a slideshow, not a story. */}
+                        {galleryImages.length >= STORY_GENERATE_MIN_PHOTOS && (
+                          <button
+                            onClick={() => {
+                              setStoryGenStyle('clean')
+                              // Initialise the curator with the default
+                              // shot list (favorites if any, else first N)
+                              // so the modal opens with something concrete
+                              // the photographer can immediately edit.
+                              const favs = galleryImages
+                                .filter(i => i.is_top_pick)
+                                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                                .map(i => i.id)
+                              const defaults = favs.length > 0
+                                ? favs.slice(0, STORY_GENERATE_MAX_PHOTOS)
+                                : galleryImages
+                                    .slice()
+                                    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                                    .slice(0, STORY_DEFAULT_PHOTO_BUDGET)
+                                    .map(i => i.id)
+                              setStoryCandidateIds(defaults)
+                              setStoryShowAddPicker(false)
+                              setShowStoryStyleModal(true)
+                            }}
+                            disabled={storyGenerating || storyUploading}
+                            style={{
+                              padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                              background: 'transparent', border: `1px solid ${textPrimary}`,
+                              color: textPrimary,
+                              cursor: storyGenerating ? 'wait' : 'pointer',
+                              fontFamily: 'inherit',
+                              opacity: storyGenerating ? 0.6 : 1,
+                              letterSpacing: '0.18em', textTransform: 'uppercase',
+                              display: 'inline-flex', alignItems: 'center', gap: 8,
+                            }}
+                          >
+                            <Icon name="stories" size={13} strokeWidth={2} />
+                            צור סטורי אוטומטית
+                          </button>
+                        )}
+                        <button
+                          onClick={() => storyFileInputRef.current?.click()}
+                          disabled={storyUploading}
+                          style={{
+                            padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                            background: textPrimary, border: `1px solid ${textPrimary}`,
+                            color: '#fff', cursor: storyUploading ? 'wait' : 'pointer',
+                            fontFamily: 'inherit', opacity: storyUploading ? 0.6 : 1,
+                            letterSpacing: '0.18em', textTransform: 'uppercase',
+                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                          }}
+                        >
+                          <Icon name="plus" size={13} strokeWidth={2} />
+                          העלאת סטורי
+                        </button>
+                      </div>
                     </div>
 
                     {/* Helper copy — explains the supported formats + size limit
@@ -2769,7 +3973,7 @@ export function Dashboard() {
                         </div>
                       </div>
                     ) : (
-                      <div style={{
+                      <div className="dash-stories-grid" style={{
                         display: 'grid',
                         gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
                         gap: 12,
@@ -2795,7 +3999,11 @@ export function Dashboard() {
                                 src={url}
                                 muted
                                 playsInline
-                                preload="metadata"
+                                // preload="none" — was "metadata" which fires a
+                                // range request for every story tile on tab open
+                                // (heavy on mobile + galleries with 20+ stories).
+                                // Hover triggers play() which loads what's needed.
+                                preload="none"
                                 onMouseEnter={(e) => { void (e.target as HTMLVideoElement).play().catch(() => { /* autoplay blocked */ }) }}
                                 onMouseLeave={(e) => {
                                   const v = e.target as HTMLVideoElement
@@ -3287,9 +4495,31 @@ export function Dashboard() {
                         desc="אורחים יוכלו למצוא את עצמם בסלפי. עלות: ללא תוספת טוקנים."
                         on={Boolean(ds.faceIndexEnabled)}
                         onChange={async () => {
+                          // Write the column + JSONB key in ONE update so the
+                          // two never drift (rekognition RPC reads the column;
+                          // the public viewer reads the JSONB). Was two
+                          // separate non-atomic UPDATEs that could leave the
+                          // gallery in a half-on state on transient failure.
+                          if (!editingGallery) return
                           const newVal = !ds.faceIndexEnabled
-                          await updateGallerySetting('faceIndexEnabled', newVal)
-                          await supabase.from('galleries').update({ face_index_enabled: newVal }).eq('id', editingGallery.id)
+                          const prevSettings = editingGallery.delivery_settings || {}
+                          const nextSettings = { ...prevSettings, faceIndexEnabled: newVal }
+                          setEditingGallery({
+                            ...editingGallery,
+                            face_index_enabled: newVal,
+                            delivery_settings: nextSettings,
+                          })
+                          markDirty()
+                          const { error } = await supabase
+                            .from('galleries')
+                            .update({ face_index_enabled: newVal, delivery_settings: nextSettings })
+                            .eq('id', editingGallery.id)
+                          if (error) {
+                            setEditingGallery(g => g && g.id === editingGallery.id
+                              ? { ...g, face_index_enabled: !newVal, delivery_settings: prevSettings } : g)
+                            showToast({ kind: 'error', text: 'שמירת זיהוי פנים נכשלה.' })
+                            console.warn('[face-index toggle]', error)
+                          }
                         }}
                         last
                       />
@@ -3446,6 +4676,53 @@ export function Dashboard() {
                       )}
                     </Section>
 
+                    {/* ── Backup (per-gallery, portable ZIP) ──────────────
+                        Lets the photographer pull every original + a
+                        metadata.json sidecar in one ZIP. Important for trust
+                        + a migration safety net. Phase 1 is browser-side;
+                        for 500+-image galleries Phase 2 should spawn a
+                        server-side render to S3 + presigned URL. */}
+                    <Section eyebrow="גיבוי וייצוא">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                            ייצא את כל הגלריה כקובץ ZIP
+                          </div>
+                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.6 }}>
+                            כל המקור (או תצוגות web אם המקור לא הועלה) + metadata.json עם
+                            הגדרות הגלריה, סקציות וסדר התמונות. הקובץ נייד וניתן לשחזור בעתיד.
+                          </div>
+                        </div>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={handleGalleryExport}
+                            disabled={exporting}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 8,
+                              padding: '10px 18px', borderRadius: 2,
+                              background: exporting ? bgSubtle : textPrimary,
+                              color: exporting ? textMuted : '#fff',
+                              border: `1px solid ${exporting ? border : textPrimary}`,
+                              fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
+                              textTransform: 'uppercase',
+                              cursor: exporting ? 'wait' : 'pointer', fontFamily: 'inherit',
+                              opacity: exporting ? 0.7 : 1,
+                            }}
+                          >
+                            <Icon name="download" size={14} />
+                            <span>
+                              {exporting
+                                ? exportProgress
+                                  ? exportProgressLabel(exportProgress)
+                                  : 'מייצא...'
+                                : 'ייצא גלריה (ZIP)'}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </Section>
+
                     {/* ── Domain (account-level) ──────────────────────────
                         Lives at the bottom of the gallery editor's Settings
                         tab for now — the photographer doesn't have a
@@ -3528,7 +4805,7 @@ export function Dashboard() {
                           </div>
 
                           {/* DNS record card */}
-                          <div style={{
+                          <div className="dash-dns-grid" style={{
                             background: '#fff',
                             border: `1px solid ${border}`,
                             padding: '14px 16px',
@@ -3603,7 +4880,7 @@ export function Dashboard() {
                                 opacity: domainSaving ? 0.6 : 1,
                               }}
                             >
-                              בדוק שוב עכשיו
+                              רענן סטטוס
                             </button>
                             <button
                               type="button"
@@ -3764,7 +5041,7 @@ export function Dashboard() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
                         <div>
                           <div style={{ ...labelStyle }}>סגנון מסך פתיחה</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                          <div className="dash-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                             {([
                               { id: 'mosaic' as const,    label: 'מוזאיקה', desc: 'תמונות גוללות ברקע',           icon: 'sections' as IconName },
                               { id: 'cinematic' as const, label: 'קולנועי', desc: 'תמונת רקע עם אפקט זום',     icon: 'photo'    as IconName },
@@ -3791,8 +5068,8 @@ export function Dashboard() {
                               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                             }}>
                               <span>תמונת שער · ראש הגלריה</span>
-                              {ds.coverImageUrl && (
-                                <button onClick={() => updateGallerySetting('coverImageUrl', null)} style={{
+                              {(ds.coverImageUrl || ds.coverImagePath) && (
+                                <button onClick={() => updateGallerySettings({ coverImageUrl: null, coverImagePath: null })} style={{
                                   background: 'transparent', border: 'none', cursor: 'pointer',
                                   color: textMuted, fontFamily: 'inherit',
                                   fontSize: 9, fontWeight: 500, letterSpacing: '0.18em',
@@ -3846,10 +5123,24 @@ export function Dashboard() {
                             }}>
                               {galleryImages.slice(0, 48).map(img => {
                                 const url = imgUrl(img.storage_path)
-                                const isCover = ds.coverImageUrl === url
+                                // Prefer the canonical storage_path comparison
+                                // — the URL form drifts when buckets switch from
+                                // public to signed URLs or when VITE_SUPABASE_URL
+                                // changes per env. Fall back to URL match so
+                                // legacy galleries (no coverImagePath yet) still
+                                // highlight the right tile.
+                                const isCover =
+                                  (ds.coverImagePath as string | undefined) === img.storage_path
+                                  || ds.coverImageUrl === url
                                 return (
                                   <button key={img.id}
-                                    onClick={() => updateGallerySetting('coverImageUrl', url)}
+                                    onClick={() => updateGallerySettings({
+                                      // Path is the new canonical value; URL
+                                      // is dual-written for backward compat
+                                      // until the viewer migrates (Phase 6).
+                                      coverImagePath: img.storage_path,
+                                      coverImageUrl: url,
+                                    })}
                                     aria-label={isCover ? 'תמונת שער נוכחית' : 'הגדר כתמונת שער'}
                                     style={{
                                       padding: 0, border: 'none', background: 'transparent',
@@ -3875,7 +5166,7 @@ export function Dashboard() {
                           <input
                             type="text"
                             value={(ds.galleryTitle as string) || editingGallery.name}
-                            onChange={e => updateGallerySetting('galleryTitle', e.target.value)}
+                            onChange={e => renameGalleryTitle(e.target.value)}
                             style={inputBase}
                             onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
                             onBlur={e => { e.currentTarget.style.borderColor = border }}
@@ -3889,6 +5180,19 @@ export function Dashboard() {
                             onChange={e => updateGallerySetting('clientName', e.target.value)}
                             placeholder="לדוגמה: יוסי ומיכל"
                             style={inputBase}
+                            onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
+                            onBlur={e => { e.currentTarget.style.borderColor = border }}
+                          />
+                        </label>
+                        <label style={{ display: 'block' }}>
+                          <span style={{ ...labelStyle }}>תיאור האלבום</span>
+                          <textarea
+                            value={(ds.galleryDescription as string) || ''}
+                            onChange={e => updateGallerySetting('galleryDescription', e.target.value)}
+                            placeholder="טקסט קצר שמופיע ללקוח על הגלריה — מקום, סיפור, הוקרה."
+                            rows={3}
+                            maxLength={500}
+                            style={{ ...inputBase, resize: 'vertical' as const, minHeight: 72, fontFamily: 'inherit', lineHeight: 1.45 }}
                             onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
                             onBlur={e => { e.currentTarget.style.borderColor = border }}
                           />
@@ -4065,7 +5369,164 @@ export function Dashboard() {
                   </div>
                   )
                 })()}
+
+                {/* ── Live Preview Tab ── Phase 5.
+                    Renders the gallery's public URL inside an iframe scoped to
+                    the editor's main content pane. The src carries a ?v=N cache
+                    buster (bumped on every successful save) so reloads are
+                    guaranteed even with aggressive CDN/browser caching.
+                    Until Phase 6 introduces draft/publish snapshots the public
+                    viewer reads delivery_settings directly — so the iframe IS
+                    the latest saved state; the "unpublished changes" pill is
+                    purely informational. */}
+                {false && editingGallery && (() => {  /* full-page preview tab disabled — inline split takes over */
+                  const shareUrl = galleryShareUrl(editingGallery!)
+                  const previewSrc = `${shareUrl}${shareUrl.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minHeight: '100%' }}>
+                      {/* Pane header — eyebrow label + dirty-state pill + refresh */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: 12, flexWrap: 'wrap',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+                            textTransform: 'uppercase', color: textMuted,
+                          }}>תצוגה חיה</span>
+                          {unpublishedChanges && (
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              padding: '4px 10px', borderRadius: 2,
+                              border: `1px solid ${border}`, background: bgSubtle,
+                              fontSize: 11, fontWeight: 500, color: textSecondary,
+                              fontFamily: 'inherit',
+                            }}>
+                              <span aria-hidden="true" style={{
+                                width: 7, height: 7, borderRadius: '50%',
+                                background: textMuted, display: 'inline-block',
+                              }} />
+                              שינויים שטרם פורסמו
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setPreviewRefreshKey(k => k + 1)}
+                          aria-label="רענן תצוגה חיה"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            padding: '8px 14px', borderRadius: 2,
+                            background: 'transparent', border: `1px solid ${border}`,
+                            color: textPrimary, cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: 11, fontWeight: 500,
+                            letterSpacing: '0.18em', textTransform: 'uppercase',
+                          }}
+                        >
+                          <Icon name="arrow-out" size={12} strokeWidth={1.85} />
+                          רענן
+                        </button>
+                      </div>
+
+                      {/* Iframe shell — full content width, capped at 1400px and
+                          centered so wide monitors don't stretch the preview
+                          past where it's legible. On viewports < 900px we let
+                          it fill 100% per the spec. */}
+                      <div style={{
+                        width: '100%', maxWidth: 1400, marginInline: 'auto',
+                        border: `1px solid ${border}`, background: bgSubtle,
+                      }}>
+                        <iframe
+                          key={previewRefreshKey}
+                          src={previewSrc}
+                          title="תצוגה חיה של הגלריה"
+                          style={{
+                            display: 'block', width: '100%', height: '80vh',
+                            border: 'none', background: bgSubtle,
+                          }}
+                        />
+                      </div>
+
+                      {/* Footer hint — make the URL discoverable for copy + the
+                          "open in new tab" escape hatch (some browsers throttle
+                          iframes harder than top-level navigations). */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: 12, flexWrap: 'wrap', color: textMuted,
+                        fontSize: 11, letterSpacing: '0.02em',
+                      }}>
+                        <span style={{ direction: 'ltr', unicodeBidi: 'isolate' }}>{shareUrl}</span>
+                        <a href={shareUrl} target="_blank" rel="noreferrer" style={{
+                          color: textSecondary, textDecoration: 'none',
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
+                        }}>
+                          <Icon name="arrow-out" size={11} strokeWidth={1.85} />
+                          פתח בלשונית חדשה
+                        </a>
+                      </div>
+                    </div>
+                  )
+                })()}
                 </div>
+                {/* Side-preview iframe — auto-refreshes via previewRefreshKey
+                    on every settings save. Shown only on Settings + Welcome
+                    tabs (config-heavy surfaces); other tabs get full width. */}
+                {sidePreviewActive && (
+                  <aside style={{
+                    width: 'min(48%, 540px)', flexShrink: 0,
+                    borderInlineStart: `1px solid ${border}`,
+                    background: bgSubtle, display: 'flex', flexDirection: 'column',
+                  }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      gap: 8, padding: '12px 14px',
+                      borderBottom: `1px solid ${border}`, background: '#fff',
+                    }}>
+                      <span style={{
+                        fontSize: 10, fontWeight: 500, letterSpacing: '0.22em',
+                        textTransform: 'uppercase', color: textMuted,
+                      }}>תצוגה חיה ללקוח</span>
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        <button
+                          onClick={() => setPreviewRefreshKey(k => k + 1)}
+                          aria-label="רענן תצוגה"
+                          style={{
+                            padding: '4px 10px', borderRadius: 2,
+                            background: 'transparent', border: `1px solid ${border}`,
+                            color: textMuted, cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
+                          }}
+                        >רענן</button>
+                        <button
+                          onClick={() => setShowSidePreview(false)}
+                          aria-label="הסתר תצוגה"
+                          title="הסתר תצוגה"
+                          style={{
+                            padding: '4px 8px', borderRadius: 2,
+                            background: 'transparent', border: `1px solid ${border}`,
+                            color: textMuted, cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: 10,
+                          }}
+                        >✕</button>
+                      </div>
+                    </div>
+                    <iframe
+                      key={previewRefreshKey}
+                      src={(() => {
+                        const u = galleryShareUrl(editingGallery)
+                        return `${u}${u.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
+                      })()}
+                      title="תצוגה חיה של הגלריה"
+                      style={{
+                        display: 'block', width: '100%', flex: 1,
+                        border: 'none', background: bgSubtle, minHeight: 0,
+                      }}
+                    />
+                  </aside>
+                )}
+                </div>
+                )
+                })()}
               </div>
             </div>
 
@@ -4086,6 +5547,7 @@ export function Dashboard() {
                   aria-modal="true"
                   aria-labelledby="add-set-heading"
                   onClick={e => e.stopPropagation()}
+                  className="dash-mobile-modal"
                   style={{
                     background: '#fff',
                     width: 'calc(100vw - 40px)', maxWidth: 480,
@@ -4161,7 +5623,7 @@ export function Dashboard() {
                     התיאור מוצג ללקוחות שלך כשהם רואים את הקטע הזה — מצוין לסטוריטלינג.
                   </p>
 
-                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <div className="dash-modal-actions" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                     <button onClick={() => setShowAddSetModal(false)} style={{
                       padding: '10px 22px', borderRadius: 2,
                       background: 'transparent', border: `1px solid ${border}`,
@@ -4212,24 +5674,30 @@ export function Dashboard() {
             <div style={{
               display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12,
             }}>
-              {[
-                { email: 'demo@example.com', count: 24, date: '21.04.2026' },
-                { email: 'guest@gmail.com', count: 12, date: '20.04.2026' },
-                { email: 'couple@mail.com', count: 48, date: '19.04.2026' },
-              ].map((d, i) => (
+              {/* Placeholder rows for the upcoming "download tracking" feature.
+                  Visually mocked with skeleton bars instead of fake emails — so
+                  the photographer can't mistake them for real activity. */}
+              {[0, 1, 2].map((i) => (
                 <div key={i} style={{
                   padding: '14px 16px', borderRadius: 12,
                   background: 'rgba(255,255,255,.02)', border: `1px solid rgba(0,0,0,.03)`,
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  opacity: 0.55,
                 }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: textPrimary, marginBottom: 2 }}>{d.email}</div>
-                    <div style={{ fontSize: 10, color: textMuted }}>{d.date}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      height: 10, width: '60%', borderRadius: 4,
+                      background: border, marginBottom: 6,
+                    }} />
+                    <div style={{
+                      height: 8, width: '30%', borderRadius: 4,
+                      background: border,
+                    }} />
                   </div>
                   <div style={{
-                    fontSize: 16, fontWeight: 800, color: accentLight,
-                    background: 'rgba(45,196,121,.1)', padding: '4px 10px', borderRadius: 8,
-                  }}>{d.count}</div>
+                    height: 22, width: 36, borderRadius: 8,
+                    background: 'rgba(45,196,121,.1)',
+                  }} />
                 </div>
               ))}
             </div>
@@ -4353,7 +5821,7 @@ export function Dashboard() {
               }}>
                 סגנון מסך פתיחה
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              <div className="dash-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 {([
                   { value: 'mosaic' as const,    label: 'פסיפס',    icon: 'sections' as IconName },
                   { value: 'cinematic' as const, label: 'קולנועי', icon: 'photo'    as IconName },
@@ -4389,7 +5857,7 @@ export function Dashboard() {
               }}>
                 תצוגת פיד
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              <div className="dash-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 {([
                   { value: 'grid' as const,     label: 'רשת',     icon: 'gallery'  as IconName },
                   { value: 'masonry' as const,  label: 'אבן',     icon: 'sections' as IconName },
@@ -4477,7 +5945,7 @@ export function Dashboard() {
                   }}>
                     מצב פרטיות
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div className="dash-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     {([
                       { id: 'open' as const,    label: 'פתוח',  desc: 'כולם רואים את כל התמונות' },
                       { id: 'private' as const, label: 'פרטי',  desc: 'כל אורח רואה רק את התמונות שלו' },
@@ -4569,7 +6037,7 @@ export function Dashboard() {
               </div>
             ))}
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 32, justifyContent: 'flex-end' }}>
+            <div className="dash-modal-actions" style={{ display: 'flex', gap: 10, marginTop: 32, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setShowModal(false)}
                 style={{
@@ -4626,6 +6094,7 @@ export function Dashboard() {
                 aria-modal="true"
                 aria-labelledby="face-confirm-heading"
                 onClick={(e) => e.stopPropagation()}
+                className="dash-mobile-modal"
                 style={{
                   background: '#fff', width: 'calc(100vw - 40px)', maxWidth: 460,
                   padding: '36px 40px 32px',
@@ -4662,7 +6131,7 @@ export function Dashboard() {
                 }}>
                   ההעלאה תהיה איטית מעט יותר כי כל תמונה עוברת אינדוקס. אפשר להפעיל ולהשבית בכל רגע.
                 </div>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <div className="dash-modal-actions" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                   <button
                     onClick={() => setShowFaceConfirm(false)}
                     style={{
@@ -4790,6 +6259,22 @@ export function Dashboard() {
                     }}
                   />
                 </label>
+                <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    onClick={previewShareEmail}
+                    disabled={shareSending || previewLoading}
+                    style={{
+                      background: 'transparent', border: 'none', padding: 0,
+                      color: textSecondary, fontSize: 13, fontWeight: 600,
+                      cursor: previewLoading ? 'wait' : 'pointer',
+                      textDecoration: 'underline', textUnderlineOffset: 4,
+                      fontFamily: 'inherit', opacity: shareSending ? 0.5 : 1,
+                    }}
+                  >
+                    {previewLoading ? 'טוען…' : 'תצוגה מקדימה'}
+                  </button>
+                </div>
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button
                     onClick={() => setShareGallery(null)}
@@ -4823,6 +6308,60 @@ export function Dashboard() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ───────────── Share Email Preview ─────────────
+          Renders the server-composed HTML in a sandboxed iframe so the
+          photographer can verify the branded email before sending. The
+          iframe sandbox allows same-origin styles to render (no scripts)
+          so links don't accidentally navigate the dashboard tab. */}
+      {previewHtml && (
+        <div
+          onClick={() => setPreviewHtml(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 2200,
+            background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(10px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, animation: 'overlayIn .2s ease both',
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="תצוגה מקדימה של המייל"
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: bg, width: '100%', maxWidth: 640,
+              borderRadius: 22, padding: 20,
+              border: `1px solid ${border}`,
+              animation: 'modalIn .3s ease both',
+              boxShadow: '0 30px 100px rgba(0,0,0,.6)',
+              display: 'flex', flexDirection: 'column', gap: 12,
+              maxHeight: '90vh',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>תצוגה מקדימה</h2>
+              <button
+                onClick={() => setPreviewHtml(null)}
+                aria-label="סגירה"
+                style={{
+                  background: 'transparent', border: 'none', color: textMuted,
+                  fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 4,
+                }}
+              >×</button>
+            </div>
+            <iframe
+              title="email-preview"
+              srcDoc={previewHtml}
+              sandbox="allow-same-origin"
+              style={{
+                width: '100%', flex: 1, minHeight: 480,
+                border: `1px solid ${border}`, borderRadius: 12, background: '#fff',
+              }}
+            />
           </div>
         </div>
       )}
@@ -4872,7 +6411,10 @@ export function Dashboard() {
                   onClick={async () => {
                     const url = await startCheckout(pkg.planId)
                     if (url) { window.location.href = url }
-                    else { alert('שגיאה בפתיחת תשלום. נסה שוב.') }
+                    else {
+                      console.warn('[startCheckout] no url returned', { planId: pkg.planId })
+                      showToast({ kind: 'error', text: 'שגיאה בפתיחת תשלום. נסה שוב.' })
+                    }
                   }}
                   style={{
                     position: 'relative',
@@ -4917,7 +6459,369 @@ export function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* ───────── Stories Phase 1 — style picker modal ─────────
+          Confirms the style before POSTing /api/stories/render. Phase 2 will
+          extend the radio group with vintage / fast-social once those
+          Remotion compositions land. Backdrop click + Escape both dismiss
+          (the latter via the useFocusTrap above). */}
+      {showStoryStyleModal && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!storyGenerating) setShowStoryStyleModal(false)
+          }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1200,
+            background: 'rgba(20,20,19,.55)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            animation: 'overlayIn .2s ease both',
+          }}
+        >
+          <div
+            ref={storyStyleRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="story-style-heading"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff', width: 'calc(100vw - 40px)', maxWidth: 460,
+              maxHeight: 'calc(100vh - 32px)',
+              display: 'flex', flexDirection: 'column',
+              border: `1px solid ${border}`,
+              animation: 'modalIn .25s ease both',
+            }}
+          >
+            {/* Scrollable body — the modal got tall enough on small viewports
+                that the footer buttons fell off-screen and were unclickable.
+                Splitting into body + sticky footer keeps the CTAs always
+                reachable regardless of how many photos are in the curator. */}
+            <div style={{
+              flex: 1, minHeight: 0, overflowY: 'auto',
+              padding: '24px 28px 12px',
+            }}>
+            <div style={{
+              fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+              color: textMuted, textTransform: 'uppercase', marginBottom: 14,
+            }}>
+              Story generator
+            </div>
+            <h3 id="story-style-heading" style={{
+              fontSize: 22, fontWeight: 500, margin: '0 0 14px',
+              color: textPrimary, letterSpacing: '-0.015em', lineHeight: 1.15,
+            }}>
+              איזה סגנון סטורי?
+            </h3>
+
+            {/* Photo curator — full edit-before-generate: see the candidate
+                shot list, drag-reorder, remove (✕), add more from the rest of
+                the gallery. Default load is favorites if any, otherwise the
+                first N; the photographer can override everything. */}
+            {(() => {
+              const candidates = storyCandidateIds ?? []
+              const candidateSet = new Set(candidates)
+              const imgById = new Map(galleryImages.map(i => [i.id, i]))
+              const ordered = candidates
+                .map(id => imgById.get(id))
+                .filter((i): i is GalleryImage => !!i)
+              const additionalPool = galleryImages
+                .filter(i => !candidateSet.has(i.id))
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+              const removeCandidate = (id: string) =>
+                setStoryCandidateIds(prev => (prev ?? []).filter(x => x !== id))
+              const addCandidate = (id: string) =>
+                setStoryCandidateIds(prev => {
+                  const base = prev ?? []
+                  if (base.includes(id)) return base
+                  if (base.length >= STORY_GENERATE_MAX_PHOTOS) return base
+                  return [...base, id]
+                })
+              const reorder = (from: string, to: string) => {
+                if (from === to) return
+                setStoryCandidateIds(prev => {
+                  const base = (prev ?? []).slice()
+                  const fromIdx = base.indexOf(from)
+                  const toIdx = base.indexOf(to)
+                  if (fromIdx === -1 || toIdx === -1) return base
+                  const [moved] = base.splice(fromIdx, 1)
+                  base.splice(toIdx, 0, moved)
+                  return base
+                })
+              }
+              const tooFew = candidates.length < STORY_GENERATE_MIN_PHOTOS
+              const tooMany = candidates.length > STORY_GENERATE_MAX_PHOTOS
+              return (
+                <div style={{
+                  margin: '0 0 18px',
+                  border: `1px solid ${tooFew || tooMany ? '#d97706' : border}`,
+                  background: bgSubtle,
+                }}>
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between',
+                    alignItems: 'baseline', gap: 10,
+                    padding: '12px 14px 8px',
+                  }}>
+                    <div style={{
+                      fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                      color: textMuted, textTransform: 'uppercase',
+                    }}>תמונות בסטורי · {candidates.length} / {STORY_GENERATE_MAX_PHOTOS}</div>
+                    <button
+                      type="button"
+                      onClick={() => setStoryShowAddPicker(v => !v)}
+                      style={{
+                        background: 'transparent', border: 'none',
+                        color: textPrimary, cursor: 'pointer',
+                        fontSize: 11, fontWeight: 500,
+                        letterSpacing: '0.06em', fontFamily: 'inherit',
+                      }}
+                    >
+                      {storyShowAddPicker ? '✕ סגור' : '+ הוסף עוד תמונות'}
+                    </button>
+                  </div>
+                  {/* Selected strip — drag to reorder, ✕ to remove. RTL flow */}
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: 6,
+                    padding: '0 14px 12px', maxHeight: 168, overflowY: 'auto',
+                  }}>
+                    {ordered.map(img => {
+                      const isDragSrc = storyDraggedId === img.id
+                      const isDropTgt = storyDragOverId === img.id && storyDraggedId && storyDraggedId !== img.id
+                      return (
+                        <div
+                          key={img.id}
+                          draggable
+                          onDragStart={(e) => {
+                            setStoryDraggedId(img.id)
+                            e.dataTransfer.effectAllowed = 'move'
+                            try { e.dataTransfer.setData('text/plain', img.id) } catch {}
+                          }}
+                          onDragOver={(e) => {
+                            if (!storyDraggedId || storyDraggedId === img.id) return
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                            if (storyDragOverId !== img.id) setStoryDragOverId(img.id)
+                          }}
+                          onDragLeave={() => { if (storyDragOverId === img.id) setStoryDragOverId(null) }}
+                          onDrop={(e) => {
+                            if (!storyDraggedId) return
+                            e.preventDefault()
+                            const src = storyDraggedId
+                            setStoryDraggedId(null); setStoryDragOverId(null)
+                            if (src && src !== img.id) reorder(src, img.id)
+                          }}
+                          onDragEnd={() => { setStoryDraggedId(null); setStoryDragOverId(null) }}
+                          style={{
+                            position: 'relative', width: 52, height: 52,
+                            cursor: 'grab',
+                            opacity: isDragSrc ? 0.4 : 1,
+                            outline: isDropTgt ? `2px solid ${textPrimary}` : 'none',
+                            outlineOffset: -2,
+                            transition: 'opacity .15s',
+                          }}
+                          title="גרור לסידור · לחץ ✕ להסרה"
+                        >
+                          <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path}
+                            alt="" loading="lazy"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: border }} />
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeCandidate(img.id) }}
+                            aria-label="הסר תמונה מהסטורי"
+                            style={{
+                              position: 'absolute', top: -4, insetInlineEnd: -4,
+                              width: 16, height: 16, borderRadius: '50%',
+                              background: '#fff', border: `1px solid ${border}`,
+                              color: textPrimary, cursor: 'pointer', fontSize: 10, lineHeight: 1,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              padding: 0,
+                            }}
+                          >✕</button>
+                        </div>
+                      )
+                    })}
+                    {ordered.length === 0 && (
+                      <div style={{ fontSize: 12, color: textMuted, padding: '8px 0' }}>
+                        אין תמונות שנבחרו. לחץ "הוסף עוד תמונות" כדי לבחור.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Inline picker for adding more from the rest of the gallery */}
+                  {storyShowAddPicker && (
+                    <div style={{
+                      borderTop: `1px solid ${border}`, padding: '10px 14px 14px',
+                      maxHeight: 280, overflowY: 'auto',
+                    }}>
+                      <div style={{ fontSize: 11, color: textMuted, marginBottom: 8, lineHeight: 1.5 }}>
+                        לחץ על תמונה כדי להוסיף אותה לסוף הסטורי. תמונות שכבר נכללות מודגשות.
+                      </div>
+                      {additionalPool.length === 0 ? (
+                        <div style={{ fontSize: 12, color: textMuted }}>אין תמונות נוספות בגלריה.</div>
+                      ) : (
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))',
+                          gap: 4,
+                        }}>
+                          {additionalPool.map(img => {
+                            const reachedMax = candidates.length >= STORY_GENERATE_MAX_PHOTOS
+                            return (
+                              <button
+                                key={img.id}
+                                type="button"
+                                onClick={() => addCandidate(img.id)}
+                                disabled={reachedMax}
+                                title={reachedMax ? `מקסימום ${STORY_GENERATE_MAX_PHOTOS} תמונות` : 'הוסף לסטורי'}
+                                style={{
+                                  padding: 0, border: 'none', background: 'transparent',
+                                  aspectRatio: '1', cursor: reachedMax ? 'not-allowed' : 'pointer',
+                                  opacity: reachedMax ? 0.4 : 1,
+                                  position: 'relative',
+                                }}
+                              >
+                                <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path}
+                                  alt="" loading="lazy"
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: border }} />
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Bounds warning — keep the photographer inside the
+                      12-60 sweet spot the Lambda is tuned for. */}
+                  {(tooFew || tooMany) && (
+                    <div style={{
+                      fontSize: 11, color: '#b45309', padding: '0 14px 12px', lineHeight: 1.5,
+                    }}>
+                      {tooFew && <>צריך לפחות <strong>{STORY_GENERATE_MIN_PHOTOS}</strong> תמונות כדי לייצר סטורי קולח.</>}
+                      {tooMany && <>מקסימום <strong>{STORY_GENERATE_MAX_PHOTOS}</strong> תמונות לסטורי אחד.</>}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* Style picker — all 5 desktop styles. Phase 1 only renders
+                "clean" in the stubbed endpoint; the rest will be wired as
+                their Remotion compositions land. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 18 }}>
+              {STORY_STYLES.map(s => {
+                const selected = storyGenStyle === s.id
+                return (
+                  <label key={s.id} style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 12,
+                    padding: '12px 14px',
+                    border: `1px solid ${selected ? textPrimary : border}`,
+                    background: selected ? bgSubtle : '#fff',
+                    cursor: 'pointer', transition: 'background .15s, border-color .15s',
+                  }}>
+                    <input
+                      type="radio"
+                      name="story-style"
+                      value={s.id}
+                      checked={selected}
+                      onChange={() => setStoryGenStyle(s.id)}
+                      style={{ marginTop: 3 }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: textPrimary, marginBottom: 2 }}>
+                        {s.label} <span style={{ color: textMuted, fontWeight: 400 }}>— {s.description}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.55 }}>
+                        {s.hint} · ~{s.approxDurationSec} שניות
+                      </div>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+
+            {/* Time estimate — dynamic, computed from the actual photo count
+                + selected style. Updates as the photographer edits the
+                curator. Phase 2's Lambda is the source of truth; this is
+                the calibrated estimate the user plans around. */}
+            {(() => {
+              const count = (storyCandidateIds?.length ?? STORY_DEFAULT_PHOTO_BUDGET)
+              const estSec = estimateRenderSeconds(Math.max(count, STORY_MIN_PHOTOS), storyGenStyle)
+              return (
+                <div style={{
+                  fontSize: 12, color: textMuted, lineHeight: 1.55,
+                  marginBottom: 22, padding: '10px 12px',
+                  border: `1px dashed ${border}`,
+                }}>
+                  <strong style={{ color: textSecondary }}>זמן רינדור משוער: {formatStoryDuration(estSec)}</strong>
+                  &nbsp;עבור {count} תמונות בסגנון {STORY_STYLES.find(s => s.id === storyGenStyle)?.label ?? storyGenStyle}. הסטורי יישמר בגלריה כשיהיה מוכן ותקבל הודעה — אפשר לעזוב את המסך.
+                </div>
+              )
+            })()}
+
+            </div>
+            {/* Sticky footer — always visible. Hairline divider keeps it
+                visually attached to the scrollable body above. */}
+            <div style={{
+              display: 'flex', gap: 10, justifyContent: 'flex-end',
+              padding: '14px 28px 18px',
+              borderTop: `1px solid ${border}`, background: '#fff',
+              flexShrink: 0,
+            }}>
+              <button
+                onClick={() => { if (!storyGenerating) setShowStoryStyleModal(false) }}
+                disabled={storyGenerating}
+                style={{
+                  background: 'transparent', color: textPrimary,
+                  border: `1px solid ${border}`,
+                  borderRadius: 2, padding: '11px 22px', fontSize: 11,
+                  cursor: storyGenerating ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500,
+                  opacity: storyGenerating ? 0.5 : 1,
+                }}
+              >
+                ביטול
+              </button>
+              {(() => {
+                const count = storyCandidateIds?.length ?? 0
+                const tooFew = count < STORY_GENERATE_MIN_PHOTOS
+                const tooMany = count > STORY_GENERATE_MAX_PHOTOS
+                const blocked = tooFew || tooMany
+                const disabled = storyGenerating || blocked
+                return (
+                  <button
+                    onClick={() => { void handleGenerateStoryConfirm() }}
+                    disabled={disabled}
+                    style={{
+                      background: textPrimary, color: '#fff',
+                      border: `1px solid ${textPrimary}`,
+                      borderRadius: 2, padding: '11px 26px', fontSize: 11,
+                      cursor: storyGenerating ? 'wait' : blocked ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit', fontWeight: 500,
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                      opacity: disabled ? 0.55 : 1,
+                    }}
+                  >
+                    {storyGenerating ? 'מייצר…' : `צור סטורי · ${count}`}
+                  </button>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Existing <ToastContainer /> near the top of the JSX already covers
+          every dashboard toast — including the Stories Phase 1 generation
+          flow — so no separate Story-specific container needed. */}
       </div>
+
+      {/* Confirm-modal host. Rendered at the dashboard root so every
+          destructive handler (deleteSection / bulkDeleteSelected /
+          deleteSingleImage / …) can await a styled, RTL-correct confirm
+          instead of the native window.confirm() dialog. See
+          components/useConfirm.ts. */}
+      <ConfirmHost />
     </div>
   )
 }

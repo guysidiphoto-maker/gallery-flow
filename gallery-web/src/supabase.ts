@@ -14,6 +14,12 @@ export function storageUrl(bucket: string, path: string): string {
  * served by the Smart CDN with a 1-year cache, so each (image,width) pair is
  * transformed once and then served from the edge. Used to emit a responsive
  * <img srcset> so phones download ~16KB instead of the ~74KB stored thumb.
+ *
+ * Format negotiation happens implicitly via the browser's Accept header —
+ * passing an explicit `format=` value to Supabase render is currently only
+ * supported for `origin` and any other value returns 400 (every image broke
+ * when we tried `format=auto`). Modern browsers already advertise AVIF/WebP
+ * in Accept, so the CDN can pick the best encoding without us asking.
  */
 export function renderUrl(
   bucket: string,

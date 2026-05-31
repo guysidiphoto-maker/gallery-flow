@@ -22,9 +22,13 @@ const BUCKET = 'gallery-images'
 const WARM_COUNT = 250 // first N thumbnails — covers the opening screens
 const CONCURRENCY = 6  // gentle on the photographer's connection
 
-// Mirror the grid's responsive thumbnail config (App.tsx MasonryGrid) so a
-// preload caches the exact variant the grid will later request.
-const THUMB_WIDTHS = [240, 400, 600]
+// SINGLE SOURCE OF TRUTH for the responsive widths the grid emits in its
+// transform srcset. Both `MasonryGrid` (App.tsx) and `preloadGalleryThumbs`
+// below import this so the warming actually populates the same Supabase
+// transform variants the grid then requests. Drift between the two used to
+// warm 240/400/600 but the grid asked for 320/640/960/1280 — every guest
+// then paid the cold-transform cost on first load.
+export const GRID_WIDTHS: number[] = [320, 640, 960, 1280]
 const THUMB_SIZES =
   '(max-width: 479px) 50vw, (max-width: 767px) 50vw, (max-width: 1099px) 33vw, 25vw'
 const TRANSFORMABLE = new Set(['gallery-images', 'demo-uploads'])
@@ -105,7 +109,7 @@ export function preloadGalleryThumbs(
     img.onload = img.onerror = () => { if (!cancelled) loadNext() }
     if (useTransforms) {
       img.sizes = THUMB_SIZES
-      img.srcset = THUMB_WIDTHS.map(w => `${renderUrl(bucket, path, w, 60)} ${w}w`).join(', ')
+      img.srcset = GRID_WIDTHS.map(w => `${renderUrl(bucket, path, w, 60)} ${w}w`).join(', ')
     }
     img.src = storageUrl(bucket, path) // fallback + non-transform buckets
   }

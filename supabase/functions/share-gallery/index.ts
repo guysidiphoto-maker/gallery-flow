@@ -1,19 +1,32 @@
 // Send an email with a gallery's public link to a recipient. Owner-only.
 //
-// POST { galleryId, recipientEmail, subject?, message? }
-//   → 200 { ok: true,  messageId }
+// POST { galleryId, recipientEmail, subject?, message?, studioBrand?, preview? }
+//   → 200 { ok: true,  messageId }                           (send)
+//   → 200 { ok: true,  preview: true, subject, html, text }  (preview only)
 //   → 400 / 401 / 500 { ok: false, error }
 //
 // Resend handles delivery; gallery_email_log captures every attempt
 // (status='sent' on success, 'failed' otherwise) for the Activities tab.
+//
+// Branded template: when the photographer's businesses.brand_kit JSONB is
+// populated (migration 062) we render the studio's logo/colors/voice. When
+// it's not, we fall back to the legacy plain-text template so the existing
+// flow never regresses.
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import {
+  BrandKit,
+  composeShareEmail,
+} from './template.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const PUBLIC_VIEWER_BASE = Deno.env.get('PUBLIC_VIEWER_BASE') ?? 'https://pixflow-ai.com'
+// `From` stays on the verified Pixflow domain so Resend will accept the
+// send. Reply-To carries the photographer's address so client replies go
+// to the studio, not to a no-reply inbox.
 const FROM_ADDRESS = 'Pixflow <noreply@pixflow-ai.com>'
 
 const corsHeaders = {
@@ -43,22 +56,44 @@ async function requirePhotographer(req: Request) {
   return { user, sb }
 }
 
-async function loadOwnedGallery(sb: SupabaseClient, userId: string, galleryId: string) {
+interface LoadedOwnership {
+  gallery: {
+    id: string
+    business_id: string
+    name: string
+    status: string
+    password_hash: string | null
+    delivery_settings: Record<string, unknown> | null
+  }
+  business: {
+    id: string
+    business_name: string
+    brand_kit: BrandKit | null
+    logo_url: string | null
+    website_url: string | null
+  }
+}
+
+async function loadOwnedGallery(
+  sb: SupabaseClient,
+  userId: string,
+  galleryId: string,
+): Promise<LoadedOwnership> {
   const { data: biz } = await sb
     .from('businesses')
-    .select('id, business_name')
+    .select('id, business_name, brand_kit, logo_url, website_url')
     .eq('user_id', userId)
     .maybeSingle()
   if (!biz) throw new Error('no_business_for_user')
 
   const { data: gallery } = await sb
     .from('galleries')
-    .select('id, business_id, name, status, password_hash')
+    .select('id, business_id, name, status, password_hash, delivery_settings')
     .eq('id', galleryId)
     .eq('business_id', biz.id)
     .maybeSingle()
   if (!gallery) throw new Error('gallery_not_found')
-  return { gallery, business: biz }
+  return { gallery: gallery as LoadedOwnership['gallery'], business: biz as LoadedOwnership['business'] }
 }
 
 // Minimal email-shape validation. We don't need full RFC 5321 — just enough
@@ -67,95 +102,96 @@ function looksLikeEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+// Merge the kit pulled off the businesses row with anything the caller
+// passed in the request payload. Caller wins per-field so the dashboard's
+// preview-then-send flow renders exactly what the photographer saw. Falls
+// back to the legacy logo_url / website_url columns so accounts that never
+// filled in the JSONB still get a partially-branded email.
+function resolveBrandKit(
+  business: LoadedOwnership['business'],
+  override: BrandKit | null | undefined,
+): BrandKit | null {
+  const stored: BrandKit | null = business.brand_kit ?? null
+  const legacy: BrandKit | null = (business.logo_url || business.website_url)
+    ? {
+      logo:   business.logo_url   ? { url: business.logo_url } : null,
+      social: business.website_url ? { website: business.website_url } : null,
+    }
+    : null
+  const base: BrandKit | null = stored ?? legacy
+  if (!override) return base
+  return {
+    logo:   override.logo   ?? base?.logo   ?? null,
+    colors: override.colors ?? base?.colors ?? null,
+    voice:  override.voice  ?? base?.voice  ?? null,
+    social: override.social ?? base?.social ?? null,
+  }
 }
 
-interface EmailComposition {
-  subject: string
-  html: string
+// Pull the cover image off delivery_settings (set by the gallery editor) or
+// fall back to the first image's web preview. Used as the hero thumbnail in
+// the branded email body. Returns null if no images exist.
+async function resolveCoverUrl(
+  sb: SupabaseClient,
+  gallery: LoadedOwnership['gallery'],
+): Promise<string | null> {
+  const settings = gallery.delivery_settings ?? {}
+  const explicit = (settings as { coverImageUrl?: string }).coverImageUrl
+  if (explicit) return explicit
+  const { data: img } = await sb
+    .from('images')
+    .select('thumbnail_path, web_preview_path')
+    .eq('gallery_id', gallery.id)
+    .order('sort_order', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (!img) return null
+  const path = (img as { thumbnail_path?: string; web_preview_path?: string }).thumbnail_path
+            || (img as { thumbnail_path?: string; web_preview_path?: string }).web_preview_path
+  if (!path) return null
+  return `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${path}`
 }
 
-function composeEmail(opts: {
-  galleryName: string
-  galleryUrl: string
-  studioName: string
-  customSubject?: string
-  customMessage?: string
-}): EmailComposition {
-  const subject = (opts.customSubject?.trim()) || `התמונות שלך מ${opts.galleryName} מוכנות 📸`
-  const safeMessage = opts.customMessage
-    ? escapeHtml(opts.customMessage).replace(/\n/g, '<br>')
-    : ''
-  const html = `<!DOCTYPE html>
-<html lang="he" dir="rtl">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${escapeHtml(subject)}</title>
-</head>
-<body style="margin:0;padding:0;background:#0a0a0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#f1f1f4;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0a0a0f;padding:32px 16px;">
-    <tr><td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#11111c;border:1px solid #1e1e2a;border-radius:18px;padding:36px 32px;">
-        <tr><td style="text-align:right;">
-          <div style="font-size:13px;font-weight:600;color:#a5b4fc;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;">
-            ${escapeHtml(opts.studioName || 'Pixflow')}
-          </div>
-          <h1 style="font-size:24px;font-weight:800;letter-spacing:-0.01em;margin:0 0 16px;color:#f1f1f4;line-height:1.25;">
-            ${escapeHtml(opts.galleryName)}
-          </h1>
-          ${safeMessage ? `<p style="font-size:15px;line-height:1.6;color:#c5c8d8;margin:0 0 24px;">${safeMessage}</p>` : ''}
-          <p style="font-size:14px;line-height:1.6;color:#8b8fa3;margin:0 0 28px;">
-            הגלריה מוכנה לצפייה. לחיצה על הכפתור תפתח אותה בדפדפן שלך.
-          </p>
-          <div style="text-align:center;margin:24px 0;">
-            <a href="${opts.galleryUrl}"
-               style="display:inline-block;padding:14px 32px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#818cf8);color:#fff;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:.01em;">
-              צפו בגלריה
-            </a>
-          </div>
-          <p style="font-size:12px;line-height:1.6;color:#5c5f73;margin:24px 0 0;text-align:center;word-break:break-all;">
-            ${escapeHtml(opts.galleryUrl)}
-          </p>
-        </td></tr>
-      </table>
-      <p style="font-size:11px;color:#5c5f73;margin:20px 0 0;">
-        נשלח דרך Pixflow · pixflow-ai.com
-      </p>
-    </td></tr>
-  </table>
-</body>
-</html>`
-  return { subject, html }
+// Look up the studio owner's email so client replies land in the
+// photographer's inbox. Service role can read auth.users; we only pull the
+// email column. Returns null on missing/invalid so the caller can decide
+// whether to omit the Reply-To header entirely (Resend allows that).
+async function lookupOwnerEmail(sb: SupabaseClient, userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await sb.auth.admin.getUserById(userId)
+    if (error || !data?.user?.email) return null
+    return data.user.email
+  } catch {
+    return null
+  }
 }
 
 async function sendViaResend(opts: {
   to: string
   subject: string
   html: string
+  text: string
+  replyTo: string | null
 }): Promise<{ ok: true; messageId: string } | { ok: false; error: string }> {
   if (!RESEND_API_KEY) {
     return { ok: false, error: 'resend_not_configured' }
   }
   try {
+    const payload: Record<string, unknown> = {
+      from: FROM_ADDRESS,
+      to: [opts.to],
+      subject: opts.subject,
+      html: opts.html,
+      text: opts.text,
+    }
+    if (opts.replyTo) payload.reply_to = opts.replyTo
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from: FROM_ADDRESS,
-        to: [opts.to],
-        subject: opts.subject,
-        html: opts.html,
-      }),
+      body: JSON.stringify(payload),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
@@ -230,10 +266,15 @@ serve(async (req) => {
   }
 
   let body: {
-    galleryId?: string
+    galleryId?:    string
     recipientEmail?: string
-    subject?: string
-    message?: string
+    subject?:      string
+    message?:      string
+    studioBrand?:  BrandKit | null
+    // When true, render the email and return the HTML/text without
+    // contacting Resend or writing the log row. Used by the dashboard's
+    // preview-before-send button.
+    preview?:      boolean
   }
   try {
     body = await req.json()
@@ -242,11 +283,15 @@ serve(async (req) => {
   }
 
   const galleryId = String(body.galleryId ?? '').trim()
+  const isPreview = body.preview === true
   const recipientEmail = String(body.recipientEmail ?? '').trim().toLowerCase()
-  if (!galleryId)                  return json({ ok: false, error: 'galleryId_required' }, 400)
-  if (!looksLikeEmail(recipientEmail)) return json({ ok: false, error: 'invalid_email' }, 400)
+  if (!galleryId) return json({ ok: false, error: 'galleryId_required' }, 400)
+  // Recipient is optional for preview mode (the preview doesn't get sent).
+  if (!isPreview && !looksLikeEmail(recipientEmail)) {
+    return json({ ok: false, error: 'invalid_email' }, 400)
+  }
 
-  let owned
+  let owned: LoadedOwnership
   try {
     owned = await loadOwnedGallery(sb, user.id, galleryId)
   } catch (e) {
@@ -256,11 +301,11 @@ serve(async (req) => {
   }
   const { gallery, business } = owned
 
-  if (gallery.status !== 'live') {
+  if (!isPreview && gallery.status !== 'live') {
     return json({ ok: false, error: 'gallery_not_published' }, 409)
   }
 
-  if (await isOverRateLimit(sb, business.id)) {
+  if (!isPreview && await isOverRateLimit(sb, business.id)) {
     return json(
       { ok: false, error: 'rate_limit_exceeded', limit_per_hour: RATE_LIMIT_PER_HOUR },
       429,
@@ -268,16 +313,38 @@ serve(async (req) => {
   }
 
   const galleryUrl = `${PUBLIC_VIEWER_BASE}/gallery/${gallery.id}`
-  const { subject, html } = composeEmail({
-    galleryName:   gallery.name || 'הגלריה שלך',
+  const studioBrand = resolveBrandKit(business, body.studioBrand)
+  const coverImageUrl = await resolveCoverUrl(sb, gallery)
+  const composed = composeShareEmail({
+    galleryName:    gallery.name || 'הגלריה שלך',
     galleryUrl,
-    studioName:    business.business_name || 'Pixflow',
-    customSubject: body.subject,
-    customMessage: body.message,
+    coverImageUrl,
+    studioName:     business.business_name || 'Pixflow',
+    studioBrand,
+    customSubject:  body.subject,
+    customMessage:  body.message,
   })
 
-  const result = await sendViaResend({ to: recipientEmail, subject, html })
-  await logEmail(sb, gallery.id, recipientEmail, subject, result)
+  if (isPreview) {
+    return json({
+      ok:      true,
+      preview: true,
+      subject: composed.subject,
+      html:    composed.html,
+      text:    composed.text,
+      branded: composed.branded,
+    })
+  }
+
+  const replyTo = await lookupOwnerEmail(sb, user.id)
+  const result = await sendViaResend({
+    to: recipientEmail,
+    subject: composed.subject,
+    html: composed.html,
+    text: composed.text,
+    replyTo,
+  })
+  await logEmail(sb, gallery.id, recipientEmail, composed.subject, result)
 
   if (!result.ok) {
     return json({ ok: false, error: result.error }, 502)

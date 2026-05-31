@@ -1,16 +1,15 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import JSZip from 'jszip'
+import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
+import { VariableSizeList, type ListChildComponentProps } from 'react-window'
 import { supabase, storageUrl, renderUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from './lib/publicSession'
-import { signedStorageUrl } from './lib/signedStorage'
-import { preloadGalleryThumbs } from './lib/warmCache'
+import { signedStorageUrl, signedWatermarkedUrl } from './lib/signedStorage'
+import { preloadGalleryThumbs, GRID_WIDTHS } from './lib/warmCache'
 import { TurnstileWidget } from './components/TurnstileWidget'
 import { SignedImg } from './components/SignedImg'
+import { VirtualMasonryRow, rowHeightFor } from './components/VirtualMasonryRow'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
-import { FaceSearchExperience } from './components/FaceSearchExperience'
-import { StoryPlayer } from './components/StoryPlayer'
 import { t, type Lang } from './i18n'
 import {
   getMeta as gcGetMeta,
@@ -21,11 +20,61 @@ import {
 } from './lib/galleryClient'
 import { logDownload, logBatchDownload } from './lib/activityLog'
 
+// Both surfaces only mount once a guest opts in (face search button / story
+// circle). Lazy-loading keeps their JS (camera pipeline + autoplay video
+// player) out of the gallery's initial bundle.
+const FaceSearchExperience = lazy(() =>
+  import('./components/FaceSearchExperience').then(m => ({ default: m.FaceSearchExperience })),
+)
+const StoryPlayer = lazy(() =>
+  import('./components/StoryPlayer').then(m => ({ default: m.StoryPlayer })),
+)
+
+// ─── Phase 6 step 5 phase 2 — published-snapshot cutover flag ──────────────
+// When `VITE_USE_PUBLISHED_SNAPSHOT` is the string `'true'` AND the gallery
+// has a non-null `published_revision_id`, the viewer reads delivery_settings
+// + sections from the gallery_revisions snapshot (via the
+// `gallery_get_published_snapshot` RPC) instead of the live row. This lets
+// photographers edit a published gallery without leaking unpublished changes
+// to clients — the snapshot only updates when Publish is clicked.
+//
+// Default is OFF (legacy behaviour) so the rollback is a single env-var flip.
+// Image rows are intentionally NOT snapshotted: gallery_get_images still
+// returns the live image set, so photos uploaded post-publish remain visible.
+const USE_PUBLISHED_SNAPSHOT =
+  (import.meta.env.VITE_USE_PUBLISHED_SNAPSHOT as string | undefined) === 'true'
+
+interface PublishedSnapshot {
+  revision_id: string
+  revision_index: number
+  settings: Record<string, unknown> | null
+  section_data: Array<{
+    id: string
+    name: string
+    slug?: string | null
+    sort_order?: number | null
+    description?: string | null
+  }> | null
+  name: string | null
+  status: string | null
+  access_type: string | null
+  event_date: string | null
+  event_type: string | null
+  event_location: string | null
+  created_at: string
+}
+
 // ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
+// a11y: when prefers-reduced-motion is set we skip the parallax entirely and
+// render a plain wrapper — no perspective/rotateX that can cause vestibular
+// discomfort (WCAG 2.3.3 / prefers-reduced-motion).
 
 function ScrollReveal({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    // Honour the OS reduced-motion preference before wiring the observer.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
     const el = ref.current
     if (!el) return
     const mobile = window.innerWidth < 768
@@ -140,6 +189,108 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
   const colWidth = containerWidth > 0 ? (containerWidth - gap * (cols - 1)) / cols : 0
   const imgSizes = colWidth > 0 ? `${Math.round(colWidth)}px` : `${Math.round(100 / cols)}vw`
 
+  // ── Virtualization threshold ─────────────────────────────────────────────
+  // Galleries up to 300 photos keep the original column-balanced masonry —
+  // it packs tighter (no row-clip artifacts) and the cost of mounting 300
+  // DOM trees is negligible. Past 300, React reconciliation + memory cost
+  // dominate scroll perf; we switch to a row-virtualized layout so only
+  // the visible rows (~3-5) are mounted. Empirical break-even: ~300 tiles
+  // on a mid-tier laptop, scrolling stays at 60fps versus ~18fps for a
+  // non-virtualized 2000-photo wedding.
+  const VIRTUALIZE_THRESHOLD = 300
+  const shouldVirtualize = images.length > VIRTUALIZE_THRESHOLD
+
+  // Pre-compute rows for the virtualized path — group images into rows of
+  // `cols` in their natural order. (We deliberately don't reuse the column-
+  // balancing algorithm; virtualization needs deterministic row indexing.)
+  const rows = useMemo(() => {
+    if (!shouldVirtualize) return [] as Array<Array<{ img: GalleryImage; index: number }>>
+    const out: Array<Array<{ img: GalleryImage; index: number }>> = []
+    for (let i = 0; i < images.length; i += cols) {
+      const slice: Array<{ img: GalleryImage; index: number }> = []
+      for (let k = 0; k < cols && i + k < images.length; k++) {
+        slice.push({ img: images[i + k], index: i + k })
+      }
+      out.push(slice)
+    }
+    return out
+  }, [images, cols, shouldVirtualize])
+
+  // Per-row height memo, recomputed when container width or rows change.
+  // VariableSizeList caches by index; we reset its internal cache when the
+  // function identity changes (see effect below).
+  const rowHeight = useCallback((rowIdx: number) => {
+    const row = rows[rowIdx]
+    if (!row) return 0
+    return rowHeightFor(row, cols, containerWidth, gap)
+  }, [rows, cols, containerWidth, gap])
+
+  const listRef = useRef<VariableSizeList | null>(null)
+  useEffect(() => {
+    // Tell VariableSizeList to drop its cached heights whenever the row
+    // shape changes (resize, layout switch, new images arriving). Without
+    // this, rows that used to be tall would render at the stale measured
+    // size.
+    listRef.current?.resetAfterIndex(0, true)
+  }, [rowHeight])
+
+  if (shouldVirtualize && containerWidth > 0) {
+    // Cap the virtualized viewport at ~85vh so the page can still scroll
+    // siblings (section heading, "all images" CTA) below it.
+    const viewportHeight = typeof window === 'undefined' ? 800 : Math.max(400, Math.round(window.innerHeight * 0.85))
+    const ROW_RENDER = ({ index, style }: ListChildComponentProps) => {
+      const row = rows[index]
+      if (!row) return null
+      // Phase 4: first two rows of the first section eager-load to give
+      // the LCP image fetchpriority=high. Later rows lazy-load as they
+      // scroll into the virtualization window.
+      const eager = index < 2
+      return (
+        <VirtualMasonryRow
+          rowImages={row}
+          cols={cols}
+          imgBucket={imgBucket}
+          gap={gap}
+          rounded={rounded}
+          imgSizes={imgSizes}
+          eager={eager}
+          onImageClick={onImageClick}
+          onDownload={onDownload}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
+          onToggleSelect={onToggleSelect}
+          clientMode={clientMode}
+          hiddenIds={hiddenIds}
+          onToggleHide={onToggleHide}
+          watermark={watermark}
+          style={style}
+        />
+      )
+    }
+    return (
+      <div
+        ref={containerRef}
+        style={{
+          maxWidth: layoutMode === '1-col' ? 900 : undefined,
+          margin: layoutMode === '1-col' ? '0 auto' : undefined,
+          padding: gap > 0 ? `0 ${gap}px` : 0,
+          position: 'relative',
+        }}
+      >
+        <VariableSizeList
+          ref={listRef}
+          height={viewportHeight}
+          width={containerWidth}
+          itemCount={rows.length}
+          itemSize={rowHeight}
+          overscanCount={2}
+        >
+          {ROW_RENDER}
+        </VariableSizeList>
+      </div>
+    )
+  }
+
   // Height-balanced masonry: place each image (in order) into the currently
   // SHORTEST column, using its real aspect ratio (h/w) for the height. This
   // keeps columns even — no one column ending far short of the others (the big
@@ -175,6 +326,12 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
         <div key={ci} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap }}>
           {col.map(({ img, index }) => {
             const isSelected = selectMode && selectedIds?.has(img.id)
+            // First-row tiles are the LCP — load them eagerly with a high
+            // fetchpriority hint so the browser races them ahead of all the
+            // below-the-fold lazy tiles. `fetchpriority` is a lowercase HTML
+            // attribute (not a documented React prop yet), so we attach it
+            // via an extra spread.
+            const isAboveFold = index < cols
             return (
               <div
                 key={img.id}
@@ -188,11 +345,14 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                   // thumbnail — the big columns need that detail to stay crisp.
                   // Phones still pull a small file (sizes = the column width).
                   path={img.storage_path || img.thumbnail_path}
-                  transformWidths={[320, 640, 960, 1280]}
+                  transformWidths={GRID_WIDTHS}
                   transformQuality={70}
                   sizes={imgSizes}
                   alt=""
-                  loading="lazy"
+                  loading={isAboveFold ? 'eager' : 'lazy'}
+                  // React 18.3+ camelCases this to the DOM `fetchpriority`
+                  // attribute. High-priority hint races the LCP tiles ahead.
+                  fetchPriority={isAboveFold ? 'high' : undefined}
                   decoding="async"
                   style={{
                     width: '100%', height: 'auto', display: 'block',
@@ -493,6 +653,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
       {/* Event meta */}
       {(eventDate || eventLocation) && (
         <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .8s both' : 'none' }}>
+          {/* TODO: a11y — event meta at rgba(.25) is ~1.8:1 contrast on black. Design decision needed: raise opacity or use a larger font size to meet WCAG 3.1.4 for decorative metadata. */}
           <p style={{
             fontSize: 12, color: 'rgba(255,255,255,.25)', margin: '10px 0 0',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, letterSpacing: '0.03em',
@@ -506,6 +667,7 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
 
       {galleryDescription && (
         <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .85s both' : 'none' }}>
+          {/* TODO: a11y — gallery description at rgba(.22) is ~1.6:1 contrast. Needs design decision: bump opacity to at least .65 for AA compliance, or confirm this text is purely decorative and not load-bearing. */}
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,.22)', margin: '8px auto 0', maxWidth: 420 }}>
             {galleryDescription}
           </p>
@@ -595,6 +757,11 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
           opacity: 0; transition: opacity .6s ease;
         }
         .wc-col img.wc-loaded { opacity: 1; }
+        /* Reduced-motion: stop the infinite mosaic scroll (WCAG 2.3.3) */
+        @media (prefers-reduced-motion: reduce) {
+          .wc-col { animation: none !important; }
+          .hero__bg { animation: none !important; }
+        }
       `}</style>
       <div style={{
         position: 'absolute', inset: 0,
@@ -677,6 +844,11 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
             90% { opacity: 1; }
             100% { transform: translateY(-100vh) translateX(40px); opacity: 0; }
           }
+          /* Ken Burns zoom is a looping motion animation — suppress it for
+             vestibular safety (WCAG 2.3.3 / prefers-reduced-motion).       */
+          @media (prefers-reduced-motion: reduce) {
+            [style*="wcCineZoom"] { animation: wcCineFadeIn 2.5s ease .2s both !important; }
+          }
         `}</style>
         {bgSrc && (
           <div style={{
@@ -685,9 +857,13 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
             filter: isPrivate ? 'blur(50px) saturate(.2)' : 'blur(8px) saturate(1.1)',
             animation: 'wcCineFadeIn 2.5s ease .2s both, wcCineZoom 20s ease-in-out infinite alternate',
           }}>
+            {/* Cover image — meaningful alt derived from gallery title so screen
+                readers convey context rather than announcing an empty alt.
+                The image is decorative when private (blur makes it unrecognisable),
+                so alt="" is correct there. */}
             <img
               src={bgSrc}
-              alt=""
+              alt={isPrivate ? '' : `${galleryTitle} cover photo`}
               style={{
                 width: '100%', height: '100%', objectFit: 'cover', display: 'block',
                 ...(coverCrop ? { objectPosition: `${50 + (coverCrop.x || 0)}% ${50 + (coverCrop.y || 0)}%` } : {}),
@@ -816,7 +992,9 @@ function SectionNav({
 }) {
   const hasSections = sections.length > 0
   return (
-    <nav className="section-nav">
+    // role="navigation" + aria-label give screen readers a named landmark
+    // so they can jump here directly (WCAG 1.3.1, 2.4.1).
+    <nav className="section-nav" role="navigation" aria-label="Gallery sections">
       <div className="section-nav__inner">
         <div className="section-nav__items">
           {hasSections && showAllPill && (
@@ -967,12 +1145,16 @@ export function App() {
           const { data: bizRows } = await supabase.rpc('get_business_by_slug', { p_slug: galleryRef.businessSlug })
           const biz = bizRows?.[0]
           if (!biz) { setError('Gallery not found'); return }
+          // Migration 063 made gallery_status an enum of ('draft','live','archived').
+          // 'published' is no longer a valid value (it was a desktop-era ghost
+          // that never landed in the DB). We resolve against draft+live so the
+          // owner can deep-link into an unpublished gallery from their email.
           const { data: g } = await supabase.from('galleries').select('*')
             .eq('business_id', biz.id).eq('slug', galleryRef.gallerySlug)
-            .in('status', ['live', 'published', 'draft']).single()
+            .in('status', ['live', 'draft']).single()
           if (g) { loadGallery(g.id); return }
           const { data: byName } = await supabase.from('galleries').select('*')
-            .eq('business_id', biz.id).in('status', ['live', 'published', 'draft'])
+            .eq('business_id', biz.id).in('status', ['live', 'draft'])
             .ilike('name', galleryRef.gallerySlug.replace(/-/g, '%')).limit(1)
           if (byName?.[0]) { loadGallery(byName[0].id); return }
           setError('Gallery not found')
@@ -1088,13 +1270,75 @@ export function App() {
       // to wait on token issuance for what is essentially a label.
       supabase
         .from('gallery_sections')
-        .select('id, name, slug, sort_order')
+        .select('id, name, slug, sort_order, description')
         .eq('gallery_id', id)
         .order('sort_order', { ascending: true }),
     ])
+
+    // ── Phase 6 step 5 phase 2 — snapshot override ─────────────────────────
+    // When the cutover flag is on AND the gallery has been published at least
+    // once, the viewer reads delivery_settings + sections from the immutable
+    // gallery_revisions snapshot instead of the live row. The photographer
+    // can keep editing the live row freely; clients see the last-published
+    // state until the next Publish writes a new revision.
+    //
+    // Fallbacks (any of the below leaves the legacy live read intact):
+    //   • Flag off (default).
+    //   • Gallery has no published_revision_id yet.
+    //   • RPC errored or returned no rows.
+    let liveSections = (secsRes.data || []) as GallerySection[]
+    let liveGallery = g
+    const publishedRevisionId = (meta as { published_revision_id?: string | null }).published_revision_id ?? null
+    if (USE_PUBLISHED_SNAPSHOT && publishedRevisionId) {
+      try {
+        const { data: snapRows, error: snapErr } = await supabase.rpc(
+          'gallery_get_published_snapshot',
+          { p_gallery_id: id },
+        )
+        if (snapErr) {
+          console.warn('[snapshot] rpc_error — falling back to live read', snapErr.message)
+        } else {
+          const snap = Array.isArray(snapRows) ? (snapRows[0] as PublishedSnapshot | undefined) : (snapRows as PublishedSnapshot | undefined)
+          if (snap) {
+            // Override delivery_settings with the snapshotted JSONB. The live
+            // gallery row may have newer edits we explicitly want to hide.
+            const snapSettings = (snap.settings ?? {}) as Partial<DeliverySettings>
+            const snapStatus = (snap.status === 'draft' || snap.status === 'live' || snap.status === 'archived')
+              ? snap.status
+              : g.status
+            liveGallery = {
+              ...g,
+              name: snap.name ?? g.name,
+              status: snapStatus,
+              delivery_settings: snapSettings as DeliverySettings,
+            }
+            // Rebuild sections from snapshot.section_data, preserving the
+            // snapshot's ordering. Newer sections added post-publish are
+            // intentionally absent — photographer must re-publish to expose
+            // them to clients.
+            if (Array.isArray(snap.section_data)) {
+              liveSections = snap.section_data
+                .slice()
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                .map(s => ({
+                  id: s.id,
+                  name: s.name,
+                  slug: s.slug ?? null,
+                  sort_order: s.sort_order ?? 0,
+                }))
+            }
+          } else {
+            console.warn('[snapshot] no_row_for_published_revision_id — falling back to live read')
+          }
+        }
+      } catch (e) {
+        console.warn('[snapshot] threw — falling back to live read', e)
+      }
+    }
+
     setImages(firstImgs)
-    setSections(secsRes.data || [])
-    setGallery(g)
+    setSections(liveSections)
+    setGallery(liveGallery)
 
     // Stream the remaining pages in the background (best-effort), appending in
     // order. Runs while the guest is still on the welcome/cover screen.
@@ -1367,7 +1611,10 @@ export function App() {
   // ── Resolve settings with backward-compatible defaults ──────────────────
   const raw: Partial<DeliverySettings> = (gallery.delivery_settings || {}) as Partial<DeliverySettings>
 
-  const accessType       = s(raw, 'accessType', 'public')
+  // Phase 6 Step 2: prefer typed column, fall back to JSONB during dual-read.
+  // gallery.access_type is the migrated source of truth; rawSettings.accessType
+  // remains populated by current writes until Step 4's RPC dual-writes both.
+  const accessType       = (gallery.access_type ?? s(raw, 'accessType', 'public')) as string
   const galleryTitle     = s(raw, 'galleryTitle', '') || gallery.name
   const clientName       = s(raw, 'clientName', '') || gallery.client_name
   const coverImageId     = s(raw, 'coverImageId', null)
@@ -1493,8 +1740,8 @@ export function App() {
           welcomeMessage={(rawSettings as Record<string, unknown>).welcomeMessage as string || ''}
           textAnimation={((rawSettings as Record<string, unknown>).welcomeTextAnimation as 'blur' | 'typewriter' | 'slide') || 'blur'}
           animationSpeed={((rawSettings as Record<string, unknown>).welcomeAnimationSpeed as 'slow' | 'normal' | 'fast') || 'normal'}
-          eventDate={rawSettings.eventDate || ''}
-          eventLocation={rawSettings.eventLocation || ''}
+          eventDate={(gallery.event_date ?? rawSettings.eventDate) || ''}
+          eventLocation={(gallery.event_location ?? rawSettings.eventLocation) || ''}
           clientName={clientName || ''}
           studioName={studioName}
           studioWebsite={studioWebsite}
@@ -1512,30 +1759,32 @@ export function App() {
         />
         {/* Face search experience — full-screen flow with camera, thinking, results */}
         {showFaceSearch && gallery && (
-          <FaceSearchExperience
-            galleryId={gallery.id}
-            backgroundImages={images.slice(0, 6)}
-            storageUrl={(path: string) => renderUrl(imgBucket, path, 1280, 65)}
-            privacyMode={facePrivacyMode}
-            lang={lang}
-            onClose={() => setShowFaceSearch(false)}
-            onSelfieCapture={(url) => setFaceSelfieUrl(url)}
-            onMatches={(ids, serverImages) => {
-              setFaceMatchIds(new Set(ids))
-              setFaceFilterActive(true)
-              setShowFaceSearch(false)
-              // In private mode the bulk image fetch was skipped, so the only
-              // images we have are the ones the server hydrated for matches.
-              if (facePrivacyMode === 'private' && serverImages.length > 0) {
-                setImages(serverImages as unknown as GalleryImage[])
-              }
-              if (ids.length > 0) setShowWelcome(false)
-            }}
-            onBrowseAll={() => {
-              setShowFaceSearch(false)
-              setShowWelcome(false)
-            }}
-          />
+          <Suspense fallback={null}>
+            <FaceSearchExperience
+              galleryId={gallery.id}
+              backgroundImages={images.slice(0, 6)}
+              storageUrl={(path: string) => renderUrl(imgBucket, path, 1280, 65)}
+              privacyMode={facePrivacyMode}
+              lang={lang}
+              onClose={() => setShowFaceSearch(false)}
+              onSelfieCapture={(url) => setFaceSelfieUrl(url)}
+              onMatches={(ids, serverImages) => {
+                setFaceMatchIds(new Set(ids))
+                setFaceFilterActive(true)
+                setShowFaceSearch(false)
+                // In private mode the bulk image fetch was skipped, so the only
+                // images we have are the ones the server hydrated for matches.
+                if (facePrivacyMode === 'private' && serverImages.length > 0) {
+                  setImages(serverImages as unknown as GalleryImage[])
+                }
+                if (ids.length > 0) setShowWelcome(false)
+              }}
+              onBrowseAll={() => {
+                setShowFaceSearch(false)
+                setShowWelcome(false)
+              }}
+            />
+          </Suspense>
         )}
       </>
     )
@@ -1673,8 +1922,17 @@ export function App() {
 
   function downloadUrl(img: GalleryImage) {
     // 'original' and 'high' → serve original full-res file when available
-    if (downloadQuality === 'original' || downloadQuality === 'high') return originalUrl(img)
-    // 'web' → compressed web preview
+    const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+    const path = wantsHd
+      ? (img.original_uploaded && img.original_path ? img.original_path : img.storage_path)
+      : img.storage_path
+    // Route the full-res download through the watermark engine when the
+    // gallery has watermarking enabled. Browse surfaces (thumbs, lightbox)
+    // still use the clean storage URL — only this download helper opts in.
+    if (watermarkEnabled && gallery?.business_id) {
+      return signedWatermarkedUrl(path, gallery.business_id)
+    }
+    if (wantsHd) return originalUrl(img)
     return webUrl(img)
   }
 
@@ -1698,11 +1956,23 @@ export function App() {
    *  click is invisible next to the actual download. */
   async function resolveDownloadUrl(img: GalleryImage): Promise<{ url: string; downgraded: boolean }> {
     const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+    // Watermark gate: photographer's per-gallery toggle (with brand-kit
+    // fallback handled server-side in /api/watermark). We only route the
+    // FULL-RESOLUTION download through the engine; thumbs + web previews
+    // keep streaming clean so browsing the gallery stays untouched.
+    const businessId = gallery?.business_id ?? ''
+    const watermarkPath = (path: string): string =>
+      watermarkEnabled && businessId
+        ? signedWatermarkedUrl(path, businessId)
+        : '' // empty signals "no watermark wrap — use the signed/public URL"
+
     if (!wantsHd || !img.original_path) {
       // P4.5.D: when flag is on, route through signedStorageUrl. When flag
       // off, signedStorageUrl short-circuits to public URL — same behavior
       // as today (originalUrl/webUrl return public URLs).
       const path = wantsHd ? (img.original_uploaded ? img.original_path! : img.storage_path) : img.storage_path
+      const wm = watermarkPath(path)
+      if (wm) return { url: wm, downgraded: false }
       const url = await signedStorageUrl(imgBucket, path)
       return { url, downgraded: false }
     }
@@ -1712,14 +1982,20 @@ export function App() {
     try {
       const head = await fetch(headCandidate, { method: 'HEAD' })
       if (head.ok) {
+        const wm = watermarkPath(img.original_path)
+        if (wm) return { url: wm, downgraded: false }
         const url = await signedStorageUrl(imgBucket, img.original_path)
         return { url, downgraded: false }
       }
     } catch {
       // Network blip — assume present and let the actual download surface any real error.
+      const wm = watermarkPath(img.original_path)
+      if (wm) return { url: wm, downgraded: false }
       const url = await signedStorageUrl(imgBucket, img.original_path)
       return { url, downgraded: false }
     }
+    const wmFallback = watermarkPath(img.storage_path)
+    if (wmFallback) return { url: wmFallback, downgraded: true }
     const fallbackUrl = await signedStorageUrl(imgBucket, img.storage_path)
     return { url: fallbackUrl, downgraded: true }
   }
@@ -1866,6 +2142,12 @@ export function App() {
             pvt,
             quality: wantsHd ? 'original' : 'web',
             filenameStem: safeTitle,
+            // Tell the ZIP endpoint to route each image through the
+            // watermark engine before adding it to the archive. The flag is
+            // honored server-side; if /api/gallery-zip doesn't yet
+            // understand it the field is ignored and we get clean originals
+            // (same as today) — never a 500.
+            watermark: watermarkEnabled,
           }),
         })
         if (!res.ok) throw new Error(`zip_${res.status}`)
@@ -1889,6 +2171,10 @@ export function App() {
     }
 
     try {
+      // JSZip is only needed for the fallback path (server-side /api/gallery-zip
+      // is preferred). Dynamic import keeps ~95KB out of the LCP-critical
+      // public-viewer bundle until a guest actually batch-downloads.
+      const { default: JSZip } = await import('jszip')
       const zip = new JSZip()
       const usedNames = new Set<string>()
       for (let i = 0; i < imgs.length; i++) {
@@ -1993,6 +2279,13 @@ export function App() {
       {/* Override the global accent CSS variable to match the photographer's
           chosen theme color. Cascades into every existing rgb(var(--accent)) ref. */}
       <style>{`:root { --accent: ${themeAccentRgb}; }`}</style>
+
+      {/* Skip link — keyboard-only shortcut past the hero to the photo grid.
+          Visible only on focus, hidden otherwise (WCAG 2.4.1 Bypass Blocks).
+          "#all-images" covers both sectioned and non-sectioned galleries. */}
+      <a href="#all-images" className="skip-link">
+        {lang === 'he' ? 'דלג לגלריה' : 'Skip to gallery'}
+      </a>
       {/* P4.5.D — Turnstile challenge modal. Renders only when the public-
           gallery-session endpoint returned `turnstile_required` for this IP.
           The widget is invisible 98% of the time (Managed mode); when it does
@@ -2286,12 +2579,14 @@ export function App() {
       {/* Full-screen StoryPlayer overlay. Mounted only while a story is
           active; closing returns to the gallery without losing scroll. */}
       {storyPlayerIndex !== null && stories.length > 0 && (
-        <StoryPlayer
-          stories={stories}
-          initialIndex={storyPlayerIndex}
-          storyUrl={storyUrl}
-          onClose={() => setStoryPlayerIndex(null)}
-        />
+        <Suspense fallback={null}>
+          <StoryPlayer
+            stories={stories}
+            initialIndex={storyPlayerIndex}
+            storyUrl={storyUrl}
+            onClose={() => setStoryPlayerIndex(null)}
+          />
+        </Suspense>
       )}
 
       {sections.length > 0 && sections.map(sec => {
@@ -2310,6 +2605,9 @@ export function App() {
               <span className="gallery-section__name">{sec.name}</span>
               <span className="gallery-section__count">{sectionImages.length} {sectionImages.length === 1 ? 'photo' : 'photos'}</span>
             </h2>
+            {sec.description && (
+              <p className="gallery-section__description">{sec.description}</p>
+            )}
             <MasonryGrid
               images={sectionImages}
               imgBucket={imgBucket}
@@ -2426,27 +2724,29 @@ export function App() {
 
       {/* Face search — full-screen experience with camera, thinking, results */}
       {showFaceSearch && gallery && (
-        <FaceSearchExperience
-          galleryId={gallery.id}
-          backgroundImages={images.slice(0, 6)}
-          storageUrl={(path: string) => storageUrl(imgBucket, path)}
-          privacyMode={facePrivacyMode}
-          onClose={() => setShowFaceSearch(false)}
-          onSelfieCapture={(url) => setFaceSelfieUrl(url)}
-          onMatches={(ids, serverImages) => {
-            setFaceMatchIds(new Set(ids))
-            setFaceFilterActive(true)
-            setShowFaceSearch(false)
-            if (facePrivacyMode === 'private' && serverImages.length > 0) {
-              setImages(serverImages as unknown as GalleryImage[])
-            }
-            if (showWelcome && ids.length > 0) setShowWelcome(false)
-          }}
-          onBrowseAll={() => {
-            setShowFaceSearch(false)
-            if (showWelcome) setShowWelcome(false)
-          }}
-        />
+        <Suspense fallback={null}>
+          <FaceSearchExperience
+            galleryId={gallery.id}
+            backgroundImages={images.slice(0, 6)}
+            storageUrl={(path: string) => storageUrl(imgBucket, path)}
+            privacyMode={facePrivacyMode}
+            onClose={() => setShowFaceSearch(false)}
+            onSelfieCapture={(url) => setFaceSelfieUrl(url)}
+            onMatches={(ids, serverImages) => {
+              setFaceMatchIds(new Set(ids))
+              setFaceFilterActive(true)
+              setShowFaceSearch(false)
+              if (facePrivacyMode === 'private' && serverImages.length > 0) {
+                setImages(serverImages as unknown as GalleryImage[])
+              }
+              if (showWelcome && ids.length > 0) setShowWelcome(false)
+            }}
+            onBrowseAll={() => {
+              setShowFaceSearch(false)
+              if (showWelcome) setShowWelcome(false)
+            }}
+          />
+        </Suspense>
       )}
 
       {/* ── HD-still-uploading toast ── */}

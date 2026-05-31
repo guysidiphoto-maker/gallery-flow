@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { verifyPassword, getStoredToken } from './lib/galleryClient'
+import { useFocusTrap } from './lib/useFocusTrap'
 
 interface PasswordGateProps {
   galleryId: string
@@ -21,6 +22,10 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken }:
   const [submitting, setSubmitting] = useState(false)
   const [cooldownLeft, setCooldownLeft] = useState(0)
   const tickRef = useRef<number | null>(null)
+
+  // Focus trap — the password gate covers the entire screen and must not let
+  // Tab escape into background content (WCAG 2.1.2).
+  const gateRef = useFocusTrap<HTMLDivElement>(true)
 
   // Auto-unlock if a fresh signed-gate token is already stored, OR (legacy)
   // the old sessionStorage flag is set. Both are valid recognition signals
@@ -75,7 +80,16 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken }:
       : 'View Gallery'
 
   return (
-    <div className="pw-gate">
+    // role="dialog" + aria-modal signal to screen readers that this gate is a
+    // blocking dialog; aria-labelledby points to the gallery title so it is
+    // announced as the dialog name when focus enters (WCAG 4.1.2, 1.3.1).
+    <div
+      ref={gateRef}
+      className="pw-gate"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pw-gate-title"
+    >
       <form className="pw-gate__card" onSubmit={handleSubmit}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -89,7 +103,7 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken }:
             End-to-end protected
           </span>
         </div>
-        <h1 className="pw-gate__title">{galleryName}</h1>
+        <h1 id="pw-gate-title" className="pw-gate__title">{galleryName}</h1>
         <p className="pw-gate__sub">This gallery is password protected</p>
         <input
           className="pw-gate__input"
@@ -99,13 +113,25 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken }:
           onChange={(e) => { setValue(e.target.value); setError(false) }}
           autoFocus
           disabled={locked}
+          // aria-describedby links the input to its live error region so screen
+          // readers announce errors immediately on change (WCAG 3.3.1).
+          aria-describedby="pw-gate-error"
+          aria-invalid={error || locked ? 'true' : undefined}
         />
-        {locked && (
-          <p className="pw-gate__error">
-            Too many attempts. Try again in {cooldownLeft}s.
-          </p>
-        )}
-        {error && !locked && <p className="pw-gate__error">Incorrect password</p>}
+        {/* aria-live="polite" announces the error via screen readers without
+            interrupting in-progress speech (WCAG 4.1.3 Status Messages).    */}
+        <p
+          id="pw-gate-error"
+          className="pw-gate__error"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {locked
+            ? `Too many attempts. Try again in ${cooldownLeft}s.`
+            : error
+              ? 'Incorrect password'
+              : ''}
+        </p>
         <button className="pw-gate__btn" type="submit" disabled={submitting || locked}>
           {btnLabel}
         </button>

@@ -42,11 +42,20 @@ export interface DeliverySettings {
   autoGenerateStories?: boolean
 }
 
+/** Canonical gallery lifecycle states. Mirrors the postgres enum
+ *  `gallery_status` introduced in migration 063_gallery_status_enum.sql.
+ *  - 'draft'    — editing, not visible to clients (or parked from a previous
+ *                 publishing/failed pipeline state, see last_publish_error).
+ *  - 'live'     — publicly visible at the slug. Gated by RLS on anon reads.
+ *  - 'archived' — soft-deleted; retained for restore, not visible.
+ */
+export type GalleryStatus = 'draft' | 'live' | 'archived'
+
 export interface Gallery {
   id: string
   name: string
   client_name: string | null
-  status: string
+  status: GalleryStatus
   image_count: number
   delivery_settings: DeliverySettings
   published_at: string | null
@@ -55,6 +64,14 @@ export interface Gallery {
   face_index_enabled?: boolean
   face_index_status?: 'pending' | 'indexing' | 'done' | 'failed' | null
   face_indexed_count?: number
+  // Phase 6 Step 2 — promoted typed columns. All nullable for the dual-read
+  // transition; reads prefer the column and fall back to delivery_settings.
+  // Writes still go through delivery_settings until Step 4's RPC lands.
+  event_date?: string | null
+  event_type?: string | null
+  event_location?: string | null
+  access_type?: 'public' | 'password' | 'code' | null
+  client_code_hash?: string | null
 }
 
 export interface GalleryImage {
@@ -88,6 +105,7 @@ export interface GallerySection {
   name: string
   slug?: string | null
   sort_order: number
+  description?: string | null
 }
 
 // ─── Event Lead Capture ─────────────────────────────────────────────────────

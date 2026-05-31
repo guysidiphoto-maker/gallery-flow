@@ -1,0 +1,34 @@
+{
+  "name": "gallery-stories-remotion-spike",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Phase 0 spike — Remotion + Lambda port of the desktop story renderer. Not wired into gallery-web build.",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/Root.tsx",
+    "render:local": "remotion render src/Root.tsx Clean out/clean.mp4",
+    "render:gallery": "tsx src/render-local.ts",
+    "lambda:deploy": "remotion lambda sites create src/Root.tsx --site-name=gallery-stories",
+    "lambda:deploy-function": "remotion lambda functions deploy --memory=2048 --disk=10240 --timeout=240",
+    "lambda:render": "tsx src/render-lambda.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "//": "DO NOT INSTALL during this spike. Declared for reference / Phase 1.",
+  "dependencies": {
+    "@remotion/bundler": "^4.0.245",
+    "@remotion/cli": "^4.0.245",
+    "@remotion/lambda": "^4.0.245",
+    "@remotion/renderer": "^4.0.245",
+    "@supabase/supabase-js": "^2.101.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.245"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.5.2"
+  }
+}

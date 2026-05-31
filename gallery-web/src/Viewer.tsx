@@ -3,6 +3,7 @@ import type { GalleryImage } from './types'
 import { Icon } from './components/Icon'
 import { signedStorageUrl } from './lib/signedStorage'
 import { renderUrl } from './supabase'
+import { useFocusTrap } from './lib/useFocusTrap'
 
 // Buckets that support Supabase on-the-fly image transforms. For these, the
 // fullscreen view loads a bounded ~2048px transform (sharp + fast) instead of
@@ -61,6 +62,11 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
   // image. The browser usually has it cached from the grid, so it paints
   // in 1 frame and the viewer never sits on a black screen.
   const [thumbSrc, setThumbSrc] = useState<string>('')
+
+  // Focus trap — keyboard users must not be able to tab out of the lightbox
+  // while it is open (WCAG 2.1.2). Returns focus to the triggering grid tile
+  // when the viewer closes.
+  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose)
 
   const prev = useCallback(() => onNavigate((index - 1 + total) % total), [index, total, onNavigate])
   const next = useCallback(() => onNavigate((index + 1) % total), [index, total, onNavigate])
@@ -145,7 +151,18 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
   }, [])
 
   return (
-    <div className="viewer" onClick={onClose} style={{ background: OVERLAY }}>
+    // role="dialog" + aria-modal tell screen readers this is a dialog and that
+    // content behind it is inert (WCAG 1.3.1, 4.1.2). aria-label provides the
+    // accessible name since there is no visible heading element inside.
+    <div
+      ref={dialogRef}
+      className="viewer"
+      onClick={onClose}
+      style={{ background: OVERLAY }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Photo ${index + 1} of ${images.length}`}
+    >
       <div className="viewer__inner" onClick={(e) => e.stopPropagation()}>
         {/* Close — hairline-bordered square in top-right (LTR-true since the
             close icon's home is conventionally top-right regardless of doc dir) */}

@@ -2,6 +2,63 @@
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ── Skip link (WCAG 2.4.1 — Bypass Blocks) ────────────────────────────────
+   Visually hidden until focused via keyboard. Jumps past the hero section
+   directly to the photo grid so keyboard/screen-reader users don't have to
+   tab through every hero element on every page load.                         */
+.skip-link {
+  position: fixed;
+  top: 12px;
+  inset-inline-start: 12px;
+  z-index: 10000;
+  padding: 10px 20px;
+  background: #fff;
+  color: #141413;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 8px;
+  text-decoration: none;
+  box-shadow: 0 4px 24px rgba(0,0,0,.5);
+  /* Hidden until focused */
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition: opacity .15s, transform .15s;
+}
+.skip-link:focus {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  /* High-contrast focus ring so the skip link itself is keyboard-visible */
+  outline: 3px solid #6366f1;
+  outline-offset: 2px;
+}
+
+/* ── Global focus-visible ring ──────────────────────────────────────────────
+   Browsers that support :focus-visible show a ring only for keyboard nav,
+   not on mouse click. Replaces every inline `outline: none` that nuked
+   the native ring without providing an alternative (WCAG 2.4.7).            */
+:focus-visible {
+  outline: 2px solid rgba(var(--accent), 0.9);
+  outline-offset: 2px;
+}
+
+/* ── Reduced-motion — disable cosmetic animations ──────────────────────────
+   Respects the OS "reduce motion" preference (WCAG 2.3.3 / prefers-reduced-
+   motion). Keeps transitions that convey state (opacity 0→1 on load) but
+   removes running / looping animations that can trigger vestibular symptoms. */
+@media (prefers-reduced-motion: reduce) {
+  .hero__bg { animation: none; transform: scale(1.08) !important; }
+  .hero__content { animation: none; }
+  .loader { animation: none; border-top-color: rgba(var(--accent), .9); }
+  .wc-col { animation: none !important; }
+  .story-circle__ring { transition: none; }
+  /* Section nav items already use short transitions — leave them as-is. */
+  /* Scroll-reveal parallax: remove the 3D transform so the element is
+     immediately visible rather than fading/rotating in on scroll.           */
+  [style*="perspective"] { transform: none !important; opacity: 1 !important; }
+}
+
 body {
   background: #0a0a0f;
   color: #fff;
@@ -114,7 +171,8 @@ input, button, textarea, select {
 
 .pw-gate__sub {
   font-size: 14px;
-  color: rgba(255,255,255,.38);
+  /* Bumped from .38 → .62 to clear 4.5:1 on #0a0a0f (was ~2.6:1) */
+  color: rgba(255,255,255,.62);
   margin-bottom: 8px;
   letter-spacing: 0.01em;
 }
@@ -177,6 +235,12 @@ input, button, textarea, select {
 
 .pw-gate__btn:active {
   transform: scale(0.98);
+}
+
+.pw-gate__btn:focus-visible {
+  /* Explicit focus ring — the button has no outline by default */
+  outline: 2px solid rgba(var(--accent), 1);
+  outline-offset: 3px;
 }
 
 /* ── Hero ─────────────────────────────────────────────────────────────────── */
@@ -669,6 +733,10 @@ input, button, textarea, select {
 
 /* ── Footer ────────────────────────────────────────────────────────────────── */
 
+/* TODO: a11y — footer text at rgba(.14) is ~1.2:1. This is intentional branding
+   de-emphasis ("powered by" credit), but if it contains actionable text (studio
+   name link) it must reach 4.5:1. Design decision: raise to rgba(.55) minimum
+   for the link variant, keep .14 only for the pure credit label. */
 .footer {
   text-align: center;
   padding: 56px 24px 48px;
@@ -759,6 +827,16 @@ input, button, textarea, select {
   background: rgba(255,255,255,.16);
   border-color: rgba(255, 255, 255, 0.12);
   transform: scale(1.05);
+}
+
+.viewer__close:focus-visible,
+.viewer__nav:focus-visible,
+.viewer__download:focus-visible {
+  /* High-contrast box-shadow ring on the dark overlay (outline can be clipped
+     by overflow:hidden; box-shadow is not). Replaces the browser default which
+     is invisible on near-black backgrounds. */
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255,255,255,.85);
 }
 
 .viewer__nav {
@@ -901,8 +979,21 @@ input, button, textarea, select {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* Optional photographer-written sub-line under the chapter heading. Treated as
+   an editorial caption: muted, narrow column, set inside the section block so
+   it sits between the heading and the masonry grid. */
+.gallery-section__description {
+  margin: 0 0 24px;
+  max-width: 56ch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 400;
+}
+
 @media (max-width: 640px) {
   .gallery-section { margin-top: 40px; }
+  .gallery-section__description { font-size: 13px; margin-bottom: 18px; }
 }
 
 /* ── Sticky section nav (Pixieset-style anchor + scroll-spy) ───────────── */
@@ -968,6 +1059,11 @@ input, button, textarea, select {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.section-nav__item:focus-visible {
+  outline: 2px solid rgba(var(--accent), 0.9);
+  outline-offset: 2px;
+}
+
 .section-nav__item--active {
   color: #fff;
   background: rgba(255, 255, 255, 0.11);
@@ -986,7 +1082,8 @@ input, button, textarea, select {
   padding: 2px 7px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.45);
+  /* Bumped from .45 → .65 to clear 4.5:1 on the dark nav surface */
+  color: rgba(255, 255, 255, 0.65);
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -1073,7 +1170,8 @@ input, button, textarea, select {
 
 .gallery-toolbar__btn--ghost {
   border-color: transparent;
-  color: rgba(255, 255, 255, 0.38);
+  /* Bumped from .38 → .62 — ghost buttons were below 4.5:1 on the dark nav */
+  color: rgba(255, 255, 255, 0.62);
 }
 .gallery-toolbar__btn--ghost:hover {
   border-color: transparent;
@@ -1169,4 +1267,158 @@ input, button, textarea, select {
 @keyframes dl-progress-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: .7; }
+}
+
+/* ── Dashboard editor — mobile responsive overrides ───────────────────────
+   The editor modal was designed desktop-first with a 260px fixed sidebar
+   alongside a flex:1 main pane inside a fixed-width dialog. Below 900px the
+   sidebar steals nearly all the modal width; below 640px the header CTAs
+   wrap raggedly, 3-col settings grids overflow, and the 140px tile grid
+   only fits 2 photos per row. The classes below are opt-in (added to the
+   inline-style React nodes) so we don't disturb other surfaces. */
+
+/* Editor modal shell — true full-screen on phone (no 16px gutter). */
+.dash-editor-modal {
+  /* Default desktop sizing is defined inline in Dashboard.tsx. */
+}
+@media (max-width: 640px) {
+  .dash-editor-modal {
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-width: 100vw !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+}
+
+/* Editor body — stack sidebar over main below 900px. The inline style is
+   `display:flex` with a 260px sidebar; we switch to column so the icon-tab
+   strip becomes a slim horizontal row above the content. */
+@media (max-width: 900px) {
+  .dash-editor-body {
+    flex-direction: column !important;
+  }
+  .dash-editor-sidebar {
+    width: 100% !important;
+    max-height: 50vh;
+    border-inline-start: none !important;
+    border-bottom: 1px solid rgba(20,20,19,.08);
+  }
+  /* Hide the cover preview on phone — it eats vertical space photographers
+     need for the editor content itself. The cover is still editable via
+     the Design tab. */
+  .dash-editor-sidebar > div:first-child {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .dash-editor-main {
+    padding: 16px 14px !important;
+  }
+}
+
+/* Editor header — let the button cluster wrap onto its own row instead of
+   colliding with the gallery title. */
+@media (max-width: 640px) {
+  .dash-editor-header {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+    padding: 14px 16px !important;
+  }
+  .dash-editor-header > * { min-width: 0; }
+  .dash-editor-header-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+  .dash-editor-header-actions a,
+  .dash-editor-header-actions button {
+    padding: 9px 14px !important;
+    font-size: 10px !important;
+    min-height: 40px;
+  }
+}
+
+/* Small generic modal (Add Set, Face Confirm, etc) — never let the body
+   spill past the viewport. */
+.dash-mobile-modal {
+  /* Defaults inline; overrides only when narrow. */
+}
+@media (max-width: 640px) {
+  .dash-mobile-modal {
+    width: calc(100vw - 16px) !important;
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    padding: 24px 20px 20px !important;
+  }
+}
+
+/* Settings grids that hard-code `1fr 1fr 1fr` or `1fr 1fr` — collapse to a
+   single column at phone width so each tile gets full breathing room. */
+@media (max-width: 640px) {
+  .dash-grid-3 { grid-template-columns: 1fr !important; }
+  .dash-grid-2 { grid-template-columns: 1fr !important; }
+  /* DNS record's label/value pair — let the value wrap under the label. */
+  .dash-dns-grid { grid-template-columns: 1fr !important; }
+}
+
+/* Photo grid inside the editor — `gridSize='regular'` uses a 140px minCell
+   which only fits 2 columns on a 390px phone. Force 3 columns via a CSS
+   variable that the inline style sets per-mode. */
+@media (max-width: 640px) {
+  .dash-photo-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 3px !important;
+  }
+  .dash-photo-grid--large {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+@media (min-width: 641px) and (max-width: 900px) {
+  .dash-photo-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+}
+
+/* Stories curator strip — 9:16 tiles at minmax(140px,1fr) → 2 per row on
+   phone with each tile ~178px tall (too tall). Pin to 3 columns and let
+   the tile aspect handle the rest. */
+@media (max-width: 640px) {
+  .dash-stories-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 6px !important;
+  }
+}
+
+/* Modal action footer — stack vertically + reserve space for the iOS home
+   indicator so the primary CTA is never clipped under the safe area. */
+@media (max-width: 640px) {
+  .dash-modal-actions {
+    flex-direction: column-reverse !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .dash-modal-actions > button,
+  .dash-modal-actions > a {
+    width: 100%;
+    min-height: 44px;
+    padding: 12px 18px !important;
+  }
+}
+
+/* Dashboard gallery card grid — explicit 1→2→3 column ramp instead of the
+   `auto-fill, minmax(280px, 1fr)` which only gives 1 column up to 640px. */
+@media (max-width: 480px) {
+  .dash-gallery-grid {
+    grid-template-columns: 1fr !important;
+    gap: 24px !important;
+  }
+}
+@media (min-width: 481px) and (max-width: 900px) {
+  .dash-gallery-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 24px !important;
+  }
 }
