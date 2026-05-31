@@ -1485,6 +1485,12 @@ export function Dashboard() {
   const [shareMessage, setShareMessage] = useState('')
   const [shareSending, setShareSending] = useState(false)
   const [shareSent, setShareSent] = useState(false)
+  // Preview-before-send: holds the rendered HTML returned from the edge
+  // function so the photographer can see the email exactly as the client
+  // will receive it. `previewLoading` is its in-flight flag; `previewHtml`
+  // null means the preview modal is closed.
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   function openEmailShare(g: Gallery) {
     setShareGallery(g)
@@ -1626,6 +1632,33 @@ export function Dashboard() {
       console.warn('[sendGalleryShareEmail]', err)
     } finally {
       setShareSending(false)
+    }
+  }
+
+  // Render the email (without sending) and open it in a sandboxed iframe so
+  // the photographer can verify wording, brand colors, and CTA before any
+  // client gets it. The edge function runs the same composer the send path
+  // uses, so what they see is byte-identical to what's queued in Resend.
+  async function previewShareEmail() {
+    if (!shareGallery || previewLoading) return
+    setPreviewLoading(true)
+    try {
+      const { previewGalleryShareEmail } = await import('../lib/shareGallery')
+      const res = await previewGalleryShareEmail({
+        galleryId: shareGallery.id,
+        recipientEmail: shareEmail || undefined,
+        subject: shareSubject || undefined,
+        message: shareMessage || undefined,
+      })
+      if (res.ok && res.html) {
+        setPreviewHtml(res.html)
+      } else {
+        alert('שגיאה בתצוגה מקדימה: ' + (res.error || 'לא ידוע'))
+      }
+    } catch (err) {
+      alert('שגיאה: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setPreviewLoading(false)
     }
   }
 
@@ -6226,6 +6259,22 @@ export function Dashboard() {
                     }}
                   />
                 </label>
+                <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    onClick={previewShareEmail}
+                    disabled={shareSending || previewLoading}
+                    style={{
+                      background: 'transparent', border: 'none', padding: 0,
+                      color: textSecondary, fontSize: 13, fontWeight: 600,
+                      cursor: previewLoading ? 'wait' : 'pointer',
+                      textDecoration: 'underline', textUnderlineOffset: 4,
+                      fontFamily: 'inherit', opacity: shareSending ? 0.5 : 1,
+                    }}
+                  >
+                    {previewLoading ? 'טוען…' : 'תצוגה מקדימה'}
+                  </button>
+                </div>
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button
                     onClick={() => setShareGallery(null)}
@@ -6259,6 +6308,60 @@ export function Dashboard() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ───────────── Share Email Preview ─────────────
+          Renders the server-composed HTML in a sandboxed iframe so the
+          photographer can verify the branded email before sending. The
+          iframe sandbox allows same-origin styles to render (no scripts)
+          so links don't accidentally navigate the dashboard tab. */}
+      {previewHtml && (
+        <div
+          onClick={() => setPreviewHtml(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 2200,
+            background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(10px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, animation: 'overlayIn .2s ease both',
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="תצוגה מקדימה של המייל"
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: bg, width: '100%', maxWidth: 640,
+              borderRadius: 22, padding: 20,
+              border: `1px solid ${border}`,
+              animation: 'modalIn .3s ease both',
+              boxShadow: '0 30px 100px rgba(0,0,0,.6)',
+              display: 'flex', flexDirection: 'column', gap: 12,
+              maxHeight: '90vh',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>תצוגה מקדימה</h2>
+              <button
+                onClick={() => setPreviewHtml(null)}
+                aria-label="סגירה"
+                style={{
+                  background: 'transparent', border: 'none', color: textMuted,
+                  fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 4,
+                }}
+              >×</button>
+            </div>
+            <iframe
+              title="email-preview"
+              srcDoc={previewHtml}
+              sandbox="allow-same-origin"
+              style={{
+                width: '100%', flex: 1, minHeight: 480,
+                border: `1px solid ${border}`, borderRadius: 12, background: '#fff',
+              }}
+            />
           </div>
         </div>
       )}
