@@ -1,5 +1,13 @@
 # Stories Generation — Phase 0 Spike (Remotion + Lambda)
 
+> **DEPRECATED 2026-05-31 — the AWS Lambda path was dropped.** The production
+> renderer now runs inside Vercel Functions using `@remotion/renderer` +
+> `@sparticuz/chromium`. See `docs/STORIES_LAMBDA_EXPLAINED.md` (bottom
+> section). Sections below referencing `@remotion/lambda`, `renderMediaOnLambda`,
+> `REMOTION_LAMBDA_FUNCTION_NAME` etc. are historical and no longer apply —
+> the spike workspace itself remains useful for local rendering via
+> `npm run render:gallery`.
+
 This directory is a **scaffold-only spike**. It is NOT production code, NOT
 wired into the Dashboard, and NOT installed by `gallery-web`'s root
 `package.json`. Its job is to prove (or disprove) that we can replace the
