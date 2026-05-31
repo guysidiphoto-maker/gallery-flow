@@ -16,8 +16,7 @@
   "functions": {
     "api/stories/render.ts": {
       "memory": 3008,
-      "maxDuration": 300,
-      "runtime": "nodejs22.x"
+      "maxDuration": 300
     }
   }
 }
