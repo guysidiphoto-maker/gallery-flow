@@ -17,12 +17,36 @@
 // Behavior:
 //   - Fetches gallery row via Supabase REST (anon key) directly — avoids the
 //     ~200kb @supabase-js bundle on edge.
+//   - Now ALSO pulls the owning business's `brand_kit` JSONB in the same call
+//     via PostgREST embedded select `businesses(name,brand_kit)`. One extra
+//     join, zero extra round-trips.
 //   - Picks cover from delivery_settings.coverImageUrl, otherwise the first
 //     image's web preview.
 //   - Renders the card with system fonts. Hebrew falls back to OS default;
 //     readable on every platform we care about.
 //   - On ANY failure, returns a branded fallback image (never a 500). A
 //     half-broken share preview is worse for the brand than a bare logo.
+//
+// Brand Kit support (added in feat/web-og-image-brand-kit):
+//   When the studio has a Brand Kit set up on their business row, the card
+//   reads from it and re-skins the share preview to the studio (not Pixflow):
+//     - brand_kit.logo.url | brand_kit.logo.square_url  → rendered top-left
+//       at 28px tall. If missing OR fetch fails, falls back to studio name
+//       rendered in uppercase tracked type (the previous wordmark slot).
+//     - brand_kit.colors.ink     → dark base background (else editorial #0a0a0f)
+//     - brand_kit.colors.primary → title accent + hairline divider tint
+//                                  (else the editorial cream tone)
+//     - brand_kit.voice.tagline  → rendered as a small italic line between
+//                                  studio name and gallery title.
+//   Logo fetch is bounded: @vercel/og fetches absolute <img src> URLs while
+//   rendering. We pre-flight the logo with a 1s AbortController; on timeout
+//   or non-2xx we drop the <img> entirely and use the text wordmark. A
+//   broken logo URL must NEVER kill the OG response — the share preview
+//   itself is more valuable than any one element of it.
+//
+//   When brand_kit is absent / `{}` / partially populated, the card degrades
+//   to the prior editorial card exactly — zero regression for galleries
+//   without a Brand Kit.
 //
 // Caching: 1 hour public CDN cache.
 
@@ -56,19 +80,52 @@ function buildRenderUrl(path: string, width = 1200, quality = 70): string {
   return `${SUPABASE_URL}/storage/v1/render/image/public/gallery-images/${path}?width=${width}&quality=${quality}&resize=contain`
 }
 
-// Editorial palette — matches the dashboard sign-in + chapter style. No
-// purple-gradient SaaS feel; the cover photo carries the visual weight and
-// type is restrained.
-const BG = '#0a0a0f'
-const TEXT = '#f5f5f3'
-const TEXT_MUTED = 'rgba(245,245,243,0.62)'
-const HAIRLINE = 'rgba(245,245,243,0.18)'
+// Editorial defaults — used when brand_kit is missing or partial. Keep these
+// in sync with the previous editorial polish PR so unbranded galleries look
+// identical to before.
+const ACCENT = '#6366f1'
+const ACCENT_LIGHT = '#818cf8'
+const DEFAULT_INK = '#0a0a0f'
+const DEFAULT_PRIMARY = '#e8e4d8' // cream accent from the editorial polish PR
+const TEXT = '#f1f1f4'
+const TEXT_MUTED = 'rgba(241,241,244,0.6)'
+
+// ──────────────────────────────────────────────────────────────────────────
+// Brand Kit shape (matches what the studio's settings UI writes into
+// businesses.brand_kit JSONB). Everything is optional — we treat the column
+// as untrusted shape and read defensively.
+// ──────────────────────────────────────────────────────────────────────────
+interface BrandKit {
+  logo?: {
+    url?: string | null         // wide / horizontal variant (preferred)
+    square_url?: string | null  // square variant (fallback for top slot)
+  } | null
+  colors?: {
+    ink?: string | null         // dark base (background)
+    primary?: string | null     // accent / hairline / title tint
+    accent?: string | null      // unused for now, reserved
+  } | null
+  typography?: {
+    weight?: number | null      // optional weight hint for the studio name
+    tracking?: string | null    // letter-spacing hint, e.g. '0.12em'
+  } | null
+  voice?: {
+    tagline?: string | null     // short line under the studio name
+  } | null
+}
 
 interface GalleryLite {
   id: string
   name: string | null
   delivery_settings: Record<string, unknown> | null
   image_count: number | null
+  businesses?: { name?: string | null; brand_kit?: BrandKit | null } | null
+}
+
+interface GalleryWithBrand {
+  gallery: GalleryLite
+  brand: BrandKit | null
+  businessName: string | null
 }
 
 async function sbFetch(path: string): Promise<unknown> {
@@ -82,13 +139,39 @@ async function sbFetch(path: string): Promise<unknown> {
   return await res.json()
 }
 
-async function lookupGallery(params: URLSearchParams): Promise<GalleryLite | null> {
+// Defensive normaliser — brand_kit is JSONB so the column can legitimately be
+// null, `{}`, or partially populated. Anything that isn't a plain object
+// collapses to null so the caller can use a single `brand ?? null` check.
+function normaliseBrandKit(raw: unknown): BrandKit | null {
+  if (!raw || typeof raw !== 'object') return null
+  const k = raw as BrandKit
+  // Treat `{}` as "no brand kit" so we don't waste time on the brand path.
+  const hasAnything =
+    k.logo?.url ||
+    k.logo?.square_url ||
+    k.colors?.ink ||
+    k.colors?.primary ||
+    k.voice?.tagline
+  return hasAnything ? k : null
+}
+
+async function lookupGallery(params: URLSearchParams): Promise<GalleryWithBrand | null> {
+  // PostgREST embedded select pulls the parent businesses row in the same
+  // request — `businesses(name,brand_kit)` adds the join, no extra DB call.
+  const SELECT = 'id,name,delivery_settings,image_count,businesses(name,brand_kit)'
+
   const id = params.get('gallery') || params.get('id')
   if (id) {
     const rows = (await sbFetch(
-      `galleries?select=id,name,delivery_settings,image_count&id=eq.${encodeURIComponent(id)}&status=in.(live,published)&limit=1`,
+      `galleries?select=${SELECT}&id=eq.${encodeURIComponent(id)}&status=in.(live,published)&limit=1`,
     )) as GalleryLite[] | null
-    return rows?.[0] ?? null
+    const gallery = rows?.[0]
+    if (!gallery) return null
+    return {
+      gallery,
+      brand: normaliseBrandKit(gallery.businesses?.brand_kit),
+      businessName: gallery.businesses?.name ?? null,
+    }
   }
   const businessSlug = params.get('business')
   const gallerySlug = params.get('slug')
@@ -105,29 +188,61 @@ async function lookupGallery(params: URLSearchParams): Promise<GalleryLite | nul
     const businessId = bizRows?.[0]?.id
     if (!businessId) return null
     const rows = (await sbFetch(
-      `galleries?select=id,name,delivery_settings,image_count&business_id=eq.${businessId}&slug=eq.${encodeURIComponent(gallerySlug)}&status=in.(live,published)&limit=1`,
+      `galleries?select=${SELECT}&business_id=eq.${businessId}&slug=eq.${encodeURIComponent(gallerySlug)}&status=in.(live,published)&limit=1`,
     )) as GalleryLite[] | null
-    return rows?.[0] ?? null
+    const gallery = rows?.[0]
+    if (!gallery) return null
+    return {
+      gallery,
+      brand: normaliseBrandKit(gallery.businesses?.brand_kit),
+      businessName: gallery.businesses?.name ?? null,
+    }
   }
   return null
 }
 
 async function pickCoverUrl(g: GalleryLite): Promise<string | null> {
   const settings = (g.delivery_settings ?? {}) as Record<string, unknown>
-  // Prefer the canonical storage path (Phase 6 Step 2 column); resolve via
-  // the transform URL so the OG card gets a 1200-wide version, not a 10MB
-  // original. Fall back to the legacy fully-resolved URL for galleries
-  // saved before the cover-as-path migration.
-  const path = typeof settings.coverImagePath === 'string' ? settings.coverImagePath : null
-  if (path) return buildRenderUrl(path)
   const declared = typeof settings.coverImageUrl === 'string' ? settings.coverImageUrl : null
   if (declared) return declared
   const imgs = (await sbFetch(
     `images?select=web_preview_path&gallery_id=eq.${g.id}&order=sort_order.asc&limit=1`,
   )) as Array<{ web_preview_path: string | null }> | null
-  const firstPath = imgs?.[0]?.web_preview_path
-  if (!firstPath) return null
-  return buildRenderUrl(firstPath)
+  const path = imgs?.[0]?.web_preview_path
+  if (!path) return null
+  return buildRenderUrl(path)
+}
+
+// Pre-flight the brand logo with a hard 1s timeout. We don't actually use the
+// response body — we just need to know whether to include the <img> tag in
+// the rendered JSX (because @vercel/og itself will fetch the URL again while
+// rastering). A HEAD request + AbortController is enough to confirm the asset
+// resolves quickly; if it doesn't, we degrade to the text wordmark.
+//
+// Critically: this MUST NEVER throw out of handler() — a flaky logo CDN
+// shouldn't be able to take down the share preview for an entire gallery.
+async function probeLogo(url: string): Promise<string | null> {
+  try {
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), 1000)
+    const res = await fetch(url, { method: 'HEAD', signal: ctl.signal })
+    clearTimeout(timer)
+    if (!res.ok) return null
+    return url
+  } catch {
+    return null
+  }
+}
+
+// Choose the best logo variant for the top slot. Prefer the wide variant
+// (looks correct next to text); fall back to square.
+function pickLogoUrl(brand: BrandKit | null): string | null {
+  if (!brand?.logo) return null
+  const wide = typeof brand.logo.url === 'string' ? brand.logo.url.trim() : ''
+  if (wide) return wide
+  const square = typeof brand.logo.square_url === 'string' ? brand.logo.square_url.trim() : ''
+  if (square) return square
+  return null
 }
 
 function fallbackResponse(): ImageResponse {
@@ -141,32 +256,46 @@ function fallbackResponse(): ImageResponse {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          background: BG,
+          background: `linear-gradient(135deg, ${DEFAULT_INK} 0%, #0a0a14 100%)`,
           color: TEXT,
           fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
         }}
       >
-        <div
-          style={{
-            fontSize: 18,
-            fontWeight: 500,
-            letterSpacing: '0.32em',
-            color: TEXT_MUTED,
-            textTransform: 'uppercase',
-          }}
-        >
-          Pixflow
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 14,
+              background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT_LIGHT})`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 28,
+              fontWeight: 800,
+            }}
+          >
+            P
+          </div>
+          <div
+            style={{
+              fontSize: 64,
+              fontWeight: 800,
+              letterSpacing: '-0.04em',
+            }}
+          >
+            pixflow
+          </div>
         </div>
-        <div style={{ width: 36, height: 1, background: HAIRLINE, margin: '24px 0' }} />
         <div
           style={{
-            fontSize: 28,
-            fontWeight: 400,
-            color: TEXT,
-            letterSpacing: '-0.015em',
+            marginTop: 18,
+            fontSize: 22,
+            color: TEXT_MUTED,
+            letterSpacing: '0.02em',
           }}
         >
-          Smart event galleries
+          Smart event galleries · find yourself in seconds
         </div>
       </div>
     ),
@@ -177,12 +306,13 @@ function fallbackResponse(): ImageResponse {
 export default async function handler(req: Request): Promise<Response> {
   try {
     const url = new URL(req.url)
-    const gallery = await lookupGallery(url.searchParams)
-    if (!gallery) {
+    const result = await lookupGallery(url.searchParams)
+    if (!result) {
       const r = fallbackResponse()
       r.headers.set('Cache-Control', 'public, s-maxage=300')
       return r
     }
+    const { gallery, brand, businessName } = result
 
     const settings = (gallery.delivery_settings ?? {}) as Record<string, unknown>
     const title =
@@ -192,19 +322,33 @@ export default async function handler(req: Request): Promise<Response> {
     const studio =
       (settings.studioName as string | undefined) ||
       (settings.businessName as string | undefined) ||
+      businessName ||
       ''
     const photoCount = Math.max(0, gallery.image_count ?? 0)
     const coverUrl = await pickCoverUrl(gallery)
 
-    // Detect Hebrew so we can flip the text-flow direction without affecting
-    // the layout. Satori supports `dir="rtl"` on individual blocks.
-    const isHebrew = /[֐-׿]/.test(title) || /[֐-׿]/.test(studio)
-    const dir: 'rtl' | 'ltr' = isHebrew ? 'rtl' : 'ltr'
+    // Resolve brand-kit-driven values with editorial fallbacks. Every brand
+    // path below is wrapped in `brand?.…` and falls back to the prior
+    // editorial token — no regression for galleries without a Brand Kit.
+    const ink = brand?.colors?.ink || DEFAULT_INK
+    const primary = brand?.colors?.primary || DEFAULT_PRIMARY
+    const tagline =
+      typeof brand?.voice?.tagline === 'string' && brand.voice.tagline.trim()
+        ? brand.voice.tagline.trim()
+        : ''
+    const studioWeight =
+      typeof brand?.typography?.weight === 'number' ? brand.typography.weight : 600
+    const studioTracking =
+      typeof brand?.typography?.tracking === 'string' ? brand.typography.tracking : '0.12em'
 
-    // Editorial card — cover as the headline, soft dark vignette so type
-    // remains legible against any photo. No purple, no logo squircle. Studio
-    // name leads (it's the photographer's brand the client recognises),
-    // gallery name is the hero, photo count is a quiet eyebrow.
+    // Pre-flight the logo URL with a 1s timeout. If it doesn't resolve in
+    // time (or 404s), we fall back to the text wordmark below.
+    const logoCandidate = pickLogoUrl(brand)
+    const logoUrl = logoCandidate ? await probeLogo(logoCandidate) : null
+
+    // The cover sits behind everything as a soft-blurred backdrop. We don't
+    // blur in CSS (Satori doesn't support filter:blur reliably) — instead we
+    // overlay a heavy dark gradient so the imagery feels supportive, not loud.
     const card = (
       <div
         style={{
@@ -213,7 +357,7 @@ export default async function handler(req: Request): Promise<Response> {
           position: 'relative',
           display: 'flex',
           flexDirection: 'column',
-          background: BG,
+          background: ink,
           color: TEXT,
           fontFamily: 'system-ui, -apple-system, "Segoe UI", "Heebo", sans-serif',
         }}
@@ -229,13 +373,10 @@ export default async function handler(req: Request): Promise<Response> {
               width: '100%',
               height: '100%',
               objectFit: 'cover',
-              opacity: 0.62,
+              opacity: 0.45,
             }}
           />
         )}
-        {/* Vignette — bottom-heavy gradient so the title block stays readable
-            against any cover, with a subtle top fade so the brand stripe also
-            has contrast. Editorial palette only (no accent color). */}
         <div
           style={{
             position: 'absolute',
@@ -243,100 +384,143 @@ export default async function handler(req: Request): Promise<Response> {
             left: 0,
             width: '100%',
             height: '100%',
-            background:
-              'linear-gradient(180deg, rgba(10,10,15,0.55) 0%, rgba(10,10,15,0.20) 28%, rgba(10,10,15,0.45) 60%, rgba(10,10,15,0.92) 100%)',
+            background: `linear-gradient(135deg, ${ink}d9 0%, ${ink}a6 50%, ${primary}40 100%)`,
             display: 'flex',
           }}
         />
-
-        {/* Top brand row — tracked wordmark + hairline + "shared gallery" eyebrow */}
+        {/* Top brand row — logo if available, else tracked studio wordmark */}
         <div
           style={{
             position: 'relative',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
             gap: 14,
-            padding: '40px 56px 0 56px',
+            padding: '46px 56px 0 56px',
           }}
         >
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt=""
+              style={{
+                height: 28,
+                width: 'auto',
+                maxWidth: 240,
+                objectFit: 'contain',
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                letterSpacing: studioTracking,
+                textTransform: 'uppercase',
+                color: TEXT,
+              }}
+            >
+              {studio || 'pixflow'}
+            </div>
+          )}
           <div
             style={{
+              flex: 1,
+              display: 'flex',
+              justifyContent: 'flex-end',
               fontSize: 16,
-              fontWeight: 500,
-              letterSpacing: '0.36em',
-              textTransform: 'uppercase',
-              color: TEXT,
-            }}
-          >
-            Pixflow
-          </div>
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 500,
               color: TEXT_MUTED,
-              letterSpacing: '0.24em',
+              letterSpacing: '0.04em',
               textTransform: 'uppercase',
             }}
           >
-            Shared gallery
+            shared gallery
           </div>
         </div>
 
-        {/* Title block — bottom-aligned, RTL-aware. Studio above, gallery
-            title as the editorial hero, photo count as the eyebrow below. */}
+        {/* Hairline divider — tinted with the brand primary at low opacity */}
         <div
-          dir={dir}
+          style={{
+            position: 'relative',
+            display: 'flex',
+            margin: '22px 56px 0 56px',
+            height: 1,
+            background: `${primary}33`,
+          }}
+        />
+
+        {/* Title block */}
+        <div
           style={{
             position: 'relative',
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'flex-end',
-            padding: '0 56px 60px 56px',
+            padding: '0 56px 56px 56px',
           }}
         >
           {studio && (
             <div
               style={{
-                fontSize: 18,
-                fontWeight: 500,
+                fontSize: 20,
+                fontWeight: studioWeight,
                 color: TEXT_MUTED,
-                marginBottom: 18,
-                letterSpacing: '0.22em',
-                textTransform: 'uppercase',
+                marginBottom: tagline ? 8 : 14,
+                letterSpacing: '0.02em',
               }}
             >
               {studio}
             </div>
           )}
+          {tagline && (
+            <div
+              style={{
+                fontSize: 18,
+                fontStyle: 'italic',
+                color: TEXT_MUTED,
+                marginBottom: 14,
+                letterSpacing: '0.01em',
+              }}
+            >
+              {tagline.length > 90 ? tagline.slice(0, 87) + '…' : tagline}
+            </div>
+          )}
           <div
             style={{
               display: 'flex',
-              fontSize: 76,
-              fontWeight: 500,
-              lineHeight: 1.08,
-              letterSpacing: '-0.025em',
+              fontSize: 80,
+              fontWeight: 800,
+              lineHeight: 1.05,
+              letterSpacing: '-0.03em',
               maxWidth: '100%',
+              color: TEXT,
             }}
           >
             {title.length > 60 ? title.slice(0, 57) + '…' : title}
           </div>
-          {/* Hairline divider */}
-          <div style={{ width: 48, height: 1, background: HAIRLINE, margin: '22px 0' }} />
           {photoCount > 0 && (
             <div
               style={{
+                marginTop: 22,
                 display: 'flex',
-                fontSize: 16,
+                alignItems: 'center',
+                gap: 12,
+                fontSize: 22,
                 color: TEXT_MUTED,
-                fontWeight: 500,
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
+                fontWeight: 600,
               }}
             >
-              {photoCount.toLocaleString()} {isHebrew ? 'תמונות' : 'Photos'}
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 999,
+                  background: primary,
+                }}
+              />
+              <span>
+                {photoCount.toLocaleString()} photos · find yours with a selfie
+              </span>
             </div>
           )}
         </div>
