@@ -5,11 +5,10 @@
   "installCommand": "npm install",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/stories-bundle/(.*)", "destination": "/stories-bundle/$1" },
     { "source": "/gallery/:id", "destination": "/api/share?id=:id" },
     { "source": "/:slug/gallery/:id", "destination": "/api/gallery-page" },
     { "source": "/:business/:gallery", "destination": "/api/gallery-page" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!stories-bundle/).*)", "destination": "/index.html" }
   ],
   "crons": [
     { "path": "/api/retry-failed-sends", "schedule": "0 0 * * *" }
