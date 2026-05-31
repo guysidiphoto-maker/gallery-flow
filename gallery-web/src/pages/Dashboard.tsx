@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { FixedSizeGrid, type GridChildComponentProps } from 'react-window'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
@@ -254,7 +254,7 @@ export function Dashboard() {
     previewRefreshTimerRef.current = setTimeout(() => {
       previewRefreshTimerRef.current = null
       setPreviewRefreshKey(k => k + 1)
-    }, 800)
+    }, 1500)
   }
   // Called by every mutation that changes what the client sees (sections,
   // photo order, uploads, top-picks, deletes, stories, …). Lights up the
@@ -1123,6 +1123,24 @@ export function Dashboard() {
   // pre-validate, the server-side mirror catches drift like the legacy
   // `coverImageURL` vs `coverImageUrl` typo that fueled Phase 6.
   //
+  // Per-key debounce timers for text-input writes. Without these, every
+  // keystroke in a description / title / message field fires a Supabase
+  // round-trip AND queues an iframe reload — typing a 50-char description
+  // would burn 50 DB writes + 50 public-viewer reloads against the live
+  // CDN. With debouncing, local state updates instantly (UI stays snappy)
+  // and the DB write + preview refresh happen ~600ms after the user pauses.
+  const settingWriteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  // Fields whose values change one-character-at-a-time. Anything else
+  // (toggle, dropdown, picker) writes synchronously since each click is a
+  // discrete intent the photographer expects to persist immediately.
+  const TEXT_INPUT_KEYS = useMemo(() => new Set([
+    'galleryTitle', 'galleryDescription', 'welcomeMessage',
+    'clientName', 'studioName', 'studioWebsite',
+    'eventLocation', 'eventType',
+    'password', 'clientCode', 'galleryCode',
+    'watermarkText', 'logoUrl', 'themeColor',
+  ]), [])
+
   // Optimistic update + rollback: we apply the patch locally before the
   // round-trip, then reconcile with the RPC's returned `delivery_settings`
   // (which is the post-merge JSONB) so client and server are byte-identical.
@@ -1145,23 +1163,39 @@ export function Dashboard() {
     //   1. local editingGallery.delivery_settings shows the new value,
     //   2. the Update button activates the moment the user starts editing
     //      (was waiting for the DB ack — 200-500ms of "dead" button),
-    //   3. the Live Preview iframe gets the new ?v=... so it reloads soon.
+    //   3. the Live Preview iframe will refresh after debounced quiet period.
     setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
     setUnpublishedChanges(true)
-    scheduleSidePreviewRefresh()
-    const { error } = await supabase
-      .from('galleries')
-      .update({ delivery_settings: nextSettings })
-      .eq('id', editingGallery.id)
-    if (error) {
-      // Roll back to the pre-change value so the UI stops lying to the user.
-      // Leave unpublishedChanges as it was — the user intended an edit that
-      // failed; the toast tells them; the button state reflects that there
-      // is still drift the user may want to retry.
-      setEditingGallery(g => g && g.id === editingGallery.id
-        ? { ...g, delivery_settings: prevSettings } : g)
-      showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
-      console.warn('[updateGallerySetting]', key, error)
+
+    const galleryId = editingGallery.id
+    const flushWrite = async () => {
+      const { error } = await supabase
+        .from('galleries')
+        .update({ delivery_settings: nextSettings })
+        .eq('id', galleryId)
+      if (error) {
+        // Roll back to the pre-change value so the UI stops lying.
+        setEditingGallery(g => g && g.id === galleryId
+          ? { ...g, delivery_settings: prevSettings } : g)
+        showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
+        console.warn('[updateGallerySetting]', key, error)
+        return
+      }
+      scheduleSidePreviewRefresh()
+    }
+
+    if (TEXT_INPUT_KEYS.has(key)) {
+      // Coalesce keystrokes — cancel the prior pending write for THIS key,
+      // schedule a fresh one. Other keys' pending writes are untouched.
+      const existing = settingWriteTimersRef.current.get(key)
+      if (existing) clearTimeout(existing)
+      const timer = setTimeout(() => {
+        settingWriteTimersRef.current.delete(key)
+        void flushWrite()
+      }, 600)
+      settingWriteTimersRef.current.set(key, timer)
+    } else {
+      await flushWrite()
     }
   }
 
