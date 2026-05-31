@@ -5230,7 +5230,11 @@ export function Dashboard() {
                                   <option key={name} value={name}>{name}</option>
                                 ))}
                               </select>
-                              {/* Preview line */}
+                              {/* Preview line — uses the gallery's actual title /
+                                  description so the photographer sees their own
+                                  content rendered in the chosen font. Falls back
+                                  to a representative placeholder if those fields
+                                  aren't set yet. */}
                               <div style={{
                                 marginTop: 12, padding: '20px 18px',
                                 background: bgSubtle, border: `1px solid ${border}`,
@@ -5240,8 +5244,11 @@ export function Dashboard() {
                                 color: textPrimary,
                                 letterSpacing: f.key === 'headingFont' ? '-0.015em' : '0',
                                 lineHeight: f.key === 'headingFont' ? 1.15 : 1.5,
+                                whiteSpace: 'pre-wrap' as const,
                               }}>
-                                {f.key === 'headingFont' ? 'הגלריה של יוסי ומיכל' : 'תיאור קצר של האירוע מופיע כאן בגוף הטקסט.'}
+                                {f.key === 'headingFont'
+                                  ? ((ds.galleryTitle as string)?.trim() || editingGallery.name || 'הגלריה של יוסי ומיכל')
+                                  : ((ds.galleryDescription as string)?.trim() || 'תיאור קצר של האירוע מופיע כאן בגוף הטקסט.')}
                               </div>
                             </div>
                           )
