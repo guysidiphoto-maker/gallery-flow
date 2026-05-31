@@ -5230,26 +5230,54 @@ export function Dashboard() {
                                   <option key={name} value={name}>{name}</option>
                                 ))}
                               </select>
-                              {/* Preview line — uses the gallery's actual title /
-                                  description so the photographer sees their own
-                                  content rendered in the chosen font. Falls back
-                                  to a representative placeholder if those fields
-                                  aren't set yet. */}
-                              <div style={{
-                                marginTop: 12, padding: '20px 18px',
-                                background: bgSubtle, border: `1px solid ${border}`,
-                                fontFamily: `'${current}', sans-serif`,
-                                fontSize: f.key === 'headingFont' ? 24 : 14,
-                                fontWeight: f.key === 'headingFont' ? 500 : 400,
-                                color: textPrimary,
-                                letterSpacing: f.key === 'headingFont' ? '-0.015em' : '0',
-                                lineHeight: f.key === 'headingFont' ? 1.15 : 1.5,
-                                whiteSpace: 'pre-wrap' as const,
-                              }}>
-                                {f.key === 'headingFont'
-                                  ? ((ds.galleryTitle as string)?.trim() || editingGallery.name || 'הגלריה של יוסי ומיכל')
-                                  : ((ds.galleryDescription as string)?.trim() || 'תיאור קצר של האירוע מופיע כאן בגוף הטקסט.')}
-                              </div>
+                              {/* Editable WYSIWYG preview — typing here updates
+                                  galleryTitle / galleryDescription live, rendered
+                                  in the currently-selected font so the
+                                  photographer sees the change in situ. Saves on
+                                  blur (the debounced live-preview iframe will
+                                  pick it up automatically). */}
+                              {f.key === 'headingFont' ? (
+                                <input
+                                  type="text"
+                                  value={(ds.galleryTitle as string) || ''}
+                                  onChange={e => updateGallerySetting('galleryTitle', e.target.value)}
+                                  placeholder={editingGallery.name || 'הקלידי כותרת לגלריה'}
+                                  maxLength={120}
+                                  dir="auto"
+                                  style={{
+                                    marginTop: 12, padding: '20px 18px', width: '100%',
+                                    background: bgSubtle, border: `1px solid ${border}`,
+                                    fontFamily: `'${current}', sans-serif`,
+                                    fontSize: 24, fontWeight: 500,
+                                    color: textPrimary, letterSpacing: '-0.015em',
+                                    lineHeight: 1.15, outline: 'none',
+                                    boxSizing: 'border-box' as const,
+                                  }}
+                                  onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
+                                  onBlur={e => { e.currentTarget.style.borderColor = border }}
+                                />
+                              ) : (
+                                <textarea
+                                  value={(ds.galleryDescription as string) || ''}
+                                  onChange={e => updateGallerySetting('galleryDescription', e.target.value)}
+                                  placeholder="תיאור קצר של האירוע מופיע כאן בגוף הטקסט."
+                                  rows={3}
+                                  maxLength={500}
+                                  dir="auto"
+                                  style={{
+                                    marginTop: 12, padding: '20px 18px', width: '100%',
+                                    background: bgSubtle, border: `1px solid ${border}`,
+                                    fontFamily: `'${current}', sans-serif`,
+                                    fontSize: 14, fontWeight: 400,
+                                    color: textPrimary, letterSpacing: '0',
+                                    lineHeight: 1.5, outline: 'none',
+                                    resize: 'vertical' as const, minHeight: 72,
+                                    boxSizing: 'border-box' as const,
+                                  }}
+                                  onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
+                                  onBlur={e => { e.currentTarget.style.borderColor = border }}
+                                />
+                              )}
                             </div>
                           )
                         })}
