@@ -3836,23 +3836,17 @@ export function Dashboard() {
                 {/* ── Stories Tab ── */}
                 {editTab === 'stories' && (
                   <div style={{ padding: '0 4px' }}>
-                    {/* Honest status banner — the auto-generate flow is wired
-                        end-to-end (UI → API → DB rows in story_renders) but
-                        the actual Remotion Lambda is not deployed yet. So
-                        clicking "צור סטורי" inserts a queued render-job row
-                        and returns success, but no mp4 actually lands. Be
-                        upfront about that so the photographer doesn't sit
-                        and wait for nothing. */}
+                    {/* Status banner — auto-generate runs on Vercel Functions
+                        (Remotion + Chromium). First render after a cold start
+                        takes ~60-90s; subsequent renders are faster. */}
                     <div style={{
                       marginBottom: 18, padding: '10px 14px',
                       border: `1px dashed ${border}`, background: bgSubtle,
                       fontSize: 12, color: textSecondary, lineHeight: 1.55,
                     }}>
-                      <strong style={{ color: textPrimary }}>⚙ יצירה אוטומטית — בקרוב.</strong>
-                      &nbsp;התשתית (Remotion + Lambda) פרוסה בקוד ובמסד, אבל הענן עוד לא מחובר.
-                      לחיצה על "צור סטורי" תיצור בקשת רינדור בתור, אבל הסרטון עצמו לא יופיע עד שתפעיל את הענן (ראה <code>gallery-web/stories-remotion/README.md</code>).
-                      <br />
-                      בינתיים — <strong>העלאת סטורי MP4 ידנית עובדת מלא</strong> דרך הכפתור משמאל.
+                      <strong style={{ color: textPrimary }}>✓ יצירה אוטומטית מופעלת.</strong>
+                      &nbsp;לחיצה על "צור סטורי אוטומטית" תרכיב סרטון מהתמונות שלך תוך 60-90 שניות.
+                      רוצה לעלות סרטון מוכן? השתמשי בכפתור <strong>העלאת סטורי</strong> משמאל.
                     </div>
                     {/* Top strip — heading + Upload Story CTA. Same rhythm as
                         the Photos tab so the editor feels uniform. */}
