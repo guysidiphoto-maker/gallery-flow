@@ -333,6 +333,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const startedAt = Date.now()
   let tmpDir: string | null = null
+  // Switch CWD to /tmp BEFORE loading Remotion. Remotion's
+  // getDownloadsCacheDir() walks up from cwd looking for a package.json and
+  // returns `<dir>/node_modules/.remotion` (or `<cwd>/.remotion` if it never
+  // finds one). On Vercel cwd is /var/task which is read-only, so any mkdir
+  // there throws ENOENT and the render crashes before it starts. /tmp has
+  // no package.json above it, so the cache dir resolves to /tmp/.remotion,
+  // which IS writable.
+  const originalCwd = process.cwd()
+  try {
+    process.chdir('/tmp')
+  } catch {
+    // best-effort — if chdir fails we proceed and let Remotion throw.
+  }
   try {
     // Lazy-import the heavy renderer modules so requests that fail early
     // (env / auth / validation) don't pay the cold-start cost.
@@ -487,6 +500,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (tmpDir) {
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {})
     }
+    // Restore the original cwd so other handlers on the same warm container
+    // see the expected /var/task. (We only chdir'd to /tmp so Remotion's
+    // cache dir lookup would land in a writable place.)
+    try { process.chdir(originalCwd) } catch { /* noop */ }
   }
 }
 
