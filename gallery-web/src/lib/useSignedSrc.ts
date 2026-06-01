@@ -32,10 +32,19 @@ const INITIAL_USE_PUBLIC = true
 const SIGNED_URLS_ENABLED =
   (import.meta.env.VITE_PUBLIC_VIEWER_SIGNED_URLS as string | undefined) === '1'
 
+// Buckets where the consumer (<SignedImg>) renders a /render/image/public/...
+// transform URL anyway — the signed `baseSrc` is unused. Hitting
+// /api/append-event-posts?action=signed_url 900× on gallery load saturated the
+// Vercel function and surfaced as 500s in production. Skip the roundtrip for
+// these buckets.
+const TRANSFORMABLE_BUCKETS = new Set(['gallery-images', 'demo-uploads'])
+
 export function useSignedSrc(
   bucket: string,
   path: string | null | undefined,
 ): string {
+  const skipSignedFetch = TRANSFORMABLE_BUCKETS.has(bucket)
+
   // Hooks must be called unconditionally (rules of hooks), so we always
   // declare state + effect; the flag only changes what they do.
   const initial = path && INITIAL_USE_PUBLIC ? storageUrl(bucket, path) : ''
@@ -43,7 +52,7 @@ export function useSignedSrc(
   const lastKeyRef = useRef<string>('')
 
   useEffect(() => {
-    if (!SIGNED_URLS_ENABLED) {
+    if (skipSignedFetch || !SIGNED_URLS_ENABLED) {
       setSrc(path ? storageUrl(bucket, path) : '')
       return
     }
@@ -66,9 +75,9 @@ export function useSignedSrc(
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run on key change
   }, [bucket, path])
 
-  // When flag is off, return the public URL synchronously (no waiting for
-  // useEffect). When flag is on, return whatever state holds (public initially,
-  // signed after resolve).
-  if (!SIGNED_URLS_ENABLED) return path ? storageUrl(bucket, path) : ''
+  // When flag is off OR the caller doesn't need the signed URL, return the
+  // public URL synchronously (no waiting for useEffect). Otherwise return
+  // whatever state holds (public initially, signed after resolve).
+  if (skipSignedFetch || !SIGNED_URLS_ENABLED) return path ? storageUrl(bucket, path) : ''
   return src
 }
