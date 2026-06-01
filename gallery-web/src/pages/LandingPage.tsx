@@ -642,7 +642,7 @@ export function LandingPage() {
             </button>
           </div>
           {'heroNote' in tx && (
-            <p className="lp-hero-note">{(tx as Record<string, string>).heroNote}</p>
+            <p className="lp-hero-note">{(tx as { heroNote: string }).heroNote}</p>
           )}
           <div className="lp-hero-mockup-wrap">
             <AppMockup />
@@ -865,7 +865,7 @@ export function LandingPage() {
         <FadeUp className="lp-container" style={{ textAlign: 'center' }}>
           <h2 className="lp-section-title">{tx.finalCta}</h2>
           {'finalSub' in tx && (
-            <p className="lp-section-sub">{(tx as Record<string, string>).finalSub}</p>
+            <p className="lp-section-sub">{(tx as { finalSub: string }).finalSub}</p>
           )}
           <a href={DOWNLOAD_URL} className="btn btn-primary btn-glow lp-btn-final">
             {tx.finalCtaBtn}

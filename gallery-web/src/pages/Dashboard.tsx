@@ -5099,7 +5099,7 @@ export function Dashboard() {
                               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                             }}>
                               <span>תמונת שער · ראש הגלריה</span>
-                              {(ds.coverImageUrl || ds.coverImagePath) && (
+                              {Boolean(ds.coverImageUrl || ds.coverImagePath) && (
                                 <button onClick={() => updateGallerySettings({ coverImageUrl: null, coverImagePath: null })} style={{
                                   background: 'transparent', border: 'none', cursor: 'pointer',
                                   color: textMuted, fontFamily: 'inherit',

@@ -54,6 +54,7 @@ export type GalleryStatus = 'draft' | 'live' | 'archived'
 export interface Gallery {
   id: string
   name: string
+  business_id?: string
   client_name: string | null
   status: GalleryStatus
   image_count: number
