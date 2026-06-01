@@ -914,6 +914,7 @@ async function handlePublicGallerySession(
     .eq('ip', ip)
     .gte('issued_at', oneHourAgo)
   if (countErr) {
+    console.error('[public_gallery_session] rate_check_failed', { galleryId, ip, message: countErr.message })
     res.status(500).json({ ok: false, error: 'rate_check_failed', detail: countErr.message.slice(0, 200) }); return
   }
   const recentCount = count ?? 0
@@ -960,10 +961,12 @@ async function handlePublicGallerySession(
     if (rpcErr.message?.includes('gallery_not_live')) {
       res.status(404).json({ ok: false, error: 'gallery_not_live' }); return
     }
+    console.error('[public_gallery_session] issue_failed', { galleryId, ip, message: rpcErr.message, code: rpcErr.code, hint: rpcErr.hint })
     res.status(500).json({ ok: false, error: 'issue_failed', detail: rpcErr.message?.slice(0, 200) }); return
   }
   const row = Array.isArray(data) ? data[0] : data
   if (!row?.token || !row?.expires_at) {
+    console.error('[public_gallery_session] rpc_returned_empty', { galleryId, ip, dataShape: typeof data, isArray: Array.isArray(data) })
     res.status(500).json({ ok: false, error: 'issue_failed', detail: 'rpc_returned_empty' }); return
   }
 
