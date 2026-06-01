@@ -58,6 +58,7 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
   const total = images.length
   const [currentSrc, setCurrentSrc] = useState<string>('')
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState(false)
   // Thumbnail URL renders as an instant LQIP placeholder behind the full
   // image. The browser usually has it cached from the grid, so it paints
   // in 1 frame and the viewer never sits on a black screen.
@@ -79,6 +80,7 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
     setLoadedSrc(null)
     setCurrentSrc('')
     setThumbSrc('')
+    setLoadError(false)
     if (!img?.storage_path) return
     // Preferred path: server-side transform. A bounded fullscreen width keeps
     // even a 10MB original down to a few hundred KB, and a tiny blurred LQIP
@@ -121,8 +123,11 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
-      if (e.key === 'ArrowLeft') prev()
-      if (e.key === 'ArrowRight') next()
+      // RTL: visual "previous" is on the right side, so the right arrow should
+      // step back. dir is set on <html> by main.tsx; default LTR.
+      const isRtl = document.documentElement.dir === 'rtl'
+      if (e.key === 'ArrowLeft') isRtl ? next() : prev()
+      if (e.key === 'ArrowRight') isRtl ? prev() : next()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -172,7 +177,7 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
           aria-label="Close"
           style={{
             ...controlBase,
-            position: 'absolute', top: 16, right: 16,
+            position: 'absolute', top: 16, insetInlineEnd: 16,
             width: 38, height: 38, borderRadius: 2,
             zIndex: 10,
           }}
@@ -226,17 +231,52 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
           src={currentSrc}
           alt=""
           onLoad={() => setLoadedSrc(currentSrc)}
+          onError={() => setLoadError(true)}
           style={{
             opacity: loadedSrc === currentSrc ? 1 : 0,
             transition: 'opacity .25s ease',
             position: 'relative',
+            display: loadError ? 'none' : undefined,
           }}
         />
 
+        {/* Storage 404 / network failure: show an inline message + next-photo
+            CTA instead of an endlessly spinning loader on a black screen. */}
+        {loadError && (
+          <div
+            role="status"
+            style={{
+              position: 'absolute', top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              color: 'rgba(255,255,255,.85)', textAlign: 'center',
+              fontFamily: 'inherit', fontSize: 14, lineHeight: 1.6,
+              padding: 24, maxWidth: 360, zIndex: 6,
+            }}
+          >
+            <p style={{ margin: '0 0 14px', fontWeight: 600 }}>
+              {document.documentElement.dir === 'rtl' ? 'התמונה לא זמינה' : 'Image unavailable'}
+            </p>
+            {total > 1 && (
+              <button
+                onClick={next}
+                style={{
+                  ...controlBase,
+                  padding: '10px 18px',
+                  fontSize: 12, letterSpacing: '.16em', textTransform: 'uppercase',
+                  borderRadius: 2,
+                }}
+              >
+                {document.documentElement.dir === 'rtl' ? 'לתמונה הבאה' : 'Next photo'}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Loading spinner: visible until the full image finishes loading.
             Sits above the LQIP layer so guests get an unambiguous "still
-            working" signal even on slow mobile networks. */}
-        {loadedSrc !== currentSrc && (
+            working" signal even on slow mobile networks. Hidden on error
+            so the error UI above takes over. */}
+        {loadedSrc !== currentSrc && !loadError && (
           <div
             aria-label="Loading"
             style={{
