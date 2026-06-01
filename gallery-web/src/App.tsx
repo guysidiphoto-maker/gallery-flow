@@ -816,6 +816,8 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
                       key={`${ci}-${i}`}
                       src={getUrl(img.thumbnail_path || img.storage_path)}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       onLoad={e => e.currentTarget.classList.add('wc-loaded')}
                     />
                   ))}
@@ -1598,9 +1600,27 @@ export function App() {
   }, [_hookImgBucket, _hookCoverImage?.storage_path])
 
   if (error) {
+    // Map internal English error keys to a localized, branded fallback. The
+    // raw "Gallery not found" string was leaking to Hebrew clients hitting a
+    // dead link, which read as a broken site rather than a polite "wrong
+    // address" message.
+    const isRtl = document.documentElement.dir === 'rtl'
+    const headline = isRtl ? 'הגלריה לא נמצאה' : 'Gallery not found'
+    const body = isRtl
+      ? 'הקישור לא תקין או שהגלריה הוסרה. אם קיבלת אותו מהצלם, פנה אליו לבדיקה.'
+      : 'The link is invalid or the gallery was removed. If you received it from the photographer, please contact them.'
     return (
-      <div className="center-msg">
-        <p>{error}</p>
+      <div className="center-msg" dir={isRtl ? 'rtl' : 'ltr'} style={{ padding: 24, textAlign: 'center' }}>
+        <h1 style={{
+          fontFamily: 'Playfair Display, Georgia, serif',
+          fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em',
+          margin: '0 0 12px', color: '#fafafa',
+        }}>{headline}</h1>
+        <p style={{
+          fontSize: 14, lineHeight: 1.6,
+          color: 'rgba(255,255,255,.65)',
+          margin: '0 0 24px', maxWidth: 420,
+        }}>{body}</p>
       </div>
     )
   }
@@ -2170,8 +2190,8 @@ export function App() {
         console.warn('[gallery-zip] server-side failed, falling back to JSZip:', err)
         // fall through to client-side bundling below
       } finally {
-        setDlProgress(null)
-        setDownloadProgress(null)
+        // Don't clear here — the JSZip fallback owns the progress UI from
+        // this point on. Clearing now would flicker the overlay closed/open.
       }
     }
 
@@ -2214,6 +2234,14 @@ export function App() {
       URL.revokeObjectURL(url)
     } catch (err) {
       console.error('ZIP download failed:', err)
+      // Surface a user-visible message — historical behaviour was a silent
+      // disappearance of the progress overlay, which read as "nothing
+      // happened" to the guest. Hebrew/English toast routed through the
+      // existing HD-notice channel.
+      const msg = document.documentElement.dir === 'rtl'
+        ? 'הורדת ה-ZIP נכשלה. נסה שוב, ואם זה חוזר, פנה לצלם.'
+        : 'ZIP download failed. Try again — if it keeps failing, contact the photographer.'
+      showHdNotice(msg)
     } finally {
       setDlProgress(null)
       setDownloadProgress(null)

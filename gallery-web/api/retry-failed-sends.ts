@@ -50,6 +50,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  // Cron-only gate: Vercel cron sends `x-vercel-cron: 1`. If CRON_SECRET is
+  // configured, also accept `authorization: Bearer <CRON_SECRET>` for manual
+  // re-runs from the dashboard. Without this gate any public caller can
+  // trigger up to 50 Twilio SMS resends per invocation.
+  const isVercelCron = req.headers['x-vercel-cron'] === '1'
+  const cronSecret = process.env.CRON_SECRET
+  const authHeader = req.headers['authorization']
+  const hasManualSecret =
+    !!cronSecret && authHeader === `Bearer ${cronSecret}`
+  if (!isVercelCron && !hasManualSecret) {
+    return res.status(401).json({ error: 'unauthorized' })
+  }
+
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceKey) return res.status(500).json({ error: 'Server misconfigured' })
   const supabase = createClient(SUPABASE_URL, serviceKey)

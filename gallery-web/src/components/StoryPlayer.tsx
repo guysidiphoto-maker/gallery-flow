@@ -275,7 +275,7 @@ export function StoryPlayer({ stories, initialIndex, storyUrl, onClose }: StoryP
           ref={videoRef}
           src={storyUrl(active)}
           autoPlay
-          muted={false}
+          muted
           playsInline
           preload="auto"
           onLoadedMetadata={() => {

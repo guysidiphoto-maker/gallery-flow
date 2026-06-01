@@ -222,6 +222,25 @@ async function pickCoverUrl(g: GalleryLite): Promise<string | null> {
 // Critically: this MUST NEVER throw out of handler() — a flaky logo CDN
 // shouldn't be able to take down the share preview for an entire gallery.
 async function probeLogo(url: string): Promise<string | null> {
+  // SSRF guard: brand_kit.logo_url is photographer-controlled JSONB. A
+  // poisoned row with file://, internal IPs, or non-http schemes must not be
+  // fetched from inside the function. Allow only http(s) on public hosts.
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    const host = parsed.hostname.toLowerCase()
+    if (
+      host === 'localhost' ||
+      host.endsWith('.local') ||
+      host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('169.254.')
+    ) return null
+  } catch {
+    return null
+  }
   try {
     const ctl = new AbortController()
     const timer = setTimeout(() => ctl.abort(), 1000)
