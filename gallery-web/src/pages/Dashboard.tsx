@@ -8,7 +8,6 @@ import { warmGalleryCache } from '../lib/warmCache'
 import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
-import { LocalGalleryPreview } from '../components/LocalGalleryPreview'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useToast } from '../components/Toast'
 import { validateDeliverySettingsPatch, summarizeValidationErrors } from '../lib/deliverySettingsSchema'
@@ -217,28 +216,17 @@ export function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
-  // Memoized delivery_settings projection — the editor tabs read `ds.foo` in
-  // dozens of places, and without a memo every render created a fresh object
-  // reference (defeating downstream React.memo / useMemo deps and adding
-  // GC pressure on every keystroke). Keyed off the underlying JSONB so the
-  // identity only changes when the photographer's edits actually land.
-  const editorDs = useMemo(
-    () => (editingGallery?.delivery_settings ?? {}) as Record<string, unknown>,
-    [editingGallery?.delivery_settings],
-  )
   // 'sections' removed (was a redundant editor tab — sections live in the
   // Photos-tab sidebar). 'preview' is Phase 5's Live Preview iframe.
   const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'welcome' | 'stories' | 'preview'>('photos')
-  // Live Preview pane — previously an iframe whose src embedded a cache-buster
-  // (`?v=N`) that we bumped on every save to force a full document reload.
-  // That round trip (HTML + JS + CSS + every image from the CDN, then App.tsx
-  // re-mount + Supabase re-fetch) was the dominant cause of the "type a
-  // character, wait a second, character appears in preview" lag. The pane is
-  // now an in-process React component (LocalGalleryPreview) that reads from
-  // `editingGallery` / `sections` / `galleryImages` state — re-rendering it
-  // costs ~1 ms instead of a full network round trip. `unpublishedChanges`
-  // is still used to label the pane "תצוגה מקומית · לא מעודכן מהפרסום" so
-  // the photographer knows what they see is unsaved local state.
+  // Live Preview pane — Phase 5. The iframe's src includes ?v=${previewRefreshKey}
+  // so bumping this number forces React to swap the iframe DOM node, which
+  // triggers a fresh navigation (sidestepping aggressive browser/CDN caches).
+  // unpublishedChanges is informational — until Phase 6 lands draft/publish
+  // snapshots, the public viewer reads delivery_settings directly so the
+  // iframe is always live; the badge just communicates that the photographer
+  // has unpublished local edits that haven't yet bumped published_at.
+  const [previewRefreshKey, setPreviewRefreshKey] = useState(0)
   const [unpublishedChanges, setUnpublishedChanges] = useState(false)
   // Inline side-by-side preview pane — visible alongside Settings + Welcome
   // tabs so every config tweak reflects live in the iframe without tab-
@@ -255,13 +243,26 @@ export function Dashboard() {
   // the eye is already on the button at the moment of click. Mirrors the
   // copy-link pattern on the gallery list cards.
   const [copiedInEditor, setCopiedInEditor] = useState(false)
+  // Debounced preview refresh — typing in an input fires onChange per
+  // keystroke; bumping the iframe key each time forced a navigation that
+  // stole focus from the active text field after every character. Holding
+  // the bump for ~800ms of idle keystrokes keeps the input usable and
+  // still feels live to the eye on the preview.
+  const previewRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleSidePreviewRefresh = () => {
+    if (previewRefreshTimerRef.current) clearTimeout(previewRefreshTimerRef.current)
+    previewRefreshTimerRef.current = setTimeout(() => {
+      previewRefreshTimerRef.current = null
+      setPreviewRefreshKey(k => k + 1)
+    }, 1500)
+  }
   // Called by every mutation that changes what the client sees (sections,
   // photo order, uploads, top-picks, deletes, stories, …). Lights up the
-  // "שינויים שטרם פורסמו" pill + Update button. The local preview already
-  // re-renders automatically from the same React state, so we no longer
-  // need to schedule an iframe reload.
+  // "שינויים שטרם פורסמו" pill + Update button and queues a Live Preview
+  // refresh (debounced so typing doesn't reload the iframe per keystroke).
   const markDirty = () => {
     setUnpublishedChanges(true)
+    scheduleSidePreviewRefresh()
   }
   // Multi-key variant of updateGallerySetting — used when one user action
   // logically writes several keys at once (e.g. cover selection writing both
@@ -693,10 +694,11 @@ export function Dashboard() {
     setEditingGallery(g)
     setEditTab('photos')
     setStories([])
-    // Reset Live Preview dirty flag per gallery so opening a second gallery
-    // in the same session doesn't inherit the previous one's "unpublished
-    // changes" state. The local preview re-renders automatically.
+    // Phase 5 — reset Live Preview state per gallery so opening a second
+    // gallery in the same session doesn't inherit the previous one's dirty
+    // flag or stale cache-buster.
     setUnpublishedChanges(false)
+    setPreviewRefreshKey(0)
     const [imagesRes, sectionsRes, storiesRes] = await Promise.all([
       supabase
         .from('images')
@@ -1161,8 +1163,7 @@ export function Dashboard() {
     //   1. local editingGallery.delivery_settings shows the new value,
     //   2. the Update button activates the moment the user starts editing
     //      (was waiting for the DB ack — 200-500ms of "dead" button),
-    //   3. the local LocalGalleryPreview re-renders for free off the same
-    //      React state — no iframe reload, no network.
+    //   3. the Live Preview iframe will refresh after debounced quiet period.
     setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
     setUnpublishedChanges(true)
 
@@ -1178,7 +1179,9 @@ export function Dashboard() {
           ? { ...g, delivery_settings: prevSettings } : g)
         showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
         console.warn('[updateGallerySetting]', key, error)
+        return
       }
+      scheduleSidePreviewRefresh()
     }
 
     if (TEXT_INPUT_KEYS.has(key)) {
@@ -1211,6 +1214,7 @@ export function Dashboard() {
     setEditingGallery({ ...editingGallery, name: newTitle, delivery_settings: nextSettings })
     setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: newTitle } : g))
     setUnpublishedChanges(true)
+    scheduleSidePreviewRefresh()
     const { error } = await supabase
       .from('galleries')
       .update({ name: newTitle, delivery_settings: nextSettings })
@@ -1430,10 +1434,10 @@ export function Dashboard() {
       return
     }
     setEditingGallery({ ...editingGallery, status: 'live', published_at: publishedAt })
-    // Clear the "unpublished changes" pill — the local preview now reflects
-    // what visitors get on the published gallery, so the hint label below it
-    // flips from "תצוגה מקומית · לא מעודכן" to "סונכרן עם הפרסום".
+    // Phase 5 — clear the "unpublished changes" pill in the Live Preview pane
+    // and force the iframe to reload so it picks up the freshest snapshot.
     setUnpublishedChanges(false)
+    setPreviewRefreshKey(k => k + 1)
     // Inline button feedback — briefly turns the button into a "✓ עודכן"
     // confirmation, then back to the resting state. Survives alongside the
     // toast so both screen-reading users and eyes-on-button users get a hit.
@@ -4413,9 +4417,7 @@ export function Dashboard() {
                 {editTab === 'settings' && (() => {
                   // Editorial Settings — local helpers shared across the
                   // toggle rows + picker tiles to keep markup compact.
-                  // `ds` is aliased from the parent-scope memoized projection
-                  // so we don't allocate a new object on every render.
-                  const ds = editorDs
+                  const ds = (editingGallery.delivery_settings ?? {}) as Record<string, unknown>
                   const Toggle = ({ on, onClick }: { on: boolean; onClick: (e: React.MouseEvent) => void }) => (
                     <div
                       role="switch" aria-checked={on}
@@ -4992,9 +4994,7 @@ export function Dashboard() {
 
                 {/* ── Design Tab — Pixieset 5-pane sub-nav ── */}
                 {editTab === 'welcome' && (() => {
-                  // Same memoized `ds` projection used by the Settings tab —
-                  // see editorDs near the top of the component.
-                  const ds = editorDs
+                  const ds = (editingGallery.delivery_settings ?? {}) as Record<string, unknown>
                   const inputBase = {
                     width: '100%', padding: '12px 14px', borderRadius: 2,
                     border: `1px solid ${border}`,
@@ -5436,21 +5436,107 @@ export function Dashboard() {
                   )
                 })()}
 
-                {/* ── Live Preview ── moved out of its own tab.
-                    The full-page iframe-based preview was unused (`{false && ...}`)
-                    and its companion side-preview (below) used to be an iframe too.
-                    Both are now replaced by the in-process LocalGalleryPreview
-                    component rendered alongside Settings + Welcome. */}
+                {/* ── Live Preview Tab ── Phase 5.
+                    Renders the gallery's public URL inside an iframe scoped to
+                    the editor's main content pane. The src carries a ?v=N cache
+                    buster (bumped on every successful save) so reloads are
+                    guaranteed even with aggressive CDN/browser caching.
+                    Until Phase 6 introduces draft/publish snapshots the public
+                    viewer reads delivery_settings directly — so the iframe IS
+                    the latest saved state; the "unpublished changes" pill is
+                    purely informational. */}
+                {false && editingGallery && (() => {  /* full-page preview tab disabled — inline split takes over */
+                  const shareUrl = galleryShareUrl(editingGallery!)
+                  const previewSrc = `${shareUrl}${shareUrl.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minHeight: '100%' }}>
+                      {/* Pane header — eyebrow label + dirty-state pill + refresh */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: 12, flexWrap: 'wrap',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+                            textTransform: 'uppercase', color: textMuted,
+                          }}>תצוגה חיה</span>
+                          {unpublishedChanges && (
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              padding: '4px 10px', borderRadius: 2,
+                              border: `1px solid ${border}`, background: bgSubtle,
+                              fontSize: 11, fontWeight: 500, color: textSecondary,
+                              fontFamily: 'inherit',
+                            }}>
+                              <span aria-hidden="true" style={{
+                                width: 7, height: 7, borderRadius: '50%',
+                                background: textMuted, display: 'inline-block',
+                              }} />
+                              שינויים שטרם פורסמו
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setPreviewRefreshKey(k => k + 1)}
+                          aria-label="רענן תצוגה חיה"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            padding: '8px 14px', borderRadius: 2,
+                            background: 'transparent', border: `1px solid ${border}`,
+                            color: textPrimary, cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: 11, fontWeight: 500,
+                            letterSpacing: '0.18em', textTransform: 'uppercase',
+                          }}
+                        >
+                          <Icon name="arrow-out" size={12} strokeWidth={1.85} />
+                          רענן
+                        </button>
+                      </div>
+
+                      {/* Iframe shell — full content width, capped at 1400px and
+                          centered so wide monitors don't stretch the preview
+                          past where it's legible. On viewports < 900px we let
+                          it fill 100% per the spec. */}
+                      <div style={{
+                        width: '100%', maxWidth: 1400, marginInline: 'auto',
+                        border: `1px solid ${border}`, background: bgSubtle,
+                      }}>
+                        <iframe
+                          key={previewRefreshKey}
+                          src={previewSrc}
+                          title="תצוגה חיה של הגלריה"
+                          style={{
+                            display: 'block', width: '100%', height: '80vh',
+                            border: 'none', background: bgSubtle,
+                          }}
+                        />
+                      </div>
+
+                      {/* Footer hint — make the URL discoverable for copy + the
+                          "open in new tab" escape hatch (some browsers throttle
+                          iframes harder than top-level navigations). */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: 12, flexWrap: 'wrap', color: textMuted,
+                        fontSize: 11, letterSpacing: '0.02em',
+                      }}>
+                        <span style={{ direction: 'ltr', unicodeBidi: 'isolate' }}>{shareUrl}</span>
+                        <a href={shareUrl} target="_blank" rel="noreferrer" style={{
+                          color: textSecondary, textDecoration: 'none',
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
+                        }}>
+                          <Icon name="arrow-out" size={11} strokeWidth={1.85} />
+                          פתח בלשונית חדשה
+                        </a>
+                      </div>
+                    </div>
+                  )
+                })()}
                 </div>
-                {/* Side-preview — RENDERED IN-PROCESS via LocalGalleryPreview.
-                    Was previously an <iframe src={publicUrl}?v=N> that reloaded
-                    on every keystroke (full HTML + JS + image refetch). Now
-                    React re-renders the local component from `editingGallery`
-                    / `sections` / `galleryImages` state — zero network on
-                    settings changes. The DB write still happens (debounced
-                    inside updateGallerySetting), but the preview no longer
-                    waits for it. The "תצוגה מקומית" hint clarifies for the
-                    photographer that what they see is unsaved local state. */}
+                {/* Side-preview iframe — auto-refreshes via previewRefreshKey
+                    on every settings save. Shown only on Settings + Welcome
+                    tabs (config-heavy surfaces); other tabs get full width. */}
                 {sidePreviewActive && (
                   <aside style={{
                     width: 'min(48%, 540px)', flexShrink: 0,
@@ -5468,6 +5554,16 @@ export function Dashboard() {
                       }}>תצוגה חיה ללקוח</span>
                       <div style={{ display: 'inline-flex', gap: 6 }}>
                         <button
+                          onClick={() => setPreviewRefreshKey(k => k + 1)}
+                          aria-label="רענן תצוגה"
+                          style={{
+                            padding: '4px 10px', borderRadius: 2,
+                            background: 'transparent', border: `1px solid ${border}`,
+                            color: textMuted, cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
+                          }}
+                        >רענן</button>
+                        <button
                           onClick={() => setShowSidePreview(false)}
                           aria-label="הסתר תצוגה"
                           title="הסתר תצוגה"
@@ -5480,33 +5576,18 @@ export function Dashboard() {
                         >✕</button>
                       </div>
                     </div>
-                    <div style={{
-                      flex: 1, minHeight: 0, overflow: 'hidden',
-                      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-                      padding: 12, background: bgSubtle,
-                    }}>
-                      <LocalGalleryPreview
-                        gallery={editingGallery}
-                        sections={sections}
-                        images={galleryImages}
-                        mode={editTab === 'welcome' ? 'welcome' : 'feed'}
-                      />
-                    </div>
-                    {/* Hint label — tells the photographer the preview reflects
-                        their unsaved local edits, not what visitors currently
-                        see on the published gallery. Flips to "synced" once
-                        unpublishedChanges clears (after Publish / Update). */}
-                    <div style={{
-                      padding: '8px 14px',
-                      borderTop: `1px solid ${border}`,
-                      background: '#fff',
-                      fontSize: 10, color: textMuted,
-                      letterSpacing: '0.04em', textAlign: 'center' as const,
-                    }}>
-                      {unpublishedChanges
-                        ? 'תצוגה מקומית · לא מעודכן מהפרסום האחרון'
-                        : 'סונכרן עם הפרסום'}
-                    </div>
+                    <iframe
+                      key={previewRefreshKey}
+                      src={(() => {
+                        const u = galleryShareUrl(editingGallery)
+                        return `${u}${u.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
+                      })()}
+                      title="תצוגה חיה של הגלריה"
+                      style={{
+                        display: 'block', width: '100%', flex: 1,
+                        border: 'none', background: bgSubtle, minHeight: 0,
+                      }}
+                    />
                   </aside>
                 )}
                 </div>
