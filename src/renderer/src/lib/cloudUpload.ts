@@ -240,7 +240,9 @@ export async function publishGallery(
     name: galleryName,
     client_id: clientDbId,
     client_name: clientName,
-    status: 'publishing',
+    // Migration 063 tightened galleries.status to enum ('draft','live','archived').
+    // 'draft' is the transient parking state during publish; flipped to 'live' on completion.
+    status: 'draft',
     image_count: imagePaths.length,
     delivery_settings: sanitizedSettings,
     face_index_enabled: faceIndexEnabled,
@@ -489,7 +491,12 @@ export async function publishGallery(
 
   if (failureRate > PREVIEW_FAILURE_THRESHOLD) {
     store.setPublishStatus('failed')
-    await supabase.from('galleries').update({ status: 'failed' }).eq('id', galleryId)
+    // Migration 063: 'failed' is no longer an enum value; park in 'draft' and
+    // record the diagnostic in last_publish_error.
+    await supabase.from('galleries').update({
+      status: 'draft',
+      last_publish_error: `Too many upload failures (${Math.round(failureRate * 100)}%).`,
+    }).eq('id', galleryId)
     activeRunner = null
     throw new Error(`Too many upload failures (${Math.round(failureRate * 100)}%). Gallery cannot go live.`)
   }
@@ -537,7 +544,12 @@ export async function publishGallery(
   // sees it and we don't ship empty galleries to clients.
   if (insertedCount === 0 && compressedImages.length > 0) {
     store.setPublishStatus('failed')
-    await supabase.from('galleries').update({ status: 'failed' }).eq('id', galleryId)
+    // Migration 063: 'failed' is no longer an enum value; park in 'draft' and
+    // record the diagnostic in last_publish_error.
+    await supabase.from('galleries').update({
+      status: 'draft',
+      last_publish_error: `No image records were saved (${compressedImages.length} attempted). First error: ${firstInsertError ?? 'unknown'}`,
+    }).eq('id', galleryId)
     throw new Error(`No image records were saved (${compressedImages.length} attempted). First error: ${firstInsertError ?? 'unknown'}`)
   }
 
@@ -730,7 +742,7 @@ export async function deleteStoriesForGallery(galleryDbId: string): Promise<{ er
 // ─── Mark Gallery Live (with retry) ─────────────────────────────────────────
 // The previous implementation issued a single UPDATE and let it throw. A
 // network blip during this exact moment was enough to leave the gallery
-// permanently stuck in 'publishing' (we saw this happen twice with Alma).
+// permanently stuck in 'draft' (we saw this happen twice with Alma).
 // Now we retry up to 3 times with exponential backoff. Idempotent: the
 // .select('id') roundtrip confirms the row reached 'live'; if a previous
 // attempt actually committed but the response was lost, the next attempt
@@ -761,7 +773,7 @@ async function flipGalleryLive(galleryId: string, publicUrl: string): Promise<vo
   }
   throw new Error(
     `Failed to mark gallery live after ${LIVE_FLIP_ATTEMPTS} attempts. ` +
-    `Last error: ${lastError}. The gallery row is still in 'publishing' — ` +
+    `Last error: ${lastError}. The gallery row is still in 'draft' — ` +
     `you can retry the publish flow safely; already-uploaded files will be reused.`
   )
 }
