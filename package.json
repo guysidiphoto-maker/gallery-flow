@@ -1,6 +1,6 @@
 {
   "name": "gallery-flow",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "Visual gallery organizer for photographers",
   "main": "./out/main/index.js",
   "scripts": {
