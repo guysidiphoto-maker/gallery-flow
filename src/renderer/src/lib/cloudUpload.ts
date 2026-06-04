@@ -330,6 +330,31 @@ export async function publishGallery(
     log('sections-created', insertedSections.length)
   }
 
+  // ── Step 2c: Resolve default section for unassigned images ─────────────
+  // Migration 065 made images.section_id NOT NULL. The trigger
+  // `galleries_ensure_default_section` guarantees every new gallery has at
+  // least one section row ("סקשן 1"), and any user-created sections we just
+  // inserted above also count. Pick the first section ordered by sort_order
+  // and use it as the fallback for any image not explicitly mapped to a
+  // section via the user's sidebar — otherwise the INSERT fails with
+  // `null value in column "section_id" ... violates not-null constraint`.
+  let defaultSectionId: string | null = null
+  {
+    const { data: firstSection, error: dsErr } = await supabase
+      .from('gallery_sections')
+      .select('id')
+      .eq('gallery_id', galleryId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (dsErr || !firstSection) {
+      store.setPublishStatus('failed')
+      throw new Error(`Failed to resolve default section: ${dsErr?.message ?? 'no section found for gallery'}`)
+    }
+    defaultSectionId = firstSection.id
+  }
+
   // ── Step 3: Prepare (originals-only — NO client compression) ──────────
   // Pixieset model: upload only the original; every display size is a
   // server-side Supabase transform. No compression step and no thumb/web
@@ -527,7 +552,7 @@ export async function publishGallery(
       original_uploaded: true,
       is_top_pick: isTopPick,
       sort_order: i,
-      section_id: sectionPathToDbId.get(imagePaths[i]) ?? null,
+      section_id: sectionPathToDbId.get(imagePaths[i]) ?? defaultSectionId,
     }
 
     const { error: imgError } = await supabase.from('images').insert(payload).select('id')
@@ -1160,6 +1185,22 @@ export async function updateGalleryImages(
     log('update-images:uploading', `${addedPaths.length} new images`)
     const slug = requireBusiness().slug
 
+    // Migration 065 made images.section_id NOT NULL. Resolve the gallery's
+    // first section once and assign every newly-uploaded row to it — the
+    // user can rearrange via the section sidebar afterwards.
+    const { data: firstSection, error: dsErr } = await supabase
+      .from('gallery_sections')
+      .select('id')
+      .eq('gallery_id', galleryDbId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (dsErr || !firstSection) {
+      return { error: `Failed to resolve default section: ${dsErr?.message ?? 'no section found for gallery'}` }
+    }
+    const defaultSectionId = firstSection.id as string
+
     onProgress?.({ phase: 'uploading', current: 0, total: addedPaths.length })
 
     // Upload one storage object with a few retries — a transient network/
@@ -1209,6 +1250,7 @@ export async function updateGalleryImages(
           original_uploaded: true,
           is_top_pick: false,
           sort_order: sortOrder,
+          section_id: defaultSectionId,
         }).select('id').single()
         if (inserted?.id) {
           cloudIdForPath.set(localPath, inserted.id as string)
