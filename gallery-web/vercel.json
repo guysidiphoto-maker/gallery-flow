@@ -9,6 +9,7 @@
     { "source": "/gallery/:id", "destination": "/api/share?id=:id" },
     { "source": "/:slug/gallery/:id", "destination": "/api/gallery-page" },
     { "source": "/:business/:gallery", "destination": "/api/gallery-page" },
+    { "source": "/:business/:gallery/:section", "destination": "/api/gallery-page" },
     { "source": "/((?!stories-bundle/).*)", "destination": "/index.html" }
   ],
   "crons": [

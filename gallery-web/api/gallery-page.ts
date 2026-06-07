@@ -53,8 +53,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Bots: serve OG tags
   const path = (req.url || '').split('?')[0].replace(/\/+$/, '')
   let gallery: Record<string, unknown> | null = null
+  let sectionSlug: string | null = null
 
-  // /{slug}/gallery/{uuid}
+  // /{slug}/gallery/{uuid} — an optional trailing /{section-slug} is ignored
+  // for resolution (the section only flavors the description below).
   const legacy = path.match(/\/([^/]+)\/gallery\/([^/]+)/)
   if (legacy) {
     const { data } = await supabase.from('galleries').select('*')
@@ -62,9 +64,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     gallery = data
   }
 
-  // /{business-slug}/{gallery-slug}
+  // /{business-slug}/{gallery-slug}[/{section-slug}] — section pages share
+  // the gallery's OG card with the section name folded in.
   if (!gallery) {
-    const clean = path.match(/\/([^/]+)\/([^/]+)$/)
+    const withSection = path.match(/^\/([^/]+)\/([^/]+)\/([^/]+)$/)
+    const clean = withSection || path.match(/^\/([^/]+)\/([^/]+)$/)
     if (clean) {
       const { data: bizRows } = await supabase.rpc('get_business_by_slug', { p_slug: clean[1] })
       const biz = bizRows?.[0]
@@ -73,6 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .eq('business_id', biz.id).eq('slug', clean[2])
           .in('status', ['live', 'published']).single()
         gallery = data
+        if (gallery && withSection) sectionSlug = decodeURIComponent(withSection[3])
       }
     }
   }
@@ -81,8 +86,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(404).send('Gallery not found')
   }
 
+  // Section page link → surface the section name in the card.
+  let sectionName: string | null = null
+  if (sectionSlug && sectionSlug !== 'more') {
+    const base = supabase.from('gallery_sections').select('name')
+      .eq('gallery_id', gallery.id as string)
+    const byId = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(sectionSlug)
+    const { data: sec } = await (byId ? base.eq('id', sectionSlug) : base.eq('slug', sectionSlug))
+      .limit(1).maybeSingle()
+    sectionName = (sec?.name as string) ?? null
+  }
+
   const s = (gallery.delivery_settings || {}) as Record<string, unknown>
-  const title = (s.galleryTitle as string) || (gallery.name as string) || 'Gallery'
+  const baseTitle = (s.galleryTitle as string) || (gallery.name as string) || 'Gallery'
+  const title = sectionName ? `${baseTitle} — ${sectionName}` : baseTitle
   const studioName = (s.studioName as string) || ''
   const imageCount = gallery.image_count as number || 0
   const description = studioName

@@ -235,10 +235,12 @@ function Router() {
   // Client public page → Portfolio (auto-generated website)
   if (path.startsWith('/client/') || /^\/[^/]+\/client\//.test(path)) return <PortfolioPage />
   if (path.startsWith('/gallery') || /^\/[^/]+\/gallery\//.test(path)) return <App />
-  // Short gallery URL: /<biz>/g/<gallery-slug>
-  if (/^\/[^/]+\/g\/[^/]+\/?$/.test(path)) return <App />
-  // Clean gallery URL: /{business-slug}/{gallery-slug}
-  if (/^\/[^/]+\/[^/]+\/?$/.test(path)) return <App />
+  // Short gallery URL: /<biz>/g/<gallery-slug>[/<section-slug>]
+  if (/^\/[^/]+\/g\/[^/]+(?:\/[^/]+)?\/?$/.test(path)) return <App />
+  // Clean gallery URL: /{business-slug}/{gallery-slug}[/{section-slug}]
+  // Section pages (Pixieset-style sets) ride on the same App — the extra
+  // segment selects which section page opens.
+  if (/^\/[^/]+\/[^/]+(?:\/[^/]+)?\/?$/.test(path)) return <App />
 
   // Fallback: redirect to landing
   window.location.replace('/')

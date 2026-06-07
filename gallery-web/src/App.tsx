@@ -974,6 +974,10 @@ function s<K extends keyof DeliverySettings>(settings: Partial<DeliverySettings>
   return v === undefined || v === null ? fallback : v as DeliverySettings[K]
 }
 
+// URL slug for the synthetic page that collects images without a section
+// (shown as a "More Photos" pill after the real sections).
+const UNSECTIONED_SLUG = 'more'
+
 // ─── Sticky section nav (Pixieset-style) ───────────────────────────────────
 // Three-column sticky bar: gallery section pills (left), the Stories toggle
 // (center), and the download / select toolbar (right). Each slot is optional;
@@ -983,6 +987,8 @@ function SectionNav({
   sectionCounts,
   totalCount,
   showAllPill,
+  allPillLabel,
+  allPillCount,
   activeId,
   onJump,
   centerToolbar,
@@ -992,6 +998,8 @@ function SectionNav({
   sectionCounts: Record<string, number>
   totalCount: number
   showAllPill?: boolean
+  allPillLabel?: string
+  allPillCount?: number
   activeId: string
   onJump: (id: string) => void
   centerToolbar?: React.ReactNode
@@ -1004,15 +1012,6 @@ function SectionNav({
     <nav className="section-nav" role="navigation" aria-label="Gallery sections">
       <div className="section-nav__inner">
         <div className="section-nav__items">
-          {hasSections && showAllPill && (
-            <button
-              className={`section-nav__item ${activeId === 'all-images' ? 'section-nav__item--active' : ''}`}
-              onClick={() => onJump('all-images')}
-            >
-              <span className="section-nav__label">All Photos</span>
-              <span className="section-nav__count">{totalCount}</span>
-            </button>
-          )}
           {hasSections && (
             <>
               {sections.map(sec => {
@@ -1029,6 +1028,15 @@ function SectionNav({
                 )
               })}
             </>
+          )}
+          {hasSections && showAllPill && (
+            <button
+              className={`section-nav__item ${activeId === 'all-images' ? 'section-nav__item--active' : ''}`}
+              onClick={() => onJump('all-images')}
+            >
+              <span className="section-nav__label">{allPillLabel ?? 'All Photos'}</span>
+              <span className="section-nav__count">{allPillCount ?? totalCount}</span>
+            </button>
           )}
         </div>
         <div className="section-nav__center">{centerToolbar}</div>
@@ -1055,47 +1063,12 @@ export function App() {
   // at 'all-images' until the first chapter scrolls into view.
   const [activeSectionAnchor, setActiveSectionAnchor] = useState<string>('all-images')
 
-  // Sections render as stacked "chapters" (every section one after another,
-  // Pic-Time style). The pills are quick-jump navigation, not tabs — so we no
-  // longer isolate a single section. A shared ?section=<slug> link scrolls to
-  // that chapter instead. The deep-link target is captured ONCE at mount, here,
-  // before the URL-sync effect below can rewrite the query string.
-  const deepLinkSectionRef = useRef<string | null>(
-    (() => {
-      try { return new URLSearchParams(window.location.search).get('section') } catch { return null }
-    })()
-  )
-
-  // Keep ?section=<slug> in sync with the chapter currently in view (driven by
-  // the scroll-spy anchor) so a refresh or shared link lands on the same
-  // chapter. replaceState never adds history entries; pure UX nicety, so the
-  // whole thing is wrapped in try/catch and never load-bearing.
-  useEffect(() => {
-    try {
-      const url = new URL(window.location.href)
-      const secId = activeSectionAnchor.replace(/^section-/, '')
-      const sec = sections.find(s => s.id === secId)
-      if (sec) url.searchParams.set('section', sec.slug || sec.id)
-      else url.searchParams.delete('section')
-      window.history.replaceState(null, '', url.toString())
-    } catch { /* ignore — url sync is a UX nicety, never load-bearing */ }
-  }, [activeSectionAnchor, sections])
-
-  // Deep-link: ?section=<slug|id> scrolls to that chapter once the grid has
-  // painted. Honored once, using the value captured at mount (above) so the
-  // URL-sync effect can't clear it first.
-  useEffect(() => {
-    if (showWelcome || images.length === 0 || sections.length === 0) return
-    const param = deepLinkSectionRef.current
-    if (!param) return
-    const sec = sections.find(s => s.id === param || s.slug === param)
-    if (!sec) return
-    deepLinkSectionRef.current = null
-    const t = setTimeout(() => {
-      document.getElementById(`section-${sec.id}`)?.scrollIntoView({ behavior: 'auto', block: 'start' })
-    }, 60)
-    return () => clearTimeout(t)
-  }, [showWelcome, images.length, sections])
+  // Sections render as PAGES (Pixieset-style "sets"): each section has its
+  // own URL — /<biz>/<gallery>/<section-slug> — and the pills switch pages
+  // via pushState instead of scrolling one long stacked feed. Images for the
+  // whole gallery are already in memory, so a page switch is instant. The
+  // face-search filter temporarily flattens back to stacked chapters so
+  // matches from every section stay visible at once (see pagedMode below).
   const [viewerRole, setViewerRole] = useState<'none' | 'client' | 'guest'>('none')
   const [clientCodeInput, setClientCodeInput] = useState('')
   const [clientCodeError, setClientCodeError] = useState(false)
@@ -1127,18 +1100,20 @@ export function App() {
   // Download progress tracking
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null)
 
-  // Parse gallery from URL
+  // Parse gallery from URL. Every form may carry one extra trailing segment
+  // — the section page slug (/<biz>/<gallery>/<section>). basePath is the
+  // gallery's own URL without that segment; section navigation appends to it.
   const galleryRef = useMemo(() => {
     const path = window.location.pathname.replace(/\/+$/, '')
-    // Short slug form: /<biz>/g/<gallery-slug> (NEW)
-    const short = path.match(/^\/([^/]+)\/g\/([^/]+)$/)
-    if (short) return { type: 'slug' as const, businessSlug: short[1], gallerySlug: short[2] }
-    const legacy = path.match(/^\/[^/]+\/gallery\/([^/]+)$/)
-    if (legacy) return { type: 'id' as const, value: legacy[1] }
-    const direct = path.match(/^\/gallery\/([^/]+)$/)
-    if (direct) return { type: 'id' as const, value: direct[1] }
-    const clean = path.match(/^\/([^/]+)\/([^/]+)$/)
-    if (clean) return { type: 'slug' as const, businessSlug: clean[1], gallerySlug: clean[2] }
+    // Short slug form: /<biz>/g/<gallery-slug>
+    const short = path.match(/^\/([^/]+)\/g\/([^/]+)(?:\/[^/]+)?$/)
+    if (short) return { type: 'slug' as const, businessSlug: short[1], gallerySlug: short[2], basePath: `/${short[1]}/g/${short[2]}` }
+    const legacy = path.match(/^\/([^/]+)\/gallery\/([^/]+)(?:\/[^/]+)?$/)
+    if (legacy) return { type: 'id' as const, value: legacy[2], basePath: `/${legacy[1]}/gallery/${legacy[2]}` }
+    const direct = path.match(/^\/gallery\/([^/]+)(?:\/[^/]+)?$/)
+    if (direct) return { type: 'id' as const, value: direct[1], basePath: `/gallery/${direct[1]}` }
+    const clean = path.match(/^\/([^/]+)\/([^/]+)(?:\/[^/]+)?$/)
+    if (clean) return { type: 'slug' as const, businessSlug: clean[1], gallerySlug: clean[2], basePath: `/${clean[1]}/${clean[2]}` }
     return null
   }, [])
 
@@ -1170,11 +1145,82 @@ export function App() {
     }
   }, [galleryRef])
 
-  // Scroll-spy: track which section is in view and update activeSectionAnchor.
-  // We watch the All Images section + every section block. The first one
-  // intersecting wins.
+  // ── Section pages ────────────────────────────────────────────────────────
+  // pagedMode: sections become separate pages. Off while the face filter is
+  // active (matches must stay visible across every section at once).
+  const pagedMode = sections.length > 0 && !faceFilterActive
+  const galleryBasePath = galleryRef?.basePath ?? null
+
+  // The section the current URL points at: the path segment after the
+  // gallery base, else the legacy ?section=<slug|id> query param.
+  const currentSectionParam = () => {
+    try {
+      const path = window.location.pathname.replace(/\/+$/, '')
+      if (galleryBasePath && path.startsWith(galleryBasePath + '/')) {
+        return decodeURIComponent(path.slice(galleryBasePath.length + 1))
+      }
+      return new URLSearchParams(window.location.search).get('section')
+    } catch { return null }
+  }
+
+  // Map a slug/id from the URL to a section anchor. UNSECTIONED_SLUG is the
+  // synthetic "More Photos" page that holds images without a section.
+  const anchorForParam = (param: string | null): string | null => {
+    if (!param) return null
+    if (param === UNSECTIONED_SLUG) return 'all-images'
+    const sec = sections.find(s => s.slug === param || s.id === param)
+    return sec ? `section-${sec.id}` : null
+  }
+
+  // Open a section page: swap state + URL, then land at the top of the new
+  // page's grid (scroll-margin-top clears the sticky nav). push=false for
+  // back/forward navigation, where the browser already changed the URL.
+  const openSectionPage = (anchorId: string, push = true) => {
+    setActiveSectionAnchor(anchorId)
+    if (push && galleryBasePath) {
+      try {
+        const secId = anchorId.replace(/^section-/, '')
+        const sec = sections.find(s => s.id === secId)
+        const slug = anchorId === 'all-images' ? UNSECTIONED_SLUG : (sec ? (sec.slug || sec.id) : null)
+        if (slug) window.history.pushState(null, '', `${galleryBasePath}/${encodeURIComponent(slug)}`)
+      } catch { /* URL sync is a nicety, never load-bearing */ }
+    }
+    // Wait a tick so the new page's block is mounted before scrolling.
+    setTimeout(() => {
+      document.getElementById(anchorId)?.scrollIntoView({ behavior: 'auto', block: 'start' })
+    }, 50)
+  }
+
+  // On load: open the section the URL deep-links to, else the first section
+  // that actually has photos.
   useEffect(() => {
-    if (sections.length === 0 || showWelcome) return
+    if (!pagedMode || images.length === 0) return
+    const fromUrl = anchorForParam(currentSectionParam())
+    if (fromUrl) { setActiveSectionAnchor(fromUrl); return }
+    const first = sections.find(s => images.some(im => im.section_id === s.id))
+    if (first) setActiveSectionAnchor(`section-${first.id}`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagedMode, sections, images.length])
+
+  // Back/forward: re-resolve the section page from the URL.
+  useEffect(() => {
+    if (!pagedMode) return
+    const onPop = () => {
+      const anchor = anchorForParam(currentSectionParam())
+      if (anchor) { openSectionPage(anchor, false); return }
+      const first = sections.find(s => images.some(im => im.section_id === s.id))
+      if (first) openSectionPage(`section-${first.id}`, false)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagedMode, sections, images])
+
+  // Scroll-spy: track which section is in view and update activeSectionAnchor.
+  // Only relevant in stacked-chapters mode (face filter active) — in paged
+  // mode exactly one section is on screen and navigation drives the anchor.
+  useEffect(() => {
+    if (sections.length === 0 || showWelcome || pagedMode) return
     // When sections cover the gallery we no longer render an "all-images"
     // section; only watch per-section anchors.
     const ids = sections.length > 0
@@ -1490,6 +1536,18 @@ export function App() {
     if (!faceMatchIds || !faceFilterActive) return base
     return base.filter(img => faceMatchIds.has(img.id))
   }, [images, hiddenImageIds, viewerRole, faceMatchIds, faceFilterActive])
+
+  // Images that belong to no section (or to a deleted one). In paged mode
+  // they get their own "More Photos" page; in stacked mode they render in
+  // the all-images safety-net block.
+  const unsectionedImages = useMemo(() => {
+    const sectionIdSet = new Set(sections.map(s => s.id))
+    return visibleImages.filter(img => !img.section_id || !sectionIdSet.has(img.section_id))
+  }, [visibleImages, sections])
+  const anySectionHasContent = useMemo(
+    () => sections.some(sec => visibleImages.some(img => img.section_id === sec.id)),
+    [sections, visibleImages]
+  )
 
   // Surface face search whenever there's a usable index — that's any
   // gallery in 'done', AND any gallery still 'indexing' once at least one
@@ -2524,13 +2582,20 @@ export function App() {
             acc[sec.id] = images.filter(im => im.section_id === sec.id).length
             return acc
           }, {})}
-          showAllPill={false}
+          showAllPill={pagedMode && anySectionHasContent && unsectionedImages.length > 0}
+          allPillLabel={txt.morePhotos}
+          allPillCount={unsectionedImages.length}
           totalCount={images.length}
           activeId={activeSectionAnchor}
           onJump={(id) => {
-            // Chapters are stacked, so a pill is a quick-jump: scroll to that
-            // chapter's block (scroll-margin-top clears the sticky nav).
-            // Scroll-spy then keeps the active pill in sync as the user reads.
+            if (pagedMode) {
+              // Each section is its own page — switch page + URL.
+              openSectionPage(id)
+              return
+            }
+            // Stacked chapters (face filter): a pill is a quick-jump — scroll
+            // to that chapter's block (scroll-margin-top clears the sticky
+            // nav). Scroll-spy keeps the active pill in sync as the user reads.
             document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           }}
           /* Stories moved out of the header into the Instagram-style circle
@@ -2622,14 +2687,17 @@ export function App() {
         </Suspense>
       )}
 
-      {sections.length > 0 && sections.map(sec => {
-        // Chapters: every section renders as its own stacked block, one after
-        // another. A section with zero matching images renders null; the
-        // all-photos safety-net block below kicks in if every section ends up
-        // empty. Face filter applies inside each section — visibleImages is
-        // already filtered by faceMatchIds when the filter is on, so each
-        // chapter shows only the matched photos that belong to it, and chapters
-        // with no matches disappear from the layout.
+      {sections.length > 0 && sections.filter(sec =>
+        // Paged mode: render ONLY the active section's page. Stacked mode
+        // (face filter): every chapter renders one after another.
+        !pagedMode || activeSectionAnchor === `section-${sec.id}`
+      ).map(sec => {
+        // A section with zero matching images renders null; the all-photos
+        // safety-net block below kicks in if every section ends up empty.
+        // Face filter applies inside each chapter — visibleImages is already
+        // filtered by faceMatchIds when the filter is on, so each chapter
+        // shows only the matched photos that belong to it, and chapters with
+        // no matches disappear from the layout.
         const sectionImages = visibleImages.filter(img => img.section_id === sec.id)
         if (sectionImages.length === 0) return null
         return (
@@ -2681,18 +2749,15 @@ export function App() {
           Without this the page renders empty whenever any image lacks a
           valid section_id. */}
       {(() => {
-        const sectionIdSet = new Set(sections.map(s => s.id))
-        const unsectionedImages = visibleImages.filter(img =>
-          !img.section_id || !sectionIdSet.has(img.section_id)
-        )
-        const anySectionHasContent = sections.some(sec =>
-          visibleImages.some(img => img.section_id === sec.id)
-        )
         const shouldRender =
           sections.length === 0 ||
           !anySectionHasContent ||
           unsectionedImages.length > 0
         if (!shouldRender) return null
+        // Paged mode: this block is the "More Photos" page — render it only
+        // when it IS the active page. (When no section has content it doubles
+        // as the safety net, and 'all-images' is the default anchor anyway.)
+        if (pagedMode && anySectionHasContent && activeSectionAnchor !== 'all-images') return null
         const mainGridImages =
           viewerRole === 'client' ? images :
           sections.length === 0 ? visibleImages :
