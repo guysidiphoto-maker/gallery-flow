@@ -1387,37 +1387,98 @@ export async function updateGallerySectionsInCloud(
 
   log('update-sections:start', `${sections.length} sections`)
 
-  // 1. Wipe existing sections (cascade is OK because images.section_id is
-  //    ON DELETE SET NULL, so deleting sections clears the FK without
-  //    deleting the images themselves).
-  const { error: delErr } = await supabase
+  // 1. Reconcile section rows (RESTRICT-safe). Migration 065 made
+  //    images.section_id NOT NULL with FK ON DELETE RESTRICT, so the old
+  //    wipe-and-recreate (DELETE all → INSERT all) fails the moment any
+  //    image still references a section — which is always. Instead: reuse
+  //    existing rows by name (keeps ids AND slugs stable, so per-section
+  //    URLs survive a sync), insert the missing ones, reassign every image
+  //    below, and only then delete the leftovers (empty by that point).
+  const { data: existingRows, error: exErr } = await supabase
     .from('gallery_sections')
-    .delete()
+    .select('id, name, sort_order')
     .eq('gallery_id', galleryDbId)
-  if (delErr) return { error: `Delete old sections failed: ${delErr.message}` }
+  if (exErr) return { error: `Fetch existing sections failed: ${exErr.message}` }
 
-  // 2. Insert new sections
+  // First-come matching by name so duplicate names pair deterministically.
+  const unclaimedByName = new Map<string, Array<{ id: string; sort_order: number }>>()
+  for (const row of existingRows ?? []) {
+    const list = unclaimedByName.get(row.name as string) ?? []
+    list.push({ id: row.id as string, sort_order: row.sort_order as number })
+    unclaimedByName.set(row.name as string, list)
+  }
+
   const sectionPathToDbId = new Map<string, string>()
-  if (sections.length > 0) {
-    const sectionRows = sections.map(s => ({
-      gallery_id: galleryDbId,
-      name: s.name,
-      sort_order: s.sortOrder,
-    }))
+  const keptIds = new Set<string>()
+  const toInsert: PublishSectionInput[] = []
+
+  for (const s of sections) {
+    const existing = unclaimedByName.get(s.name)?.shift()
+    if (existing) {
+      keptIds.add(existing.id)
+      if (existing.sort_order !== s.sortOrder) {
+        const { error: soErr } = await supabase
+          .from('gallery_sections')
+          .update({ sort_order: s.sortOrder })
+          .eq('id', existing.id)
+        if (soErr) return { error: `Reorder section "${s.name}" failed: ${soErr.message}` }
+      }
+      for (const p of s.imagePaths) sectionPathToDbId.set(p, existing.id)
+    } else {
+      toInsert.push(s)
+    }
+  }
+
+  if (toInsert.length > 0) {
     const { data: insertedSections, error: insErr } = await supabase
       .from('gallery_sections')
-      .insert(sectionRows)
+      .insert(toInsert.map(s => ({
+        gallery_id: galleryDbId,
+        name: s.name,
+        sort_order: s.sortOrder,
+      })))
       .select('id, name, sort_order')
     if (insErr || !insertedSections) {
       return { error: `Insert sections failed: ${insErr?.message}` }
     }
-    for (const inputSection of sections) {
+    // Pair the inserted rows back to their input by (sort_order, name) —
+    // stable and unique within this insert batch.
+    for (const inputSection of toInsert) {
       const matched = insertedSections.find(r => r.sort_order === inputSection.sortOrder && r.name === inputSection.name)
       if (!matched) continue
+      keptIds.add(matched.id as string)
       for (const p of inputSection.imagePaths) {
-        sectionPathToDbId.set(p, matched.id)
+        sectionPathToDbId.set(p, matched.id as string)
       }
     }
+  }
+
+  // Fallback section for images that match no desired section (photos left
+  // unassigned in the sidebar). section_id can't be NULL anymore, so they
+  // get a real trailing section instead of failing the sync — the viewer
+  // shows it as its own page like any other section.
+  let fallbackSectionId: string | null = null
+  const ensureFallbackSection = async (): Promise<string | null> => {
+    if (fallbackSectionId) return fallbackSectionId
+    const name = sections.length === 0 ? 'סקשן 1' : 'עוד תמונות'
+    const reuse = unclaimedByName.get(name)?.shift()
+    if (reuse) {
+      keptIds.add(reuse.id)
+      fallbackSectionId = reuse.id
+      return fallbackSectionId
+    }
+    const { data: created, error: fbErr } = await supabase
+      .from('gallery_sections')
+      .insert({ gallery_id: galleryDbId, name, sort_order: sections.length })
+      .select('id')
+      .single()
+    if (fbErr || !created) {
+      log('update-sections:fallback-create-failed', fbErr?.message ?? 'no row')
+      return null
+    }
+    keptIds.add(created.id as string)
+    fallbackSectionId = created.id as string
+    return fallbackSectionId
   }
 
   // 3. Reassign section_id on each image.
@@ -1489,6 +1550,15 @@ export async function updateGallerySectionsInCloud(
       updates.push({ id: img.id as string, filename: img.filename as string, newSection })
     }
 
+    // section_id is NOT NULL (migration 065) — unmatched images can't be
+    // cleared, so they land in the fallback section instead.
+    const unmatched = updates.filter(u => !u.newSection)
+    if (unmatched.length > 0) {
+      const fb = await ensureFallbackSection()
+      if (!fb) return { error: `Could not create a section for ${unmatched.length} unassigned photos` }
+      for (const u of unmatched) u.newSection = fb
+    }
+
     const CONCURRENCY = 6
     const MAX_ATTEMPTS = 3
     let cursor = 0
@@ -1524,6 +1594,25 @@ export async function updateGallerySectionsInCloud(
       return {
         error: `${failures} of ${updates.length} section_id updates failed (e.g. ${failedFilenames.join(', ')}). Click "Re-sync to cloud" to retry.`,
       }
+    }
+  }
+
+  // 4. Delete sections that are no longer wanted. Every image was just
+  //    reassigned away from them, so the RESTRICT FK lets the delete
+  //    through. Runs only after a fully-clean reassign (failures above
+  //    return early) so we never delete a section that still holds images.
+  const obsoleteIds = (existingRows ?? [])
+    .map(r => r.id as string)
+    .filter(id => !keptIds.has(id))
+  if (obsoleteIds.length > 0) {
+    const { error: delErr } = await supabase
+      .from('gallery_sections')
+      .delete()
+      .in('id', obsoleteIds)
+    if (delErr) {
+      // Leftover empty sections are cosmetic — the viewer hides sections
+      // with no images. Log, don't fail the sync.
+      log('update-sections:delete-leftovers-failed', delErr.message)
     }
   }
 

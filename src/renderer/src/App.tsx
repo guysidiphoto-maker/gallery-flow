@@ -602,8 +602,8 @@ function MainApp({ business }: { business: Business | null }) {
       }
       setUpdateProgress('Updating sections…')
 
-      // 2) Sync sections — wipes and recreates gallery_sections + reassigns
-      //    section_id on each image by filename.
+      // 2) Sync sections — reconciles gallery_sections (reuse rows by name,
+      //    insert new, delete leftovers) + reassigns section_id per image.
       const sectionsState = useSections.getState()
       const idToPath = new Map(imgs.map(i => [i.id, i.path]))
       const sectionsInput = sectionsState.sections
