@@ -1699,6 +1699,33 @@ export function Dashboard() {
     }
   }
 
+  // Render the email (without sending) and open it in a sandboxed iframe so
+  // the photographer can verify wording, brand colors, and CTA before any
+  // client gets it. The edge function runs the same composer the send path
+  // uses, so what they see is byte-identical to what's queued in Resend.
+  async function previewShareEmail() {
+    if (!shareGallery || previewLoading) return
+    setPreviewLoading(true)
+    try {
+      const { previewGalleryShareEmail } = await import('../lib/shareGallery')
+      const res = await previewGalleryShareEmail({
+        galleryId: shareGallery.id,
+        recipientEmail: shareEmail || undefined,
+        subject: shareSubject || undefined,
+        message: shareMessage || undefined,
+      })
+      if (res.ok && res.html) {
+        setPreviewHtml(res.html)
+      } else {
+        alert('שגיאה בתצוגה מקדימה: ' + (res.error || 'לא ידוע'))
+      }
+    } catch (err) {
+      alert('שגיאה: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
   // Clean, short, shareable URL — pixflow-ai.com/<business>/<gallery-slug>
   // (e.g. /eclipse-media/rapyd-saint-lucia), matching Pixieset. The router
   // resolves this by slug; falls back to the legacy /gallery/<id> form when a
