@@ -163,7 +163,7 @@ async function lookupGallery(params: URLSearchParams): Promise<GalleryWithBrand 
   const id = params.get('gallery') || params.get('id')
   if (id) {
     const rows = (await sbFetch(
-      `galleries?select=${SELECT}&id=eq.${encodeURIComponent(id)}&status=in.(live,published)&limit=1`,
+      `galleries?select=${SELECT}&id=eq.${encodeURIComponent(id)}&status=in.(live)&limit=1`,
     )) as GalleryLite[] | null
     const gallery = rows?.[0]
     if (!gallery) return null
@@ -188,7 +188,7 @@ async function lookupGallery(params: URLSearchParams): Promise<GalleryWithBrand 
     const businessId = bizRows?.[0]?.id
     if (!businessId) return null
     const rows = (await sbFetch(
-      `galleries?select=${SELECT}&business_id=eq.${businessId}&slug=eq.${encodeURIComponent(gallerySlug)}&status=in.(live,published)&limit=1`,
+      `galleries?select=${SELECT}&business_id=eq.${businessId}&slug=eq.${encodeURIComponent(gallerySlug)}&status=in.(live)&limit=1`,
     )) as GalleryLite[] | null
     const gallery = rows?.[0]
     if (!gallery) return null

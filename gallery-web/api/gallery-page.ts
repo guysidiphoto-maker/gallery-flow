@@ -86,7 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (legacyId) {
     const { data } = await supabase.from('galleries').select('*')
-      .eq('id', legacyId).in('status', ['live', 'published']).single()
+      .eq('id', legacyId).in('status', ['live']).single()
     gallery = data
   } else if (bizSlug && gallerySlug) {
     const { data: bizRows } = await supabase.rpc('get_business_by_slug', { p_slug: bizSlug })
@@ -94,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (biz) {
       const { data } = await supabase.from('galleries').select('*')
         .eq('business_id', biz.id).eq('slug', gallerySlug)
-        .in('status', ['live', 'published']).single()
+        .in('status', ['live']).single()
       gallery = data
     }
   }
