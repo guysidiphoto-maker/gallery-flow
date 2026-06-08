@@ -4,3 +4,4 @@
 # Never committed; every Vercel deploy bundles fresh from
 # stories-remotion/src/Root.tsx into here, then vite copies it into dist/.
 public/stories-bundle/
+playwright-report/
