@@ -1,0 +1,43 @@
+name: pre-deploy
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  gallery-web:
+    name: gallery-web typecheck / build / e2e
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gallery-web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: gallery-web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Hard gate: gallery-web must stay clean (root/src/renderer is NOT gated here).
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit -p tsconfig.json
+
+      # Hard gate.
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright (chromium)
+        run: npx playwright install --with-deps chromium
+
+      # Soft gate: specs self-skip via fixtures when E2E_* env vars are absent.
+      - name: E2E (Playwright)
+        continue-on-error: true
+        run: npm run test:e2e
