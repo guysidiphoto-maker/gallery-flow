@@ -23,6 +23,29 @@ Respond with valid JSON only:
 { "captions": ["caption1", "caption2", ...] }`
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Origin/Referer allowlist gate (mirrors generate-feed.ts / generate-campaign.ts /
+  // plan-event.ts / score-images.ts). Without it this is an open Claude proxy.
+  const ALLOWED_ORIGINS = new Set([
+    'https://pixflow-ai.com',
+    'https://www.pixflow-ai.com',
+  ])
+  const origin = String(req.headers.origin ?? req.headers.referer ?? '')
+  const isLocalDev = origin.startsWith('http://localhost')
+  const isVercelPreview = /\.vercel\.app$/.test(new URL(origin || 'http://x').hostname || '')
+  // Improvement over the sibling endpoints: a MISSING Origin AND Referer is a DENY
+  // here (those endpoints let an absent Origin bypass the gate; the audit flagged it).
+  if (!origin) return res.status(403).json({ error: 'origin_required' })
+  if (!isLocalDev && !isVercelPreview) {
+    try {
+      const host = new URL(origin).origin
+      if (!ALLOWED_ORIGINS.has(host)) {
+        return res.status(403).json({ error: 'origin_not_allowed' })
+      }
+    } catch {
+      return res.status(403).json({ error: 'invalid_origin' })
+    }
+  }
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const { photos, language = 'he', tone = 'professional' } = req.body || {}
