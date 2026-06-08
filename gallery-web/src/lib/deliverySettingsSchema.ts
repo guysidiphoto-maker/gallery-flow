@@ -178,6 +178,18 @@ const RULES: Record<string, FieldRule> = {
   // Client privacy
   clientHidePhotosEnabled: boolean('הסתרת תמונות ע"י לקוח'),
   clientSelectionEnabled:  boolean('בחירת תמונות ע"י לקוח'),
+
+  // Misc / legacy — keys real galleries store and the viewer reads. Kept in
+  // sync with the server validator's allowlist (migration: widen_delivery_
+  // settings_allowlist). Permissive rules so existing values never get
+  // rejected on save.
+  language:               maxLength('שפה', 8),
+  thumbnailSize:          maxLength('גודל תמונה ממוזערת', 16),
+  welcomeTextAnimation:   maxLength('אנימציית טקסט פתיחה', 24),
+  welcomeAnimationSpeed:  maxLength('מהירות אנימציה', 16),
+  gridDirection:          maxLength('כיוון רשת', 8),
+  creditsSystem:          maxLength('מערכת קרדיטים', 24),
+  faceRecognition:        boolean('זיהוי פנים (legacy)'),
 }
 
 export type ValidationResult =
