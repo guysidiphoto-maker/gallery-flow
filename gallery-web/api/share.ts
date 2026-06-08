@@ -68,7 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .from('galleries')
       .select('id, name, delivery_settings, image_count')
       .eq('id', id)
-      .in('status', ['live', 'published'])
+      .in('status', ['live'])
       .single()
     if (gallery) {
       // Whitelist: ONLY these fields may be read out of delivery_settings into
