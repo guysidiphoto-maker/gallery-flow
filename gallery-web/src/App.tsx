@@ -1132,8 +1132,12 @@ export function App() {
           // round trips to the Sydney origin). Falls through to the legacy
           // multi-call path if the RPC is absent (073 not yet applied) or on a
           // transient failure — so behavior is preserved either way.
+          // First page is 100 (FIRST_PAGE below must match): covers the
+          // welcome mosaic (~30) + first grid screens while keeping the
+          // single-call payload light (~0.5s vs ~2s at 300). The rest streams
+          // via background pagination.
           const boot = await gcBootstrap<GalleryMeta, GalleryImage, GallerySection>(
-            galleryRef.businessSlug, galleryRef.gallerySlug,
+            galleryRef.businessSlug, galleryRef.gallerySlug, 100,
           )
           if (boot.status === 'ok' && boot.galleryId) {
             loadGallery(boot.galleryId, {
@@ -1335,7 +1339,8 @@ export function App() {
     // screens render in ~0.6s, then stream the rest in the background instead
     // of blocking ~2s on all ~900 rows. Pages arrive in sort_order, so
     // appending keeps the gallery order stable.
-    const FIRST_PAGE = 300   // covers the welcome mosaic + first grid batches
+    const FIRST_PAGE = 100   // MUST match the gcBootstrap limit above; covers
+                             // the welcome mosaic + first grid screens, rest streams
     const REST_PAGE = 1000
     const skipImages = isPrivateFaceMode || mustWaitForUnlock
 
