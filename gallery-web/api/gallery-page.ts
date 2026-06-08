@@ -136,16 +136,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ? `${title} by ${studioName} — ${imageCount} photos`
     : `${title} — ${imageCount} photos`
 
-  // Hot-fix 2026-05-16: /api/og is failing in production (Satori/Edge issue).
+  // Wrap a storage object path in a bounded Supabase image transform. In the
+  // originals-only model web_preview_path points at the multi-MB original;
+  // WhatsApp/Facebook reject preview images over ~300KB, so serving the raw
+  // original means NO link preview. A 1200×630 cover transform is ~130KB.
+  const ogTransform = (path: string): string =>
+    `${SUPABASE_URL}/storage/v1/render/image/public/gallery-images/${path}?width=1200&height=630&resize=cover&quality=70`
+
   // Resolve og:image to a direct cover photo from storage so WhatsApp/Facebook
   // see a real preview. Order: settings.coverImageUrl (if HTTP) → first
   // image's web_preview_path → /api/og as last-resort fallback.
   let ogImage: string
+  // A declared cover that is a Supabase storage object URL is also bounded
+  // through the transform; an arbitrary external http cover is left as-is.
   const declaredCover =
     typeof s.coverImageUrl === 'string' && s.coverImageUrl.startsWith('http')
       ? s.coverImageUrl
       : null
-  if (declaredCover) {
+  const declaredCoverObjMatch = declaredCover?.match(/\/storage\/v1\/object\/public\/gallery-images\/(.+)$/)
+  if (declaredCoverObjMatch) {
+    ogImage = ogTransform(declaredCoverObjMatch[1])
+  } else if (declaredCover) {
     ogImage = declaredCover
   } else {
     const { data: imgs } = await supabase
@@ -156,7 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .limit(1)
     const firstPath = imgs?.[0]?.web_preview_path as string | undefined
     ogImage = firstPath
-      ? `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${firstPath}`
+      ? ogTransform(firstPath)
       : `https://pixflow-ai.com/api/og?gallery=${encodeURIComponent(gallery.id as string)}`
   }
 
