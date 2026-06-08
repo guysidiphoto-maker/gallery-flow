@@ -97,6 +97,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     sectionName = (sec?.name as string) ?? null
   }
 
+  // Escape every photographer-controlled value before it lands in HTML
+  // attributes — a gallery/studio/section name (or a crafted coverImageUrl)
+  // containing `"` or `<` would otherwise break out of the attribute and
+  // inject tags into the crawler-facing markup. (share.ts already does this.)
+  const escapeHtml = (str: string): string =>
+    str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+       .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+
   const s = (gallery.delivery_settings || {}) as Record<string, unknown>
   const baseTitle = (s.galleryTitle as string) || (gallery.name as string) || 'Gallery'
   const title = sectionName ? `${baseTitle} — ${sectionName}` : baseTitle
@@ -130,22 +138,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : `https://pixflow-ai.com/api/og?gallery=${encodeURIComponent(gallery.id as string)}`
   }
 
+  const eTitle = escapeHtml(title)
+  const eStudio = escapeHtml(studioName)
+  const eDesc = escapeHtml(description)
+  const eImage = escapeHtml(ogImage)
+  const ePath = escapeHtml(path)
+
   res.setHeader('Content-Type', 'text/html')
   res.setHeader('Cache-Control', 'public, s-maxage=3600')
   return res.status(200).send(`<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
-<title>${title}${studioName ? ` — ${studioName}` : ''}</title>
-<meta property="og:title" content="${title}" />
-<meta property="og:description" content="${description}" />
+<title>${eTitle}${studioName ? ` — ${eStudio}` : ''}</title>
+<meta property="og:title" content="${eTitle}" />
+<meta property="og:description" content="${eDesc}" />
 <meta property="og:type" content="website" />
-<meta property="og:url" content="https://pixflow-ai.com${path}" />
-<meta property="og:image" content="${ogImage}" />
+<meta property="og:url" content="https://pixflow-ai.com${ePath}" />
+<meta property="og:image" content="${eImage}" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="${title}" />
-<meta name="twitter:description" content="${description}" />
-<meta name="twitter:image" content="${ogImage}" />
+<meta name="twitter:title" content="${eTitle}" />
+<meta name="twitter:description" content="${eDesc}" />
+<meta name="twitter:image" content="${eImage}" />
 </head><body></body></html>`)
 }

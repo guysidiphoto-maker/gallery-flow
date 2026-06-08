@@ -14,9 +14,12 @@ import { t, type Lang } from './i18n'
 import {
   getMeta as gcGetMeta,
   getImages as gcGetImages,
+  getImagesResult as gcGetImagesResult,
   getStories as gcGetStories,
   getHidden as gcGetHidden,
   setHidden as gcSetHidden,
+  bootstrapGallery as gcBootstrap,
+  type GalleryMeta,
 } from './lib/galleryClient'
 import { logDownload, logBatchDownload } from './lib/activityLog'
 
@@ -1124,6 +1127,24 @@ export function App() {
     } else {
       (async () => {
         try {
+          // Fast path: one RPC resolves business+gallery slug and returns
+          // meta + first image page + sections together (replaces ~4 serial
+          // round trips to the Sydney origin). Falls through to the legacy
+          // multi-call path if the RPC is absent (073 not yet applied) or on a
+          // transient failure — so behavior is preserved either way.
+          const boot = await gcBootstrap<GalleryMeta, GalleryImage, GallerySection>(
+            galleryRef.businessSlug, galleryRef.gallerySlug,
+          )
+          if (boot.status === 'ok' && boot.galleryId) {
+            loadGallery(boot.galleryId, {
+              meta: boot.meta as unknown as GalleryMeta,
+              images: boot.images ?? [],
+              sections: boot.sections ?? [],
+            })
+            return
+          }
+          if (boot.status === 'not_found') { setError('Gallery not found'); return }
+          // boot.status === 'unavailable' → legacy resolve below.
           const { data: bizRows } = await supabase.rpc('get_business_by_slug', { p_slug: galleryRef.businessSlug })
           const biz = bizRows?.[0]
           if (!biz) { setError('Gallery not found'); return }
@@ -1278,8 +1299,13 @@ export function App() {
     return () => clearTimeout(id)
   }, [showWelcome, images.length])
 
-  async function loadGallery(id: string) {
-    const meta = await gcGetMeta(id)
+  async function loadGallery(
+    id: string,
+    prefetch?: { meta: GalleryMeta; images: GalleryImage[]; sections: GallerySection[] },
+  ) {
+    // The bootstrap fast-path hands meta/images/sections in already; only fetch
+    // them here when there's no prefetch (the legacy id-route + fallback path).
+    const meta = prefetch?.meta ?? await gcGetMeta(id)
     if (!meta) {
       setError('Gallery not found')
       return
@@ -1313,19 +1339,28 @@ export function App() {
     const REST_PAGE = 1000
     const skipImages = isPrivateFaceMode || mustWaitForUnlock
 
+    // Prefetched images are only valid for a NON-gated gallery — the bootstrap
+    // RPC ran without an unlock token, so a gated gallery's prefetch.images is
+    // empty and we must re-fetch with the token below. Sections carry no
+    // sensitive content, so the prefetch is always usable.
+    const canUsePrefetchImages = !!prefetch && !skipImages && !gateOn
     const [firstImgs, secsRes] = await Promise.all([
-      skipImages
-        ? Promise.resolve([] as GalleryImage[])
-        : gcGetImages<GalleryImage>(id, { offset: 0, limit: FIRST_PAGE }),
+      canUsePrefetchImages
+        ? Promise.resolve(prefetch!.images)
+        : skipImages
+          ? Promise.resolve([] as GalleryImage[])
+          : gcGetImages<GalleryImage>(id, { offset: 0, limit: FIRST_PAGE }),
       // gallery_sections is intentionally left on the legacy public path —
       // section names ("Day 1", "Day 2") are far less sensitive than image
       // contents, and gating them here would force every PasswordGate render
       // to wait on token issuance for what is essentially a label.
-      supabase
-        .from('gallery_sections')
-        .select('id, name, slug, sort_order, description')
-        .eq('gallery_id', id)
-        .order('sort_order', { ascending: true }),
+      prefetch
+        ? Promise.resolve({ data: prefetch.sections })
+        : supabase
+            .from('gallery_sections')
+            .select('id, name, slug, sort_order, description')
+            .eq('gallery_id', id)
+            .order('sort_order', { ascending: true }),
     ])
 
     // ── Phase 6 step 5 phase 2 — snapshot override ─────────────────────────
@@ -1398,9 +1433,14 @@ export function App() {
     if (!skipImages && firstImgs.length === FIRST_PAGE) {
       void (async () => {
         for (let offset = FIRST_PAGE; ; offset += REST_PAGE) {
-          const rows = await gcGetImages<GalleryImage>(id, { offset, limit: REST_PAGE })
-          if (rows.length > 0) setImages(prev => [...prev, ...rows])
-          if (rows.length < REST_PAGE) break
+          // getImagesResult retries transient failures internally and reports
+          // ok=false only on a real failure — so a network blip no longer looks
+          // like "end of data" and silently truncates the gallery. On a genuine
+          // failure we stop appending but leave the already-loaded pages intact.
+          const res = await gcGetImagesResult<GalleryImage>(id, { offset, limit: REST_PAGE })
+          if (!res.ok) break
+          if (res.data.length > 0) setImages(prev => [...prev, ...res.data])
+          if (res.data.length < REST_PAGE) break
         }
       })()
     }
@@ -1620,19 +1660,11 @@ export function App() {
     return () => { cancelled = true }
   }, [_hookImgBucket, _hookCoverImgForResolve?.storage_path, _hookCoverImageUrlSetting])
 
-  const [welcomeUrlMap, setWelcomeUrlMap] = useState<Map<string, string>>(new Map())
-  useEffect(() => {
-    if (!showWelcome || _hookWelcomeImages.length === 0) return
-    let cancelled = false
-    const paths = Array.from(new Set(
-      _hookWelcomeImages.flatMap(img => [img.thumbnail_path, img.storage_path]).filter(Boolean) as string[],
-    ))
-    Promise.all(paths.map(async p => [p, await signedStorageUrl(_hookImgBucket, p)] as [string, string]))
-      .then(pairs => { if (!cancelled) setWelcomeUrlMap(new Map(pairs)) })
-      .catch(() => { /* fallback to public URLs via callback */ })
-    return () => { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showWelcome, _hookWelcomeImages.length, _hookImgBucket])
+  // The welcome mosaic renders bounded transforms via renderUrl (see the
+  // WelcomeScreen storageUrl prop). It used to resolve signedStorageUrl for
+  // every welcome image first and swap those in — but with signed URLs off
+  // (prod) that resolved to the raw full-resolution originals, re-downloading
+  // tens of MB behind the cover screen. Dropped: the cover now stays bounded.
 
   // While the welcome/cover screen is shown, preload the gallery's first grid
   // thumbnails into the guest's browser cache (mirroring the grid's srcset).
@@ -1831,7 +1863,7 @@ export function App() {
           images={welcomeImages}
           coverImageUrl={resolvedCoverUrl}
           coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
-          storageUrl={(path: string) => welcomeUrlMap.get(path) ?? renderUrl(imgBucket, path, 1280, 65)}
+          storageUrl={(path: string) => renderUrl(imgBucket, path, 1280, 65)}
           onEnter={() => setShowWelcome(false)}
           faceSearchAvailable={faceSearchAvailable}
           facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}

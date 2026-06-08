@@ -6,10 +6,10 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/stories-bundle/(.*)", "destination": "/stories-bundle/$1" },
-    { "source": "/gallery/:id", "destination": "/api/share?id=:id" },
-    { "source": "/:slug/gallery/:id", "destination": "/api/gallery-page" },
-    { "source": "/:business/:gallery", "destination": "/api/gallery-page" },
-    { "source": "/:business/:gallery/:section", "destination": "/api/gallery-page" },
+    { "source": "/gallery/:id", "has": [{ "type": "header", "key": "user-agent", "value": "(WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Googlebot|bingbot|Applebot|redditbot|Pinterest|Mastodon|Iframely|vkShare|W3C_Validator)" }], "destination": "/api/share?id=:id" },
+    { "source": "/:slug/gallery/:id", "has": [{ "type": "header", "key": "user-agent", "value": "(WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Googlebot|bingbot|Applebot|redditbot|Pinterest|Mastodon|Iframely|vkShare|W3C_Validator)" }], "destination": "/api/gallery-page" },
+    { "source": "/:business/:gallery", "has": [{ "type": "header", "key": "user-agent", "value": "(WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Googlebot|bingbot|Applebot|redditbot|Pinterest|Mastodon|Iframely|vkShare|W3C_Validator)" }], "destination": "/api/gallery-page" },
+    { "source": "/:business/:gallery/:section", "has": [{ "type": "header", "key": "user-agent", "value": "(WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Googlebot|bingbot|Applebot|redditbot|Pinterest|Mastodon|Iframely|vkShare|W3C_Validator)" }], "destination": "/api/gallery-page" },
     { "source": "/((?!stories-bundle/).*)", "destination": "/index.html" }
   ],
   "crons": [
