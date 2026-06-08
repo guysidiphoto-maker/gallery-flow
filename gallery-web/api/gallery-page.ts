@@ -50,41 +50,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 </html>`)
   }
 
-  // Bots: serve OG tags
+  // Bots: serve OG tags.
+  //
+  // Resolution prefers the query params the vercel.json rewrite injects
+  // (?biz=&gallery=&section= / ?biz=&legacyId=) — a Vercel rewrite to
+  // /api/gallery-page does NOT preserve the original path in req.url, so the
+  // old path-parsing branch silently failed for every clean/legacy share link
+  // (only /gallery/:id worked, because share.ts gets ?id= explicitly). We fall
+  // back to parsing req.url so a direct hit still resolves.
+  const q = req.query as Record<string, string | string[] | undefined>
+  const qStr = (v: string | string[] | undefined): string | null =>
+    Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
   const path = (req.url || '').split('?')[0].replace(/\/+$/, '')
-  let gallery: Record<string, unknown> | null = null
-  let sectionSlug: string | null = null
 
-  // /{slug}/gallery/{uuid} — an optional trailing /{section-slug} is ignored
-  // for resolution (the section only flavors the description below).
-  const legacy = path.match(/\/([^/]+)\/gallery\/([^/]+)/)
-  if (legacy) {
-    const { data } = await supabase.from('galleries').select('*')
-      .eq('id', legacy[2]).in('status', ['live', 'published']).single()
-    gallery = data
+  let bizSlug = qStr(q.biz)
+  let gallerySlug = qStr(q.gallery)
+  let legacyId = qStr(q.legacyId)
+  let sectionSlug = qStr(q.section)
+
+  if (!bizSlug && !legacyId) {
+    // Fallback: parse req.url (direct hit, not via rewrite).
+    const legacy = path.match(/\/([^/]+)\/gallery\/([^/]+)/)
+    if (legacy) { bizSlug = legacy[1]; legacyId = legacy[2] }
+    else {
+      const withSection = path.match(/^\/([^/]+)\/([^/]+)\/([^/]+)$/)
+      const clean = withSection || path.match(/^\/([^/]+)\/([^/]+)$/)
+      if (clean) {
+        bizSlug = clean[1]; gallerySlug = clean[2]
+        if (withSection) sectionSlug = decodeURIComponent(withSection[3])
+      }
+    }
   }
 
-  // /{business-slug}/{gallery-slug}[/{section-slug}] — section pages share
-  // the gallery's OG card with the section name folded in.
-  if (!gallery) {
-    const withSection = path.match(/^\/([^/]+)\/([^/]+)\/([^/]+)$/)
-    const clean = withSection || path.match(/^\/([^/]+)\/([^/]+)$/)
-    if (clean) {
-      const { data: bizRows } = await supabase.rpc('get_business_by_slug', { p_slug: clean[1] })
-      const biz = bizRows?.[0]
-      if (biz) {
-        const { data } = await supabase.from('galleries').select('*')
-          .eq('business_id', biz.id).eq('slug', clean[2])
-          .in('status', ['live', 'published']).single()
-        gallery = data
-        if (gallery && withSection) sectionSlug = decodeURIComponent(withSection[3])
-      }
+  let gallery: Record<string, unknown> | null = null
+
+  if (legacyId) {
+    const { data } = await supabase.from('galleries').select('*')
+      .eq('id', legacyId).in('status', ['live', 'published']).single()
+    gallery = data
+  } else if (bizSlug && gallerySlug) {
+    const { data: bizRows } = await supabase.rpc('get_business_by_slug', { p_slug: bizSlug })
+    const biz = bizRows?.[0]
+    if (biz) {
+      const { data } = await supabase.from('galleries').select('*')
+        .eq('business_id', biz.id).eq('slug', gallerySlug)
+        .in('status', ['live', 'published']).single()
+      gallery = data
     }
   }
 
   if (!gallery) {
     return res.status(404).send('Gallery not found')
   }
+  // Don't trust req.url for the canonical og:url (it's /api/gallery-page under
+  // the rewrite); rebuild it from the resolved slugs.
+  const canonicalPath = legacyId
+    ? `/${bizSlug}/gallery/${legacyId}`
+    : `/${bizSlug}/${gallerySlug}${sectionSlug ? `/${sectionSlug}` : ''}`
 
   // Section page link → surface the section name in the card.
   let sectionName: string | null = null
@@ -142,7 +164,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const eStudio = escapeHtml(studioName)
   const eDesc = escapeHtml(description)
   const eImage = escapeHtml(ogImage)
-  const ePath = escapeHtml(path)
+  const ePath = escapeHtml(canonicalPath)
 
   res.setHeader('Content-Type', 'text/html')
   res.setHeader('Cache-Control', 'public, s-maxage=3600')

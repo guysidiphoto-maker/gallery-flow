@@ -7,9 +7,9 @@
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/stories-bundle/(.*)", "destination": "/stories-bundle/$1" },
     { "source": "/gallery/:id", "destination": "/api/share?id=:id" },
-    { "source": "/:slug/gallery/:id", "destination": "/api/gallery-page" },
-    { "source": "/:business/:gallery", "destination": "/api/gallery-page" },
-    { "source": "/:business/:gallery/:section", "destination": "/api/gallery-page" },
+    { "source": "/:slug/gallery/:id", "destination": "/api/gallery-page?biz=:slug&legacyId=:id" },
+    { "source": "/:business/:gallery", "destination": "/api/gallery-page?biz=:business&gallery=:gallery" },
+    { "source": "/:business/:gallery/:section", "destination": "/api/gallery-page?biz=:business&gallery=:gallery&section=:section" },
     { "source": "/((?!stories-bundle/).*)", "destination": "/index.html" }
   ],
   "crons": [
