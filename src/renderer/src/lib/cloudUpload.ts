@@ -26,6 +26,29 @@ function log(step: string, detail?: string | number) {
 
 // ─── Supabase helpers ───────────────────────────────────────────────────────
 
+// delivery_settings can ONLY be written via the update_gallery_settings RPC —
+// migration 069 revoked the authenticated role's direct column UPDATE. Strip
+// desktop-local keys the cloud validator rejects (a local logo path that must
+// never reach the cloud, and desktop-only face-index state) before sending.
+// Returns { error } in the same shape callers already use.
+async function saveDeliverySettingsViaRpc(
+  galleryId: string,
+  patch: Record<string, unknown>,
+): Promise<{ error: string | null }> {
+  const clean: Record<string, unknown> = { ...patch }
+  delete clean.password            // goes through the bcrypt RPC, never the JSONB
+  delete clean.logoPath            // local filesystem path — must not reach cloud
+  delete clean.faceIndexSections   // desktop-local only; nothing cloud-side reads it
+  const { data, error } = await supabase.rpc('update_gallery_settings', {
+    p_gallery_id: galleryId,
+    p_patch: clean,
+  })
+  if (error) return { error: `${error.code ?? 'rpc'}: ${error.message}` }
+  const res = (data ?? {}) as { ok?: boolean; errors?: unknown }
+  if (res.ok !== true) return { error: `settings_rejected: ${JSON.stringify(res.errors)}` }
+  return { error: null }
+}
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
 async function getSupabaseToken(): Promise<string> {
@@ -294,13 +317,12 @@ export async function publishGallery(
           .from(BUCKET)
           .upload(coverPath, blob, { contentType: 'image/jpeg', upsert: true, cacheControl: ONE_YEAR_CACHE })
         if (!coverErr) {
-          // Update delivery_settings with the storage URL
+          // Update delivery_settings with the storage URL (via the RPC — 069).
           const coverStorageUrl = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${coverPath}`
           sanitizedSettings.coverImageUrl = coverStorageUrl
-          await supabase.from('galleries').update({
-            delivery_settings: sanitizedSettings,
-          }).eq('id', galleryId)
-          log('cover-uploaded', coverPath)
+          const coverRes = await saveDeliverySettingsViaRpc(galleryId, { coverImageUrl: coverStorageUrl })
+          if (coverRes.error) log('cover-settings-failed', coverRes.error)
+          else log('cover-uploaded', coverPath)
         }
       }
     } catch (e) {
@@ -1590,18 +1612,24 @@ export async function updateGallerySettings(
   // photo. Toggling on kicks off resumeFaceIndexingIfEnabled below.
   const desiredFaceEnabled = !!sanitizedSettings.faceIndexEnabled
 
+  // face_index_enabled is a granted column (direct UPDATE ok); delivery_settings
+  // must go through the RPC (069). Two writes: the column directly, the JSONB
+  // via the validated RPC.
   const { error: updateError } = await supabase
     .from('galleries')
-    .update({
-      delivery_settings: sanitizedSettings,
-      face_index_enabled: desiredFaceEnabled,
-    })
+    .update({ face_index_enabled: desiredFaceEnabled })
     .eq('local_id', localGalleryId)
     .eq('status', 'live')
     .select('id')
 
   if (updateError) {
     return { error: `${updateError.code}: ${updateError.message}` }
+  }
+  if (galleryId) {
+    const settingsRes = await saveDeliverySettingsViaRpc(galleryId, sanitizedSettings)
+    if (settingsRes.error) {
+      return { error: settingsRes.error }
+    }
   }
 
   if (galleryId) {

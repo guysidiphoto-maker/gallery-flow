@@ -264,6 +264,25 @@ export function Dashboard() {
     setUnpublishedChanges(true)
     scheduleSidePreviewRefresh()
   }
+  // The ONLY allowed write path for delivery_settings. Migration 069 revoked
+  // the direct column UPDATE for the authenticated role, so every
+  // delivery_settings write MUST go through the update_gallery_settings RPC
+  // (SECURITY DEFINER, owner-checked, validates against the shared allowlist
+  // and merges the patch). Returns ok=false with the server's errors on
+  // rejection so callers can roll back the optimistic UI.
+  async function saveDeliverySettings(
+    galleryId: string,
+    patch: Record<string, unknown>,
+  ): Promise<{ ok: boolean; errors?: unknown }> {
+    const { data, error } = await supabase.rpc('update_gallery_settings', {
+      p_gallery_id: galleryId,
+      p_patch: patch,
+    })
+    if (error) return { ok: false, errors: [{ key: '_rpc', error: error.message }] }
+    const res = (data ?? {}) as { ok?: boolean; errors?: unknown }
+    return { ok: res.ok === true, errors: res.errors }
+  }
+
   // Multi-key variant of updateGallerySetting — used when one user action
   // logically writes several keys at once (e.g. cover selection writing both
   // the canonical storage path and the legacy URL fallback in the same patch).
@@ -274,15 +293,12 @@ export function Dashboard() {
     const nextSettings = { ...prevSettings, ...patch }
     setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
     markDirty()
-    const { error } = await supabase
-      .from('galleries')
-      .update({ delivery_settings: nextSettings })
-      .eq('id', editingGallery.id)
-    if (error) {
+    const { ok, errors } = await saveDeliverySettings(editingGallery.id, patch)
+    if (!ok) {
       setEditingGallery(g => g && g.id === editingGallery.id
         ? { ...g, delivery_settings: prevSettings } : g)
       showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
-      console.warn('[updateGallerySettings]', patch, error)
+      console.warn('[updateGallerySettings]', patch, errors)
     }
   }
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number; description?: string | null }>>([])
@@ -1169,16 +1185,14 @@ export function Dashboard() {
 
     const galleryId = editingGallery.id
     const flushWrite = async () => {
-      const { error } = await supabase
-        .from('galleries')
-        .update({ delivery_settings: nextSettings })
-        .eq('id', galleryId)
-      if (error) {
+      // Send only the changed key as the patch; the RPC merges it server-side.
+      const { ok, errors } = await saveDeliverySettings(galleryId, { [key]: value })
+      if (!ok) {
         // Roll back to the pre-change value so the UI stops lying.
         setEditingGallery(g => g && g.id === galleryId
           ? { ...g, delivery_settings: prevSettings } : g)
         showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
-        console.warn('[updateGallerySetting]', key, error)
+        console.warn('[updateGallerySetting]', key, errors)
         return
       }
       scheduleSidePreviewRefresh()
@@ -1215,16 +1229,19 @@ export function Dashboard() {
     setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: newTitle } : g))
     setUnpublishedChanges(true)
     scheduleSidePreviewRefresh()
-    const { error } = await supabase
+    // `name` is a granted column (direct UPDATE is fine); galleryTitle lives in
+    // delivery_settings, which must go through the RPC (069). Two writes.
+    const { error: nameErr } = await supabase
       .from('galleries')
-      .update({ name: newTitle, delivery_settings: nextSettings })
+      .update({ name: newTitle })
       .eq('id', editingGallery.id)
-    if (error) {
+    const titleRes = await saveDeliverySettings(editingGallery.id, { galleryTitle: newTitle })
+    if (nameErr || !titleRes.ok) {
       setEditingGallery(g => g && g.id === editingGallery.id
         ? { ...g, name: prevName, delivery_settings: prevSettings } : g)
       setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: prevName } : g))
       showToast({ kind: 'error', text: 'שמירת הכותרת נכשלה. נסה שוב.' })
-      console.warn('[renameGalleryTitle]', error)
+      console.warn('[renameGalleryTitle]', nameErr, titleRes.errors)
     }
   }
 
@@ -4541,15 +4558,19 @@ export function Dashboard() {
                             delivery_settings: nextSettings,
                           })
                           markDirty()
-                          const { error } = await supabase
+                          // face_index_enabled is a granted column (direct
+                          // UPDATE ok); faceIndexEnabled lives in
+                          // delivery_settings → through the RPC (069).
+                          const { error: colErr } = await supabase
                             .from('galleries')
-                            .update({ face_index_enabled: newVal, delivery_settings: nextSettings })
+                            .update({ face_index_enabled: newVal })
                             .eq('id', editingGallery.id)
-                          if (error) {
+                          const dsRes = await saveDeliverySettings(editingGallery.id, { faceIndexEnabled: newVal })
+                          if (colErr || !dsRes.ok) {
                             setEditingGallery(g => g && g.id === editingGallery.id
                               ? { ...g, face_index_enabled: !newVal, delivery_settings: prevSettings } : g)
                             showToast({ kind: 'error', text: 'שמירת זיהוי פנים נכשלה.' })
-                            console.warn('[face-index toggle]', error)
+                            console.warn('[face-index toggle]', colErr, dsRes.errors)
                           }
                         }}
                         last
