@@ -2278,6 +2278,12 @@ function MainApp({ business }: { business: Business | null }) {
             if (path) {
               useGallery.setState({ folderPath: path })
               await reloadFolder()
+              // Pixieset model: a fresh gallery's photos land in a default
+              // "Highlights" section instead of staying unassigned.
+              useSections.getState().ensureImagesAssigned(
+                useGallery.getState().images.map(i => i.id),
+              )
+              if (!useSections.getState().isPanelOpen) useSections.getState().togglePanel()
             } else {
               setCurrentProjectId(null)
             }
@@ -2347,7 +2353,14 @@ function MainApp({ business }: { business: Business | null }) {
           setCurrentProjectId(id); setWelcomed(true)
           useGallery.setState({ images: [], folderPath: '' })
           const path = await window.api.openFolderDialog()
-          if (path) { useGallery.setState({ folderPath: path }); await reloadFolder() }
+          if (path) {
+            useGallery.setState({ folderPath: path })
+            await reloadFolder()
+            // Pixieset model: new gallery's photos land in a default section.
+            useSections.getState().ensureImagesAssigned(
+              useGallery.getState().images.map(i => i.id),
+            )
+          }
         }
 
         const selectSuggestion = (c: ClientData) => {

@@ -109,8 +109,15 @@ export function SectionsPanel({ publishStatus, publicUrl, onPublish, onForceSync
     deleteSection,
     togglePanel,
     openPublishModal,
+    ensureImagesAssigned,
   } = useSections()
   const { images, folderPath, removeUnassignedImages } = useGallery()
+
+  // Assign every photo not in a section to the active section (or a default
+  // "Highlights" section) — the Pixieset model where no photo is left loose.
+  const handleAssignUnassigned = useCallback(() => {
+    ensureImagesAssigned(images.map(i => i.id))
+  }, [ensureImagesAssigned, images])
 
   const [newName, setNewName] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -232,6 +239,38 @@ export function SectionsPanel({ publishStatus, publicUrl, onPublish, onForceSync
           title="Add section"
         >+</button>
       </div>
+
+      {/* Unassigned photos — primary action is to ASSIGN them to a section
+          (Pixieset model: every photo belongs to a set). The destructive
+          "remove from gallery" stays below as a secondary option. */}
+      {unassignedCount > 0 && (
+        <button
+          onClick={handleAssignUnassigned}
+          style={{
+            margin: '4px 8px 0',
+            padding: '8px 10px',
+            background: 'rgba(16, 185, 129, 0.10)',
+            border: '1px solid rgba(16, 185, 129, 0.30)',
+            borderRadius: 6,
+            color: '#10b981',
+            fontSize: 11,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            textAlign: 'left',
+            width: 'calc(100% - 16px)',
+          }}
+          title={activeSectionFilter ? 'שייך לסקשן הפעיל' : 'שייך לסקשן Highlights'}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+          </svg>
+          <span style={{ flex: 1 }}>
+            שייך {unassignedCount} תמונות לא־משויכות לסקשן
+          </span>
+        </button>
+      )}
 
       {/* Cleanup unassigned photos — visible only when sections exist and there
           are leftover photos not in any section */}

@@ -3,6 +3,10 @@ import { arrayMove } from '@dnd-kit/sortable'
 import { nanoid } from '../utils/nanoid'
 import type { ImageFile, Section, SectionNamingMode } from '../types'
 
+// Pixieset-style default: every gallery has at least one section, and uploads
+// land in it so a photo is never left unassigned. Renameable by the user.
+const DEFAULT_SECTION_NAME = 'Highlights'
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function computeDestNames(
@@ -60,6 +64,13 @@ interface SectionsState {
   assignImagesToSection: (imageIds: string[], sectionId: string) => void
   removeImageFromSection: (imageId: string, sectionId: string) => void
   reorderSectionImages: (sectionId: string, activeId: string, overId: string) => void
+
+  // Pixieset model: assign any images not yet in a section to a section, so a
+  // photo is never left "unassigned". Target priority: the section the user is
+  // currently viewing → else a default "Highlights" section (found or created).
+  // Never silently merges into an unrelated named set. Idempotent — only
+  // touches genuinely-unassigned ids, so it's safe to call after every import.
+  ensureImagesAssigned: (allImageIds: string[]) => void
 
   // Settings
   setSectionNamingMode: (sectionId: string, mode: SectionNamingMode, prefix?: string) => void
@@ -143,6 +154,26 @@ export const useSections = create<SectionsState>((set, get) => ({
       sectionsDirtyAt: markDirty(),
     }
   }),
+
+  ensureImagesAssigned: (allImageIds) => {
+    const state = get()
+    const assigned = new Set(state.sections.flatMap(sec => sec.imageIds))
+    const unassigned = allImageIds.filter(id => !assigned.has(id))
+    if (unassigned.length === 0) return
+
+    let targetId = state.activeSectionFilter
+    if (!targetId || !state.sections.some(sec => sec.id === targetId)) {
+      const existing = state.sections.find(sec => sec.name === DEFAULT_SECTION_NAME)
+      if (existing) {
+        targetId = existing.id
+      } else {
+        get().addSection(DEFAULT_SECTION_NAME)
+        const secs = get().sections
+        targetId = secs[secs.length - 1].id
+      }
+    }
+    get().assignImagesToSection(unassigned, targetId)
+  },
 
   removeImageFromSection: (imageId, sectionId) => set(s => ({
     sections: s.sections.map(sec =>
