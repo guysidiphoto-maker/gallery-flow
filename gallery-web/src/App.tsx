@@ -1,12 +1,10 @@
 import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
-import { VariableSizeList, type ListChildComponentProps } from 'react-window'
 import { supabase, storageUrl, renderUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from './lib/publicSession'
 import { signedStorageUrl, signedWatermarkedUrl } from './lib/signedStorage'
 import { preloadGalleryThumbs, GRID_WIDTHS } from './lib/warmCache'
 import { TurnstileWidget } from './components/TurnstileWidget'
 import { SignedImg } from './components/SignedImg'
-import { VirtualMasonryRow, rowHeightFor } from './components/VirtualMasonryRow'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
@@ -192,63 +190,24 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
   const colWidth = containerWidth > 0 ? (containerWidth - gap * (cols - 1)) / cols : 0
   const imgSizes = colWidth > 0 ? `${Math.round(colWidth)}px` : `${Math.round(100 / cols)}vw`
 
-  // ── Virtualization threshold ─────────────────────────────────────────────
-  // Galleries up to 300 photos keep the original column-balanced masonry —
-  // it packs tighter (no row-clip artifacts) and the cost of mounting 300
-  // DOM trees is negligible. Past 300, React reconciliation + memory cost
-  // dominate scroll perf; we switch to a row-virtualized layout so only
-  // the visible rows (~3-5) are mounted. Empirical break-even: ~300 tiles
-  // on a mid-tier laptop, scrolling stays at 60fps versus ~18fps for a
-  // non-virtualized 2000-photo wedding.
-  const VIRTUALIZE_THRESHOLD = 300
-  const shouldVirtualize = images.length > VIRTUALIZE_THRESHOLD
-
-  // Pre-compute rows for the virtualized path — group images into rows of
-  // `cols` in their natural order. (We deliberately don't reuse the column-
-  // balancing algorithm; virtualization needs deterministic row indexing.)
-  const rows = useMemo(() => {
-    if (!shouldVirtualize) return [] as Array<Array<{ img: GalleryImage; index: number }>>
-    const out: Array<Array<{ img: GalleryImage; index: number }>> = []
-    for (let i = 0; i < images.length; i += cols) {
-      const slice: Array<{ img: GalleryImage; index: number }> = []
-      for (let k = 0; k < cols && i + k < images.length; k++) {
-        slice.push({ img: images[i + k], index: i + k })
-      }
-      out.push(slice)
-    }
-    return out
-  }, [images, cols, shouldVirtualize])
-
-  // Per-row height memo, recomputed when container width or rows change.
-  // VariableSizeList caches by index; we reset its internal cache when the
-  // function identity changes (see effect below).
-  const rowHeight = useCallback((rowIdx: number) => {
-    const row = rows[rowIdx]
-    if (!row) return 0
-    return rowHeightFor(row, cols, containerWidth, gap)
-  }, [rows, cols, containerWidth, gap])
-
-  const listRef = useRef<VariableSizeList | null>(null)
-  useEffect(() => {
-    // Tell VariableSizeList to drop its cached heights whenever the row
-    // shape changes (resize, layout switch, new images arriving). Without
-    // this, rows that used to be tall would render at the stale measured
-    // size.
-    listRef.current?.resetAfterIndex(0, true)
-  }, [rowHeight])
-
   // Height-balanced masonry: place each image (in order) into the currently
   // SHORTEST column, using its real aspect ratio (h/w) for the height. This
   // keeps columns even — no one column ending far short of the others (the big
   // black gap). Deterministic in index order, so loading more images never
   // reshuffles already-placed ones → no jump. Falls back to ~square (1) when a
   // photo's dimensions aren't stored yet (then it degrades to round-robin).
-  // Must be declared before any conditional early-return so the hook count
-  // stays stable across renders (React error #300 otherwise — fires the first
-  // time containerWidth transitions from 0 to a measured value on a
-  // virtualized gallery).
+  //
+  // One path for every gallery size, large or small. We deliberately do NOT
+  // virtualize with a react-window list: that owns its own `overflow:auto`
+  // viewport, which on desktop steals the wheel from the document and traps
+  // scrolling inside the first section (the "stuck first section" bug), and its
+  // fixed per-row height clipping leaves black gaps when portrait + landscape
+  // tiles mix in one row. Here the browser/document stays the only vertical
+  // scroll owner, and each tile keeps its own natural aspect ratio (no row
+  // clipping → no black holes). Memory is bounded instead by the progressive
+  // `visibleCount` batching above: only ~BATCH_SIZE tiles mount up-front, and
+  // more reveal as the sentinel scrolls into view.
   const columns = useMemo(() => {
-    if (shouldVirtualize) return [] as Array<Array<{ img: GalleryImage; index: number }>>
     const result: Array<Array<{ img: GalleryImage; index: number }>> = Array.from({ length: cols }, () => [])
     const heights = new Array(cols).fill(0)
     for (let i = 0; i < visibleImages.length; i++) {
@@ -260,64 +219,7 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
       heights[c] += ratio
     }
     return result
-  }, [visibleImages, cols, shouldVirtualize])
-
-  if (shouldVirtualize && containerWidth > 0) {
-    // Cap the virtualized viewport at ~85vh so the page can still scroll
-    // siblings (section heading, "all images" CTA) below it.
-    const viewportHeight = typeof window === 'undefined' ? 800 : Math.max(400, Math.round(window.innerHeight * 0.85))
-    const ROW_RENDER = ({ index, style }: ListChildComponentProps) => {
-      const row = rows[index]
-      if (!row) return null
-      // Phase 4: first two rows of the first section eager-load to give
-      // the LCP image fetchpriority=high. Later rows lazy-load as they
-      // scroll into the virtualization window.
-      const eager = index < 2
-      return (
-        <VirtualMasonryRow
-          rowImages={row}
-          cols={cols}
-          imgBucket={imgBucket}
-          gap={gap}
-          rounded={rounded}
-          imgSizes={imgSizes}
-          eager={eager}
-          onImageClick={onImageClick}
-          onDownload={onDownload}
-          selectMode={selectMode}
-          selectedIds={selectedIds}
-          onToggleSelect={onToggleSelect}
-          clientMode={clientMode}
-          hiddenIds={hiddenIds}
-          onToggleHide={onToggleHide}
-          watermark={watermark}
-          style={style}
-        />
-      )
-    }
-    return (
-      <div
-        ref={containerRef}
-        style={{
-          maxWidth: layoutMode === '1-col' ? 900 : undefined,
-          margin: layoutMode === '1-col' ? '0 auto' : undefined,
-          padding: gap > 0 ? `0 ${gap}px` : 0,
-          position: 'relative',
-        }}
-      >
-        <VariableSizeList
-          ref={listRef}
-          height={viewportHeight}
-          width={containerWidth}
-          itemCount={rows.length}
-          itemSize={rowHeight}
-          overscanCount={2}
-        >
-          {ROW_RENDER}
-        </VariableSizeList>
-      </div>
-    )
-  }
+  }, [visibleImages, cols])
 
   return (
     <div
