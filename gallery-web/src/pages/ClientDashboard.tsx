@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react'
+import { useEffect, useState, useRef, useCallback, lazy, Suspense, type CSSProperties } from 'react'
 import { supabase, storageUrl } from '../supabase'
 import { signedStorageUrl } from '../lib/signedStorage'
 import { SignedImg } from '../components/SignedImg'
@@ -14,6 +14,16 @@ const FeedStudio       = lazy(() => import('../components/FeedStudio').then(m =>
 const CreativeEngineDialog = lazy(() => import('../components/CreativeEngineDialog').then(m => ({ default: m.CreativeEngineDialog })))
 import { loadPortfolioSettings } from '../components/portfolioSettings'
 import { Icon, type IconName } from '../components/Icon'
+const ClientHome = lazy(() => import('../components/ClientHome').then(m => ({ default: m.ClientHome })))
+
+// PR1 — "Social OS" simplified navigation (Dashboard / Social Studio / Library).
+// Behind a flag so the legacy 7-tab structure stays fully recoverable: when the
+// flag is off, the client dashboard renders exactly as before. Enable per-env
+// (e.g. Vercel preview) with VITE_FEATURE_NEW_IA=true.
+const SOCIAL_OS = import.meta.env.VITE_FEATURE_NEW_IA === 'true'
+// Default posting cadence for a production-company retainer (drives the
+// "content remaining" math on the Dashboard).
+const CADENCE_PER_WEEK = 3
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -208,7 +218,9 @@ export function ClientDashboard() {
   const [stories, setStories] = useState<Map<string, StoryRow[]>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'feed-studio' | 'content' | 'calendar' | 'galleries' | 'stories' | 'page' | 'tender'>('feed-studio')
+  const [tab, setTab] = useState<'home' | 'feed-studio' | 'content' | 'calendar' | 'galleries' | 'stories' | 'page' | 'tender'>(SOCIAL_OS ? 'home' : 'feed-studio')
+  // PR1: open/close state for the "More" (frozen/legacy) menu in the Social OS nav.
+  const [moreOpen, setMoreOpen] = useState(false)
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(() => {
     // Hydrate from sessionStorage so the user's selection survives refresh
     // within the same browser session. Real persistence (a
@@ -533,6 +545,39 @@ export function ClientDashboard() {
     { id: 'tender', label: 'חיפוש למכרז', icon: 'search' },
   ]
 
+  // ── PR1 Social OS navigation model ──────────────────────────────────────
+  // Three primary areas map onto the existing `tab` content blocks (nothing is
+  // rebuilt): Dashboard → 'home', Social Studio → the social trio
+  // (feed-studio/content/calendar), Library → 'galleries'. Everything else
+  // (Stories, My Page, Tender) is frozen under "More" — code + routes intact.
+  const SOCIAL_TABS = ['feed-studio', 'content', 'calendar']
+  const primaryArea: 'dashboard' | 'social' | 'library' | 'more' =
+    tab === 'home' ? 'dashboard'
+      : SOCIAL_TABS.includes(tab) ? 'social'
+        : tab === 'galleries' ? 'library'
+          : 'more'
+  const moreItems: Array<{ id: typeof tab; label: string }> = [
+    ...(hasStories ? [{ id: 'stories' as const, label: 'Stories' }] : []),
+    { id: 'page' as const, label: 'My Page' },
+    { id: 'tender' as const, label: 'חיפוש למכרז' },
+  ]
+  const socialSubTabs: Array<{ id: typeof tab; label: string }> = [
+    { id: 'feed-studio', label: 'Feed' },
+    { id: 'content', label: 'Compose' },
+    { id: 'calendar', label: 'Calendar' },
+  ]
+  // Shared nav-button style (matches the legacy tab buttons exactly).
+  const navBtnStyle = (active: boolean, divider: boolean): CSSProperties => ({
+    padding: '8px 14px', border: 'none', cursor: 'pointer',
+    borderInlineStart: divider ? `1px solid ${border}` : 'none',
+    background: active ? textPrimary : 'transparent',
+    color: active ? '#fff' : textPrimary,
+    fontFamily: 'inherit', fontSize: 10, fontWeight: 500,
+    letterSpacing: '0.18em', textTransform: 'uppercase',
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    transition: 'background .15s, color .15s', whiteSpace: 'nowrap',
+  })
+
   return (
     <div style={{
       minHeight: '100vh', background: bg, color: textPrimary,
@@ -570,37 +615,101 @@ export function ClientDashboard() {
             }} />
           </div>
           {/* ── Tab Navigation — tracked uppercase, hairline-divided ── */}
-          <nav style={{
-            display: 'flex', gap: 4,
-            border: `1px solid ${border}`,
-            background: '#fff',
-          }}>
-            {tabs.map((t, i) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                style={{
-                  padding: '8px 14px', border: 'none', cursor: 'pointer',
-                  borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
-                  background: tab === t.id ? textPrimary : 'transparent',
-                  color: tab === t.id ? '#fff' : textPrimary,
-                  fontFamily: 'inherit',
-                  fontSize: 10, fontWeight: 500,
-                  letterSpacing: '0.18em', textTransform: 'uppercase',
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  transition: 'background .15s, color .15s',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <Icon name={t.icon} size={12} strokeWidth={1.6} />
-                {t.label}
+          {SOCIAL_OS ? (
+            /* PR1 Social OS nav: 3 primary areas + a "More" menu for frozen/
+               legacy areas (Stories, My Page, Tender). Same visual language. */
+            <nav aria-label="Primary" style={{ display: 'flex', gap: 4, border: `1px solid ${border}`, background: '#fff', position: 'relative' }}>
+              {([
+                { area: 'dashboard', label: 'Dashboard', icon: 'activity' as IconName, go: () => setTab('home') },
+                { area: 'social', label: 'Social Studio', icon: 'gallery' as IconName, go: () => setTab('feed-studio') },
+                { area: 'library', label: 'Library', icon: 'sections' as IconName, go: () => setTab('galleries') },
+              ] as const).map((p, i) => (
+                <button key={p.area} onClick={p.go} style={navBtnStyle(primaryArea === p.area, i > 0)}>
+                  <Icon name={p.icon} size={12} strokeWidth={1.6} />
+                  {p.label}
+                </button>
+              ))}
+              {/* More — frozen/legacy areas kept reachable (not deleted) */}
+              <button aria-label="More" onClick={() => setMoreOpen(o => !o)} style={navBtnStyle(primaryArea === 'more', true)}>
+                <Icon name="menu" size={12} strokeWidth={1.6} />
+                More
               </button>
-            ))}
-          </nav>
+              {moreOpen && (
+                <div role="menu" style={{ position: 'absolute', top: '100%', insetInlineEnd: 0, marginTop: 4, background: '#fff', border: `1px solid ${border}`, minWidth: 180, zIndex: 200, boxShadow: '0 8px 24px rgba(0,0,0,.08)' }}>
+                  {moreItems.map(m => (
+                    <button
+                      key={m.id}
+                      role="menuitem"
+                      onClick={() => { setTab(m.id); setMoreOpen(false) }}
+                      style={{ display: 'block', width: '100%', textAlign: 'start', padding: '10px 14px', border: 'none', borderBottom: `1px solid ${border}`, background: tab === m.id ? textPrimary : 'transparent', color: tab === m.id ? '#fff' : textPrimary, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </nav>
+          ) : (
+            <nav style={{
+              display: 'flex', gap: 4,
+              border: `1px solid ${border}`,
+              background: '#fff',
+            }}>
+              {tabs.map((t, i) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  style={{
+                    padding: '8px 14px', border: 'none', cursor: 'pointer',
+                    borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
+                    background: tab === t.id ? textPrimary : 'transparent',
+                    color: tab === t.id ? '#fff' : textPrimary,
+                    fontFamily: 'inherit',
+                    fontSize: 10, fontWeight: 500,
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    transition: 'background .15s, color .15s',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Icon name={t.icon} size={12} strokeWidth={1.6} />
+                  {t.label}
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
       </header>
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 24px 96px' }}>
+
+        {/* ── PR1 Dashboard (Social OS home) — content-engine overview ──── */}
+        {SOCIAL_OS && tab === 'home' && (
+          <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>Loading…</div>}>
+            <ClientHome
+              galleries={galleries}
+              covers={covers}
+              topPicksCount={topPicks.length}
+              storiesCount={Array.from(stories.values()).flat().length}
+              cadencePerWeek={CADENCE_PER_WEEK}
+              onGoSocial={() => setTab('feed-studio')}
+              onGoLibrary={() => setTab('galleries')}
+              palette={{ textPrimary, textMuted, border, statusLive }}
+            />
+          </Suspense>
+        )}
+
+        {/* ── PR1 Social Studio sub-nav — unifies Feed / Compose / Calendar
+            (the legacy social trio) under one area. Just switches `tab`. ── */}
+        {SOCIAL_OS && primaryArea === 'social' && (
+          <div style={{ display: 'flex', gap: 4, marginBottom: 28, border: `1px solid ${border}`, width: 'fit-content', background: '#fff' }}>
+            {socialSubTabs.map((s, i) => (
+              <button key={s.id} onClick={() => setTab(s.id)} style={navBtnStyle(tab === s.id, i > 0)}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ── Feed Studio Tab — the AI Visual OS surface ──────────────── */}
         {tab === 'feed-studio' && (
