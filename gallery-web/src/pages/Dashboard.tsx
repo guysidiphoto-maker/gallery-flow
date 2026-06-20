@@ -6,7 +6,7 @@ import { uploadMany } from '../lib/uploadPipeline'
 import { signedStorageUrl } from '../lib/signedStorage'
 import { warmGalleryCache } from '../lib/warmCache'
 import { SignedImg } from '../components/SignedImg'
-import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
+import { getMyTokenBalance, startCheckout, startGalleryCheckout, TOKEN_PACKAGES, GALLERY_UNLOCK_PRICE_ILS } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useToast } from '../components/Toast'
@@ -55,6 +55,11 @@ interface Gallery {
   // legacy delivery_settings.faceIndexEnabled JSONB key — the column is the
   // canonical source for the rekognition RPC, JSONB for the public viewer.
   face_index_enabled?: boolean | null
+  // One-time gallery purchase (migrations 075-077). requires_payment opts a
+  // gallery into the ₪590 model; one_time_paid flips true once it's bought.
+  requires_payment?: boolean | null
+  one_time_paid?: boolean | null
+  paid_expires_at?: string | null
 }
 
 interface GalleryImage {
@@ -622,7 +627,7 @@ export function Dashboard() {
     }
     const { data, error } = await supabase
       .from('galleries')
-      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings, requires_payment, one_time_paid, paid_expires_at')
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
@@ -1522,7 +1527,7 @@ export function Dashboard() {
       // produced, rather than reconstructing them client-side.
       const { data: fresh } = await supabase
         .from('galleries')
-        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings, requires_payment, one_time_paid, paid_expires_at')
         .eq('id', newId)
         .maybeSingle()
       if (fresh) openGalleryEditor(fresh as Gallery)
@@ -2856,6 +2861,34 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  {/* One-time gallery unlock (₪590). Paid → badge; unpaid → buy
+                      button. Independent of subscription tokens. */}
+                  {editingGallery.one_time_paid ? (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                      background: 'rgba(123,143,110,.14)', color: statusLive,
+                      border: `1px solid rgba(123,143,110,.4)`,
+                    }}>
+                      <Icon name="check" size={14} strokeWidth={2} /> גלריה שולמה
+                    </span>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        const url = await startGalleryCheckout(editingGallery.id)
+                        if (url) { window.location.href = url }
+                        else { showToast({ kind: 'error', text: 'שגיאה בפתיחת תשלום. נסה שוב.' }) }
+                      }}
+                      title="רכישה חד-פעמית של הגלריה — אחסון מורחב + זיהוי פנים"
+                      style={{
+                        background: 'transparent', color: textSecondary, cursor: 'pointer',
+                        border: `1px solid ${border}`, borderRadius: 8,
+                        padding: '6px 12px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+                      }}
+                    >
+                      פתח גלריה · ₪{GALLERY_UNLOCK_PRICE_ILS}
+                    </button>
+                  )}
                   {/* Live-preview toggle — only meaningful on Settings + Welcome
                       tabs (where the side preview pane appears). Lets the
                       photographer reclaim the full editor width when they want
