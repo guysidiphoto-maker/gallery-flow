@@ -1,0 +1,42 @@
+# Pixflow — robots.txt
+# Public marketing pages and published galleries are crawlable.
+# Private app surfaces (dashboards, vendor/client portals, questionnaires,
+# capture flows) are disallowed — they are gated, per-user, and have no SEO value.
+
+User-agent: *
+Allow: /
+
+# App / private surfaces — keep out of the index
+Disallow: /dashboard
+Disallow: /studio-settings
+Disallow: /brand-kit
+Disallow: /client/
+Disallow: /vendor/
+Disallow: /q/
+Disallow: /event/
+Disallow: /api/
+
+# AI answer-engine crawlers — explicitly welcome. Pixflow wants to be a
+# citable source for "event gallery with face recognition" style questions.
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+Sitemap: https://pixflow-ai.com/sitemap.xml
