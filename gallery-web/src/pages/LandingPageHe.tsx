@@ -3,6 +3,7 @@ import { signInWithGoogle } from '../lib/auth'
 import { color, text, space, radius, font, shadow } from '../theme'
 import { Button, Card, Badge, Reveal, Detect } from '../components/ui'
 import { FaceScanShowcase } from '../components/FaceScanShowcase'
+import { ScanProgress } from '../components/ScanProgress'
 
 const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
@@ -120,6 +121,7 @@ export function LandingPageHe() {
       fontFamily: font.sans, WebkitFontSmoothing: 'antialiased', overflowX: 'hidden',
     }}>
       <style>{PHONE_CSS}</style>
+      <ScanProgress />
 
       {/* Nav */}
       <nav style={{
