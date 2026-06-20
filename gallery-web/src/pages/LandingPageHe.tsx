@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { signInWithGoogle } from '../lib/auth'
 import { color, text, space, radius, font, shadow } from '../theme'
 import { Button, Card, Badge, Reveal } from '../components/ui'
+import { FaceScanShowcase } from '../components/FaceScanShowcase'
 
 const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
@@ -174,6 +175,9 @@ export function LandingPageHe() {
           </div>
         </Reveal>
       </section>
+
+      {/* Signature face-recognition scroll moment */}
+      <FaceScanShowcase />
 
       {/* How it works */}
       <section id="how" style={{ maxWidth: 1000, margin: '0 auto', padding: `${space[7]}px clamp(20px, 5vw, 56px)` }}>
