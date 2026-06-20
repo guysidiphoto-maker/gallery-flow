@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { signInWithGoogle } from '../lib/auth'
 import { color, text, space, radius, font, shadow } from '../theme'
-import { Button, Card, Badge, Reveal } from '../components/ui'
+import { Button, Card, Badge, Reveal, Detect } from '../components/ui'
 import { FaceScanShowcase } from '../components/FaceScanShowcase'
 
 const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
@@ -98,9 +98,9 @@ function Faq({ q, a }: { q: string; a: string }) {
 }
 
 const STEPS = [
-  { n: '1', t: 'מעלים תמונות', d: 'גוררים תיקייה וסוגרים עניין.' },
-  { n: '2', t: 'שולחים לינק', d: 'וואטסאפ, QR, מה שנוח — בלי אפליקציה ללקוח.' },
-  { n: '3', t: 'הם מוצאים את עצמם', d: 'סלפי אחד, וזיהוי הפנים עושה את השאר.' },
+  { n: '1', t: 'מעלים תמונות', d: 'גוררים תיקייה וסוגרים עניין.', g: 'linear-gradient(150deg,#C8B49E,#A98F76)' },
+  { n: '2', t: 'שולחים לינק', d: 'וואטסאפ, QR, מה שנוח — בלי אפליקציה ללקוח.', g: 'linear-gradient(150deg,#C7A6A6,#A87E7E)' },
+  { n: '3', t: 'הם מוצאים את עצמם', d: 'סלפי אחד, וזיהוי הפנים עושה את השאר.', g: 'linear-gradient(150deg,#9FB0A0,#7B8F6E)' },
 ]
 
 const FAQS = [
@@ -186,24 +186,24 @@ export function LandingPageHe() {
         </Reveal>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: space[4] }}>
           {STEPS.map((s, i) => (
-            <Reveal key={s.n} delay={i * 90}>
+            <Detect key={s.n} delay={i * 90}>
               <Card interactive pad={28} style={{ display: 'flex', flexDirection: 'column', gap: space[2], height: '100%' }}>
                 <div style={{
-                  width: 40, height: 40, borderRadius: radius.pill, background: color.accentSoft,
-                  color: color.accent, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 40, height: 40, borderRadius: radius.pill, background: s.g,
+                  color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   ...text.h3, fontWeight: 700, marginBottom: space[1],
                 }}>{s.n}</div>
                 <h3 style={{ ...text.h3, margin: 0 }}>{s.t}</h3>
                 <p style={{ ...text.small, color: color.inkSoft, margin: 0 }}>{s.d}</p>
               </Card>
-            </Reveal>
+            </Detect>
           ))}
         </div>
       </section>
 
       {/* Pricing teaser → full /pricing */}
       <section style={{ maxWidth: 1000, margin: '0 auto', padding: `${space[6]}px clamp(20px, 5vw, 56px)` }}>
-        <Reveal>
+        <Detect>
         <Card pad={36} style={{
           textAlign: 'center', background: color.surfaceAlt,
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space[3],
@@ -218,7 +218,7 @@ export function LandingPageHe() {
             <Button variant="secondary" size="lg" onClick={go}>התחל בחינם</Button>
           </div>
         </Card>
-        </Reveal>
+        </Detect>
       </section>
 
       {/* FAQ */}

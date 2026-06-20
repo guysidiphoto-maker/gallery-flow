@@ -3,7 +3,7 @@
 // `plans` table (migration 075) + the ₪590 one-time gallery (076-078).
 
 import { color, text, space, radius, font } from '../theme'
-import { Button, Card, Badge, Reveal } from '../components/ui'
+import { Button, Card, Badge, Reveal, Detect } from '../components/ui'
 
 interface Tier {
   id: string
@@ -85,7 +85,7 @@ export default function PricingPage() {
         maxWidth: 1080, margin: '0 auto', padding: `0 clamp(20px, 5vw, 56px)`, alignItems: 'stretch',
       }}>
         {TIERS.map((tier, i) => (
-          <Reveal key={tier.id} delay={i * 90} style={{ display: 'flex' }}>
+          <Detect key={tier.id} delay={i * 90} style={{ display: 'flex' }}>
           <Card elevated={tier.highlight} interactive pad={28}
             style={{
               display: 'flex', flexDirection: 'column', position: 'relative', width: '100%',
@@ -117,7 +117,7 @@ export default function PricingPage() {
               התחל עם {tier.name}
             </Button>
           </Card>
-          </Reveal>
+          </Detect>
         ))}
       </section>
 
