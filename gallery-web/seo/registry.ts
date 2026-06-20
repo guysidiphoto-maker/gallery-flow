@@ -27,6 +27,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { LANDING_PAGES, type LandingContent } from './content'
+import { BLOG_POSTS, BLOG_INDEX_PATH, type BlogPost } from './blog'
 
 export const SITE_ORIGIN =
   process.env.SITE_ORIGIN || process.env.NEXT_PUBLIC_SITE_URL || 'https://pixflow-ai.com'
@@ -336,6 +337,175 @@ function landingToRoute(c: LandingContent): SeoRoute {
   }
 }
 
+// ── Blog renderer (dark theme, inline-styled, self-contained) ────────────────
+
+function blogPostingLd(p: BlogPost): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: p.h1,
+    description: p.description,
+    datePublished: p.datePublished,
+    dateModified: p.dateModified,
+    author: { '@type': 'Organization', name: p.author, '@id': `${SITE_ORIGIN}/#organization` },
+    publisher: { '@id': `${SITE_ORIGIN}/#organization` },
+    mainEntityOfPage: { '@type': 'WebPage', '@id': `${SITE_ORIGIN}${p.path}` },
+    image: OG_DEFAULT,
+    inLanguage: p.lang,
+  }
+}
+
+function blogHeaderFooter(inner: string): string {
+  return `
+  <div style="background:${D.bg};color:${D.text};min-height:100vh;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.7">
+    <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:820px;margin:0 auto;padding:22px 24px;border-bottom:1px solid ${D.border}">
+      <a href="/en" style="font-weight:700;font-size:19px;color:${D.text};text-decoration:none">Pixflow</a>
+      <nav aria-label="Primary" style="display:flex;gap:22px;flex-wrap:wrap;font-size:14px">
+        <a href="/en" style="color:${D.muted};text-decoration:none">Home</a>
+        <a href="/blog" style="color:${D.muted};text-decoration:none">Blog</a>
+        <a href="/demo" style="color:${D.muted};text-decoration:none">Demo</a>
+      </nav>
+    </header>
+    <main style="max-width:680px;margin:0 auto;padding:0 24px">
+${inner}
+    </main>
+    <footer style="max-width:680px;margin:48px auto 0;padding:28px 24px 56px;border-top:1px solid ${D.border};color:${D.muted};font-size:14px">
+      © Pixflow — AI face recognition event photo galleries &nbsp;·&nbsp; <a href="/terms" style="color:${D.muted}">Terms</a> &nbsp;·&nbsp; <a href="/privacy" style="color:${D.muted}">Privacy</a>
+    </footer>
+  </div>`
+}
+
+function blogPostBody(p: BlogPost): string {
+  const sections = p.sections
+    .map(s => {
+      const h2 = s.h2
+        ? `      <h2 style="font-size:25px;line-height:1.25;font-weight:700;margin:36px 0 12px">${esc(s.h2)}</h2>`
+        : ''
+      const paras = (s.paragraphs || [])
+        .map(t => `      <p style="font-size:18px;color:${D.text};margin:0 0 18px">${esc(t)}</p>`)
+        .join('\n')
+      const bullets = s.bullets?.length
+        ? `      <ul style="margin:8px 0 18px;padding:0;list-style:none">${s.bullets
+            .map(
+              b =>
+                `<li style="position:relative;padding-left:26px;margin:12px 0;font-size:18px;color:${D.text}"><span style="position:absolute;left:4px;top:12px;width:7px;height:7px;border-radius:50%;background:${D.accent}"></span>${esc(
+                  b,
+                )}</li>`,
+            )
+            .join('')}</ul>`
+        : ''
+      return [h2, paras, bullets].filter(Boolean).join('\n')
+    })
+    .join('\n')
+
+  const related = p.related.length
+    ? `      <section style="padding:32px 0 0;border-top:1px solid ${D.border};margin-top:40px">
+        <h2 style="font-size:20px;font-weight:700;margin:0 0 14px">Related</h2>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">${p.related
+          .map(
+            r =>
+              `<a href="${esc(r.href)}" style="display:inline-block;padding:9px 16px;border-radius:999px;border:1px solid ${D.border};background:${D.surface};color:${D.text};font-size:14px;text-decoration:none">${esc(
+                r.label,
+              )}</a>`,
+          )
+          .join('')}</div>
+      </section>`
+    : ''
+
+  return blogHeaderFooter(`      <article>
+        <p style="text-transform:uppercase;letter-spacing:.14em;font-size:12px;font-weight:600;color:${D.accent};margin:44px 0 16px"><a href="/blog" style="color:${D.accent};text-decoration:none">Blog</a></p>
+        <h1 style="font-size:38px;line-height:1.12;letter-spacing:-.02em;font-weight:700;margin:0 0 14px">${esc(
+          p.h1,
+        )}</h1>
+        <p style="font-size:14px;color:${D.muted};margin:0 0 32px">${esc(p.author)} · ${esc(
+    p.datePublished,
+  )} · ${p.readingMinutes} min read</p>
+${sections}
+${related}
+      </article>`)
+}
+
+function blogIndexBody(posts: BlogPost[]): string {
+  const items = posts
+    .map(
+      p => `        <article style="padding:28px 0;border-top:1px solid ${D.border}">
+          <h2 style="font-size:24px;line-height:1.2;font-weight:700;margin:0 0 8px"><a href="${esc(
+            p.path,
+          )}" style="color:${D.text};text-decoration:none">${esc(p.h1)}</a></h2>
+          <p style="font-size:13px;color:${D.muted};margin:0 0 10px">${esc(p.datePublished)} · ${
+        p.readingMinutes
+      } min read</p>
+          <p style="font-size:17px;color:${D.muted};margin:0 0 10px">${esc(p.excerpt)}</p>
+          <a href="${esc(p.path)}" style="color:${D.accent};font-size:15px;text-decoration:none">Read more →</a>
+        </article>`,
+    )
+    .join('\n')
+  return blogHeaderFooter(`      <div style="padding:56px 0 8px">
+        <h1 style="font-size:42px;line-height:1.1;letter-spacing:-.02em;font-weight:700;margin:0 0 14px">Pixflow Blog</h1>
+        <p style="font-size:19px;color:${D.muted};margin:0">Guides and ideas on delivering event photos with AI face recognition — for photographers and production teams.</p>
+      </div>
+${items}`)
+}
+
+function blogToRoute(p: BlogPost): SeoRoute {
+  return {
+    key: `blog-${p.slug}`,
+    path: p.path,
+    lang: p.lang,
+    dir: p.dir,
+    title: p.title,
+    description: p.description,
+    bodyHtml: blogPostBody(p),
+    changefreq: 'monthly',
+    priority: 0.6,
+    indexable: true,
+    jsonLd: [
+      organizationLd(),
+      blogPostingLd(p),
+      breadcrumbLd([
+        { name: 'Home', path: '/en' },
+        { name: 'Blog', path: BLOG_INDEX_PATH },
+        { name: p.h1, path: p.path },
+      ]),
+    ],
+  }
+}
+
+const BLOG_INDEX_ROUTE: SeoRoute = {
+  key: 'blog-index',
+  path: BLOG_INDEX_PATH,
+  lang: 'en',
+  dir: 'ltr',
+  title: 'Pixflow Blog — Event Photo Delivery & Face Recognition',
+  description:
+    'Guides on delivering event photos with AI face recognition — faster delivery, choosing a gallery platform, and how face-recognition photo delivery works.',
+  changefreq: 'weekly',
+  priority: 0.6,
+  indexable: true,
+  bodyHtml: blogIndexBody(BLOG_POSTS),
+  jsonLd: [
+    organizationLd(),
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Blog',
+      '@id': `${SITE_ORIGIN}${BLOG_INDEX_PATH}#blog`,
+      name: 'Pixflow Blog',
+      url: `${SITE_ORIGIN}${BLOG_INDEX_PATH}`,
+      publisher: { '@id': `${SITE_ORIGIN}/#organization` },
+      blogPost: BLOG_POSTS.map(p => ({
+        '@type': 'BlogPosting',
+        headline: p.h1,
+        url: `${SITE_ORIGIN}${p.path}`,
+        datePublished: p.datePublished,
+      })),
+    },
+    breadcrumbLd([
+      { name: 'Home', path: '/en' },
+      { name: 'Blog', path: BLOG_INDEX_PATH },
+    ]),
+  ],
+}
+
 // ── Home / legal FAQ data ───────────────────────────────────────────────────
 
 const HOME_FAQ_HE = [
@@ -520,7 +690,12 @@ const STATIC_ROUTES: SeoRoute[] = [
 
 // ── Assembled route table ───────────────────────────────────────────────────
 
-const ROUTES: SeoRoute[] = [...STATIC_ROUTES, ...LANDING_PAGES.map(landingToRoute)]
+const ROUTES: SeoRoute[] = [
+  ...STATIC_ROUTES,
+  ...LANDING_PAGES.map(landingToRoute),
+  BLOG_INDEX_ROUTE,
+  ...BLOG_POSTS.map(blogToRoute),
+]
 
 const BY_KEY = new Map(ROUTES.map(r => [r.key, r]))
 const BY_PATH = new Map(ROUTES.map(r => [r.path, r]))

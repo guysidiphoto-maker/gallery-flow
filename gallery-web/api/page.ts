@@ -125,10 +125,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Resolve the route: prefer the ?route= key the rewrite injects; fall back to
   // parsing the path for direct hits.
   const q = req.query as Record<string, string | string[] | undefined>
-  const routeKey = Array.isArray(q.route) ? q.route[0] : q.route
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
+  const routeKey = first(q.route)
+  // ?p= carries the original path for dynamic rewrites (e.g. /blog/:slug),
+  // since a Vercel rewrite to /api/page does not preserve it in req.url.
+  const pathParam = first(q.p)
   const path = (req.url || '/').split('?')[0]
 
-  const route = (routeKey && getRouteByKey(routeKey)) || getRouteByPath(path)
+  const route =
+    (routeKey && getRouteByKey(routeKey)) || getRouteByPath(pathParam || path)
 
   const host = (req.headers['x-forwarded-host'] || req.headers.host || '') as string
   const proto = (req.headers['x-forwarded-proto'] as string) || 'https'

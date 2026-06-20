@@ -19,6 +19,8 @@
     { "source": "/wedding-photo-gallery", "destination": "/api/page?route=wedding-photo-gallery" },
     { "source": "/corporate-event-gallery", "destination": "/api/page?route=corporate-event-gallery" },
     { "source": "/how-it-works", "destination": "/api/page?route=how-it-works" },
+    { "source": "/blog", "destination": "/api/page?route=blog-index" },
+    { "source": "/blog/:slug", "destination": "/api/page?p=/blog/:slug" },
     { "source": "/gallery/:id", "destination": "/api/share?id=:id" },
     { "source": "/:slug/gallery/:id", "destination": "/api/gallery-page?biz=:slug&legacyId=:id" },
     { "source": "/:business/:gallery", "destination": "/api/gallery-page?biz=:business&gallery=:gallery" },

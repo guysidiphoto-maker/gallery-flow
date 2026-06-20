@@ -23,6 +23,12 @@ const LandingPage = lazy(() =>
 const SeoLanding = lazy(() =>
   import('./pages/SeoLanding').then(m => ({ default: m.SeoLanding })),
 )
+const BlogIndex = lazy(() =>
+  import('./pages/BlogIndex').then(m => ({ default: m.BlogIndex })),
+)
+const BlogPost = lazy(() =>
+  import('./pages/BlogPost').then(m => ({ default: m.BlogPost })),
+)
 const DemoPage = lazy(() =>
   import('./pages/DemoPage').then(m => ({ default: m.DemoPage })),
 )
@@ -228,6 +234,10 @@ function Router() {
   // Content-driven SEO landing pages (single source: seo/content.ts). Single
   // segment, so they precede the multi-segment gallery matchers below.
   if (LANDING_PATHS.has(path.replace(/\/+$/, '') || '/')) return <SeoLanding />
+  // Blog — /blog index and /blog/<slug> posts. Two-segment posts must be
+  // matched here, before the multi-segment gallery matchers below.
+  if (path === '/blog' || path === '/blog/') return <BlogIndex />
+  if (path.startsWith('/blog/')) return <BlogPost />
   if (path === '/demo') return <DemoPage />
   if (path === '/pricing') return <PricingPage />
   if (path === '/dashboard') return <Dashboard />
