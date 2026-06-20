@@ -4,6 +4,7 @@
 
 import { color, text, space, radius, font } from '../theme'
 import { Button, Card, Badge, Reveal, Detect } from '../components/ui'
+import { ScanHUD } from '../components/ScanHUD'
 
 interface Tier {
   id: string
@@ -52,6 +53,7 @@ export default function PricingPage() {
       minHeight: '100vh', background: color.bg, color: color.ink,
       fontFamily: font.sans, WebkitFontSmoothing: 'antialiased',
     }}>
+      <ScanHUD />
       {/* Header */}
       <header style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
