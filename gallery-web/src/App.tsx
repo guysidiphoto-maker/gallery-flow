@@ -1753,6 +1753,7 @@ export function App() {
         galleryName={galleryTitle}
         onUnlock={handleUnlock}
         requireToken={signedGateOn}
+        lang={lang}
       />
     )
   }
