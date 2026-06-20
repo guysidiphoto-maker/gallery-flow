@@ -41,6 +41,13 @@ type GalleryStatus = 'draft' | 'live' | 'archived'
 const STORY_GENERATE_MIN_PHOTOS = STORY_MIN_PHOTOS
 const STORY_GENERATE_MAX_PHOTOS = STORY_MAX_PHOTOS
 
+// Gallery one-time billing controls (paywall toggle + ₪590 unlock button) stay
+// behind a flag until LemonSqueezy checkout is wired + the edge functions are
+// deployed. OFF in production prevents a photographer from locking a real
+// gallery with no working way to pay. Flip VITE_FEATURE_GALLERY_BILLING=true
+// once billing is live.
+const GALLERY_BILLING_ON = import.meta.env.VITE_FEATURE_GALLERY_BILLING === 'true'
+
 interface Gallery {
   id: string
   name: string
@@ -2861,6 +2868,7 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  {GALLERY_BILLING_ON && (<>
                   {/* Toggle: opt this gallery into the one-time model. When on
                       and unpaid, the public viewer locks behind a ₪590 paywall
                       (server-enforced). Off by default. */}
@@ -2913,6 +2921,7 @@ export function Dashboard() {
                       פתח גלריה · ₪{GALLERY_UNLOCK_PRICE_ILS}
                     </button>
                   )}
+                  </>)}
                   {/* Live-preview toggle — only meaningful on Settings + Welcome
                       tabs (where the side preview pane appears). Lets the
                       photographer reclaim the full editor width when they want
