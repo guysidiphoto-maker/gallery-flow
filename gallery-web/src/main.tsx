@@ -19,6 +19,7 @@ const LandingPageHe = lazy(() =>
 const DemoPage = lazy(() =>
   import('./pages/DemoPage').then(m => ({ default: m.DemoPage })),
 )
+const PricingPage = lazy(() => import('./pages/PricingPage'))
 const TermsPage = lazy(() =>
   import('./pages/TermsPage').then(m => ({ default: m.TermsPage })),
 )
@@ -217,6 +218,7 @@ function Router() {
 
   if (path === '/') return <LandingPageHe />
   if (path === '/demo') return <DemoPage />
+  if (path === '/pricing') return <PricingPage />
   if (path === '/dashboard') return <Dashboard />
   if (path === '/studio-settings') return <StudioSettings />
   if (path === '/brand-kit') return <BrandKit />
