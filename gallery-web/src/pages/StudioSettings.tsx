@@ -776,7 +776,7 @@ export function StudioSettings() {
             aria-labelledby="studio-buy-tokens-heading"
             onClick={e => e.stopPropagation()}
             style={{
-              background: bg, width: '100%', maxWidth: 720,
+              background: bg, width: '100%', maxWidth: 920,
               borderRadius: 24, padding: 36,
               border: `1px solid ${border}`,
               boxShadow: '0 30px 100px rgba(0,0,0,.6)',
@@ -799,7 +799,7 @@ export function StudioSettings() {
               טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong style={{ color: tokenBalance < 50 ? '#A67C52' : statusLive }}>{tokenBalance.toLocaleString('he-IL')}</strong>
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
               {TOKEN_PACKAGES.map(pkg => (
                 <button
                   key={pkg.planId}
@@ -847,7 +847,7 @@ export function StudioSettings() {
 
             <p style={{ fontSize: 11, color: textMuted, margin: '20px 0 0', textAlign: 'center', lineHeight: 1.5 }}>
               חיוב חודשי דרך LemonSqueezy. אפשר לבטל בכל זמן.<br />
-              טוקנים שלא בשימוש מצטברים, לא מתאפסים בסוף חודש.
+              המכסה מתחדשת בתחילת כל חודש (טוקנים שלא נוצלו אינם מצטברים).
             </p>
           </div>
         </div>

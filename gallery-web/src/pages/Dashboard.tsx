@@ -6,7 +6,7 @@ import { uploadMany } from '../lib/uploadPipeline'
 import { signedStorageUrl } from '../lib/signedStorage'
 import { warmGalleryCache } from '../lib/warmCache'
 import { SignedImg } from '../components/SignedImg'
-import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
+import { getMyTokenBalance, startCheckout, startGalleryCheckout, TOKEN_PACKAGES, GALLERY_UNLOCK_PRICE_ILS } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useToast } from '../components/Toast'
@@ -41,6 +41,13 @@ type GalleryStatus = 'draft' | 'live' | 'archived'
 const STORY_GENERATE_MIN_PHOTOS = STORY_MIN_PHOTOS
 const STORY_GENERATE_MAX_PHOTOS = STORY_MAX_PHOTOS
 
+// Gallery one-time billing controls (paywall toggle + ₪590 unlock button) stay
+// behind a flag until LemonSqueezy checkout is wired + the edge functions are
+// deployed. OFF in production prevents a photographer from locking a real
+// gallery with no working way to pay. Flip VITE_FEATURE_GALLERY_BILLING=true
+// once billing is live.
+const GALLERY_BILLING_ON = import.meta.env.VITE_FEATURE_GALLERY_BILLING === 'true'
+
 interface Gallery {
   id: string
   name: string
@@ -55,6 +62,11 @@ interface Gallery {
   // legacy delivery_settings.faceIndexEnabled JSONB key — the column is the
   // canonical source for the rekognition RPC, JSONB for the public viewer.
   face_index_enabled?: boolean | null
+  // One-time gallery purchase (migrations 075-077). requires_payment opts a
+  // gallery into the ₪590 model; one_time_paid flips true once it's bought.
+  requires_payment?: boolean | null
+  one_time_paid?: boolean | null
+  paid_expires_at?: string | null
 }
 
 interface GalleryImage {
@@ -622,7 +634,7 @@ export function Dashboard() {
     }
     const { data, error } = await supabase
       .from('galleries')
-      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings, requires_payment, one_time_paid, paid_expires_at')
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
@@ -1522,7 +1534,7 @@ export function Dashboard() {
       // produced, rather than reconstructing them client-side.
       const { data: fresh } = await supabase
         .from('galleries')
-        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings, requires_payment, one_time_paid, paid_expires_at')
         .eq('id', newId)
         .maybeSingle()
       if (fresh) openGalleryEditor(fresh as Gallery)
@@ -2856,6 +2868,60 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  {GALLERY_BILLING_ON && (<>
+                  {/* Toggle: opt this gallery into the one-time model. When on
+                      and unpaid, the public viewer locks behind a ₪590 paywall
+                      (server-enforced). Off by default. */}
+                  <button
+                    onClick={async () => {
+                      const next = !editingGallery.requires_payment
+                      const { error } = await supabase.from('galleries')
+                        .update({ requires_payment: next }).eq('id', editingGallery.id)
+                      if (error) { showToast({ kind: 'error', text: 'שגיאה בעדכון מצב התשלום.' }); return }
+                      setEditingGallery({ ...editingGallery, requires_payment: next })
+                      setGalleries(prev => prev.map(g => g.id === editingGallery.id ? { ...g, requires_payment: next } : g))
+                      showToast({ kind: 'success', text: next ? 'הגלריה נעולה ללקוח עד תשלום.' : 'נעילת התשלום בוטלה.' })
+                    }}
+                    title="כשפעיל, הלקוח רואה מסך תשלום (₪590) עד שמשלמים"
+                    style={{
+                      background: editingGallery.requires_payment ? 'rgba(166,124,82,.14)' : 'transparent',
+                      color: editingGallery.requires_payment ? '#A67C52' : textSecondary,
+                      cursor: 'pointer',
+                      border: `1px solid ${editingGallery.requires_payment ? 'rgba(166,124,82,.4)' : border}`,
+                      borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+                    }}
+                  >
+                    {editingGallery.requires_payment ? 'תשלום-לקוח: פעיל' : 'תשלום-לקוח: כבוי'}
+                  </button>
+                  {/* One-time gallery unlock (₪590). Paid → badge; unpaid → buy
+                      button. Independent of subscription tokens. */}
+                  {editingGallery.one_time_paid ? (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                      background: 'rgba(123,143,110,.14)', color: statusLive,
+                      border: `1px solid rgba(123,143,110,.4)`,
+                    }}>
+                      <Icon name="check" size={14} strokeWidth={2} /> גלריה שולמה
+                    </span>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        const url = await startGalleryCheckout(editingGallery.id)
+                        if (url) { window.location.href = url }
+                        else { showToast({ kind: 'error', text: 'שגיאה בפתיחת תשלום. נסה שוב.' }) }
+                      }}
+                      title="רכישה חד-פעמית של הגלריה — אחסון מורחב + זיהוי פנים"
+                      style={{
+                        background: 'transparent', color: textSecondary, cursor: 'pointer',
+                        border: `1px solid ${border}`, borderRadius: 8,
+                        padding: '6px 12px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+                      }}
+                    >
+                      פתח גלריה · ₪{GALLERY_UNLOCK_PRICE_ILS}
+                    </button>
+                  )}
+                  </>)}
                   {/* Live-preview toggle — only meaningful on Settings + Welcome
                       tabs (where the side preview pane appears). Lets the
                       photographer reclaim the full editor width when they want
@@ -6471,7 +6537,7 @@ export function Dashboard() {
             aria-labelledby="buy-tokens-heading"
             onClick={e => e.stopPropagation()}
             style={{
-              background: bg, width: '100%', maxWidth: 720,
+              background: bg, width: '100%', maxWidth: 920,
               borderRadius: 24, padding: 36,
               border: `1px solid ${border}`,
               animation: 'modalIn .3s ease both',
@@ -6491,7 +6557,7 @@ export function Dashboard() {
               טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#16a274' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
               {TOKEN_PACKAGES.map(pkg => (
                 <button
                   key={pkg.planId}
@@ -6541,7 +6607,7 @@ export function Dashboard() {
 
             <p style={{ fontSize: 11, color: textMuted, margin: '20px 0 0', textAlign: 'center', lineHeight: 1.5 }}>
               חיוב חודשי דרך LemonSqueezy. אפשר לבטל בכל זמן.<br />
-              טוקנים שלא בשימוש מצטברים, לא מתאפסים בסוף חודש.
+              המכסה מתחדשת בתחילת כל חודש (טוקנים שלא נוצלו אינם מצטברים).
             </p>
           </div>
         </div>
