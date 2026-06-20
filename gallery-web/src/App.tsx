@@ -20,6 +20,7 @@ import {
   type GalleryMeta,
 } from './lib/galleryClient'
 import { logDownload, logBatchDownload } from './lib/activityLog'
+import { startGalleryCheckout, GALLERY_UNLOCK_PRICE_ILS } from './lib/tokenClient'
 
 // Both surfaces only mount once a guest opts in (face search button / story
 // circle). Lazy-loading keeps their JS (camera pipeline + autoplay video
@@ -1626,6 +1627,49 @@ export function App() {
     return (
       <div className="center-msg">
         <div className="loader" />
+      </div>
+    )
+  }
+
+  // ── One-time gallery paywall ────────────────────────────────────────────
+  // The server withholds images for a gallery opted into the one-time model
+  // and not yet paid (migrations 077/078); here we render the unlock screen
+  // instead of an empty grid. Flag fields arrive via gallery_get_meta. This is
+  // presentation only — the real enforcement is server-side, so it can't be
+  // bypassed by skipping this screen.
+  const payMeta = gallery as unknown as {
+    requires_payment?: boolean; one_time_paid?: boolean; paid_expires_at?: string | null
+  }
+  const paidWithinWindow = payMeta.one_time_paid === true && !!payMeta.paid_expires_at
+    && new Date(payMeta.paid_expires_at).getTime() > Date.now()
+  if (payMeta.requires_payment === true && !paidWithinWindow) {
+    const isRtl = document.documentElement.dir === 'rtl'
+    return (
+      <div className="center-msg" dir={isRtl ? 'rtl' : 'ltr'} style={{ padding: 24, textAlign: 'center' }}>
+        <div style={{ fontSize: 40, marginBottom: 16 }} aria-hidden>🔒</div>
+        <h1 style={{
+          fontFamily: 'Playfair Display, Georgia, serif',
+          fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em',
+          margin: '0 0 12px', color: '#fafafa',
+        }}>{gallery.name}</h1>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'rgba(255,255,255,.65)', margin: '0 0 24px', maxWidth: 420 }}>
+          {isRtl
+            ? `הגלריה מוכנה. לפתיחה מלאה — צפייה, חיפוש פנים והורדות — נדרש תשלום חד-פעמי של ₪${GALLERY_UNLOCK_PRICE_ILS}.`
+            : `Your gallery is ready. A one-time ₪${GALLERY_UNLOCK_PRICE_ILS} payment unlocks full viewing, face search and downloads.`}
+        </p>
+        <button
+          onClick={async () => {
+            const url = await startGalleryCheckout(gallery.id)
+            if (url) window.location.href = url
+          }}
+          style={{
+            background: '#fafafa', color: '#141413', border: 'none',
+            borderRadius: 10, padding: '14px 28px', fontSize: 15, fontWeight: 700,
+            cursor: 'pointer', letterSpacing: '-0.01em',
+          }}
+        >
+          {isRtl ? `שחרר את הגלריה · ₪${GALLERY_UNLOCK_PRICE_ILS}` : `Unlock gallery · ₪${GALLERY_UNLOCK_PRICE_ILS}`}
+        </button>
       </div>
     )
   }

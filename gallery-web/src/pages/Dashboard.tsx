@@ -2861,6 +2861,30 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  {/* Toggle: opt this gallery into the one-time model. When on
+                      and unpaid, the public viewer locks behind a ₪590 paywall
+                      (server-enforced). Off by default. */}
+                  <button
+                    onClick={async () => {
+                      const next = !editingGallery.requires_payment
+                      const { error } = await supabase.from('galleries')
+                        .update({ requires_payment: next }).eq('id', editingGallery.id)
+                      if (error) { showToast({ kind: 'error', text: 'שגיאה בעדכון מצב התשלום.' }); return }
+                      setEditingGallery({ ...editingGallery, requires_payment: next })
+                      setGalleries(prev => prev.map(g => g.id === editingGallery.id ? { ...g, requires_payment: next } : g))
+                      showToast({ kind: 'success', text: next ? 'הגלריה נעולה ללקוח עד תשלום.' : 'נעילת התשלום בוטלה.' })
+                    }}
+                    title="כשפעיל, הלקוח רואה מסך תשלום (₪590) עד שמשלמים"
+                    style={{
+                      background: editingGallery.requires_payment ? 'rgba(166,124,82,.14)' : 'transparent',
+                      color: editingGallery.requires_payment ? '#A67C52' : textSecondary,
+                      cursor: 'pointer',
+                      border: `1px solid ${editingGallery.requires_payment ? 'rgba(166,124,82,.4)' : border}`,
+                      borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+                    }}
+                  >
+                    {editingGallery.requires_payment ? 'תשלום-לקוח: פעיל' : 'תשלום-לקוח: כבוי'}
+                  </button>
                   {/* One-time gallery unlock (₪590). Paid → badge; unpaid → buy
                       button. Independent of subscription tokens. */}
                   {editingGallery.one_time_paid ? (

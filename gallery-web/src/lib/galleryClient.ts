@@ -69,6 +69,9 @@ export interface BootstrapResult<M = unknown, I = unknown, S = unknown> {
   meta?: M
   images?: I[]
   sections?: S[]
+  // True when the gallery is opted into the one-time model and not yet paid
+  // (migrations 077/078). Images come back empty; the viewer shows a paywall.
+  locked?: boolean
 }
 
 interface StoredToken {
@@ -160,7 +163,7 @@ export async function bootstrapGallery<M = GalleryMeta, I = unknown, S = unknown
     }),
   )
   if (error || !data) return { status: 'unavailable' }
-  const res = data as { ok?: boolean; error?: string; gallery_id?: string; meta?: M; images?: unknown; sections?: S[] }
+  const res = data as { ok?: boolean; error?: string; gallery_id?: string; meta?: M; images?: unknown; sections?: S[]; locked?: boolean }
   if (res.ok !== true) {
     return { status: res.error === 'not_found' ? 'not_found' : 'unavailable' }
   }
@@ -174,6 +177,7 @@ export async function bootstrapGallery<M = GalleryMeta, I = unknown, S = unknown
     meta: res.meta,
     images: images as I[],
     sections: (res.sections ?? []) as S[],
+    locked: res.locked === true,
   }
 }
 
