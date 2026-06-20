@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { signInWithGoogle } from '../lib/auth'
 import { color, text, space, radius, font, shadow } from '../theme'
-import { Button, Card, Badge } from '../components/ui'
+import { Button, Card, Badge, Reveal } from '../components/ui'
 
 const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
@@ -140,53 +140,66 @@ export function LandingPageHe() {
         maxWidth: 1120, margin: '0 auto', padding: `${space[7]}px clamp(20px, 5vw, 56px) ${space[8]}px`,
       }}>
         <div style={{ flex: '1 1 420px', maxWidth: 540 }}>
-          <h1 style={{ ...text.display, margin: 0 }}>הגלריה שלך.<br/>הלקוחות מוצאים<br/>את עצמם.</h1>
-          <p style={{ ...text.body, fontSize: 18, color: color.inkSoft, margin: `${space[4]}px 0 ${space[5]}px`, maxWidth: 460 }}>
-            ענן גלריות לצלמים עם זיהוי פנים. האורחים מצלמים סלפי — וכל התמונות שלהם כבר שם. בלי אפליקציה, בלי חיפוש.
-          </p>
-          <div style={{ display: 'flex', gap: space[3], alignItems: 'center', flexWrap: 'wrap' }}>
-            <Button size="lg" onClick={go}>התחל בחינם</Button>
-            <button onClick={() => setLive(v => !v)} style={{
-              background: 'none', border: 'none', cursor: 'pointer', ...text.body, fontWeight: 600,
-              color: color.accent, fontFamily: font.sans,
-            }}>
-              {live ? '● רואים את זה חי →' : '▶ תראה לי איך זה עובד'}
-            </button>
-          </div>
-          <div style={{ ...text.small, color: color.textMuted, marginTop: space[4] }}>
-            100 תמונות חינם · בלי כרטיס אשראי
-          </div>
+          <Reveal>
+            <h1 style={{ ...text.display, margin: 0 }}>הגלריה שלך.<br/>הלקוחות מוצאים<br/>את עצמם.</h1>
+          </Reveal>
+          <Reveal delay={90}>
+            <p style={{ ...text.body, fontSize: 18, color: color.inkSoft, margin: `${space[4]}px 0 ${space[5]}px`, maxWidth: 460 }}>
+              ענן גלריות לצלמים עם זיהוי פנים. האורחים מצלמים סלפי — וכל התמונות שלהם כבר שם. בלי אפליקציה, בלי חיפוש.
+            </p>
+          </Reveal>
+          <Reveal delay={170}>
+            <div style={{ display: 'flex', gap: space[3], alignItems: 'center', flexWrap: 'wrap' }}>
+              <Button size="lg" onClick={go}>התחל בחינם</Button>
+              <button onClick={() => setLive(v => !v)} style={{
+                background: 'none', border: 'none', cursor: 'pointer', ...text.body, fontWeight: 600,
+                color: color.accent, fontFamily: font.sans,
+              }}>
+                {live ? '● רואים את זה חי →' : '▶ תראה לי איך זה עובד'}
+              </button>
+            </div>
+          </Reveal>
+          <Reveal delay={240}>
+            <div style={{ ...text.small, color: color.textMuted, marginTop: space[4] }}>
+              100 תמונות חינם · בלי כרטיס אשראי
+            </div>
+          </Reveal>
         </div>
 
         {/* Phone */}
-        <div style={{ flex: '0 0 auto' }}>
-          <div className={`phone ${live ? 'phone--live' : ''}`}>
+        <Reveal delay={120} y={32} style={{ flex: '0 0 auto' }}>
+          <div className={`phone phone-float ${live ? 'phone--live' : ''}`}>
             <div className="phone-notch" />
             <div className="phone-scr"><PhoneDemo active={live} /></div>
           </div>
-        </div>
+        </Reveal>
       </section>
 
       {/* How it works */}
       <section id="how" style={{ maxWidth: 1000, margin: '0 auto', padding: `${space[7]}px clamp(20px, 5vw, 56px)` }}>
-        <h2 style={{ ...text.h1, textAlign: 'center', margin: `0 0 ${space[6]}px` }}>שלושה שלבים. זהו.</h2>
+        <Reveal>
+          <h2 style={{ ...text.h1, textAlign: 'center', margin: `0 0 ${space[6]}px` }}>שלושה שלבים. זהו.</h2>
+        </Reveal>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: space[4] }}>
-          {STEPS.map(s => (
-            <Card key={s.n} pad={28} style={{ display: 'flex', flexDirection: 'column', gap: space[2] }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: radius.pill, background: color.accentSoft,
-                color: color.accent, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                ...text.h3, fontWeight: 700, marginBottom: space[1],
-              }}>{s.n}</div>
-              <h3 style={{ ...text.h3, margin: 0 }}>{s.t}</h3>
-              <p style={{ ...text.small, color: color.inkSoft, margin: 0 }}>{s.d}</p>
-            </Card>
+          {STEPS.map((s, i) => (
+            <Reveal key={s.n} delay={i * 90}>
+              <Card interactive pad={28} style={{ display: 'flex', flexDirection: 'column', gap: space[2], height: '100%' }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: radius.pill, background: color.accentSoft,
+                  color: color.accent, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  ...text.h3, fontWeight: 700, marginBottom: space[1],
+                }}>{s.n}</div>
+                <h3 style={{ ...text.h3, margin: 0 }}>{s.t}</h3>
+                <p style={{ ...text.small, color: color.inkSoft, margin: 0 }}>{s.d}</p>
+              </Card>
+            </Reveal>
           ))}
         </div>
       </section>
 
       {/* Pricing teaser → full /pricing */}
       <section style={{ maxWidth: 1000, margin: '0 auto', padding: `${space[6]}px clamp(20px, 5vw, 56px)` }}>
+        <Reveal>
         <Card pad={36} style={{
           textAlign: 'center', background: color.surfaceAlt,
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space[3],
@@ -201,20 +214,27 @@ export function LandingPageHe() {
             <Button variant="secondary" size="lg" onClick={go}>התחל בחינם</Button>
           </div>
         </Card>
+        </Reveal>
       </section>
 
       {/* FAQ */}
       <section style={{ maxWidth: 620, margin: '0 auto', padding: `${space[7]}px clamp(20px, 5vw, 56px)` }}>
-        <h2 style={{ ...text.h1, textAlign: 'center', margin: `0 0 ${space[5]}px` }}>שאלות נפוצות</h2>
-        {FAQS.map(f => <Faq key={f.q} q={f.q} a={f.a} />)}
+        <Reveal>
+          <h2 style={{ ...text.h1, textAlign: 'center', margin: `0 0 ${space[5]}px` }}>שאלות נפוצות</h2>
+        </Reveal>
+        <Reveal delay={80}>
+          <div>{FAQS.map(f => <Faq key={f.q} q={f.q} a={f.a} />)}</div>
+        </Reveal>
       </section>
 
       {/* Final CTA */}
       <section style={{ textAlign: 'center', padding: `${space[7]}px ${space[5]}px ${space[8]}px` }}>
-        <h2 style={{ ...text.display, fontSize: 'clamp(30px,5vw,56px)', margin: `0 0 ${space[5]}px` }}>
-          הגלריה הבאה שלך<br/>מוכרת את עצמה.
-        </h2>
-        <Button size="lg" onClick={go} style={{ padding: '16px 40px', fontSize: 16 }}>יאללה, נרים את זה</Button>
+        <Reveal>
+          <h2 style={{ ...text.display, fontSize: 'clamp(30px,5vw,56px)', margin: `0 0 ${space[5]}px` }}>
+            הגלריה הבאה שלך<br/>מוכרת את עצמה.
+          </h2>
+          <Button size="lg" onClick={go} style={{ padding: '16px 40px', fontSize: 16 }}>יאללה, נרים את זה</Button>
+        </Reveal>
       </section>
 
       {/* Footer */}
@@ -235,6 +255,10 @@ export function LandingPageHe() {
 
 /* Self-contained styles for the dark phone mockup + its demo animation. */
 const PHONE_CSS = `
+html{scroll-behavior:smooth}
+.phone-float{animation:phonefloat 6s ease-in-out infinite}
+@keyframes phonefloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@media(prefers-reduced-motion:reduce){.phone-float{animation:none}html{scroll-behavior:auto}}
 .phone{width:clamp(220px,24vw,280px);aspect-ratio:9/19.5;border:2px solid #1a1a1a;border-radius:38px;background:#0E0E10;position:relative;overflow:hidden;box-shadow:${shadow.lg};transition:border-color .5s,box-shadow .5s}
 .phone--live{border-color:#7B8F6E;box-shadow:0 0 50px rgba(123,143,110,.18),${shadow.lg}}
 .phone-notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:70px;height:18px;background:#0E0E10;border-radius:0 0 10px 10px;z-index:5}

@@ -3,7 +3,7 @@
 // `plans` table (migration 075) + the ₪590 one-time gallery (076-078).
 
 import { color, text, space, radius, font } from '../theme'
-import { Button, Card, Badge } from '../components/ui'
+import { Button, Card, Badge, Reveal } from '../components/ui'
 
 interface Tier {
   id: string
@@ -68,11 +68,15 @@ export default function PricingPage() {
 
       {/* Hero */}
       <section style={{ textAlign: 'center', padding: `${space[7]}px ${space[5]}px ${space[6]}px`, maxWidth: 720, margin: '0 auto' }}>
-        <h1 style={{ ...text.display, margin: 0 }}>תמחור פשוט ושקוף</h1>
-        <p style={{ ...text.body, color: color.inkSoft, fontSize: 17, margin: `${space[4]}px auto 0`, maxWidth: 540 }}>
-          המכסה מתחדשת בכל חודש. <strong>זיהוי פנים כלול בכל מנוי בתשלום</strong> — הלקוחות מוצאים את עצמם בשניות.
-          בלי כוכביות, בלי שיחת מכירה.
-        </p>
+        <Reveal>
+          <h1 style={{ ...text.display, margin: 0 }}>תמחור פשוט ושקוף</h1>
+        </Reveal>
+        <Reveal delay={90}>
+          <p style={{ ...text.body, color: color.inkSoft, fontSize: 17, margin: `${space[4]}px auto 0`, maxWidth: 540 }}>
+            המכסה מתחדשת בכל חודש. <strong>זיהוי פנים כלול בכל מנוי בתשלום</strong> — הלקוחות מוצאים את עצמם בשניות.
+            בלי כוכביות, בלי שיחת מכירה.
+          </p>
+        </Reveal>
       </section>
 
       {/* Subscription tiers */}
@@ -80,10 +84,11 @@ export default function PricingPage() {
         display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: space[4],
         maxWidth: 1080, margin: '0 auto', padding: `0 clamp(20px, 5vw, 56px)`, alignItems: 'stretch',
       }}>
-        {TIERS.map(tier => (
-          <Card key={tier.id} elevated={tier.highlight} pad={28}
+        {TIERS.map((tier, i) => (
+          <Reveal key={tier.id} delay={i * 90} style={{ display: 'flex' }}>
+          <Card elevated={tier.highlight} interactive pad={28}
             style={{
-              display: 'flex', flexDirection: 'column', position: 'relative',
+              display: 'flex', flexDirection: 'column', position: 'relative', width: '100%',
               border: tier.highlight ? `1.5px solid ${color.accentBorder}` : `1px solid ${color.border}`,
             }}>
             {tier.highlight && (
@@ -112,11 +117,13 @@ export default function PricingPage() {
               התחל עם {tier.name}
             </Button>
           </Card>
+          </Reveal>
         ))}
       </section>
 
       {/* One-time gallery */}
       <section style={{ maxWidth: 1080, margin: `${space[7]}px auto 0`, padding: `0 clamp(20px, 5vw, 56px)` }}>
+        <Reveal>
         <Card pad={32} style={{
           display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
           gap: space[4], background: color.surfaceAlt,
@@ -136,6 +143,7 @@ export default function PricingPage() {
             <Button size="lg" onClick={() => { window.location.href = '/dashboard' }}>צור גלריה</Button>
           </div>
         </Card>
+        </Reveal>
       </section>
 
       {/* Free tier note */}
