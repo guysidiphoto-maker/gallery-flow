@@ -5,6 +5,7 @@ import { App } from './App'
 import './styles.css'
 import { initSentry } from './sentry'
 import { getSentryReportContext } from './lib/sentryContext'
+import { LANDING_PATHS } from '../seo/content'
 
 // ── Route-level code splitting ───────────────────────────────────────────
 // Every non-gallery route is lazy-loaded so the public gallery viewer
@@ -15,6 +16,12 @@ import { getSentryReportContext } from './lib/sentryContext'
 // splash lives in index.html and is removed when React renders).
 const LandingPageHe = lazy(() =>
   import('./pages/LandingPageHe').then(m => ({ default: m.LandingPageHe })),
+)
+const LandingPage = lazy(() =>
+  import('./pages/LandingPage').then(m => ({ default: m.LandingPage })),
+)
+const SeoLanding = lazy(() =>
+  import('./pages/SeoLanding').then(m => ({ default: m.SeoLanding })),
 )
 const DemoPage = lazy(() =>
   import('./pages/DemoPage').then(m => ({ default: m.DemoPage })),
@@ -217,6 +224,10 @@ function Router() {
   const path = window.location.pathname
 
   if (path === '/') return <LandingPageHe />
+  if (path === '/en' || path === '/en/') return <LandingPage />
+  // Content-driven SEO landing pages (single source: seo/content.ts). Single
+  // segment, so they precede the multi-segment gallery matchers below.
+  if (LANDING_PATHS.has(path.replace(/\/+$/, '') || '/')) return <SeoLanding />
   if (path === '/demo') return <DemoPage />
   if (path === '/pricing') return <PricingPage />
   if (path === '/dashboard') return <Dashboard />
