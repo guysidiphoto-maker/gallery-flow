@@ -19,6 +19,7 @@
 // crawler ping.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { allRoutes } from '../seo/registry'
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
@@ -30,16 +31,10 @@ const SITE_ORIGIN =
   process.env.NEXT_PUBLIC_SITE_URL ||
   'https://pixflow-ai.com'
 
-// Marketing pages — keep the list small + maintained by hand. New routes
-// belong here so the sitemap stays a single source of truth, not auto-
-// generated from a route table (which would leak admin URLs).
-const STATIC_ROUTES: Array<{ path: string; changefreq?: string; priority?: number }> = [
-  { path: '/', changefreq: 'weekly', priority: 1.0 },
-  { path: '/he', changefreq: 'weekly', priority: 1.0 },
-  { path: '/demo', changefreq: 'monthly', priority: 0.5 },
-  { path: '/terms', changefreq: 'yearly', priority: 0.3 },
-  { path: '/privacy', changefreq: 'yearly', priority: 0.3 },
-]
+// Marketing pages come from the SEO registry (seo/registry.ts) — the single
+// source of truth shared with api/page.ts, so a new SEO/landing route appears
+// in the sitemap automatically (indexable routes only; admin URLs never live
+// in the registry).
 
 interface GalleryRow {
   slug: string | null
@@ -105,12 +100,23 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
   const galleries = await fetchPublicGalleries()
 
   const urls: string[] = []
-  for (const r of STATIC_ROUTES) {
+  for (const r of allRoutes()) {
+    if (!r.indexable) continue
+    // hreflang alternates (xhtml:link) so Google clusters he/en versions.
+    const altLinks = r.alternates
+      ? Object.entries(r.alternates)
+          .map(
+            ([lang, path]) =>
+              `    <xhtml:link rel="alternate" hreflang="${lang}" href="${xmlEscape(`${SITE_ORIGIN}${path}`)}" />\n`,
+          )
+          .join('')
+      : ''
     urls.push(
       `  <url>\n` +
       `    <loc>${xmlEscape(`${SITE_ORIGIN}${r.path}`)}</loc>\n` +
-      (r.changefreq ? `    <changefreq>${r.changefreq}</changefreq>\n` : '') +
-      (r.priority !== undefined ? `    <priority>${r.priority.toFixed(1)}</priority>\n` : '') +
+      altLinks +
+      `    <changefreq>${r.changefreq}</changefreq>\n` +
+      `    <priority>${r.priority.toFixed(1)}</priority>\n` +
       `  </url>`
     )
   }
@@ -127,7 +133,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
 
   const xml =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n` +
     urls.join('\n') +
     `\n</urlset>\n`
 
