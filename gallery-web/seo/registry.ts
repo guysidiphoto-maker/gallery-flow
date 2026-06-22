@@ -26,8 +26,8 @@
 // when that branch merges, so the SSR route and the SPA route ship together.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { LANDING_PAGES, type LandingContent } from './content'
-import { BLOG_POSTS, BLOG_INDEX_PATH, type BlogPost } from './blog'
+import { LANDING_PAGES, type LandingContent } from './content.js'
+import { BLOG_POSTS, BLOG_INDEX_PATH, type BlogPost } from './blog.js'
 
 export const SITE_ORIGIN =
   process.env.SITE_ORIGIN || process.env.NEXT_PUBLIC_SITE_URL || 'https://pixflow-ai.com'

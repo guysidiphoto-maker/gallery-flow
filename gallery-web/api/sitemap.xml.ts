@@ -19,7 +19,7 @@
 // crawler ping.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { allRoutes } from '../seo/registry'
+import { allRoutes } from '../seo/registry.js'
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
