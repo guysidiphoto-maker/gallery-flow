@@ -36,8 +36,19 @@ const FAVICON = `  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
 // Discover the built bundle's hashed asset tags from the static SPA shell
 // (dist/app.html — renamed from index.html post-build so "/" can be SSR'd).
-// Returns the raw <link>/<script> tags referencing /assets/* so we re-emit
-// exactly what Vite generated (entry JS, CSS, modulepreloads).
+// Re-emits the entry module <script>, the stylesheet <link>, and any
+// modulepreload <link>s that Vite generated.
+//
+// NB: the tag-matcher below captures each element only up to its first '>',
+// i.e. the OPENING tag. For void elements (<link …>) that is the whole element
+// and re-emitting verbatim is correct. For <script src> it is NOT — a <script>
+// needs an explicit </script>. Re-emitting the bare opening tag left the entry
+// script unclosed at end-of-document, so the browser swallowed </body></html>
+// as its text content and never executed the bundle → React never mounted and
+// every SSR route (/, /en, /blog, landing pages, …) rendered the static SEO
+// body on the dark app shell ("dark/dimmed" page). We therefore rebuild the
+// script from its src as a complete, self-closed tag, and pass link tags
+// through unchanged.
 async function discoverAssets(
   origin: string,
 ): Promise<{ head: string; body: string } | null> {
@@ -51,8 +62,16 @@ async function discoverAssets(
     const head: string[] = []
     const body: string[] = []
     for (const tag of tags) {
-      if (/rel=["']?stylesheet/i.test(tag)) head.push(tag)
-      else body.push(tag) // modulepreload links + the module entry script
+      if (/^<script\b/i.test(tag)) {
+        // The module entry script. Rebuild from its src so the tag is always
+        // complete and closed (a src'd module script has no inner content).
+        const src = tag.match(/\bsrc=["']([^"']+)["']/)?.[1]
+        if (src) body.push(`<script type="module" crossorigin src="${src}"></script>`)
+      } else if (/rel=["']?stylesheet/i.test(tag)) {
+        head.push(tag) // <link rel="stylesheet" …> — void element, complete as-is
+      } else {
+        body.push(tag) // <link rel="modulepreload"/"preload" …> — void, complete as-is
+      }
     }
     if (!body.length && !head.length) return null
     return { head: head.join('\n  '), body: body.join('\n  ') }
