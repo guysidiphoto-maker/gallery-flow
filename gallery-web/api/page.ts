@@ -34,14 +34,15 @@ const FAVICON = `  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
   <link rel="apple-touch-icon" href="/pixflow-icon-192.png" />`
 
-// Discover the built bundle's hashed asset tags from the static index.html.
+// Discover the built bundle's hashed asset tags from the static SPA shell
+// (dist/app.html — renamed from index.html post-build so "/" can be SSR'd).
 // Returns the raw <link>/<script> tags referencing /assets/* so we re-emit
 // exactly what Vite generated (entry JS, CSS, modulepreloads).
 async function discoverAssets(
   origin: string,
 ): Promise<{ head: string; body: string } | null> {
   try {
-    const res = await fetch(`${origin}/index.html`, {
+    const res = await fetch(`${origin}/app.html`, {
       headers: { 'user-agent': 'pixflow-ssr' },
     })
     if (!res.ok) return null
@@ -143,7 +144,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // routing/404 still works. (Should not happen: rewrites only send known keys.)
   if (!route) {
     try {
-      const shell = await fetch(`${origin}/index.html`)
+      const shell = await fetch(`${origin}/app.html`)
       const html = await shell.text()
       res.setHeader('Content-Type', 'text/html; charset=utf-8')
       res.setHeader('Cache-Control', 'no-cache')
@@ -156,14 +157,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const assets = await discoverAssets(origin)
 
   // Asset discovery failed → fall back to a browser-side loader that pulls the
-  // bundle from /index.html (mirrors api/gallery-page.ts). Crawlers still get
+  // bundle from /app.html (mirrors api/gallery-page.ts). Crawlers still get
   // the full head + crawlable body above; only the interactive hydration is
   // deferred to the client in this rare path.
   const assetHead = assets?.head ? `  ${assets.head}` : ''
   const assetBody = assets?.body
     ? `  ${assets.body}`
     : `  <script>
-    fetch('/index.html').then(r=>r.text()).then(h=>{
+    fetch('/app.html').then(r=>r.text()).then(h=>{
       const css=h.match(/href="(\\/assets\\/[^"]+\\.css)"/);
       if(css){const l=document.createElement('link');l.rel='stylesheet';l.href=css[1];document.head.appendChild(l)}
       for(const m of h.matchAll(/src="(\\/assets\\/[^"]+\\.js)"/g)){const s=document.createElement('script');s.type='module';s.src=m[1];document.body.appendChild(s)}

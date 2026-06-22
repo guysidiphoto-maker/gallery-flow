@@ -25,7 +25,7 @@
     { "source": "/:slug/gallery/:id", "destination": "/api/gallery-page?biz=:slug&legacyId=:id" },
     { "source": "/:business/:gallery", "destination": "/api/gallery-page?biz=:business&gallery=:gallery" },
     { "source": "/:business/:gallery/:section", "destination": "/api/gallery-page?biz=:business&gallery=:gallery&section=:section" },
-    { "source": "/((?!stories-bundle/).*)", "destination": "/index.html" }
+    { "source": "/((?!stories-bundle/).*)", "destination": "/app.html" }
   ],
   "crons": [
     { "path": "/api/retry-failed-sends", "schedule": "0 0 * * *" }

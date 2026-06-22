@@ -38,8 +38,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
   </div>
   <script>
-    // Dynamically load the latest Vite bundle
-    fetch('/').then(r => r.text()).then(html => {
+    // Dynamically load the latest Vite bundle from the static SPA shell.
+    // (/app.html — renamed from index.html so "/" can be SSR'd. Fetching the
+    // shell directly keeps this bootstrap decoupled from the homepage route.)
+    fetch('/app.html').then(r => r.text()).then(html => {
       const m = html.match(/src="(\\/assets\\/index-[^"]+\\.js)"/)
       const c = html.match(/href="(\\/assets\\/index-[^"]+\\.css)"/)
       if (c) { const l = document.createElement('link'); l.rel='stylesheet'; l.href=c[1]; document.head.appendChild(l) }
