@@ -6,6 +6,7 @@ import './styles.css'
 import { initSentry } from './sentry'
 import { getSentryReportContext } from './lib/sentryContext'
 import { LANDING_PATHS } from '../seo/content'
+import { initAnalytics } from './lib/analytics'
 
 // ── Route-level code splitting ───────────────────────────────────────────
 // Every non-gallery route is lazy-loaded so the public gallery viewer
@@ -65,6 +66,8 @@ const BrandKit = lazy(() =>
 )
 
 initSentry()
+// Analytics is a no-op unless VITE_GA4_MEASUREMENT_ID is set (see lib/analytics).
+initAnalytics()
 
 // ── Global ErrorBoundary ─────────────────────────────────────────────────
 // Catches uncaught render errors anywhere in the tree (e.g. lazy-chunk fetch
