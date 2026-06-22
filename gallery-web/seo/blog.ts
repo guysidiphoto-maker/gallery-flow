@@ -170,6 +170,184 @@ export const BLOG_POSTS: BlogPost[] = [
       { label: 'How it works', href: '/how-it-works' },
     ],
   },
+  {
+    slug: 'a-face-recognition-workflow-for-event-photographers',
+    path: '/blog/a-face-recognition-workflow-for-event-photographers',
+    lang: 'en',
+    dir: 'ltr',
+    title: 'A Face Recognition Workflow for Photographers | Pixflow',
+    h1: 'A face recognition workflow for event photographers: shoot to self-serve',
+    description:
+      'A practical end-to-end face recognition workflow for event photographers — from shooting and culling to upload, indexing, and guest self-service delivery.',
+    excerpt:
+      'Face recognition only saves time if it fits the way you already work. Here is a practical, end-to-end workflow — from the way you shoot to the moment guests pull their own photos.',
+    datePublished: '2026-06-22',
+    dateModified: '2026-06-22',
+    author: 'Pixflow',
+    readingMinutes: 8,
+    sections: [
+      {
+        paragraphs: [
+          'Face recognition gets sold as a single feature: a guest takes a selfie, they get their photos. But the quality of that moment is decided long before the guest ever opens the gallery — it is decided by how you shoot, how you cull, and how you upload. Treat face recognition as the last step of a workflow rather than a magic button, and the results get noticeably better.',
+          'This is a practical, end-to-end workflow for event photographers, written around how face matching actually behaves in the real world. None of it requires changing your style of photography. It is mostly about removing friction so the matching has good material to work with and guests have a clean path to their own photos.',
+        ],
+      },
+      {
+        h2: 'How face matching works (the short version)',
+        paragraphs: [
+          'You do not need to understand the math, but a rough mental model helps. A face recognition system converts each detected face into a numerical signature that captures the geometry of that face. When a guest takes a selfie, their selfie becomes a signature too, and the system returns the photos whose signatures are close enough to match.',
+          'Two consequences follow. First, the system matches on faces, not names — it never needs to know who anyone is, only which faces belong together. Second, anything that makes a face hard to read for a human (heavy motion blur, deep shadow, extreme angles, a face mostly turned away) also makes it harder to match. Your job on the day is simply to give the system enough clear faces per person that at least some of them match confidently.',
+        ],
+      },
+      {
+        h2: 'Step 1 — Shoot with matching in mind (without changing your style)',
+        paragraphs: [
+          'You are not going to pose every guest, and you should not try to. The goal is coverage, not perfection: across an event, most people naturally end up in a few frames where their face is reasonably sharp and front-facing. A few small habits make that far more likely.',
+        ],
+        bullets: [
+          'Get at least one cleaner, well-lit frame of key groups — the couple, the speakers, the VIPs, the family tables.',
+          'Do not skip the candids. People in motion, mid-laugh, or in profile still match as long as some of their other frames are clean.',
+          'Be aware of backlight and stage lighting. A face that is a silhouette to your eye is a silhouette to the system too.',
+          'Shoot the room from a few angles. More coverage per person means more chances for a confident match.',
+        ],
+      },
+      {
+        h2: 'Step 2 — Cull lightly, and cull for people',
+        paragraphs: [
+          'Event culling is a different discipline from culling a styled portrait session. For an event, every guest is hoping to find themselves, and the photo they love most is often one you would have cut — the slightly imperfect one where they are laughing with their friends.',
+          'So cull for technical failures, not for taste: drop frames that are genuinely out of focus, badly exposed, or accidental, and keep the rest. A lighter cull means more people are represented, more selfies return results, and fewer guests walk away disappointed.',
+        ],
+      },
+      {
+        h2: 'Step 3 — Upload once, index automatically',
+        paragraphs: [
+          'Once your set is ready, the workflow collapses into a single action: upload the gallery. With a platform built around face recognition, indexing happens automatically as part of that upload — the system detects faces and builds the signatures in the background. You do not tag anyone or sort by person; that manual sorting is exactly the step face recognition exists to delete.',
+          'This is the core of how Pixflow is designed to work: you upload to a branded gallery, the faces are indexed for you, and the per-guest sorting that used to eat your evenings simply does not happen anymore. Start uploading as soon as you have a first batch and let the gallery fill in.',
+        ],
+      },
+      {
+        h2: 'Step 4 — Let guests self-serve',
+        paragraphs: [
+          'You share one link — dropped into WhatsApp, sent by email, printed on event signage, or turned into a QR code. The guest opens it on their phone, takes a quick selfie, and is shown the photos they appear in. No account, no app install, no scrolling through a thousand images.',
+          'This quietly removes a huge amount of post-event admin. The biggest drain on a photographer’s time after an event is rarely editing — it is the trickle of messages asking “can you send me the ones of me and Sarah?” Self-serve face search answers that question before it is ever asked, for every guest at once.',
+        ],
+      },
+      {
+        h2: 'Step 5 — Handle the edge cases',
+        paragraphs: [
+          'No system matches every face perfectly, and it helps to know where the gaps are. A guest who only appears in a few dim, side-on frames may get a partial result; someone in sunglasses or a mask in every shot may not match at all.',
+        ],
+        bullets: [
+          'Set expectations gently: a good, well-lit selfie returns the best results.',
+          'Coverage is your safety net — the lighter cull from Step 2 pays off again here.',
+          'For anyone who does not match well, the gallery is still fully browsable, so they are never locked out.',
+        ],
+      },
+      {
+        h2: 'Putting it together',
+        paragraphs: [
+          'The whole workflow is short on purpose: shoot for coverage, cull for failures rather than taste, upload once and let indexing run, share a single link, and let guests pull their own photos. Each step makes the final selfie-to-photos moment feel instant and reliable — and it means your galleries land while the event is still the thing everyone is talking about.',
+        ],
+      },
+    ],
+    related: [
+      { label: 'How face recognition delivery works', href: '/how-it-works' },
+      { label: 'For event photographers', href: '/event-photographers' },
+      { label: 'How to deliver event photos faster', href: '/blog/how-to-deliver-event-photos-faster' },
+    ],
+  },
+  {
+    slug: 'corporate-event-photo-delivery-playbook',
+    path: '/blog/corporate-event-photo-delivery-playbook',
+    lang: 'en',
+    dir: 'ltr',
+    title: 'Corporate Event Photo Delivery: A Playbook | Pixflow',
+    h1: 'Corporate event photo delivery: a playbook for marketing and event teams',
+    description:
+      'A practical playbook for marketing and event teams: how to plan, brand, and deliver corporate event photos at scale with self-serve face recognition.',
+    excerpt:
+      'Corporate events generate thousands of photos and hundreds of people who each want only the ones they are in. This is a playbook for delivering them without drowning in requests.',
+    datePublished: '2026-06-22',
+    dateModified: '2026-06-22',
+    author: 'Pixflow',
+    readingMinutes: 9,
+    sections: [
+      {
+        paragraphs: [
+          'Corporate event photography has a distribution problem that wedding and portrait work does not. A conference, sales kickoff, gala, or trade-show booth can produce thousands of images and put hundreds of attendees in front of the lens — and each of them, plus your own leadership, marketing, and PR teams, wants a different slice of the set. Delivering that well is an operations challenge as much as a photography one.',
+          'This playbook is for the people who own that challenge: marketing managers, internal communications teams, and event producers. It assumes the photos will be good. The question is how you turn a hard drive full of images into photos that actually get used — without delivery turning into weeks of email.',
+        ],
+      },
+      {
+        h2: 'Decide what the photos are for before the event',
+        paragraphs: [
+          'Corporate event photos usually serve three audiences at once, and they pull in different directions. Naming them up front changes how you brief the photographer and how you deliver. Write a one-line shot brief for each before the event, and you will both shoot the right things and know exactly how to deliver them afterward.',
+        ],
+        bullets: [
+          'Attendees and employees, who mostly want the candids of themselves and their colleagues to share and keep.',
+          'Marketing and brand, who want hero shots — the keynote, the stage, the branded environment — for recaps, social, and next year’s promotion.',
+          'Leadership, PR, and sales, who want clean, usable images of specific executives, speakers, partners, and award moments.',
+        ],
+      },
+      {
+        h2: 'Build the delivery plan into the run-of-show',
+        paragraphs: [
+          'The biggest delays in corporate delivery are almost never the editing — they are the unanswered questions afterward: who approves the photos, who can be shown publicly, where the files are allowed to live, and who can download them. Settle these while planning the event, not while three teams are chasing you the week after.',
+        ],
+        bullets: [
+          'Approvals: decide who signs off before any photo goes public, and how fast they can turn it around.',
+          'Consent and privacy: confirm your attendee photography policy and how guests were notified.',
+          'Access tiers: plan who gets the full set versus a curated subset — all-staff, leadership, partners, press.',
+          'Branding: have the logo, colors, and event name ready so the gallery looks like your event, not a generic file dump.',
+        ],
+      },
+      {
+        h2: 'Solve the “where are the photos of me?” problem at scale',
+        paragraphs: [
+          'At a corporate event, the single most repeated request is some version of “can you send me the photos I’m in?” Multiplied across hundreds of attendees and routed through one or two people on the marketing team, that becomes a genuine bottleneck.',
+          'Self-serve face recognition removes it entirely. Attendees open one gallery link, take a selfie, and instantly see every photo they appear in — no manual sorting by your team, no account, no app. This is the model Pixflow is built around: you (or your photographer) upload once, faces are indexed automatically, and every attendee pulls their own photos from a branded gallery. Your team stops being a switchboard for photo requests.',
+        ],
+      },
+      {
+        h2: 'Make one link do the distribution',
+        paragraphs: [
+          'Corporate delivery works best when there is exactly one place to send people. A single gallery link can go into the post-event email, the internal Slack or Teams channel, the event app, or a printed QR code so attendees grab their photos before they have even left the venue.',
+          'One link also protects your brand. Every gallery is a branded surface — your logo, colors, and event name — so the recap reinforces the brand instead of looking like a shared drive. And because you control access, you decide whether the gallery is open, password-gated, or restricted to a specific audience.',
+        ],
+      },
+      {
+        h2: 'Feed your brand channels without a second shoot',
+        paragraphs: [
+          'The marketing value of an event does not end on the day. A well-organized gallery is a content library you can draw on for weeks: the recap post, the thank-you email, the case study, next year’s campaign, and the steady drip of social content that keeps the event alive.',
+          'Plan for this by keeping hero shots easy to find and separate from the candids, and by capturing enough variety — wide room shots, speaker close-ups, branded environments, attendee moments — that you are not rationing three usable images across every channel.',
+        ],
+      },
+      {
+        h2: 'Respect privacy as a default, not an afterthought',
+        paragraphs: [
+          'Corporate events carry obligations consumer events do not: employee privacy, attendee consent, NDAs around certain guests, and sometimes regulatory constraints. Delivery should make honoring those obligations easy rather than relying on everyone to remember them.',
+          'Practically, that means choosing access controls deliberately — public link, password, or a restricted audience — and keeping private galleries genuinely private and never publicly indexed. Face matching should help attendees find their own photos while you stay in control of who can see what.',
+        ],
+      },
+      {
+        h2: 'A simple delivery checklist',
+        paragraphs: [
+          'Pulling it together, here is the short version a marketing or event team can run for any corporate event.',
+        ],
+        bullets: [
+          'Before: write a three-audience shot brief, confirm consent and approvals, and prepare branding assets.',
+          'During: shoot for coverage and capture hero shots separately from candids; consider QR signage for on-site self-serve.',
+          'Delivery: upload once to a branded gallery, let face recognition index attendees automatically, and share a single controlled link.',
+          'After: pull hero shots into recaps and social, keep the gallery as a content library, and let attendees self-serve.',
+        ],
+      },
+    ],
+    related: [
+      { label: 'Corporate event gallery', href: '/corporate-event-gallery' },
+      { label: 'For production companies', href: '/event-production-companies' },
+      { label: 'AI event photo gallery', href: '/ai-event-photo-gallery' },
+    ],
+  },
 ]
 
 export const BLOG_BY_PATH: Record<string, BlogPost> = Object.fromEntries(
