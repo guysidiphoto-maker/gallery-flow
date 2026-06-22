@@ -269,15 +269,26 @@ ${c.faq
       )}</a>`
     : ''
 
-  return `
-  <div style="background:${D.bg};color:${D.text};min-height:100vh;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.6">
-    <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:980px;margin:0 auto;padding:22px 24px;border-bottom:1px solid ${D.border}">
-      <a href="/en" style="font-weight:700;font-size:19px;color:${D.text};text-decoration:none">Pixflow</a>
-      <nav aria-label="Primary" style="display:flex;gap:22px;flex-wrap:wrap;font-size:14px">
-        <a href="/en" style="color:${D.muted};text-decoration:none">Home</a>
+  // Hebrew landing pages render RTL with a Hebrew shell; English stay LTR.
+  const isHe = c.lang === 'he'
+  const font = isHe
+    ? "'Heebo','Noto Sans Hebrew',system-ui,sans-serif"
+    : "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
+  const nav = isHe
+    ? `<a href="/" style="color:${D.muted};text-decoration:none">בית</a>
+        <a href="/demo" style="color:${D.muted};text-decoration:none">דמו</a>
+        <a href="/en" style="color:${D.muted};text-decoration:none">English</a>`
+    : `<a href="/en" style="color:${D.muted};text-decoration:none">Home</a>
         <a href="/how-it-works" style="color:${D.muted};text-decoration:none">How it works</a>
         <a href="/demo" style="color:${D.muted};text-decoration:none">Demo</a>
-        <a href="/" style="color:${D.muted};text-decoration:none">עברית</a>
+        <a href="/" style="color:${D.muted};text-decoration:none">עברית</a>`
+
+  return `
+  <div dir="${c.dir}" style="background:${D.bg};color:${D.text};min-height:100vh;font-family:${font};line-height:1.6">
+    <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:980px;margin:0 auto;padding:22px 24px;border-bottom:1px solid ${D.border}">
+      <a href="${isHe ? '/' : '/en'}" style="font-weight:700;font-size:19px;color:${D.text};text-decoration:none">Pixflow</a>
+      <nav aria-label="Primary" style="display:flex;gap:22px;flex-wrap:wrap;font-size:14px">
+        ${nav}
       </nav>
     </header>
     <main style="max-width:760px;margin:0 auto;padding:0 24px">

@@ -52,17 +52,28 @@ export function SeoLanding() {
   }
 
   const faqs = content.faq
+  const isHe = content.lang === 'he'
   return (
     <div className="seo-page" dir={content.dir}>
       <header className="seo-header">
-        <a className="seo-brand" href="/en">
+        <a className="seo-brand" href={isHe ? '/' : '/en'}>
           Pixflow
         </a>
         <nav className="seo-nav" aria-label="Primary">
-          <a href="/en">Home</a>
-          <a href="/how-it-works">How it works</a>
-          <a href="/demo">Demo</a>
-          <a href="/">עברית</a>
+          {isHe ? (
+            <>
+              <a href="/">בית</a>
+              <a href="/demo">דמו</a>
+              <a href="/en">English</a>
+            </>
+          ) : (
+            <>
+              <a href="/en">Home</a>
+              <a href="/how-it-works">How it works</a>
+              <a href="/demo">Demo</a>
+              <a href="/">עברית</a>
+            </>
+          )}
         </nav>
       </header>
 
