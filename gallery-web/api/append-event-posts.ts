@@ -163,6 +163,10 @@ interface SignedUrlBody {
   /** P4.5.C: public-viewer token, gallery-scoped. Verified against the
    *  gallery_id extracted from `path`'s second segment. */
   pvt?: string
+  /** P2.2: password-gallery unlock token (gallery_unlock_tokens). Required
+   *  (when SIGNED_URL_ENFORCE_ORIGINALS=1) before signing an /originals/
+   *  path of a password-protected gallery. No-op for non-password galleries. */
+  unlockToken?: string
 }
 interface PublicGallerySessionBody {
   action: 'public_gallery_session'
@@ -737,6 +741,11 @@ async function handleSavePostEdit(
 
 const ALLOWED_BUCKETS = new Set(['gallery-images', 'gallery-stories', 'demo-uploads'])
 
+// P2.2: when '1', signing an /originals/ path requires a valid gallery-scoped
+// public-viewer token AND (for password galleries) a valid unlock token.
+// Default off → legacy advisory behavior, so this is a safe, reversible flip.
+const SIGNED_URL_ENFORCE_ORIGINALS = process.env.SIGNED_URL_ENFORCE_ORIGINALS === '1'
+
 async function handleSignedUrl(
   body: SignedUrlBody,
   req: VercelRequest,
@@ -776,23 +785,52 @@ async function handleSignedUrl(
   // Advisory only for now: log on mismatch but still issue. P4.5.E will flip
   // this to enforcing when the bucket goes private.
   const pvt = String(body.pvt ?? '').trim()
+  const segments = path.split('/')
+  const galleryIdGuess = segments[1] // <slug>/<gallery_id>/...
+  const galleryIdValid =
+    !!galleryIdGuess &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(galleryIdGuess)
   let pvtValidated = false
   let pvtMismatch = false
-  if (pvt && bucket === 'gallery-images') {
-    const segments = path.split('/')
-    const galleryIdGuess = segments[1] // <slug>/<gallery_id>/...
-    if (galleryIdGuess && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(galleryIdGuess)) {
-      const { data, error: pvtErr } = await supabase.rpc('verify_public_gallery_session', {
-        p_token: pvt,
-        p_gallery_id: galleryIdGuess,
-      })
-      if (!pvtErr) {
-        pvtValidated = data === true
-        pvtMismatch = !pvtValidated
-        if (pvtMismatch) {
-          console.warn('[signed_url] pvt provided but failed verification', { galleryIdGuess })
-        }
+  if (pvt && bucket === 'gallery-images' && galleryIdValid) {
+    const { data, error: pvtErr } = await supabase.rpc('verify_public_gallery_session', {
+      p_token: pvt,
+      p_gallery_id: galleryIdGuess,
+    })
+    if (!pvtErr) {
+      pvtValidated = data === true
+      pvtMismatch = !pvtValidated
+      if (pvtMismatch) {
+        console.warn('[signed_url] pvt provided but failed verification', { galleryIdGuess })
       }
+    }
+  }
+
+  // ── P2.2: enforce authorization for ORIGINAL downloads ──────────────────
+  // Originals live at `<slug>/<gallery_id>/originals/<file>`. Once the bucket
+  // flips private (P2.4), the public URL dies and this signed URL becomes the
+  // ONLY way to fetch an original — so it must prove the caller is authorized:
+  //   1. a live, gallery-scoped public-viewer token (anti-abuse + scope), and
+  //   2. for PASSWORD galleries, a valid unlock token (gallery_token_is_valid
+  //      returns true unconditionally for non-password galleries, so this is a
+  //      no-op there and an enforced gate for password galleries).
+  // Flag-gated (SIGNED_URL_ENFORCE_ORIGINALS) so rollout is reversible; when
+  // off, behavior is the legacy advisory path (issues without requiring PVT).
+  const isOriginalPath = bucket === 'gallery-images' && segments.includes('originals')
+  if (SIGNED_URL_ENFORCE_ORIGINALS && isOriginalPath) {
+    if (!galleryIdValid) {
+      res.status(400).json({ ok: false, error: 'invalid_path' }); return
+    }
+    if (!pvtValidated) {
+      res.status(401).json({ ok: false, error: 'pvt_required' }); return
+    }
+    const unlockToken = String(body.unlockToken ?? '').trim()
+    const { data: authzOk, error: authzErr } = await supabase.rpc('gallery_token_is_valid', {
+      p_gallery_id: galleryIdGuess,
+      p_token: unlockToken || null,
+    })
+    if (authzErr || authzOk !== true) {
+      res.status(401).json({ ok: false, error: 'unlock_required' }); return
     }
   }
 

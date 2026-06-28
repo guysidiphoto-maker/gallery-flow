@@ -60,6 +60,9 @@ interface ZipBody {
   galleryId?: string
   imageIds?: string[]
   pvt?: string
+  /** P2.2: password-gallery unlock token. Required (via gallery_token_is_valid)
+   *  for password galleries; no-op for non-password galleries. */
+  unlockToken?: string
   filenameStem?: string
   /** 'web' (default) | 'original'. 'original' tries original_path with a
    *  per-row fallback to web_preview_path when original_uploaded is false. */
@@ -108,6 +111,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   })
   if (pvtErr || pvtOk !== true) {
     res.status(401).json({ ok: false, error: 'invalid_pvt' }); return
+  }
+
+  // P2.2: password galleries additionally require a valid unlock token.
+  // gallery_token_is_valid returns true unconditionally for non-password
+  // galleries, so this is a no-op there and an enforced gate for password ones.
+  const unlockToken = String(body.unlockToken ?? '').trim()
+  const { data: authzOk, error: authzErr } = await supabase.rpc('gallery_token_is_valid', {
+    p_gallery_id: galleryId,
+    p_token: unlockToken || null,
+  })
+  if (authzErr || authzOk !== true) {
+    res.status(401).json({ ok: false, error: 'unlock_required' }); return
   }
 
   // Verify all requested images belong to the gallery, fetch their paths.

@@ -421,6 +421,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(401).json({ ok: false, error: 'invalid_pvt' }); return
   }
 
+  // P2.2: password galleries additionally require a valid unlock token before
+  // we composite + stream the original. gallery_token_is_valid is a no-op
+  // (true) for non-password galleries and an enforced gate for password ones.
+  const unlock = String(req.query.unlock ?? '').trim()
+  const { data: authzOk, error: authzErr } = await supabase.rpc('gallery_token_is_valid', {
+    p_gallery_id: ctx.galleryId,
+    p_token: unlock || null,
+  })
+  if (authzErr || authzOk !== true) {
+    res.status(401).json({ ok: false, error: 'unlock_required' }); return
+  }
+
   const original = await downloadOriginal(ctx.bucket, imagePath)
   if (!original) {
     res.status(404).json({ ok: false, error: 'source_unavailable' }); return
