@@ -1,5 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { requireAuthedUser } from '../server/ownerAuth.js'
+
+// Service-role client, used ONLY to validate the caller's JWT via GoTrue.
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+const authClient =
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    : null
 
 interface PhotoInput {
   eventType?: string
@@ -47,6 +57,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  // Blocker 2 gate: require a valid authenticated session before any paid
+  // Anthropic call. This endpoint takes only free-text (no tenant resource), so
+  // a logged-in user is sufficient — Origin alone is spoofable and not enough.
+  if (!authClient) return res.status(500).json({ error: 'auth_not_configured' })
+  const gate = await requireAuthedUser(req, authClient)
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.code })
 
   const { photos, language = 'he', tone = 'professional' } = req.body || {}
   if (!photos || !Array.isArray(photos) || photos.length === 0) {

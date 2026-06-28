@@ -8,6 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { requireBusinessOwnerOfClient } from '../server/ownerAuth.js'
 
 export const maxDuration = 60
 
@@ -247,6 +248,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const clientId = String(body.clientId ?? '').trim()
   if (!clientId) {
     return res.status(400).json({ ok: false, error: 'clientId_required' })
+  }
+
+  // Blocker 2 gate: require a valid Supabase JWT whose user owns this client's
+  // business. Rejects (401/403/404) BEFORE any paid Anthropic call. Origin gate
+  // above is defense-in-depth only — this is the real boundary.
+  const gate = await requireBusinessOwnerOfClient(req, supabase, clientId)
+  if (!gate.ok) {
+    return res.status(gate.status).json({ ok: false, error: gate.code })
   }
 
   const { data: client } = await supabase
