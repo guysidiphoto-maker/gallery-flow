@@ -1,7 +1,17 @@
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZseWlxZmF3a3JqdnFjbWtwZnZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5ODg3NzksImV4cCI6MjA5MDU2NDc3OX0.ionfOl71NrBO-0iBVBAu6oiTUzkJuIu-drEkY1cmsFY'
+// P2.2: env-driven with a fallback to the production project. When
+// VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are unset (the normal prod build)
+// these resolve to the exact hardcoded prod values below — byte-identical to
+// before. A staging preview sets the two VITE_ vars to point the whole client
+// (auth + storage URLs + render URLs) at pixflow-staging, fully isolated from
+// production.
+const SUPABASE_URL =
+  (import.meta.env.VITE_SUPABASE_URL as string | undefined) ||
+  'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
+const SUPABASE_ANON_KEY =
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZseWlxZmF3a3JqdnFjbWtwZnZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5ODg3NzksImV4cCI6MjA5MDU2NDc3OX0.ionfOl71NrBO-0iBVBAu6oiTUzkJuIu-drEkY1cmsFY'
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 

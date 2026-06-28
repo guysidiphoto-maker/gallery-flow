@@ -13,7 +13,7 @@
 // Pattern intentionally mirrors the in-app batch-download in App.tsx so the
 // two flows behave the same (JSZip + createObjectURL + anchor click).
 
-import { supabase, storageUrl } from '../supabase'
+import { supabase } from '../supabase'
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -146,40 +146,30 @@ export async function exportGalleryAsZip(
     const sectionInfo = img.section_id ? sectionById.get(img.section_id) : null
     const sectionFolder = sectionInfo?.slug ?? '_unsectioned'
 
-    // Prefer the original; HEAD-guard so a stale original_uploaded flag
-    // doesn't 404 the export. Same belt-and-braces rule App.tsx uses.
-    let url: string | null = null
+    // P2.2: owner export uses the AUTHENTICATED storage download (the owner's
+    // Supabase session), never a public URL. This removes the last public
+    // /originals/ dependency and keeps working after originals go private
+    // (the owner reads under their own RLS). Prefer the original; on any error
+    // (incl. a not-yet-uploaded original 404) fall back to the web preview.
+    let blob: Blob | null = null
     let servedFrom: 'original' | 'web_preview' = 'web_preview'
     if (img.original_path) {
-      const originalUrl = storageUrl(bucket, img.original_path)
-      if (img.original_uploaded) {
-        url = originalUrl
+      const { data, error } = await supabase.storage.from(bucket).download(img.original_path)
+      if (!error && data) {
+        blob = data
         servedFrom = 'original'
-      } else {
-        try {
-          const head = await fetch(originalUrl, { method: 'HEAD' })
-          if (head.ok) {
-            url = originalUrl
-            servedFrom = 'original'
-          }
-        } catch {
-          // network blip — treat as missing, fall through to web preview
-        }
       }
     }
-    if (!url) {
-      url = storageUrl(bucket, img.web_preview_path)
-      servedFrom = 'web_preview'
+    if (!blob) {
+      const { data, error } = await supabase.storage.from(bucket).download(img.web_preview_path)
+      if (!error && data) {
+        blob = data
+        servedFrom = 'web_preview'
+      }
     }
-
-    let blob: Blob | null = null
-    try {
-      const res = await fetch(url)
-      if (!res.ok) throw new Error(`http_${res.status}`)
-      blob = await res.blob()
-    } catch (err) {
+    if (!blob) {
       failedCount += 1
-      console.warn('[galleryExport] failed to fetch image', img.id, err)
+      console.warn('[galleryExport] failed to download image', img.id)
     }
 
     if (blob) {

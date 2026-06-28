@@ -71,6 +71,11 @@ interface SignedStorageOptions {
   token?: string
   /** Override Phase 4.5 public viewer token (e.g., when caller already has it). */
   pvt?: string
+  /** P2.2: password-gallery unlock token (gallery_unlock_tokens). Required by
+   *  the server before issuing a signed URL for an /originals/ path that
+   *  belongs to a password-protected gallery. No-op for non-password
+   *  galleries. The caller passes getStoredToken(galleryId) here. */
+  unlockToken?: string
   /** Skip cache (force fresh signed URL). */
   bypassCache?: boolean
   /** When the signed URL request fails, fall back to public URL. Default true. */
@@ -101,6 +106,7 @@ export async function signedStorageUrl(
     try {
       const token = options.token ?? readSessionToken()
       const pvt = options.pvt ?? readPublicViewerToken()
+      const unlockToken = options.unlockToken
       const res = await fetch('/api/append-event-posts', {
         method: 'POST',
         headers: {
@@ -112,6 +118,7 @@ export async function signedStorageUrl(
           bucket,
           path,
           ...(pvt ? { pvt } : {}),
+          ...(unlockToken ? { unlockToken } : {}),
         }),
       })
       const json = await res.json()
@@ -154,9 +161,17 @@ export function clearSignedUrlCache(): void {
  * SPA has already cached in sessionStorage for the active anonymous
  * viewer; we read it the same way signedStorageUrl does.
  */
-export function signedWatermarkedUrl(path: string, businessId: string, pvt?: string): string {
+export function signedWatermarkedUrl(
+  path: string,
+  businessId: string,
+  pvt?: string,
+  unlockToken?: string,
+): string {
   const token = (pvt ?? readPublicViewerToken()).trim()
   const params = new URLSearchParams({ image: path, business: businessId })
   if (token) params.set('pvt', token)
+  // P2.2: password-gallery unlock token. The watermark endpoint resolves the
+  // gallery from the image path and (for password galleries) requires this.
+  if (unlockToken) params.set('unlock', unlockToken)
   return `/api/watermark?${params.toString()}`
 }

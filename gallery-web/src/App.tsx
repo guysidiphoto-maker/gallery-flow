@@ -17,6 +17,7 @@ import {
   getHidden as gcGetHidden,
   setHidden as gcSetHidden,
   bootstrapGallery as gcBootstrap,
+  getStoredToken,
   type GalleryMeta,
 } from './lib/galleryClient'
 import { logDownload, logBatchDownload } from './lib/activityLog'
@@ -2028,9 +2029,21 @@ export function App() {
     // FULL-RESOLUTION download through the engine; thumbs + web previews
     // keep streaming clean so browsing the gallery stays untouched.
     const businessId = gallery?.business_id ?? ''
+
+    // P2.2: authorization tokens carried to /api signed_url + /api/watermark.
+    // pvt proves "real viewer of this gallery"; unlockToken proves
+    // password-unlock for password galleries (no-op for non-password). Both
+    // read from the active session — signedStorageUrl can read pvt itself, but
+    // we pass both explicitly so the download path is deterministic.
+    const signedOpts = gallery?.id
+      ? {
+          pvt: readPublicSessionToken(gallery.id) ?? undefined,
+          unlockToken: getStoredToken(gallery.id) ?? undefined,
+        }
+      : {}
     const watermarkPath = (path: string): string =>
       watermarkEnabled && businessId
-        ? signedWatermarkedUrl(path, businessId)
+        ? signedWatermarkedUrl(path, businessId, signedOpts.pvt, signedOpts.unlockToken)
         : '' // empty signals "no watermark wrap — use the signed/public URL"
 
     if (!wantsHd || !img.original_path) {
@@ -2040,30 +2053,48 @@ export function App() {
       const path = wantsHd ? (img.original_uploaded ? img.original_path! : img.storage_path) : img.storage_path
       const wm = watermarkPath(path)
       if (wm) return { url: wm, downgraded: false }
-      const url = await signedStorageUrl(imgBucket, path)
+      const url = await signedStorageUrl(imgBucket, path, signedOpts)
       return { url, downgraded: false }
     }
-    // HD requested AND original_path is set: HEAD-check whether the file
-    // really exists, then sign or fall back.
+
+    // HD requested AND original_path is set.
+    const wm = watermarkPath(img.original_path)
+    if (wm) return { url: wm, downgraded: false }
+
+    if (isPublicViewerSignedUrlsEnabled()) {
+      // P2.2: do NOT HEAD-check the public original URL — once the bucket is
+      // private that HEAD is a guaranteed 403 and would wrongly downgrade
+      // HD→web. Instead request an authorized signed URL directly; only a
+      // genuine sign failure (401 unauthorized, or 404 original truly absent)
+      // downgrades us to a signed web copy.
+      try {
+        const url = await signedStorageUrl(imgBucket, img.original_path, {
+          ...signedOpts,
+          fallbackToPublic: false,
+        })
+        return { url, downgraded: false }
+      } catch {
+        const fallbackUrl = await signedStorageUrl(imgBucket, img.storage_path, signedOpts)
+        return { url: fallbackUrl, downgraded: true }
+      }
+    }
+
+    // Flag OFF (legacy): HEAD-check the public original, then sign or fall back.
+    // signedStorageUrl short-circuits to the public URL while the flag is off,
+    // so this branch is byte-identical to the pre-P2.2 behavior.
     const headCandidate = storageUrl(imgBucket, img.original_path)
     try {
       const head = await fetch(headCandidate, { method: 'HEAD' })
       if (head.ok) {
-        const wm = watermarkPath(img.original_path)
-        if (wm) return { url: wm, downgraded: false }
-        const url = await signedStorageUrl(imgBucket, img.original_path)
+        const url = await signedStorageUrl(imgBucket, img.original_path, signedOpts)
         return { url, downgraded: false }
       }
     } catch {
       // Network blip — assume present and let the actual download surface any real error.
-      const wm = watermarkPath(img.original_path)
-      if (wm) return { url: wm, downgraded: false }
-      const url = await signedStorageUrl(imgBucket, img.original_path)
+      const url = await signedStorageUrl(imgBucket, img.original_path, signedOpts)
       return { url, downgraded: false }
     }
-    const wmFallback = watermarkPath(img.storage_path)
-    if (wmFallback) return { url: wmFallback, downgraded: true }
-    const fallbackUrl = await signedStorageUrl(imgBucket, img.storage_path)
+    const fallbackUrl = await signedStorageUrl(imgBucket, img.storage_path, signedOpts)
     return { url: fallbackUrl, downgraded: true }
   }
 
@@ -2207,6 +2238,8 @@ export function App() {
             galleryId: gallery.id,
             imageIds: imgs.map(i => i.id),
             pvt,
+            // P2.2: password-gallery unlock token (no-op for non-password).
+            unlockToken: getStoredToken(gallery.id) ?? undefined,
             quality: wantsHd ? 'original' : 'web',
             filenameStem: safeTitle,
             // Tell the ZIP endpoint to route each image through the
@@ -2248,7 +2281,14 @@ export function App() {
         setDlProgress(`Downloading ${i + 1} / ${imgs.length}...`)
         setDownloadProgress({ current: i + 1, total: imgs.length })
         try {
-          const res = await fetch(downloadUrl(imgs[i]))
+          // P2.2: when the signed-URL flow is on, never fetch a public original
+          // here — resolveDownloadUrl returns an authorized signed URL (and
+          // honors watermark + HD→web downgrade). Flag off → downloadUrl()
+          // returns the legacy public URL, identical to pre-P2.2.
+          const fetchUrl = isPublicViewerSignedUrlsEnabled()
+            ? (await resolveDownloadUrl(imgs[i])).url
+            : downloadUrl(imgs[i])
+          const res = await fetch(fetchUrl)
           const blob = await res.blob()
           let name = imgs[i].filename || `photo-${i + 1}.jpg`
           if (usedNames.has(name)) {
