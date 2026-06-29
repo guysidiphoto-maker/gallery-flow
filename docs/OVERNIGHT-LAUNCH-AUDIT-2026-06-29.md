@@ -1,5 +1,58 @@
 # Overnight Launch-Readiness Audit — 2026-06-29
 
+> ## 🚀 SPRINT 3 — PRODUCTION ROLLOUT (executed, verified)
+>
+> Approved sequenced rollout. **Each prod change applied one at a time, verified immediately, rolled-back tests left no trace.** All three DB-layer P0s are now CLOSED in production. Code-layer fixes are verified + GO, awaiting your PR-merge to `main` (protected → Vercel auto-deploys).
+>
+> ### 1. What was applied to PRODUCTION (Supabase `vlyiqfawkrjvqcmkpfvs`)
+> | Step | Migration | Result | Verification |
+> |---|---|---|---|
+> | 1 | **079** revoke privileged RPC execute | ✅ applied | all 4 RPCs: anon=false, authenticated=false, **service_role=true**; routes 200; sign denied 400 |
+> | 2 | **080** drop feed_plans anon read | ✅ applied | anon feed_plans read **6 → 0**; owner+service policies intact; dashboard/galleries 200 |
+> | 5 | **081** free-tier gallery cap | ✅ applied | 4/4 existing businesses grandfathered NULL; new default=3; trigger blocks at cap (errcode 23514); existing business still inserts (no regression); trigger fn EXECUTE revoked from PUBLIC; **0 ERROR advisors** |
+>
+> ### 2. What was DEPLOYED (code → prod)
+> **Nothing yet.** Code deploys go through protected `main` (PR merge → Vercel auto-deploy); I cannot merge a protected-main PR from here. Blocker 2, /en cleanup, payments flag, and the gallery-cap UI message are **built + verified + GO**, awaiting your one-click merges.
+>
+> ### 3. Branches / PRs
+> `security/blocker1-revoke-rpc-migration` (079, applied) · `security/feed-plans-anon-read-leak` (080, applied) · `plan/free-tier-gallery-cap` (081, applied; UI pending) · `security/blocker2-ai-endpoint-auth` (GO, pending merge) · `ux/en-trust-cleanup` (GO, pending merge) · `payments/hide-buy-more-cta` (GO, pending merge). Independent PR review: **all 6 APPROVE**.
+>
+> ### 4. Verification per step — all **PASS** (details in the table above + §7/§11 below).
+>
+> ### 5–6. Is public self-serve signup launch-safe NOW? **CONDITIONAL — not yet.**
+> DB-layer P0s are closed, but two code-layer P0s are **not live until you merge**: Blocker 2 (AI endpoints still anon-abusable in prod until deployed) and /en fake testimonials (still live). Once those two deploy + GoTrue config is verified, **open self-serve signup is launch-safe.**
+>
+> ### 7. Exact remaining blockers
+> 1. **Deploy Blocker 2** (merge `security/blocker2-ai-endpoint-auth`) — until live, AI endpoints keep the bypassable Origin-only gate.
+> 2. **Deploy /en cleanup** (merge `ux/en-trust-cleanup`) — fake testimonials + "80% faster" still live (FTC risk).
+> 3. **Verify GoTrue signup config** (dashboard — not SQL-readable).
+> 4. *(recommended, not strict P0)* deploy `plan/free-tier-gallery-cap` UI + `payments/hide-buy-more-cta`. The cap **trigger** is already live; only the friendly message + buy-CTA hiding are pending.
+> 5. *(P1, not signup blockers)* `/api/gallery-zip` crash; vendors/image_scores anon read policies (tables empty today); gallery_get_meta draft-meta leak.
+> 6. *(known risk)* P2.4 public originals — accept or schedule (do NOT touch now).
+>
+> ### 8. Manual actions required from you
+> 1. **Merge 4 PRs → main** (Blocker 2, /en, payments, cap-UI). Each triggers a Vercel prod deploy.
+> 2. **After Blocker 2 deploys,** run the live abuse matrix against prod (safe — all should be 401/403, no AI spend):
+>    `BASE_URL="https://pixflow-ai.com" bash gallery-web/scripts/verify-blocker2-ai-auth.sh`
+> 3. **Supabase → Authentication:** Providers → Google = ON (keep); Email = decide (the app is Google-only — either DISABLE Email, or if kept, ensure "Confirm email" is ON, no autoconfirm). Settings → "Allow new users to sign up" = ON (you want self-serve). *(Current state: 4 users, all yours; 1 has a legacy email identity → Email provider was on at some point.)*
+> 4. Decide `/api/gallery-zip` (browser-test "download all") and **accept P2.4** as known launch risk (or schedule the staged migration).
+>
+> ### 9. Rollback (for what was applied tonight)
+> - **079:** `GRANT EXECUTE ON FUNCTION public.add_tokens(uuid,integer,text,uuid,jsonb) TO authenticated;` (+ the other 3 — reopens the hole; don't).
+> - **080:** `CREATE POLICY feed_plans_public_select ON public.feed_plans FOR SELECT TO anon USING (status = ANY(ARRAY['draft','accepted','published']));` (reopens leak).
+> - **081:** `DROP TRIGGER IF EXISTS trg_enforce_gallery_limit ON public.galleries; DROP FUNCTION IF EXISTS public.enforce_gallery_limit(); ALTER TABLE public.businesses DROP COLUMN IF EXISTS gallery_limit;`
+> - **Code deploys:** Vercel → Promote the current production deploy `dpl_AdMhZR9x6h6qpT6F1wSF9KWkDPRY` (rollback candidate) if any merge misbehaves.
+>
+> ### 10. What must NOT be touched
+> P2.4 / bucket privacy / originals / watermark / live charging — all untouched, keep untouched. No redesign.
+>
+> ### 11. Shortest final path to launch
+> Merge the 4 PRs → run the prod abuse matrix (step 8.2) → set the 3 GoTrue toggles (step 8.3) → accept P2.4. That's it — **open self-serve signup is then launch-safe.**
+>
+> — Acting CTO, Sprint 3 rollout complete. Sprints 1 (audit) + 2 (implementation) detail below.
+
+---
+
 **Acting CTO / Release Manager report.** Simulated 10-role team (1 lead + 6 parallel specialist agents + direct CTO implementation). Window: ~2 hours, overnight. Production: https://pixflow-ai.com · Supabase prod `vlyiqfawkrjvqcmkpfvs` · staging `bkccdomovxtuqdxrahnc`.
 
 Sub-reports (full detail) live in `docs/audit/`: `SECURITY-tenant-isolation.md`, `SIGNUP-self-serve.md`, `PAYMENTS.md`, `QA-matrix.md`, `PERF-DEVOPS.md`, `UX-launch-trust.md`.
