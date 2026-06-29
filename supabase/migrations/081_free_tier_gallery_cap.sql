@@ -65,6 +65,11 @@ CREATE TRIGGER trg_enforce_gallery_limit
   BEFORE INSERT ON public.galleries
   FOR EACH ROW EXECUTE FUNCTION public.enforce_gallery_limit();
 
+-- Triggers fire under the definer regardless of EXECUTE grants, so no role
+-- needs direct EXECUTE on the trigger function. Revoking PUBLIC clears the
+-- "SECURITY DEFINER executable by anon/authenticated" advisor.
+REVOKE EXECUTE ON FUNCTION public.enforce_gallery_limit() FROM PUBLIC, anon, authenticated;
+
 COMMIT;
 
 -- ── Verification (after apply) ──────────────────────────────────────────────
