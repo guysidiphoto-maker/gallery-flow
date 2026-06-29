@@ -15,6 +15,7 @@
 
 import { useEffect, useState, useMemo, type CSSProperties } from 'react'
 import { SignedImg } from './SignedImg'
+import { authedFetch } from '../lib/authedFetch'
 
 interface TopPick {
   id: string
@@ -76,7 +77,7 @@ export function EventPlanDialog({
       try {
         // Step 1: ensure scoring (cheap if cached).
         setStageLabel('AI מנקד את התמונות של האירוע…')
-        await fetch('/api/score-images', {
+        await authedFetch('/api/score-images', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ clientId }),
@@ -86,7 +87,7 @@ export function EventPlanDialog({
         // Step 2: ask for suggestions.
         setStage('planning')
         setStageLabel('AI מציע פוסטים לאירוע…')
-        const res = await fetch('/api/plan-event', {
+        const res = await authedFetch('/api/plan-event', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ clientId, galleryId, count: 2 }),

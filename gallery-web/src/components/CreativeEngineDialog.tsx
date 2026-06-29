@@ -11,6 +11,7 @@
 //   Step 5  Export             — per-post PNG export (phase 2; stub today)
 
 import { useEffect, useState, type CSSProperties } from 'react'
+import { authedFetch } from '../lib/authedFetch'
 import {
   CreativeRenderer,
   type DesignSpec,
@@ -160,7 +161,7 @@ export function CreativeEngineDialog(props: Props) {
     try {
       // Step 1: ensure scoring (cheap if cached).
       setGeneratingLabel('מנקד את התמונות של האירוע...')
-      await fetch('/api/score-images', {
+      await authedFetch('/api/score-images', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId }),
       })
@@ -168,7 +169,7 @@ export function CreativeEngineDialog(props: Props) {
       // Step 2: campaign generation.
       setGeneratingLabel('בונה 4 כיוונים יצירתיים...')
       const postsPerDirection = brief.depth === 'campaign' ? 7 : 4
-      const res = await fetch('/api/generate-campaign', {
+      const res = await authedFetch('/api/generate-campaign', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId, galleryId, brief, postsPerDirection }),
       })

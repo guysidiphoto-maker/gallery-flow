@@ -21,6 +21,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react'
 import { supabase, storageUrl } from '../supabase'
+import { authedFetch } from '../lib/authedFetch'
 import { SignedImg } from './SignedImg'
 import { CreativeBriefWizard, type Brief } from './CreativeBriefWizard'
 import { PostPreview } from './FeedStudioPreviews'
@@ -288,7 +289,7 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
   async function runScoring(): Promise<boolean> {
     setRescoring(true)
     try {
-      const res = await fetch('/api/score-images', {
+      const res = await authedFetch('/api/score-images', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId }),
@@ -343,7 +344,7 @@ export function FeedStudio({ clientId, topPicks, galleries }: FeedStudioProps) {
     // Step 2: call generate-feed with brief.
     setStage(1)
     try {
-      const res = await fetch('/api/generate-feed', {
+      const res = await authedFetch('/api/generate-feed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId, brief }),

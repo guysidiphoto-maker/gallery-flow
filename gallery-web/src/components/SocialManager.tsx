@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { PostEditor, type ScheduledPost } from './PostEditor'
+import { authedFetch } from '../lib/authedFetch'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -144,7 +145,7 @@ export function SocialManager({ galleries, allImages, topPicks, clientId, storag
     if (postsWithoutCaptions.length === 0) return
     setGeneratingCaptions(true)
     try {
-      const res = await fetch('/api/generate-captions', {
+      const res = await authedFetch('/api/generate-captions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -179,7 +180,7 @@ export function SocialManager({ galleries, allImages, topPicks, clientId, storag
   const generateSingleCaption = async (post: ScheduledPost) => {
     setGeneratingSingle(true)
     try {
-      const res = await fetch('/api/generate-captions', {
+      const res = await authedFetch('/api/generate-captions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

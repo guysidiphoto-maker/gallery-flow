@@ -17,6 +17,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { requireBusinessOwnerOfClient } from '../server/ownerAuth.js'
 
 export const maxDuration = 60
 
@@ -293,6 +294,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ ok: false, error: 'clientId_and_galleryId_required' })
   if (!brief || typeof brief !== 'object')
     return res.status(400).json({ ok: false, error: 'brief_required' })
+
+  // Blocker 2 gate: authenticated owner of this client only, before any AI call.
+  const gate = await requireBusinessOwnerOfClient(req, supabase, clientId)
+  if (!gate.ok) return res.status(gate.status).json({ ok: false, error: gate.code })
 
   const { data: client } = await supabase
     .from('clients').select('id, name, business_id').eq('id', clientId).maybeSingle()
