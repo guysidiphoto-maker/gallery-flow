@@ -6,6 +6,53 @@ Sub-reports (full detail) live in `docs/audit/`: `SECURITY-tenant-isolation.md`,
 
 ---
 
+# ⚡ SPRINT 2 UPDATE — implementation pass (parallel engineering team)
+
+After the audit (below), a second sprint **built and verified the fixes for every P0**. All work is on isolated branches; **production was NOT touched** (read-only verification only). Everything is staged for your one-click approval.
+
+## Task board
+
+| # | Task | Owner role | Status | Branch | Risk | Prod touched | Next step |
+|---|---|---|---|---|---|---|---|
+| 1 | Blocker 2 — AI endpoint auth | Security+Backend+QA | ✅ **Built + verified** (build clean, 13/13 unit tests, verify script) | `security/blocker2-ai-endpoint-auth` | Low | No | Merge → Preview smoke → atomic deploy |
+| 2 | feed_plans P0 read leak | Security+Supabase | ✅ **Migration ready + proven read-only on prod** | `security/feed-plans-anon-read-leak` (mig 080) | Low (reversible DROP) | No | Apply mig 080 to prod (approve) |
+| 3 | /en unsafe claims | UX+Frontend | ✅ **Done** (4 fake testimonials + "80% faster" + fake "Free Trial" removed) | `ux/en-trust-cleanup` | Low | No | Merge → deploy |
+| 4 | Free-plan guardrails | Payments+Backend | ✅ **Migration + UI ready** (cap 3 galleries, grandfathers all existing) | `plan/free-tier-gallery-cap` (mig 081) | Low (additive + trigger) | No | Apply mig 081 + merge UI |
+| 5 | Payments safe state | Payments | ✅ **Done** ("Buy more" gated behind flag; balance kept) | `payments/hide-buy-more-cta` | Low | No | Merge → deploy |
+| 6 | Blocker 1 durability | Security | ✅ **Done** (codifying migration) | `security/blocker1-revoke-rpc-migration` (mig 079) | None (idempotent) | No (already locked) | Apply mig 079 (no-op) |
+| 7 | gallery-zip crash (P1) | DevOps | ⏳ **Open** — needs env/bundling debug + browser test | — | — | No | Investigate (orig §11) |
+| 8 | P1 read leaks (vendors/image_scores/draft-meta) | Security | ⏳ **Diagnosed, not yet patched** (scoped out of feed_plans task) | — | — | No | Second RLS migration |
+
+## What was built + how it was verified
+
+- **Blocker 2** (`security/blocker2-ai-endpoint-auth`): shared gate `gallery-web/server/ownerAuth.ts` (JWT + business-ownership), wired into all 5 AI endpoints, `authedFetch` on all 8 frontend call sites. **Verified:** `vite build` exit 0 (`authedFetch` bundled); **13/13** offline unit assertions (`tests/blocker2-ownerAuth.test.ts`) proving missing-token→401 before any network call, bad-token→401 before any DB read, cross-tenant→403, owner→ok; safe HTTP abuse script `scripts/verify-blocker2-ai-auth.sh`. Only remaining check: a Preview smoke run (needs a deploy).
+- **feed_plans** (mig 080): drops the unscoped `anon` SELECT policy. **Proven read-only on prod:** anon could read 6 rows / 1 business / 3 drafts; it is the *only* anon SELECT policy; the authenticated owner path (`feed_plans_owner_select`) and service_role paths are independent → zero functional impact. Reversible.
+- **/en** (`ux/en-trust-cleanup`): removed four invented named testimonials + the fabricated "80% faster" stat + two fake "Start Free Trial" CTAs; replaced with honest value-prop copy. Typecheck clean. (Unused `.lp-testimonial*` CSS left in place — harmless.)
+- **Free-tier cap** (mig 081 + Dashboard): `businesses.gallery_limit` (NULL=unlimited); existing businesses grandfathered to NULL (prod has 2 with >3 galleries, max 99 — all owner's), new signups default to 3, enforced by a BEFORE INSERT trigger on `galleries` (covers direct insert + duplicate RPC). Friendly Hebrew limit toast added. Photos already capped by the 100-token grant. Reversible.
+- **Payments** (`payments/hide-buy-more-cta`): every buy/checkout affordance gated behind `VITE_FEATURE_GALLERY_BILLING` (OFF in prod); token balance still shown; no path reaches `startCheckout` when off. The public ₪590 unlock screen is already protected by the same flag. Typecheck clean.
+
+## Revised launch decision (Sprint 2): **CONDITIONAL GO — pending your APPROVAL + DEPLOY of the staged fixes**
+
+The blocker shifted from *"work isn't done"* to *"work is done and waiting for you to approve applying it."* Every P0 is now built and verified. Public self-serve signup becomes **safe** once you: apply migrations 080+081, deploy Blocker 2 + the /en + payments branches, verify the GoTrue signup config, and decide gallery-zip (P1) + accept P2.4 (known risk).
+
+## Shortest path to launch — exact merge/apply order (sequence risky changes)
+
+1. **Apply mig 079** (Blocker 1 codify — idempotent no-op). *DB. Zero risk.*
+2. **Apply mig 080** (feed_plans — closes P0 read leak). *DB. Reversible. Verify anon SELECT now 0.*
+3. **Deploy Blocker 2:** merge `security/blocker2-ai-endpoint-auth` → Vercel **Preview** → run `gallery-web/scripts/verify-blocker2-ai-auth.sh` against the Preview (expect all 401/403) → **atomic** prod deploy (backend+frontend together). *Code.*
+4. **Deploy `ux/en-trust-cleanup`** (remove fake claims). *Code.*
+5. **Apply mig 081 + deploy `plan/free-tier-gallery-cap`** (gallery cap + message), ideally together. *DB+code.*
+6. **Deploy `payments/hide-buy-more-cta`**. *Code.*
+7. **Manual:** verify Supabase GoTrue signup config (enable_signup / email provider / autoconfirm); investigate `/api/gallery-zip` crash; accept P2.4 originals as known risk (or schedule the staged migration).
+
+After 1–6 + the GoTrue check, **open self-serve signup is launch-safe.** (P1 read leaks in row 8 and gallery-zip in row 7 should follow immediately but are not strict P0 launch blockers — vendors/image_scores tables are empty today; gallery-zip affects "download all", not signup safety.)
+
+---
+
+# 📋 ORIGINAL AUDIT (Sprint 1) — full detail below
+
+---
+
 ## 1. Executive summary
 
 The product is **operationally healthy** (no 500s, no timeouts, 0 ERROR-level advisors, galleries/dashboard/signed-downloads all working) and the **write-side tenant isolation is solid** (RLS scopes every mutation by `auth.uid()`/business; the 4 privileged RPCs are confirmed locked). Two of the launch blockers were advanced tonight: **Blocker 1 is now made permanent** (codifying migration on a branch), and **Blocker 2 (AI-cost endpoint abuse) is implemented end-to-end** on a branch, typechecked, ready for Preview verification.
