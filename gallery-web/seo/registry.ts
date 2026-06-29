@@ -539,25 +539,15 @@ const STATIC_ROUTES: SeoRoute[] = [
     changefreq: 'weekly',
     priority: 1.0,
     indexable: true,
-    bodyHtml: shell(
-      'he',
-      `      <h1 style="font-size:38px;line-height:1.2;margin:0 0 16px">גלריות אירועים חכמות עם זיהוי פנים</h1>
-      <p style="font-size:19px;margin:0 0 24px">Pixflow מאפשרת לצלמי אירועים לספק גלריות ממותגות שבהן כל אורח מוצא את עצמו תוך שניות — בעזרת סלפי או חיפוש חכם מבוסס בינה מלאכותית. מעלים פעם אחת, משתפים בקישור אחד.</p>
-      <h2 style="font-size:24px;margin:32px 0 12px">למה צלמים בוחרים ב-Pixflow</h2>
-      <ul style="font-size:17px;padding-inline-start:20px">
-        <li>חיפוש תמונות לפי זיהוי פנים — האורח מצלם סלפי ומקבל את כל התמונות שלו.</li>
-        <li>גלריה ממותגת בלוגו ובצבעים של הסטודיו.</li>
-        <li>שיתוף והורדה בלחיצה אחת, מותאם לנייד.</li>
-        <li>אספקה מהירה — מתחילים לשתף דקות אחרי האירוע.</li>
-      </ul>
-      <h2 style="font-size:24px;margin:32px 0 12px">למי זה מתאים</h2>
-      <p style="font-size:17px">צלמי אירועים, צלמי חתונות, חברות הפקה, מארגני כנסים ופסטיבלים, וצוותי תוכן של מותגים.</p>
-      <p style="margin:28px 0"><a href="/demo" style="display:inline-block;background:#1a1a1a;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none">צפו בדמו</a> &nbsp; <a href="/en" style="color:#1a1a1a">English site</a></p>
-      <h2 style="font-size:24px;margin:40px 0 12px">שאלות נפוצות</h2>
-      ${HOME_FAQ_HE.map(
-        f => `      <h3 style="font-size:18px;margin:20px 0 6px">${esc(f.q)}</h3>\n      <p style="font-size:16px;margin:0">${esc(f.a)}</p>`,
-      ).join('\n')}`,
-    ),
+    // The homepage `/` renders the real cream/green product page
+    // (src/pages/LandingPageHe.tsx) as its visible content. We intentionally
+    // emit NO visible body scaffold here — the crawlable <head> (title,
+    // description, canonical, hreflang, Open Graph, robots) and the JSON-LD
+    // below are still served server-side, so SEO and structured data are fully
+    // preserved. This removes the Hebrew SEO text block that previously painted
+    // first at `/` and made the homepage look like a generic SEO landing page;
+    // React now mounts the product homepage directly into an empty #root.
+    bodyHtml: '',
     jsonLd: [
       organizationLd(),
       websiteLd(),
