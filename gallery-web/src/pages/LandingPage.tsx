@@ -75,19 +75,14 @@ const t = {
     f6t: 'Dark client gallery',
     f6d: 'Premium dark theme. Sections. Stories. Downloads. Looks incredible on every device.',
 
-    testimonialsTitle: 'Don\u2019t take our word for it',
-    t1q: "I used to spend 3 hours after every wedding. With Pixflow, I'm done in 20 minutes.",
-    t1n: 'Avi Cohen',
-    t1r: 'Wedding Photographer, Tel Aviv',
-    t2q: 'The AI Stories feature is insane. My clients share them before I even invoice.',
-    t2n: 'Maya Levi',
-    t2r: 'Event Photographer',
-    t3q: 'Switched from Pixieset. The dark theme gallery is exactly what my brand needed.',
-    t3n: 'Daniel Russo',
-    t3r: 'Portrait Photographer, NY',
-    t4q: '50+ events a year. Pixflow cut my delivery time by 80%.',
-    t4n: 'Tom Barak',
-    t4r: 'Concert Photographer',
+    builtForTitle: 'Built for event photographers',
+    builtForSub: 'Everything you need to import, curate, and deliver galleries your clients love \u2014 with AI handling the repetitive work.',
+    bf1t: 'Fast folder import',
+    bf1d: 'Drag in a full shoot and start curating in seconds \u2014 no upload wizard.',
+    bf2t: 'Curate and publish',
+    bf2d: 'Pick your best shots, group them into sections, and publish a branded, password-protected gallery.',
+    bf3t: 'AI does the busywork',
+    bf3d: 'Auto-generated story sequences and section ordering from your top picks, ready to share.',
 
     pricingTitle: 'Pricing that makes sense',
     monthly: 'Monthly',
@@ -115,7 +110,7 @@ const t = {
       'Custom branding',
       'No watermark',
     ],
-    proCta: 'Start Free Trial',
+    proCta: 'Get Started',
     proBadge: 'Most Popular',
     bizName: 'Business',
     bizPrice: '$39',
@@ -128,7 +123,7 @@ const t = {
       'Advanced analytics',
       'Custom domain',
     ],
-    bizCta: 'Start Free Trial',
+    bizCta: 'Get Started',
 
     faqTitle: 'Frequently asked questions',
     faq: [
@@ -220,19 +215,14 @@ const t = {
     f6t: 'גלריית לקוח כהה',
     f6d: 'עיצוב כהה פרימיום. סקשנים. סטוריז. הורדות. נראה רצח בכל מכשיר.',
 
-    testimonialsTitle: 'אל תסמכו עלינו. תשמעו אותם.',
-    t1q: 'הייתי מבזבז 3 שעות אחרי כל חתונה. עם Pixflow אני מסיים ב-20 דקות.',
-    t1n: 'אבי כהן',
-    t1r: 'צלם חתונות, תל אביב',
-    t2q: 'הפיצ\'ר של סטוריז AI מטורף. הלקוחות שלי משתפים עוד לפני שאני שולח חשבונית.',
-    t2n: 'מאיה לוי',
-    t2r: 'צלמת אירועים',
-    t3q: 'עברתי מ-Pixieset. הגלריה הכהה זה בדיוק מה שהמותג שלי צריך.',
-    t3n: 'דניאל רוסו',
-    t3r: 'צלם פורטרטים, ניו יורק',
-    t4q: '50+ אירועים בשנה. Pixflow חתך לי 80% מזמן המשלוח.',
-    t4n: 'תום ברק',
-    t4r: 'צלם הופעות',
+    builtForTitle: 'בנוי לצלמי אירועים',
+    builtForSub: 'כל מה שצריך כדי לייבא, לסדר ולמסור גלריות שהלקוחות אוהבים — כשה-AI עושה את העבודה החוזרת.',
+    bf1t: 'ייבוא תיקיה מהיר',
+    bf1d: 'גורר צילום שלם ומתחיל לסדר בשניות — בלי אשף העלאה.',
+    bf2t: 'סידור ופרסום',
+    bf2d: 'בוחר את הטובות, מקבץ לסקשנים, ומפרסם גלריה ממותגת ומוגנת בסיסמה.',
+    bf3t: 'ה-AI עושה את העבודה השחורה',
+    bf3d: 'סטוריז וסידור סקשנים נוצרים אוטומטית מהמועדפים שלך, מוכנים לשיתוף.',
 
     pricingTitle: 'תמחור בלי סיפורים',
     monthly: 'חודשי',
@@ -745,31 +735,21 @@ export function LandingPage() {
         </FadeUp>
       </section>
 
-      {/* -------- TESTIMONIALS -------- */}
-      <section className="lp-section" id="testimonials">
+      {/* -------- BUILT FOR PHOTOGRAPHERS -------- */}
+      <section className="lp-section" id="built-for">
         <FadeUp className="lp-container">
-          <h2 className="lp-section-title">{tx.testimonialsTitle}</h2>
-          <div className="lp-testimonials">
+          <h2 className="lp-section-title">{tx.builtForTitle}</h2>
+          <p className="lp-section-sub">{tx.builtForSub}</p>
+          <div className="lp-features">
             {[
-              { q: tx.t1q, n: tx.t1n, r: tx.t1r },
-              { q: tx.t2q, n: tx.t2n, r: tx.t2r },
-              { q: tx.t3q, n: tx.t3n, r: tx.t3r },
-              { q: tx.t4q, n: tx.t4n, r: tx.t4r },
-            ].map((item, i) => (
-              <FadeUp className="lp-testimonial" key={i} delay={i * 100}>
-                <div className="lp-testimonial-stars">
-                  {'★★★★★'}
-                </div>
-                <p className="lp-testimonial-quote">"{item.q}"</p>
-                <div className="lp-testimonial-author">
-                  <div className="lp-testimonial-avatar">
-                    {item.n.charAt(0)}
-                  </div>
-                  <div>
-                    <div className="lp-testimonial-name">{item.n}</div>
-                    <div className="lp-testimonial-role">{item.r}</div>
-                  </div>
-                </div>
+              { icon: icons.cloud, t: tx.bf1t, d: tx.bf1d },
+              { icon: icons.grid, t: tx.bf2t, d: tx.bf2d },
+              { icon: icons.play, t: tx.bf3t, d: tx.bf3d },
+            ].map((f, i) => (
+              <FadeUp className="lp-feature-card" key={i} delay={i * 80}>
+                <div className="lp-feature-icon">{f.icon}</div>
+                <h3>{f.t}</h3>
+                <p>{f.d}</p>
               </FadeUp>
             ))}
           </div>
