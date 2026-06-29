@@ -48,6 +48,14 @@ const STORY_GENERATE_MAX_PHOTOS = STORY_MAX_PHOTOS
 // once billing is live.
 const GALLERY_BILLING_ON = import.meta.env.VITE_FEATURE_GALLERY_BILLING === 'true'
 
+// Token-pack buying (the "Buy more" / "קנה טוקנים" modal → startCheckout) is
+// gated by the same flag. The create-checkout edge function is NOT deployed to
+// prod, so any "buy" click would dead-end in an error toast. Until checkout is
+// real, hide the buy affordances while KEEPING the token-balance display so
+// photographers can still see how many tokens they have. Flip
+// VITE_FEATURE_GALLERY_BILLING=true once checkout is live.
+const TOKEN_BILLING_ON = import.meta.env.VITE_FEATURE_GALLERY_BILLING === 'true'
+
 interface Gallery {
   id: string
   name: string
@@ -913,8 +921,9 @@ export function Dashboard() {
     if (tokenBalance < files.length) {
       const wanted = files.length
       const have = tokenBalance
-      showToast({ kind: 'error', text: `אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}. רכוש חבילה כדי להמשיך.` })
-      setShowBuyTokens(true)
+      showToast({ kind: 'error', text: `אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}.` })
+      // Only surface the buy-tokens modal when checkout is actually wired.
+      if (TOKEN_BILLING_ON) setShowBuyTokens(true)
       return
     }
     // Photos land in the active section (or a freshly-created default one).
@@ -935,8 +944,8 @@ export function Dashboard() {
     if (result.failed.length > 0) {
       const insufficient = result.failed.find(f => f.error.includes('insufficient_tokens'))
       if (insufficient) {
-        showToast({ kind: 'error', text: 'הטוקנים נגמרו באמצע ההעלאה. רכוש חבילה כדי להמשיך עם השאר.' })
-        setShowBuyTokens(true)
+        showToast({ kind: 'error', text: 'הטוקנים נגמרו באמצע ההעלאה.' })
+        if (TOKEN_BILLING_ON) setShowBuyTokens(true)
       } else {
         showToast({ kind: 'error', text: `${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.` })
       }
@@ -2281,18 +2290,18 @@ export function Dashboard() {
           const low = tokenBalance < 50
           return (
             <button
-              onClick={() => setShowBuyTokens(true)}
+              onClick={TOKEN_BILLING_ON ? () => setShowBuyTokens(true) : undefined}
               style={{
                 background: bgSubtle,
                 border: `1px solid ${border}`,
                 borderRadius: 4, padding: '16px 18px',
-                cursor: 'pointer', fontFamily: 'inherit',
+                cursor: TOKEN_BILLING_ON ? 'pointer' : 'default', fontFamily: 'inherit',
                 color: textPrimary, textAlign: 'right' as const,
                 transition: 'border-color .2s, background .2s',
                 marginBottom: 16,
               }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = textPrimary }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = border }}
+              onMouseEnter={TOKEN_BILLING_ON ? (e => { e.currentTarget.style.borderColor = textPrimary }) : undefined}
+              onMouseLeave={TOKEN_BILLING_ON ? (e => { e.currentTarget.style.borderColor = border }) : undefined}
             >
               <div style={{
                 fontSize: 10, color: textMuted, marginBottom: 8,
@@ -2308,15 +2317,17 @@ export function Dashboard() {
               }}>
                 {tokenBalance.toLocaleString('he-IL')}
               </div>
-              <div style={{
-                fontSize: 11, fontWeight: 500, color: textSecondary,
-                letterSpacing: '0.14em', textTransform: 'uppercase',
-                display: 'flex', alignItems: 'center', gap: 6,
-                paddingTop: 10, borderTop: `1px solid ${border}`,
-              }}>
-                Buy more
-                <span style={{ marginInlineStart: 'auto' }}>→</span>
-              </div>
+              {TOKEN_BILLING_ON && (
+                <div style={{
+                  fontSize: 11, fontWeight: 500, color: textSecondary,
+                  letterSpacing: '0.14em', textTransform: 'uppercase',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  paddingTop: 10, borderTop: `1px solid ${border}`,
+                }}>
+                  Buy more
+                  <span style={{ marginInlineStart: 'auto' }}>→</span>
+                </div>
+              )}
             </button>
           )
         })()}
@@ -6520,7 +6531,7 @@ export function Dashboard() {
       )}
 
       {/* ───────────── Buy Tokens Modal ───────────── */}
-      {showBuyTokens && (
+      {TOKEN_BILLING_ON && showBuyTokens && (
         <div
           onClick={() => setShowBuyTokens(false)}
           style={{

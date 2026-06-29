@@ -5,6 +5,14 @@ import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenCl
 import { Icon } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
 
+// Token-pack buying (the "קנו עוד" button → buy-tokens modal → startCheckout)
+// is gated behind the gallery-billing flag. The create-checkout edge function
+// is NOT deployed to prod, so any "buy" click would dead-end in an error. Until
+// checkout is real, hide the buy affordances while KEEPING the balance display
+// so photographers can still see their tokens. Flip
+// VITE_FEATURE_GALLERY_BILLING=true once checkout is live.
+const TOKEN_BILLING_ON = import.meta.env.VITE_FEATURE_GALLERY_BILLING === 'true'
+
 // ── Theme tokens ──────────────────────────────────────────────────────────────
 // Mirror the editorial-minimal palette used by Dashboard.tsx so the Studio
 // Settings page reads as a sibling surface and not a different product. Keeping
@@ -741,25 +749,27 @@ export function StudioSettings() {
                 טוקן אחד = העלאת תמונה אחת
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowBuyTokens(true)}
-              style={{
-                padding: '12px 22px', borderRadius: 2,
-                background: textPrimary, color: '#fff',
-                border: `1px solid ${textPrimary}`,
-                fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
-                textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >
-              קנו עוד
-            </button>
+            {TOKEN_BILLING_ON && (
+              <button
+                type="button"
+                onClick={() => setShowBuyTokens(true)}
+                style={{
+                  padding: '12px 22px', borderRadius: 2,
+                  background: textPrimary, color: '#fff',
+                  border: `1px solid ${textPrimary}`,
+                  fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
+                  textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                קנו עוד
+              </button>
+            )}
           </div>
         </Section>
       </div>
 
       {/* ── Buy Tokens Modal — same UI as Dashboard ─────────────────────── */}
-      {showBuyTokens && (
+      {TOKEN_BILLING_ON && showBuyTokens && (
         <div
           onClick={() => setShowBuyTokens(false)}
           style={{
