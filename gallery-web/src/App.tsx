@@ -2226,7 +2226,16 @@ export function App() {
     // through /api/gallery-zip — the server fetches via service-role and
     // streams the archive back. Avoids the per-image client-side fetches
     // that would each round-trip through signedStorage.
-    if (isPublicViewerSignedUrlsEnabled() && gallery?.id) {
+    //
+    // TEMPORARILY DISABLED (2026-06-29): /api/gallery-zip crashes at module
+    // init (FUNCTION_INVOCATION_FAILED — the `archiver` v8 dependency isn't
+    // fully traced/bundled by Vercel). Until that's fixed, skip the server ZIP
+    // and use the client-side JSZip path below — which is exactly what the
+    // catch-fallback already did on every call, so "Download All" keeps working
+    // with zero behaviour change for the user, minus one guaranteed-failed 500.
+    // Re-enable by flipping SERVER_ZIP_ENABLED to true once the API is fixed.
+    const SERVER_ZIP_ENABLED = false
+    if (SERVER_ZIP_ENABLED && isPublicViewerSignedUrlsEnabled() && gallery?.id) {
       try {
         const pvt = readPublicSessionToken(gallery.id) ?? ''
         if (!pvt) throw new Error('no_pvt')
