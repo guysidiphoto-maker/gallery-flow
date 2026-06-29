@@ -701,7 +701,15 @@ export function Dashboard() {
     setCreating(false)
     if (error) {
       console.warn('[createGallery]', error)
-      showToast({ kind: 'error', text: `שגיאה ביצירת גלריה: ${error.message}` })
+      // Free-tier gallery cap (migration 081): show a clear limit message
+      // instead of a raw DB error when the account hit its gallery quota.
+      const limitHit = /gallery_limit_reached/i.test(error.message)
+      showToast({
+        kind: 'error',
+        text: limitHit
+          ? 'הגעת למספר הגלריות המרבי בתוכנית החינמית. מחק גלריה ישנה או שדרג כדי ליצור עוד.'
+          : `שגיאה ביצירת גלריה: ${error.message}`,
+      })
       return
     }
     setShowModal(false)
