@@ -1,5 +1,50 @@
 # Overnight Launch-Readiness Audit — 2026-06-29
 
+> ## ✅ LAUNCH STATUS — ROLLOUT COMPLETE (2026-06-29, final)
+>
+> **All P0 engineering blockers are closed and verified in production.** 3 migrations applied + 4 PRs merged & deployed, each verified live.
+>
+> | What | How it shipped | Verified live |
+> |---|---|---|
+> | Blocker 1 — privileged RPC lock | mig 079 | anon/auth EXECUTE = false; service_role = true |
+> | feed_plans anon read leak | mig 080 | anon read 6 → **0** |
+> | Free-tier gallery cap | mig 081 | 4/4 grandfathered NULL; new=3; enforced; no regression |
+> | Blocker 2 — AI endpoint auth | PR #182 | all endpoints **401** (no-Origin bypass closed) |
+> | /en fake testimonials | PR #183 | 0 fake names/quotes/"80%" in deployed bundle |
+> | Payments "Buy more" hidden | PR #184 | `startCheckout` eliminated; balance kept; create-checkout undeployed |
+> | Free-tier cap message | PR #185 | friendly Hebrew message wired; existing unblocked |
+>
+> **Launch decision: CONDITIONAL GO** — launch-safe once you verify the Supabase Auth settings (checklist below). Nothing else blocks open self-serve signup.
+>
+> ### Follow-up branches prepared (NOT applied / NOT merged)
+> - **`fix/gallery-zip-skip-server-zip`** — "Download All" is NOT user-broken (it falls back to client-side JSZip, which works); this skips the wasted module-init 500 from `/api/gallery-zip` (archiver-v8 bundling) and routes straight to JSZip. **Recommended over hiding the button.** Merge anytime; not a launch blocker.
+> - **`security/p1-read-leak-cleanup`** — mig 082: drops `vendors_public_read`, replaces `image_scores_public_read` with a scoped owner policy, gates `gallery_get_meta` draft metadata behind an owner check. **NOT applied** — needs staging proof. P1 (USING-true tables empty today); next session.
+> - **Option A (proper gallery-zip fix — fix `archiver` bundling)**: deferred; needs Preview iteration; restores the efficient server-ZIP path. Post-launch.
+>
+> ### 🔐 Supabase Auth — manual checklist (the launch gate)
+> Supabase Dashboard → project `vlyiqfawkrjvqcmkpfvs` → **Authentication**:
+> | Where | Setting | Should be |
+> |---|---|---|
+> | Sign In / Providers → **Google** | enabled | ✅ **ENABLED** (keep — it's the login method) |
+> | Sign In / Providers → **Email** | enabled | **DISABLED** (app is Google-only) — *or* if you keep it, **"Confirm email" = ON** (no autoconfirm) |
+> | Settings → **Allow new users to sign up** | toggle | ✅ **ON** (you want public self-serve) |
+> | **URL Configuration → Site URL** | url | `https://pixflow-ai.com` |
+> | **URL Configuration → Redirect URLs** | allowlist | only your domains: `https://pixflow-ai.com/**` (+ `https://www.pixflow-ai.com/**`). Remove any stray/unknown URLs. |
+> | Settings → Leaked-password protection | toggle | optional ON (moot while Google-only) |
+>
+> Current state (read-only): 4 users, all yours (3 Google-only, 1 also has a legacy email identity → Email provider was on at some point). No stranger signups.
+>
+> ### Direct answers
+> - **Can you publicly launch self-serve after verifying the Auth settings above?** → **Yes.**
+> - **Hide "Download All" before launch?** → **No** — it works via fallback. Merge `fix/gallery-zip-skip-server-zip` to drop the wasted 500 (optional, recommended), but don't hide the feature.
+> - **Next PR to merge, if any?** → Optional: `fix/gallery-zip-skip-server-zip`. Nothing is required for launch beyond the Auth check.
+> - **What can wait until after launch?** → the real gallery-zip fix (archiver), `security/p1-read-leak-cleanup` (mig 082), P2.4 originals (accepted known risk), monitoring/Node-version polish.
+>
+> ### Rollback (applied prod changes)
+> - Code PRs: Vercel → promote prior production deploy. - mig 080: recreate `feed_plans_public_select`. - mig 081: drop trigger+fn+column. - mig 079: re-GRANT (don't).
+>
+> _Detail of every sprint below._
+
 > ## 🚀 SPRINT 3 — PRODUCTION ROLLOUT (executed, verified)
 >
 > Approved sequenced rollout. **Each prod change applied one at a time, verified immediately, rolled-back tests left no trace.** All three DB-layer P0s are now CLOSED in production. Code-layer fixes are verified + GO, awaiting your PR-merge to `main` (protected → Vercel auto-deploys).
