@@ -572,7 +572,12 @@ const STATIC_ROUTES: SeoRoute[] = [
     alternates: { he: '/', en: '/en' },
     changefreq: 'weekly',
     priority: 0.9,
-    indexable: true,
+    // De-indexed on purpose: the /en browser view still hydrates into the
+    // legacy dark USD/DMG LandingPage, which is off-brand vs the cream/sage
+    // Hebrew product. Until a real on-brand English page exists, keep /en out
+    // of Google (noindex via api/page.ts robots meta + excluded from sitemap,
+    // both driven off this flag). Re-enable when the English page is rebuilt.
+    indexable: false,
     bodyHtml: shell(
       'en',
       `      <h1 style="font-size:38px;line-height:1.2;margin:0 0 16px">AI Face Recognition Photo Galleries for Events</h1>
