@@ -288,7 +288,7 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                   <button
                     onClick={e => { e.stopPropagation(); onToggleSelect?.(img.id) }}
                     style={{
-                      position: 'absolute', top: 10, left: 10,
+                      position: 'absolute', top: 10, insetInlineStart: 10,
                       width: 28, height: 28, borderRadius: '50%',
                       border: isSelected ? '2px solid #818cf8' : '2px solid rgba(255,255,255,.5)',
                       background: isSelected ? 'linear-gradient(135deg, #6366f1, #818cf8)' : 'rgba(0,0,0,.4)',
@@ -308,7 +308,7 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                     className="grid-item__dl"
                     onClick={e => { e.stopPropagation(); onToggleHide(img.id) }}
                     style={{
-                      position: 'absolute', top: 10, right: 10,
+                      position: 'absolute', top: 10, insetInlineEnd: 10,
                       width: 34, height: 34, borderRadius: '50%',
                       border: hiddenIds?.has(img.id) ? '1.5px solid rgba(239,68,68,.4)' : '1px solid rgba(255,255,255,.1)',
                       background: hiddenIds?.has(img.id) ? 'rgba(239,68,68,.75)' : 'rgba(0,0,0,.45)',
@@ -339,7 +339,7 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                     className="grid-item__dl"
                     onClick={e => { e.stopPropagation(); onDownload(img) }}
                     style={{
-                      position: 'absolute', bottom: 10, right: 10,
+                      position: 'absolute', bottom: 10, insetInlineEnd: 10,
                       width: 34, height: 34, borderRadius: '50%',
                       border: '1px solid rgba(255,255,255,.1)',
                       background: 'rgba(0,0,0,.45)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
