@@ -25,7 +25,7 @@
 
 import React, { forwardRef, useEffect, useRef, useState } from 'react'
 import { useSignedSrc } from '../lib/useSignedSrc'
-import { renderUrl } from '../supabase'
+import { renderUrl, storageUrl } from '../supabase'
 
 type ImgProps = Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'>
 
@@ -36,6 +36,16 @@ interface Props extends ImgProps {
   transformWidths?: number[]
   /** JPEG quality for the transforms (default 60). */
   transformQuality?: number
+  /**
+   * Pre-baked static derivatives for a responsive srcset served DIRECTLY (no
+   * on-the-fly transform). Each entry is a stored object path + its intrinsic
+   * width descriptor, e.g. [{path: thumbnail_path, width: 640}, {path:
+   * web_preview_path, width: 2048}]. When provided (and the paths are
+   * derivatives, not originals) this is preferred over `transformWidths`, so
+   * the browser picks the right static file per column/DPR with ZERO Supabase
+   * image transformations. Null paths are skipped.
+   */
+  srcSetPaths?: Array<{ path: string | null | undefined; width: number }>
 }
 
 // Backoff schedule per failed attempt. Three retries over ~6s covers
@@ -53,7 +63,7 @@ const DEFAULT_DISPLAY_WIDTH = 1280
 
 export const SignedImg = forwardRef<HTMLImageElement, Props>(
   function SignedImg(
-    { bucket, path, transformWidths, transformQuality = 60, onError, onLoad, ...rest },
+    { bucket, path, transformWidths, transformQuality = 60, srcSetPaths, onError, onLoad, ...rest },
     ref,
   ) {
     const baseSrc = useSignedSrc(bucket, path)
@@ -80,19 +90,30 @@ export const SignedImg = forwardRef<HTMLImageElement, Props>(
       attempt > 0 ? url + (url.includes('?') ? '&' : '?') + 'cb=' + attempt : url
 
     const transformable = !!(path && TRANSFORMABLE_BUCKETS.has(bucket))
+    // A derivative path (web/thumb) is already small and is served DIRECTLY.
+    // Only an ORIGINAL path is routed through the bounded render/image transform
+    // (cost control 2026-07-05 — see displayUrl in supabase.ts).
+    const isOriginal = !!(path && path.includes('/originals/'))
+    const needsTransform = transformable && isOriginal
     const hasWidths = !!transformWidths?.length
 
-    // Build a responsive srcset of transforms when asked for and supported.
-    const srcSet = transformable && hasWidths
-      ? transformWidths!
-          .map(w => `${bust(renderUrl(bucket, path!, w, transformQuality))} ${w}w`)
-          .join(', ')
-      : undefined
+    // Preferred: a static responsive srcset built from pre-baked derivative
+    // OBJECTS (zero transforms). Used for the grid.
+    const staticParts = (transformable && !needsTransform && srcSetPaths?.length)
+      ? srcSetPaths.filter(s => !!s.path).map(s => `${bust(storageUrl(bucket, s.path!))} ${s.width}w`)
+      : []
 
-    // For transformable buckets the `src` is ALWAYS a bounded server-side
-    // transform — never the raw stored object. Uses the largest requested
-    // width, or a sane default when none were given.
-    const src = transformable
+    const srcSet = staticParts.length
+      ? staticParts.join(', ')
+      // Legacy transform srcset — only when we must bound an original.
+      : (needsTransform && hasWidths
+          ? transformWidths!.map(w => `${bust(renderUrl(bucket, path!, w, transformQuality))} ${w}w`).join(', ')
+          : undefined)
+
+    // `src`: for an original, a bounded transform (never the raw object). For a
+    // derivative, the stored object served directly (baseSrc = public/signed
+    // object URL). Non-transformable buckets: the object as-is.
+    const src = needsTransform
       ? bust(renderUrl(bucket, path!, hasWidths ? Math.max(...transformWidths!) : DEFAULT_DISPLAY_WIDTH, transformQuality))
       : (baseSrc ? bust(baseSrc) : baseSrc)
 

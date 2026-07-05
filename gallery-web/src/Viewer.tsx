@@ -2,7 +2,7 @@ import { useEffect, useCallback, useState } from 'react'
 import type { GalleryImage } from './types'
 import { Icon } from './components/Icon'
 import { signedStorageUrl } from './lib/signedStorage'
-import { renderUrl } from './supabase'
+import { displayUrl } from './supabase'
 import { useFocusTrap } from './lib/useFocusTrap'
 
 // Buckets that support Supabase on-the-fly image transforms. For these, the
@@ -86,8 +86,11 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
     // even a 10MB original down to a few hundred KB, and a tiny blurred LQIP
     // paints instantly. The stored object is never loaded raw here.
     if (TRANSFORMABLE_BUCKETS.has(imgBucket)) {
-      setThumbSrc(renderUrl(imgBucket, img.storage_path, LQIP_WIDTH, 40))
-      setCurrentSrc(renderUrl(imgBucket, img.storage_path, FULLSCREEN_WIDTH, 78))
+      // LQIP = the small pre-baked thumb served directly (usually already
+      // cached from the grid). Fullscreen = the ≤2048 web derivative direct.
+      // displayUrl only transforms if the path is still an original.
+      setThumbSrc(displayUrl(imgBucket, img.thumbnail_path ?? img.storage_path, LQIP_WIDTH, 40))
+      setCurrentSrc(displayUrl(imgBucket, img.storage_path, FULLSCREEN_WIDTH, 78))
       return () => { cancelled = true }
     }
     // Legacy fallback (non-transformable bucket): signed raw object.
@@ -111,7 +114,7 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
       if (!nextImg?.storage_path) continue
       if (TRANSFORMABLE_BUCKETS.has(imgBucket)) {
         const im = new Image()
-        im.src = renderUrl(imgBucket, nextImg.storage_path, FULLSCREEN_WIDTH, 78)
+        im.src = displayUrl(imgBucket, nextImg.storage_path, FULLSCREEN_WIDTH, 78)
         continue
       }
       signedStorageUrl(imgBucket, nextImg.storage_path)
