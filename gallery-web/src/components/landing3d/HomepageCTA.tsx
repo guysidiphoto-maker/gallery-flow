@@ -11,7 +11,7 @@ interface Props {
   onStart: () => void
 }
 
-const TRUST = ['ללא כרטיס אשראי', 'עברית מלאה ותמיכת RTL', 'מותאם למובייל'] as const
+const TRUST = ['חינם להתחלה', 'בלי אפליקציה לאורחים', 'מותג משלכם'] as const
 
 const FAQ: Array<{ q: string; a: string }> = [
   { q: 'כמה זמן לוקח להעלות אירוע?', a: 'גוררים את התמונות פעם אחת — Pixflow מסדר, בוחר רגעים ומכין את הגלריה אוטומטית.' },
@@ -60,7 +60,7 @@ export function HomepageCTA({ onStart }: Props) {
         </Reveal>
         <Reveal delay={80}>
           <p style={{ ...text.body, fontSize: 18, color: color.inkSoft, margin: `${space[4]}px 0 0` }}>
-            התחילו חינם. בלי כרטיס אשראי, בלי התקנה.
+            הגלריה הראשונה שלכם מוכנה בדקות. בלי כרטיס אשראי, בלי התקנה.
           </p>
         </Reveal>
         <Reveal delay={160}>

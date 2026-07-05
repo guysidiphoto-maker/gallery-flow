@@ -1,12 +1,12 @@
-// ScrollStorySection — one full-height beat of the scroll story. Pure HTML/CSS
-// overlay that sits ON TOP of the fixed 3D canvas (in the 3D path) or beside a
-// static product image (in the fallback path). The copy column carries a soft
-// cream scrim so text stays readable over the busy centre of a product shot.
+// ScrollStorySection — one full-height beat of the scroll story. Every beat is
+// CENTERED: a bold catalog-style headline sits in a frosted cream "clearing" in
+// the middle of the 3D field (or beside/over a static product card in the
+// fallback path). The frosted scrim keeps the copy crisp over a busy product
+// shot while the 3D stays visible all around it.
 //
-// The section itself is pointer-transparent so wheel/touch scrolling passes
-// through to the page; only interactive children (hero CTAs) re-enable pointer
-// events. Entrance is handled by the shared IO-based <Reveal> (reduced-motion
-// safe), never by scroll-pinning.
+// The section is pointer-transparent so wheel/touch scrolling passes through;
+// only interactive children (hero CTAs) re-enable pointer events. Entrance is
+// the shared IO-based <Reveal> (reduced-motion safe), never scroll-pinning.
 
 import type { ReactNode } from 'react'
 import { Reveal } from '../ui'
@@ -21,47 +21,73 @@ interface Props {
   children?: ReactNode
 }
 
+function TagPills({ tags }: { tags: string[] }) {
+  return (
+    <div style={{ display: 'flex', gap: space[2], flexWrap: 'wrap', justifyContent: 'center', marginTop: space[5] }}>
+      {tags.map(tag => (
+        <span
+          key={tag}
+          style={{
+            ...text.small,
+            fontWeight: 600,
+            color: color.accentHover,
+            background: 'rgba(123,143,110,.12)',
+            border: `1px solid ${color.accentBorder}`,
+            borderRadius: radius.pill,
+            padding: '6px 14px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {tag}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export function ScrollStorySection({ scene, image = false, children }: Props) {
   const isHero = scene.id === 'hero'
-  const justify =
-    scene.side === 'center' ? 'center' : scene.side === 'end' ? 'flex-end' : 'flex-start'
 
   const copy = (
     <div
       style={{
-        maxWidth: isHero ? 560 : 440,
-        textAlign: scene.side === 'center' ? 'center' : 'start',
+        maxWidth: isHero ? 600 : 520,
+        textAlign: 'center',
         padding: `${space[6]}px ${space[6]}px`,
         borderRadius: radius.xl,
-        // Soft cream scrim: readable over the 3D image without hiding it.
+        // Frosted cream clearing that HUGS the copy: crisp text, while the hero
+        // render + floating cards frame it on every side.
         background:
-          scene.side === 'center'
-            ? 'radial-gradient(120% 120% at 50% 40%, rgba(246,243,237,.82) 0%, rgba(246,243,237,0) 72%)'
-            : 'linear-gradient(var(--pf-scrim-dir, 90deg), rgba(246,243,237,.9) 0%, rgba(246,243,237,.72) 55%, rgba(246,243,237,0) 100%)',
-        backdropFilter: 'blur(1.5px)',
-        WebkitBackdropFilter: 'blur(1.5px)',
+          'radial-gradient(85% 108% at 50% 44%, rgba(246,243,237,.93) 0%, rgba(246,243,237,.74) 46%, rgba(246,243,237,.18) 74%, rgba(246,243,237,0) 100%)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
         pointerEvents: 'none',
       }}
     >
-      {scene.eyebrow && (
-        <Reveal>
-          <div
-            style={{
-              ...text.label,
-              color: color.accent,
-              marginBottom: space[3],
-            }}
-          >
-            {scene.eyebrow}
-          </div>
-        </Reveal>
-      )}
+      <Reveal>
+        <div
+          style={{
+            ...text.label,
+            color: color.accent,
+            marginBottom: space[3],
+            fontSize: 12,
+            letterSpacing: '0.14em',
+          }}
+        >
+          {scene.eyebrow}
+        </div>
+      </Reveal>
 
       <Reveal delay={80}>
         <h2
           style={{
             ...(isHero ? text.display : text.h1),
+            // Bolder + larger than the base scale — "catalog prominent".
             fontFamily: font.display,
+            fontWeight: 800,
+            fontSize: isHero ? 'clamp(44px, 7vw, 84px)' : 'clamp(34px, 5vw, 60px)',
+            lineHeight: 1.02,
+            letterSpacing: '-0.03em',
             color: color.ink,
             margin: 0,
             whiteSpace: 'pre-line',
@@ -75,10 +101,10 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
         <p
           style={{
             ...text.body,
-            fontSize: isHero ? 18 : 16,
+            fontSize: isHero ? 19 : 17,
             color: color.inkSoft,
-            margin: `${space[4]}px 0 0`,
-            maxWidth: 440,
+            margin: `${space[4]}px auto 0`,
+            maxWidth: 520,
             lineHeight: 1.65,
           }}
         >
@@ -86,8 +112,12 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
         </p>
       </Reveal>
 
+      <Reveal delay={200}>
+        <TagPills tags={scene.tags} />
+      </Reveal>
+
       {image && (
-        <Reveal delay={200}>
+        <Reveal delay={220}>
           <img
             src={scene.img}
             alt={scene.alt}
@@ -96,7 +126,7 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
             style={{
               display: 'block',
               width: '100%',
-              maxWidth: 620,
+              maxWidth: 640,
               height: 'auto',
               margin: `${space[6]}px auto 0`,
               borderRadius: radius.lg,
@@ -106,8 +136,10 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
       )}
 
       {children && (
-        <Reveal delay={240}>
-          <div style={{ marginTop: space[6], pointerEvents: 'auto' }}>{children}</div>
+        <Reveal delay={260}>
+          <div style={{ marginTop: space[6], pointerEvents: 'auto', display: 'flex', justifyContent: 'center' }}>
+            {children}
+          </div>
         </Reveal>
       )}
     </div>
@@ -122,11 +154,9 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
         minHeight: image ? undefined : '100svh',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: justify,
-        padding: `${space[8]}px clamp(20px, 6vw, 96px)`,
+        justifyContent: 'center',
+        padding: `${space[8]}px clamp(20px, 5vw, 64px)`,
         pointerEvents: 'none',
-        // Flip the linear scrim so it fades AWAY from the copy, toward the image.
-        ['--pf-scrim-dir' as string]: scene.side === 'end' ? '270deg' : '90deg',
       }}
     >
       {copy}
