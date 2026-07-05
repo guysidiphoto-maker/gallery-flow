@@ -2,13 +2,14 @@
 // scenes.ts — the Pixflow homepage story, as data.
 //
 // SINGLE SOURCE OF TRUTH for the scroll narrative: the 3D canvas
-// (Pixflow3DScene) and the static mobile/reduced-motion fallback both read
-// this same array, so the copy + assets never drift between the two paths.
+// (Pixflow3DScene) and the static mobile/reduced-motion fallback read the same
+// array, so copy + assets never drift between the two paths.
 //
-// All copy is CENTERED (the visible layout puts every heading in the middle,
-// over a frosted clearing in the 3D field) and written in a punchy, catalog
-// voice — short bold headline, a confident supporting line, and a row of
-// feature tags. Hebrew, RTL-first. No fabricated metrics, no testimonials.
+// Pixflow IS a FACE-RECOGNITION system for event photographers — guests find
+// the photos they appear in, and the photographer delivers a branded gallery in
+// one link. Copy stays on that value (recognition + delivery + branding), never
+// editing/curation. Hebrew, RTL, catalog voice. No em-dashes (they read as AI),
+// no fabricated metrics, no testimonials.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ASSET_BASE = '/assets/pixflow-landing'
@@ -34,52 +35,52 @@ export const SCENES: Scene[] = [
   {
     id: 'hero',
     img: `${ASSET_BASE}/hero-main.webp`,
-    alt: 'גלריית Pixflow פתוחה על מחשב נייד וטלפון, תמונות אירוע מסודרות',
-    eyebrow: 'גלריות אירועים חכמות',
-    title: 'התמונות שלכם,\nמסודרות מעצמן',
-    body: 'מעלים את כל האירוע פעם אחת. Pixflow מארגן, בוחר את הרגעים הכי חזקים, ובונה גלריה ממותגת שמוכנה לשיתוף בקישור אחד.',
-    tags: ['זיהוי פנים', 'מיתוג משלכם', 'שיתוף בקישור'],
+    alt: 'גלריית Pixflow פתוחה על מחשב נייד וטלפון, אורחת מזוהה בזיהוי פנים',
+    eyebrow: 'זיהוי פנים לצלמי אירועים',
+    title: 'כל אורח\nמוצא את עצמו',
+    body: 'Pixflow היא מערכת זיהוי הפנים לצלמי אירועים. מעלים את האירוע פעם אחת, וכל אורח מקבל בדיוק את התמונות שבהן הוא מופיע.',
+    tags: ['זיהוי פנים AI', 'בלי אפליקציה', 'גלריה ממותגת'],
   },
   {
     id: 'upload',
     img: `${ASSET_BASE}/ai-highlights.webp`,
-    alt: 'מסך Pixflow מארגן אוטומטית תמונות אירוע ובוחר את הרגעים הטובים',
+    alt: 'Pixflow סורק אוטומטית את הפנים בכל תמונות האירוע לאחר העלאה',
     eyebrow: 'העלאה',
-    title: 'גוררים.\nוזה מסודר.',
-    body: 'אלפי תמונות נכנסות ביחד ומסתדרות לגלריה נקייה. בלי מיון ידני ובלי לילות עריכה — Pixflow עושה את העבודה השחורה.',
-    tags: ['ארגון אוטומטי', 'בחירת רגעים', 'גלריה מוכנה'],
+    title: 'מעלים פעם אחת.\nהמערכת מזהה את כולם.',
+    body: 'גוררים את כל תמונות האירוע פנימה, ו-Pixflow סורקת כל פנים אוטומטית. הגלריה מוכנה לשיתוף בלי לתייג אף אחד ידנית.',
+    tags: ['סריקה אוטומטית', 'כל הפנים', 'מוכן לשיתוף'],
   },
   {
     id: 'faces',
     img: `${ASSET_BASE}/face-recognition.webp`,
-    alt: 'מסך טלפון של Pixflow מזהה אורח ומציג את כל התמונות שלו',
+    alt: 'אורח מצלם סלפי במסך Pixflow ומקבל את כל התמונות שבהן הוא מופיע',
     eyebrow: 'זיהוי פנים',
-    title: 'כל אורח\nמוצא את עצמו',
-    body: 'סלפי אחד, וזהו. זיהוי הפנים סורק את כל האירוע ומגיש לכל אורח בדיוק את התמונות שבהן הוא מופיע — בשניות.',
-    tags: ['חיפוש בסלפי', 'בלי אפליקציה', 'תוצאות מיידיות'],
+    title: 'סלפי אחד.\nכל התמונות שלו.',
+    body: 'האורח מצלם סלפי, וזיהוי הפנים מגיש לו מיד את כל התמונות שבהן הוא מופיע. בלי לגלול אלפי תמונות, בלי אפליקציה.',
+    tags: ['חיפוש בסלפי', 'התאמה מיידית', 'פרטי לכל אורח'],
   },
   {
     id: 'manage',
     img: `${ASSET_BASE}/dashboard.webp`,
-    alt: 'לוח הבקרה של Pixflow עם כל הגלריות, מרכז העלאות והרשאות שיתוף',
+    alt: 'לוח הבקרה של Pixflow עם כל הגלריות, אורחים והרשאות שיתוף',
     eyebrow: 'לוח בקרה',
     title: 'כל הגלריות.\nמסך אחד.',
-    body: 'גלריות, לקוחות, הרשאות, שיתוף והורדות — הכול מנוהל ממקום אחד, נקי וברור. אתם שולטים, לא רודפים.',
-    tags: ['ניהול לקוחות', 'הרשאות גישה', 'מעקב הורדות'],
+    body: 'מנהלים גלריות, אורחים, הרשאות ושיתוף ממקום אחד, וממתגים כל גלריה בשם ובעיצוב שלכם.',
+    tags: ['ניהול אורחים', 'הרשאות גישה', 'מיתוג מלא'],
   },
   {
     id: 'client',
     img: `${ASSET_BASE}/event-gallery.webp`,
-    alt: 'לקוח גולל בגלריית אירוע של Pixflow בטלפון ומוריד תמונות',
+    alt: 'אורח פותח גלריית אירוע ממותגת של Pixflow בטלפון ומוריד תמונות',
     eyebrow: 'חוויית לקוח',
-    title: 'גלריה\nשמרגישה יוקרה',
-    body: 'שולחים קישור אחד. הלקוח פותח, גולל, בוחר ומוריד — בעברית מלאה, מכל מכשיר, בלי להוריד שום אפליקציה.',
+    title: 'קישור אחד.\nגלריה ממותגת.',
+    body: 'שולחים לאורחים קישור אחד. הם פותחים, מוצאים את עצמם ומורידים בעברית מלאה, מכל מכשיר, בלי להתקין כלום.',
     tags: ['קישור אחד', 'עברית מלאה', 'הורדה חופשית'],
   },
 ]
 
-// Extra product render (not a story beat) — fed into the floating-card field
-// so the 3D depth has more variety than the five hero shots alone.
+// Extra product render (not a story beat) — fed into the floating-card field so
+// the 3D depth has more variety than the five hero shots alone.
 export const EXTRA_TEXTURES = [`${ASSET_BASE}/product-gallery.webp`]
 
 // The final beat (Scene 6) is not a 3D plane — it is a calm, static section

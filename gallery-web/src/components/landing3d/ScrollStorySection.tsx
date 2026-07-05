@@ -51,16 +51,11 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
   const copy = (
     <div
       style={{
-        maxWidth: isHero ? 600 : 520,
+        maxWidth: isHero ? 620 : 540,
         textAlign: 'center',
         padding: `${space[6]}px ${space[6]}px`,
-        borderRadius: radius.xl,
-        // Frosted cream clearing that HUGS the copy: crisp text, while the hero
-        // render + floating cards frame it on every side.
-        background:
-          'radial-gradient(85% 108% at 50% 44%, rgba(246,243,237,.93) 0%, rgba(246,243,237,.74) 46%, rgba(246,243,237,.18) 74%, rgba(246,243,237,0) 100%)',
-        backdropFilter: 'blur(4px)',
-        WebkitBackdropFilter: 'blur(4px)',
+        // No panel behind the copy — a soft cream text-halo (below) carries
+        // legibility over the 3D field, so the scene stays fully visible.
         pointerEvents: 'none',
       }}
     >
@@ -72,6 +67,7 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
             marginBottom: space[3],
             fontSize: 12,
             letterSpacing: '0.14em',
+            textShadow: '0 0 14px rgba(246,243,237,.96), 0 0 5px rgba(246,243,237,.9)',
           }}
         >
           {scene.eyebrow}
@@ -91,6 +87,8 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
             color: color.ink,
             margin: 0,
             whiteSpace: 'pre-line',
+            // Soft cream glow so the headline stays crisp over busy cards.
+            textShadow: '0 0 34px rgba(246,243,237,.99), 0 0 14px rgba(246,243,237,.96), 0 1px 2px rgba(246,243,237,.92)',
           }}
         >
           {scene.title}
@@ -106,6 +104,7 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
             margin: `${space[4]}px auto 0`,
             maxWidth: 520,
             lineHeight: 1.65,
+            textShadow: '0 0 20px rgba(246,243,237,.99), 0 0 8px rgba(246,243,237,.95)',
           }}
         >
           {scene.body}
