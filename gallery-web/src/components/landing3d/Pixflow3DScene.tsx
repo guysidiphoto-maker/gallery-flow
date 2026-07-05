@@ -24,7 +24,8 @@ import { EXTRA_TEXTURES } from './scenes'
 
 gsap.registerPlugin(ScrollTrigger)
 
-const PLANE_H = 3.5          // hero plane height — big enough to frame the copy
+const PLANE_H = 2.9          // hero plane height
+const HERO_Y = -1.5          // heroes sit LOW so the upper band stays clean for copy
 const SPACING = 6.2          // world gap between heroes along X
 const CAM_Z = 6.6
 const FOV = 42
@@ -128,15 +129,16 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
         const aspect = img && img.width && img.height ? img.width / img.height : 16 / 9
         const baseX = i * SPACING
 
-        // Hero plane — pushed slightly back so the centred copy has a clearing.
+        // Hero plane — sits LOW (HERO_Y) so it showcases below the copy band,
+        // never behind it. The upper band of the viewport stays clean cream.
         const geo = new THREE.PlaneGeometry(PLANE_H * aspect, PLANE_H)
         disposables.push(geo)
         const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 1 })
         disposables.push(mat)
         const mesh = new THREE.Mesh(geo, mat)
-        mesh.position.set(baseX, 0, -0.6)
+        mesh.position.set(baseX, HERO_Y, -0.6)
         scene.add(mesh)
-        heroes.push({ mesh, baseX, baseY: 0, baseZ: -0.6, phase: i * 0.9, depth: 0, focus: focusAt(baseX) })
+        heroes.push({ mesh, baseX, baseY: HERO_Y, baseZ: -0.6, phase: i * 0.9, depth: 0, focus: focusAt(baseX) })
 
         // Orbiting floating cards — unique crops of the whole render pool.
         for (let k = 0; k < CARDS_PER_HERO; k++) {
@@ -156,14 +158,14 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
           const cmat = new THREE.MeshBasicMaterial({ map: tx, transparent: true, opacity: 0 })
           disposables.push(cmat)
           const cm = new THREE.Mesh(cgeo, cmat)
-          // Scatter on a ring around the hero centre, biased away from the dead
-          // centre (so the copy clearing stays clean); split fore/background.
+          // Scatter around the LOWER product zone (never up in the copy band):
+          // wide horizontal spread, vertical biased to/below centre.
           const angle = rnd(seed + 5) * Math.PI * 2
-          const radius = 2.2 + rnd(seed + 6) * 1.9
+          const radius = 2.4 + rnd(seed + 6) * 1.9
           const foreground = k % 2 === 0
           const depth = foreground ? 0.8 + rnd(seed + 7) * 1.6 : -1.4 - rnd(seed + 7) * 1.8
-          const ox = Math.cos(angle) * radius * 1.15
-          const oy = Math.sin(angle) * radius * 0.82
+          const ox = Math.cos(angle) * radius * 1.35
+          const oy = HERO_Y + (rnd(seed + 9) - 0.32) * 2.5
           cm.position.set(baseX + ox, oy, depth)
           cm.rotation.z = (rnd(seed + 8) - 0.5) * 0.25
           scene.add(cm)
@@ -220,7 +222,9 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
       camX += (targetX - camX) * 0.08
       camera.position.x = camX + p.x * 0.4
       camera.position.y = -p.y * 0.26
-      camera.lookAt(camX, 0, 0)
+      // Look straight ahead (no tilt/keystone) so the low product stays in the
+      // bottom band and the top band stays clear for the copy.
+      camera.lookAt(camX, camera.position.y, 0)
 
       for (const h of heroes) {
         const f = h.focus()
@@ -229,7 +233,7 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
         h.mesh.scale.setScalar(0.86 + 0.14 * f)
         const dNorm = (h.baseX - camX) / SPACING
         h.mesh.position.z = -0.6 - 1.8 * (1 - f)
-        h.mesh.position.y = Math.sin(t * 0.6 + h.phase) * 0.06 * (0.4 + f)
+        h.mesh.position.y = h.baseY + Math.sin(t * 0.6 + h.phase) * 0.06 * (0.4 + f)
         h.mesh.rotation.y = dNorm * 0.5
         h.mesh.rotation.x = Math.sin(t * 0.4 + h.phase) * 0.014
       }

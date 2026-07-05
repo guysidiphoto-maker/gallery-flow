@@ -152,9 +152,11 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
         zIndex: 1,
         minHeight: image ? undefined : '100svh',
         display: 'flex',
-        alignItems: 'center',
+        // Copy lives in the UPPER band (clean cream); the 3D product showcases
+        // below it, so text never sits over a busy render → readable + centered.
+        alignItems: 'flex-start',
         justifyContent: 'center',
-        padding: `${space[8]}px clamp(20px, 5vw, 64px)`,
+        padding: `${image ? `${space[7]}px` : 'clamp(92px, 12vh, 156px)'} clamp(20px, 5vw, 64px) ${space[8]}px`,
         pointerEvents: 'none',
       }}
     >
