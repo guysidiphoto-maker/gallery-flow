@@ -5,11 +5,10 @@
 // (Pixflow3DScene) and the static mobile/reduced-motion fallback read the same
 // array, so copy + assets never drift between the two paths.
 //
-// Pixflow IS a FACE-RECOGNITION system for event photographers — guests find
-// the photos they appear in, and the photographer delivers a branded gallery in
-// one link. Copy stays on that value (recognition + delivery + branding), never
-// editing/curation. Hebrew, RTL, catalog voice. No em-dashes (they read as AI),
-// no fabricated metrics, no testimonials.
+// Positioning: guests don't look for "a gallery" — they look for themselves.
+// Photographers want to upload once, send one clean link, and let the gallery
+// do the work. Voice: natural Israeli Hebrew, sharp, human, product-led. No
+// hype, no fake metrics, no em-dashes as sentence joiners.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ASSET_BASE = '/assets/pixflow-landing'
@@ -23,12 +22,14 @@ export interface Scene {
   alt: string
   /** Small uppercase kicker above the title. */
   eyebrow: string
-  /** Short, bold, catalog-style headline (\n for line breaks). */
+  /** Headline (\n marks intentional line breaks). */
   title: string
-  /** Confident supporting line. */
+  /** Supporting line. */
   body: string
-  /** Catalog-style feature tags shown as pills under the body. */
+  /** Feature chips shown as pills under the body (empty on the hero). */
   tags: string[]
+  /** Hero only: the muted trust line under the CTAs. */
+  trust?: string
 }
 
 export const SCENES: Scene[] = [
@@ -37,45 +38,46 @@ export const SCENES: Scene[] = [
     img: `${ASSET_BASE}/hero-main.webp`,
     alt: 'גלריית Pixflow פתוחה על מחשב נייד וטלפון, אורחת מזוהה בזיהוי פנים',
     eyebrow: 'זיהוי פנים לצלמי אירועים',
-    title: 'כל אורח\nמוצא את עצמו',
-    body: 'Pixflow היא מערכת זיהוי הפנים לצלמי אירועים. מעלים את האירוע פעם אחת, וכל אורח מקבל בדיוק את התמונות שבהן הוא מופיע.',
-    tags: ['זיהוי פנים AI', 'בלי אפליקציה', 'גלריה ממותגת'],
+    title: 'האורחים לא מחפשים גלריה.\nהם מחפשים את עצמם.',
+    body: 'Pixflow הופך אלפי תמונות מאירוע לגלריה שכל אחד יודע להשתמש בה: למצוא את עצמו, לשמור רגעים, ולשתף בלי לשגע את הצלם.',
+    tags: [],
+    trust: 'בלי אפליקציה. בלי סיסמאות. בלי "שלח לי את התמונות שלי" בווטסאפ.',
   },
   {
     id: 'upload',
     img: `${ASSET_BASE}/ai-highlights.webp`,
-    alt: 'Pixflow סורק אוטומטית את הפנים בכל תמונות האירוע לאחר העלאה',
-    eyebrow: 'העלאה',
-    title: 'מעלים פעם אחת.\nהמערכת מזהה את כולם.',
-    body: 'גוררים את כל תמונות האירוע פנימה, ו-Pixflow סורקת כל פנים אוטומטית. הגלריה מוכנה לשיתוף בלי לתייג אף אחד ידנית.',
-    tags: ['סריקה אוטומטית', 'כל הפנים', 'מוכן לשיתוף'],
+    alt: 'תמונות אירוע עולות ל-Pixflow והגלריה מתחילה להסתדר אוטומטית',
+    eyebrow: 'אחרי האירוע',
+    title: 'האירוע נגמר.\nעכשיו כולם רוצים תמונות.',
+    body: 'מאות או אלפי קבצים עולים לאוויר, והגלריה מתחילה להסתדר לבד. כדי שתוכלו לשלוח קישור אחד במקום לנהל בלגן.',
+    tags: ['העלאה אחת', 'סידור חכם', 'קישור מוכן לשליחה'],
   },
   {
     id: 'faces',
     img: `${ASSET_BASE}/face-recognition.webp`,
-    alt: 'אורח מצלם סלפי במסך Pixflow ומקבל את כל התמונות שבהן הוא מופיע',
+    alt: 'אורח מזדהה במסך Pixflow ורואה את כל התמונות שבהן הוא מופיע',
     eyebrow: 'זיהוי פנים',
-    title: 'סלפי אחד.\nכל התמונות שלו.',
-    body: 'האורח מצלם סלפי, וזיהוי הפנים מגיש לו מיד את כל התמונות שבהן הוא מופיע. בלי לגלול אלפי תמונות, בלי אפליקציה.',
-    tags: ['חיפוש בסלפי', 'התאמה מיידית', 'פרטי לכל אורח'],
+    title: 'כל אורח מקבל\nדרך קצרה לתמונות שלו.',
+    body: 'במקום לחפש את עצמו בגלריה ענקית, האורח נכנס, מזדהה, ורואה את הרגעים שבהם הוא מופיע.',
+    tags: ['חיפוש לפי פנים', 'מותאם למובייל', 'פחות גלילה'],
   },
   {
     id: 'manage',
     img: `${ASSET_BASE}/dashboard.webp`,
-    alt: 'לוח הבקרה של Pixflow עם כל הגלריות, אורחים והרשאות שיתוף',
-    eyebrow: 'לוח בקרה',
-    title: 'כל הגלריות.\nמסך אחד.',
-    body: 'מנהלים גלריות, אורחים, הרשאות ושיתוף ממקום אחד, וממתגים כל גלריה בשם ובעיצוב שלכם.',
-    tags: ['ניהול אורחים', 'הרשאות גישה', 'מיתוג מלא'],
+    alt: 'לוח הבקרה של Pixflow עם רשימת אירועים, הרשאות ושליטה בשיתוף',
+    eyebrow: 'לצלם',
+    title: 'פחות הודעות.\nפחות הסברים.\nיותר מסירה.',
+    body: 'לא עוד תיקיות מפוזרות, לינקים כפולים, או שאלות חוזרות על איפה מורידים. הגלריה בנויה כדי לעשות את זה ברור.',
+    tags: ['ניהול פשוט', 'הרשאות גישה', 'גלריות במקום אחד'],
   },
   {
     id: 'client',
     img: `${ASSET_BASE}/event-gallery.webp`,
-    alt: 'אורח פותח גלריית אירוע ממותגת של Pixflow בטלפון ומוריד תמונות',
-    eyebrow: 'חוויית לקוח',
-    title: 'קישור אחד.\nגלריה ממותגת.',
-    body: 'שולחים לאורחים קישור אחד. הם פותחים, מוצאים את עצמם ומורידים בעברית מלאה, מכל מכשיר, בלי להתקין כלום.',
-    tags: ['קישור אחד', 'עברית מלאה', 'הורדה חופשית'],
+    alt: 'לקוח פותח גלריה ממותגת של Pixflow בטלפון ומעביר אותה הלאה',
+    eyebrow: 'ללקוח',
+    title: 'לא שולחים קבצים.\nשולחים חוויה.',
+    body: 'הלקוח מקבל גלריה נקייה, ממותגת ונוחה לפתיחה מכל מכשיר. כזו שאפשר להעביר הלאה בלי להסביר כלום.',
+    tags: ['מותג שלכם', 'עובד במובייל', 'קל לשיתוף'],
   },
 ]
 

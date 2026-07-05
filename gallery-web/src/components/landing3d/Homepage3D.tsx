@@ -56,9 +56,9 @@ function Header() {
       </a>
       <nav style={{ display: 'flex', alignItems: 'center', gap: space[5] }}>
         <a href="#upload" style={{ ...text.small, color: color.inkSoft, textDecoration: 'none' }} className="pf-hide-sm">איך זה עובד</a>
-        <a href="/pricing" style={{ ...text.small, color: color.inkSoft, textDecoration: 'none' }} className="pf-hide-sm">מחירים</a>
+        <a href="#manage" style={{ ...text.small, color: color.inkSoft, textDecoration: 'none' }} className="pf-hide-sm">לצלמים</a>
         <a href="/demo" style={{ ...text.small, color: color.inkSoft, textDecoration: 'none' }} className="pf-hide-sm">דמו</a>
-        <Button size="sm" onClick={() => signInWithGoogle()}>התחל בחינם</Button>
+        <Button size="sm" onClick={() => signInWithGoogle()}>התחילו עכשיו</Button>
       </nav>
     </header>
   )
