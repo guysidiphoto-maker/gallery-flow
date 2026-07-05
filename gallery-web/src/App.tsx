@@ -1712,7 +1712,12 @@ export function App() {
   const studioWebsite    = (raw as Record<string, unknown>).studioWebsite as string || ''
   const showFooterCredit = s(raw, 'showFooterCredit', true)
   const showStories      = s(raw, 'showStories', true)
-  const downloadQuality  = s(raw, 'downloadQuality', 'original')
+  // Cost control (2026-07-05): 'high' now means the ~2048px web derivative
+  // (not the multi-MB original) — excellent for phones/social/small prints and
+  // ~15× cheaper on egress. Only an explicit 'original' downloads the full
+  // original. Unset defaults to 'high' so a missing setting never silently
+  // serves multi-MB originals to every guest.
+  const downloadQuality  = s(raw, 'downloadQuality', 'high')
   // Backward compat: new downloadsEnabled falls back to old allowDownloads
   const downloadsEnabled = raw.downloadsEnabled !== undefined
     ? raw.downloadsEnabled
@@ -1993,7 +1998,7 @@ export function App() {
 
   function downloadUrl(img: GalleryImage) {
     // 'original' and 'high' → serve original full-res file when available
-    const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+    const wantsHd = downloadQuality === 'original'
     const path = wantsHd
       ? (img.original_uploaded && img.original_path ? img.original_path : img.storage_path)
       : img.storage_path
@@ -2026,7 +2031,7 @@ export function App() {
    *  fall back ONLY when storage genuinely says 404. ~50 ms penalty on the
    *  click is invisible next to the actual download. */
   async function resolveDownloadUrl(img: GalleryImage): Promise<{ url: string; downgraded: boolean }> {
-    const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+    const wantsHd = downloadQuality === 'original'
     // Watermark gate: photographer's per-gallery toggle (with brand-kit
     // fallback handled server-side in /api/watermark). We only route the
     // FULL-RESOLUTION download through the engine; thumbs + web previews
@@ -2117,7 +2122,7 @@ export function App() {
       }
       await handleDownload(url, img.filename)
       if (gallery) {
-        const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+        const wantsHd = downloadQuality === 'original'
         void logDownload(gallery.id, img.id, wantsHd ? 'original' : 'web', 'single')
       }
     } finally {
@@ -2172,7 +2177,7 @@ export function App() {
 
   async function handleBatchDownload(imgs: GalleryImage[]) {
     if (gallery && imgs.length > 0) {
-      const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+      const wantsHd = downloadQuality === 'original'
       void logBatchDownload(gallery.id, imgs.map(i => i.id), wantsHd ? 'original' : 'web')
     }
     // Resolve URLs in parallel BEFORE the download loop. HEAD-check each
@@ -2233,7 +2238,7 @@ export function App() {
       try {
         const pvt = readPublicSessionToken(gallery.id) ?? ''
         if (!pvt) throw new Error('no_pvt')
-        const wantsHd = downloadQuality === 'original' || downloadQuality === 'high'
+        const wantsHd = downloadQuality === 'original'
         const res = await fetch('/api/gallery-zip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
