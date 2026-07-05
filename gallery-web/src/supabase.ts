@@ -43,3 +43,32 @@ export function renderUrl(
   // preserving the real aspect ratio (→ 640×427).
   return `${SUPABASE_URL}/storage/v1/render/image/public/${bucket}/${path}?width=${width}&quality=${quality}&resize=contain`
 }
+
+// Buckets whose objects Supabase can transform on the fly.
+const TRANSFORMABLE_BUCKETS = new Set(['gallery-images', 'demo-uploads'])
+
+/**
+ * Display URL for a gallery image. COST CONTROL (2026-07-05): the P2.1 backfill
+ * produced static web(≤2048) + thumb(≤640) derivatives for every live image,
+ * so a *derivative* path is served DIRECTLY as a plain public object — zero
+ * Supabase Storage Image Transformations (the Pro plan includes only 100 origin
+ * images/month; routing every viewed image through render/image blew that to
+ * 4,091%). We fall back to a bounded on-the-fly render/image transform ONLY for
+ * an ORIGINAL path (the handful not yet backfilled / brand-new uploads), so the
+ * browser still never pulls the multi-MB original. `width`/`quality` are used
+ * only on that transform fallback.
+ */
+export function displayUrl(
+  bucket: string,
+  path: string,
+  width: number,
+  quality = 60,
+): string {
+  // Transform ONLY an original in a transformable bucket. Everything else —
+  // pre-baked derivatives AND non-transformable buckets (stories/video) — is
+  // served directly as a plain public object.
+  if (TRANSFORMABLE_BUCKETS.has(bucket) && path.includes('/originals/')) {
+    return renderUrl(bucket, path, width, quality)
+  }
+  return storageUrl(bucket, path)
+}

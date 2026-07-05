@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
-import { supabase, storageUrl, renderUrl } from './supabase'
+import { supabase, storageUrl, displayUrl } from './supabase'
 import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from './lib/publicSession'
 import { signedStorageUrl, signedWatermarkedUrl } from './lib/signedStorage'
 import { preloadGalleryThumbs, GRID_WIDTHS } from './lib/warmCache'
@@ -253,12 +253,15 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                 <SignedImg
                   ref={el => { if (el) imgRefs.current.set(img.id, el) }}
                   bucket={imgBucket}
-                  // Transform from the WEB preview (~1600px), not the 360px
-                  // thumbnail — the big columns need that detail to stay crisp.
-                  // Phones still pull a small file (sizes = the column width).
-                  path={img.storage_path || img.thumbnail_path}
-                  transformWidths={GRID_WIDTHS}
-                  transformQuality={70}
+                  // Serve the pre-baked static derivatives DIRECTLY (zero
+                  // Supabase transforms): phones pick the ~640 thumb, big desktop
+                  // columns pick the ≤2048 web preview. `path` is the small
+                  // fallback for no-srcset browsers. (Cost control 2026-07-05.)
+                  path={img.thumbnail_path || img.storage_path}
+                  srcSetPaths={[
+                    { path: img.thumbnail_path, width: 640 },
+                    { path: img.storage_path, width: 2048 },
+                  ]}
                   sizes={imgSizes}
                   alt=""
                   loading={isAboveFold ? 'eager' : 'lazy'}
@@ -1816,7 +1819,7 @@ export function App() {
           images={welcomeImages}
           coverImageUrl={resolvedCoverUrl}
           coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
-          storageUrl={(path: string) => renderUrl(imgBucket, path, 1280, 65)}
+          storageUrl={(path: string) => displayUrl(imgBucket, path, 1280, 65)}
           onEnter={() => setShowWelcome(false)}
           faceSearchAvailable={faceSearchAvailable}
           facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}
@@ -1831,7 +1834,7 @@ export function App() {
             <FaceSearchExperience
               galleryId={gallery.id}
               backgroundImages={images.slice(0, 6)}
-              storageUrl={(path: string) => renderUrl(imgBucket, path, 1280, 65)}
+              storageUrl={(path: string) => displayUrl(imgBucket, path, 1280, 65)}
               privacyMode={facePrivacyMode}
               lang={lang}
               onClose={() => setShowFaceSearch(false)}
@@ -2375,7 +2378,7 @@ export function App() {
     // pulls the multi-MB original (storage_path is the original in the
     // originals-only model).
     || (heroFallbackImage
-        ? renderUrl(imgBucket, heroFallbackImage.storage_path, 1280, 60)
+        ? displayUrl(imgBucket, heroFallbackImage.storage_path, 1280, 60)
         : null)
   const hasCustomCover = !!(resolvedCoverUrl || coverUrl)
 

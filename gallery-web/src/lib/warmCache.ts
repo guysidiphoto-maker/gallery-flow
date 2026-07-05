@@ -16,7 +16,7 @@
 // batches a guest sees. The long tail warms naturally as the first viewer
 // scrolls and then stays cached for a year.
 
-import { supabase, storageUrl, renderUrl } from '../supabase'
+import { supabase, storageUrl, displayUrl } from '../supabase'
 
 const BUCKET = 'gallery-images'
 const WARM_COUNT = 250 // first N thumbnails — covers the opening screens
@@ -109,7 +109,7 @@ export function preloadGalleryThumbs(
     img.onload = img.onerror = () => { if (!cancelled) loadNext() }
     if (useTransforms) {
       img.sizes = THUMB_SIZES
-      img.srcset = GRID_WIDTHS.map(w => `${renderUrl(bucket, path, w, 60)} ${w}w`).join(', ')
+      img.srcset = GRID_WIDTHS.map(w => `${displayUrl(bucket, path, w, 60)} ${w}w`).join(', ')
     }
     img.src = storageUrl(bucket, path) // fallback + non-transform buckets
   }
