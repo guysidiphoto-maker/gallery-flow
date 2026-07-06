@@ -86,19 +86,13 @@ function Footer() {
 // scenes, each tagged .pf-snap) so a scroll settles on a scene with its copy at
 // the top instead of stopping halfway. Only those sections are snap targets, so
 // the pricing / final CTA / FAQ / footer below scroll normally (the "calm"
-// outro). Firm snap on desktop (never lands halfway); softer proximity snap on
-// touch so mobile scrolling stays natural; reduced-motion opts out entirely.
+// outro). Gentle `proximity` snap on all devices — a scroll settles toward the
+// nearest scene without feeling locked; reduced-motion opts out.
 const PAGE_CSS = `
   .pf-home-3d { overflow-x: hidden; }
   @media (max-width: 640px) { .pf-hide-sm { display: none !important; } }
-  html { scroll-behavior: smooth; }
+  html { scroll-behavior: smooth; scroll-snap-type: y proximity; }
   .pf-snap { scroll-snap-align: start; }
-  @media (min-width: 768px) and (pointer: fine) {
-    html { scroll-snap-type: y mandatory; }
-  }
-  @media (max-width: 767.98px), (pointer: coarse) {
-    html { scroll-snap-type: y proximity; }
-  }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-snap-type: none; scroll-behavior: auto; }
   }
