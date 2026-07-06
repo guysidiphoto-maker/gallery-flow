@@ -4,8 +4,9 @@
 // route to sign-in (onStart) or the full /pricing page. No live checkout is
 // wired here — payment state is owned elsewhere and untouched.
 //
-// Numbers mirror src/pages/PricingPage.tsx (plans table, migration 075 + the
-// ₪590 one-time, 076-078). Keep the two in sync if pricing changes.
+// Prices shown in USD ($30 / $65 / $200 per month + $160 one-time). NOTE: the
+// full /pricing page (src/pages/PricingPage.tsx) still shows the ₪ plan numbers
+// from the plans table (migration 075) — align that separately if desired.
 
 import { Button, Card, Badge, Reveal, Detect } from '../ui'
 import { color, text, font, space } from '../../theme'
@@ -17,7 +18,7 @@ interface Props {
 interface Tier {
   id: string
   name: string
-  priceIls: number
+  priceUsd: number
   tagline: string
   photosPerMonth: string
   storage: string
@@ -27,17 +28,17 @@ interface Tier {
 
 const TIERS: Tier[] = [
   {
-    id: 'pro', name: 'מקצועי', priceIls: 79, tagline: 'לצלם העצמאי',
+    id: 'pro', name: 'מקצועי', priceUsd: 30, tagline: 'לצלם העצמאי',
     photosPerMonth: '2,000 תמונות בחודש', storage: '75GB אחסון',
     features: ['זיהוי פנים כלול', 'ללא ווטרמרק', 'סטוריז', 'מיתוג אישי'],
   },
   {
-    id: 'business', name: 'עסקי', priceIls: 159, tagline: 'לעסק שצומח', highlight: true,
+    id: 'business', name: 'עסקי', priceUsd: 65, tagline: 'לעסק שצומח', highlight: true,
     photosPerMonth: '10,000 תמונות בחודש', storage: '400GB אחסון',
     features: ['כל מה שב"מקצועי"', 'דומיין מותאם אישית', 'גלריות ללא הגבלה', 'תמיכה מועדפת'],
   },
   {
-    id: 'agency', name: 'סוכנות', priceIls: 349, tagline: 'לחברות הפקה',
+    id: 'agency', name: 'סוכנות', priceUsd: 200, tagline: 'לחברות הפקה',
     photosPerMonth: '30,000 תמונות בחודש', storage: '1.5TB אחסון',
     features: ['כל מה שב"עסקי"', 'כלי ה-AI לסושיאל', 'ניהול מספר צלמים', 'ליווי אישי'],
   },
@@ -104,7 +105,7 @@ export function HomepagePricing({ onStart }: Props) {
                 <div style={{ ...text.label, color: color.textMuted }}>{tier.tagline}</div>
                 <div style={{ ...text.h2, fontFamily: font.display, marginTop: space[1] }}>{tier.name}</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, margin: `${space[3]}px 0 ${space[2]}px` }}>
-                  <span style={{ fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em' }}>₪{tier.priceIls}</span>
+                  <span style={{ fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em' }} dir="ltr">${tier.priceUsd}</span>
                   <span style={{ ...text.small, color: color.textMuted }}>לחודש</span>
                 </div>
                 <div style={{ ...text.body, fontWeight: 600 }}>{tier.photosPerMonth}</div>
@@ -145,7 +146,7 @@ export function HomepagePricing({ onStart }: Props) {
               </p>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em', color: color.ink }}>₪590</div>
+              <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em', color: color.ink }} dir="ltr">$160</div>
               <div style={{ ...text.small, color: color.textMuted, marginBottom: space[3] }}>לגלריה</div>
               <Button size="lg" onClick={onStart}>צרו גלריה</Button>
             </div>
