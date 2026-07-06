@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { withSentry } from '../server/sentryServer.js'
 import { requireAuthedUser } from '../server/ownerAuth.js'
 
 // Service-role client, used ONLY to validate the caller's JWT via GoTrue.
@@ -32,7 +33,7 @@ Rules:
 Respond with valid JSON only:
 { "captions": ["caption1", "caption2", ...] }`
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   // Origin/Referer allowlist gate (mirrors generate-feed.ts / generate-campaign.ts /
   // plan-event.ts / score-images.ts). Without it this is an open Claude proxy.
   const ALLOWED_ORIGINS = new Set([
@@ -106,3 +107,5 @@ Generate one caption per photo.`
     return res.status(500).json({ error: 'Caption generation failed', detail: msg })
   }
 }
+
+export default withSentry('generate-captions', handler)

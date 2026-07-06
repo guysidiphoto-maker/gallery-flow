@@ -20,6 +20,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { withSentry } from '../../server/sentryServer.js'
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
@@ -34,7 +35,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // progress bar matches what the renderer produced.
 const DEFAULT_STORY_DURATION_SECONDS = 30
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET')
     return res.status(405).json({ ok: false, error: 'method_not_allowed' })
@@ -138,3 +139,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     error_message: row.error_message ?? null,
   })
 }
+
+export default withSentry('stories/status', handler)

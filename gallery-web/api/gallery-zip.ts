@@ -20,6 +20,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { withSentry } from '../server/sentryServer.js'
 import archiver from 'archiver'
 
 export const config = {
@@ -69,7 +70,7 @@ interface ZipBody {
   quality?: 'web' | 'original'
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, error: 'method_not_allowed' }); return
   }
@@ -213,3 +214,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   await archive.finalize()
   // archive.pipe() already calls res.end via the readable stream lifecycle
 }
+
+export default withSentry('gallery-zip', handler)

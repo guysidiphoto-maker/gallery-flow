@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { withSentry } from '../server/sentryServer.js'
 
 const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZseWlxZmF3a3JqdnFjbWtwZnZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5ODg3NzksImV4cCI6MjA5MDU2NDc3OX0.ionfOl71NrBO-0iBVBAu6oiTUzkJuIu-drEkY1cmsFY'
@@ -8,7 +9,7 @@ const BOT_UA = /WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slac
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   const ua = req.headers['user-agent'] || ''
   res.setHeader('Vary', 'User-Agent')
 
@@ -198,3 +199,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 <meta name="twitter:image" content="${eImage}" />
 </head><body></body></html>`)
 }
+
+export default withSentry('gallery-page', handler)
