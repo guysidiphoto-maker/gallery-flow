@@ -8,6 +8,7 @@
 import type { ReactNode } from 'react'
 import { Reveal } from '../ui'
 import { color, text, font, space, radius } from '../../theme'
+import { FaceScanFrame } from './FaceScanFrame'
 import type { Scene } from './scenes'
 
 interface Props {
@@ -136,20 +137,35 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
 
       {image && (
         <Reveal delay={220}>
-          <img
-            src={scene.img}
-            alt={scene.alt}
-            loading={isHero ? 'eager' : 'lazy'}
-            decoding="async"
-            style={{
-              display: 'block',
-              width: '100%',
-              maxWidth: 620,
-              height: 'auto',
-              margin: `${space[6]}px auto 0`,
-              borderRadius: radius.lg,
-            }}
-          />
+          {scene.id === 'faces' ? (
+            // Face-recognition motif on the mobile/static path (matches the 3D rig).
+            <div style={{ maxWidth: 620, margin: `${space[6]}px auto 0` }}>
+              <FaceScanFrame>
+                <img
+                  src={scene.img}
+                  alt={scene.alt}
+                  loading="lazy"
+                  decoding="async"
+                  style={{ display: 'block', width: '100%', height: 'auto' }}
+                />
+              </FaceScanFrame>
+            </div>
+          ) : (
+            <img
+              src={scene.img}
+              alt={scene.alt}
+              loading={isHero ? 'eager' : 'lazy'}
+              decoding="async"
+              style={{
+                display: 'block',
+                width: '100%',
+                maxWidth: 620,
+                height: 'auto',
+                margin: `${space[6]}px auto 0`,
+                borderRadius: radius.lg,
+              }}
+            />
+          )}
         </Reveal>
       )}
     </div>

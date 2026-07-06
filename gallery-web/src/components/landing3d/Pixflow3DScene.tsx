@@ -140,10 +140,74 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
     const heroes: Card[] = []
     const cards: Card[] = []
     const heroFx: Array<{ lift: THREE.Mesh; glow: THREE.Mesh; focus: () => number }> = []
+    let faceRig: { focus: () => number; update: (t: number) => void } | null = null
 
     const focusAt = (baseX: number) => () => {
       const camX = camera.position.x - pointerRef.current.x * 0.4
       return Math.max(0, 1 - Math.abs((baseX - camX) / SPACING))
+    }
+
+    // ── Face-recognition rig: a floating selfie framed by scan brackets, a
+    // sweeping scan line, and landmark nodes. Speaks the product's core
+    // language (guests find themselves by face). Lives at the faces scene.
+    const buildFaceRig = (baseX: number, tex: THREE.Texture) => {
+      const group = new THREE.Group()
+      const RIG_X = baseX - 2.05, RIG_Y = HERO_Y + 0.9
+      group.position.set(RIG_X, RIG_Y, 1.2)
+      group.rotation.z = 0.04
+      scene.add(group)
+
+      const fade: Array<{ mat: THREE.MeshBasicMaterial; max: number }> = []
+      const mk = (mat: THREE.MeshBasicMaterial, max: number) => { disposables.push(mat); fade.push({ mat, max }); return mat }
+
+      // Selfie card — portrait crop of a face from the faces render.
+      const timg = tex.image as HTMLImageElement
+      const tAspect = timg && timg.width && timg.height ? timg.width / timg.height : 16 / 9
+      const cw = 0.15, ch = 0.32, u0 = 0.44, v0 = 0.42
+      const cardH = 1.5, cardW = cardH * ((cw * tAspect) / ch)
+      const cgeo = new THREE.PlaneGeometry(cardW, cardH); cropUV(cgeo, u0, v0, cw, ch)
+      disposables.push(cgeo)
+      const card = new THREE.Mesh(cgeo, mk(new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0 }), 1))
+      group.add(card)
+
+      // Scan brackets (4 corners, sage L-shapes).
+      const hw = cardW / 2 + 0.06, hh = cardH / 2 + 0.06, armL = 0.3, th = 0.032
+      const barGeoH = new THREE.PlaneGeometry(armL, th)
+      const barGeoV = new THREE.PlaneGeometry(th, armL)
+      disposables.push(barGeoH, barGeoV)
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        const h = new THREE.Mesh(barGeoH, mk(new THREE.MeshBasicMaterial({ color: SAGE, transparent: true, opacity: 0 }), 0.9))
+        h.position.set(sx * (hw - armL / 2), sy * hh, 0.02)
+        group.add(h)
+        const v = new THREE.Mesh(barGeoV, mk(new THREE.MeshBasicMaterial({ color: SAGE, transparent: true, opacity: 0 }), 0.9))
+        v.position.set(sx * hw, sy * (hh - armL / 2), 0.02)
+        group.add(v)
+      }
+
+      // (No sweeping scan line — per request. The corner brackets + landmark
+      // nodes carry the face-recognition language on their own.)
+
+      // Landmark nodes (eyes, nose, mouth, chin) — the recognition "mesh".
+      const nodeGeo = new THREE.CircleGeometry(0.028, 16)
+      disposables.push(nodeGeo)
+      const nodes: Array<[number, number]> = [[-0.16, 0.3], [0.16, 0.3], [0, 0.08], [-0.12, -0.12], [0.12, -0.12], [0, -0.32]]
+      for (const [nx, ny] of nodes) {
+        const n = new THREE.Mesh(nodeGeo, mk(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), 0.9))
+        n.position.set(nx, ny, 0.05)
+        group.add(n)
+      }
+
+      return {
+        focus: focusAt(baseX),
+        update: (t: number) => {
+          const foc = focusAt(baseX)()
+          // Everything fades in with the scene's focus. No sweeping line.
+          for (const it of fade) it.mat.opacity = it.max * Math.pow(foc, 1.4)
+          const p = pointerRef.current
+          group.position.x = RIG_X + p.x * 0.6
+          group.position.y = RIG_Y + Math.sin(t * 0.6) * 0.06 - p.y * 0.4
+        },
+      }
     }
 
     const buildScene = (heroTex: THREE.Texture[], poolTex: THREE.Texture[]) => {
@@ -215,6 +279,10 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
           cards.push({ mesh: cm, baseX: baseX + ox, baseY: oy, baseZ: depth, phase: seed, depth, focus: focusAt(baseX) })
         }
       })
+
+      const facesIdx = scenes.findIndex(s => s.id === 'faces')
+      if (facesIdx >= 0) faceRig = buildFaceRig(facesIdx * SPACING, heroTex[facesIdx])
+
       onReady?.()
     }
 
@@ -279,6 +347,8 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
       // Look straight ahead (no tilt/keystone) so the low product stays in the
       // bottom band and the top band stays clear for the copy.
       camera.lookAt(camX, camera.position.y, 0)
+
+      if (faceRig) faceRig.update(t)
 
       for (const h of heroes) {
         const f = h.focus()
