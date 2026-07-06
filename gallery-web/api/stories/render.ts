@@ -71,6 +71,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { withSentry } from '../../server/sentryServer.js'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -167,7 +168,7 @@ function projectBrandKit(raw: unknown): RenderBrandKit | undefined {
   return { studio_name, logo, colors, voice, social }
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST')
     return res.status(405).json({ ok: false, error: 'method_not_allowed' })
@@ -573,3 +574,5 @@ async function loadImageUrlsForRender(
     .filter(p => !!p)
     .map(p => `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${p}`)
 }
+
+export default withSentry('stories/render', handler)

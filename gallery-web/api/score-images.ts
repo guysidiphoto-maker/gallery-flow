@@ -8,6 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { withSentry } from '../server/sentryServer.js'
 import { requireBusinessOwnerOfClient } from '../server/ownerAuth.js'
 
 export const maxDuration = 60
@@ -215,7 +216,7 @@ async function scoreBatch(
   return { scores: out }
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   const t0 = Date.now()
   const ALLOWED_ORIGINS = new Set([
     'https://pixflow-ai.com',
@@ -394,3 +395,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ...(detailParts.length > 0 ? { detail: detailParts.join(';').slice(0, 500) } : {}),
   })
 }
+
+export default withSentry('score-images', handler)
