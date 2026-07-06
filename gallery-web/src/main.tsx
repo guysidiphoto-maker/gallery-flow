@@ -18,6 +18,12 @@ import { initAnalytics } from './lib/analytics'
 const LandingPageHe = lazy(() =>
   import('./pages/LandingPageHe').then(m => ({ default: m.LandingPageHe })),
 )
+// New cinematic Web-3D product homepage (feat/pixflow-3d-scroll-homepage).
+// `three` lives inside this chunk (and its own lazy sub-chunk), so it never
+// touches the gallery-viewer bundle or any non-home route.
+const Homepage3D = lazy(() =>
+  import('./components/landing3d/Homepage3D').then(m => ({ default: m.Homepage3D })),
+)
 const LandingPage = lazy(() =>
   import('./pages/LandingPage').then(m => ({ default: m.LandingPage })),
 )
@@ -232,7 +238,10 @@ class ErrorBoundary extends React.Component<
 function Router() {
   const path = window.location.pathname
 
-  if (path === '/') return <LandingPageHe />
+  if (path === '/') return <Homepage3D />
+  // Previous Hebrew homepage — kept reachable for side-by-side comparison and a
+  // one-line rollback (repoint `/` back to <LandingPageHe />).
+  if (path === '/home-legacy') return <LandingPageHe />
   if (path === '/en' || path === '/en/') return <LandingPage />
   // Content-driven SEO landing pages (single source: seo/content.ts). Single
   // segment, so they precede the multi-segment gallery matchers below.

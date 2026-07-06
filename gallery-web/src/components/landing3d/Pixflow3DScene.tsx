@@ -1,0 +1,458 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Pixflow3DScene — the cinematic WebGL layer (desktop only).
+//
+// A fixed, full-viewport, pointer-transparent canvas BEHIND the (centered)
+// scroll copy. The camera dollies laterally along a filmstrip of product
+// planes; as each reaches centre it rises to focus while neighbours recede.
+// Around every hero plane orbits a rich field of small floating photo-cards
+// (unique crops of all six product renders) at many depths — foreground cards
+// sweep past in strong parallax, background cards drift far behind — so the
+// centered text sits in a living 3D space rather than on a flat image.
+//
+// Everything Three.js creates is disposed on unmount (textures, geometry,
+// materials, renderer, context); ScrollTrigger + listeners are torn down.
+// `three` is imported lazily by Homepage3D, so it never touches the gallery
+// bundle or any non-home route.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { useEffect, useRef } from 'react'
+import * as THREE from 'three'
+import { gsap } from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import type { Scene as StoryScene } from './scenes'
+import { EXTRA_TEXTURES } from './scenes'
+
+gsap.registerPlugin(ScrollTrigger)
+
+const PLANE_H = 2.9          // hero plane height
+const HERO_Y = -1.5          // heroes sit LOW so the upper band stays clean for copy
+const SPACING = 6.2          // world gap between heroes along X
+const CAM_Z = 6.6
+const FOV = 42
+const CARDS_PER_HERO = 7
+const SAGE = 0x9db089
+
+interface Props {
+  scenes: StoryScene[]
+  storyRef: React.RefObject<HTMLDivElement | null>
+  /** Lighter mode for mobile/low-power: fewer cards, lower DPR, pulled-back cam. */
+  lite?: boolean
+  onReady?: () => void
+}
+
+// Deterministic pseudo-random in [0,1) from an integer — stable across frames
+// so card positions never reflow.
+function rnd(i: number): number {
+  const x = Math.sin(i * 127.1 + 13.7) * 43758.5453
+  return x - Math.floor(x)
+}
+
+function loadTexture(loader: THREE.TextureLoader, url: string): Promise<THREE.Texture> {
+  return new Promise((resolve, reject) => {
+    loader.load(
+      url,
+      tex => {
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.generateMipmaps = true
+        tex.minFilter = THREE.LinearMipmapLinearFilter
+        tex.magFilter = THREE.LinearFilter
+        resolve(tex)
+      },
+      undefined,
+      reject,
+    )
+  })
+}
+
+// Remap a 1×1 PlaneGeometry's UVs to sample a sub-rectangle of the texture —
+// gives each card a distinct "photo" without cloning the shared texture.
+function cropUV(geo: THREE.PlaneGeometry, u0: number, v0: number, w: number, h: number) {
+  const uv = geo.attributes.uv as THREE.BufferAttribute
+  // PlaneGeometry corner order: (0,1) (1,1) (0,0) (1,0)
+  uv.setXY(0, u0, v0 + h)
+  uv.setXY(1, u0 + w, v0 + h)
+  uv.setXY(2, u0, v0)
+  uv.setXY(3, u0 + w, v0)
+  uv.needsUpdate = true
+}
+
+// A soft radial sprite baked to a canvas (center → transparent edge). Used for
+// the warm studio glow behind the product and its lift halo.
+function makeRadialTexture(stops: Array<[number, string]>): THREE.CanvasTexture {
+  const size = 256
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const ctx = c.getContext('2d')!
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  for (const [o, col] of stops) g.addColorStop(o, col)
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, size, size)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
+export default function Pixflow3DScene({ scenes, storyRef, lite = false, onReady }: Props) {
+  const mountRef = useRef<HTMLDivElement>(null)
+  const progressRef = useRef(0)
+  const pointerRef = useRef({ x: 0, y: 0 })
+
+  useEffect(() => {
+    const mount = mountRef.current
+    const storyEl = storyRef.current
+    if (!mount || !storyEl) return
+
+    let disposed = false
+    let raf = 0
+    const disposables: Array<{ dispose: () => void }> = []
+
+    // Portrait / narrow viewports pull the camera back so the landscape product
+    // still frames well; base camera Z is recomputed on resize.
+    const NARROW_ASPECT = 1.05
+    const isNarrow = () => window.innerWidth / window.innerHeight < NARROW_ASPECT
+    const baseCamZFor = () => (isNarrow() ? 8.4 : CAM_Z)
+    let baseCamZ = baseCamZFor()
+    const cardsPerHero = lite ? 3 : CARDS_PER_HERO
+    const dprCap = lite ? 1.5 : 2
+    // Product sits a bit lower on mobile so the taller mobile copy has a clean
+    // band above it (avoids CTA/text crashing into the product).
+    const HY = lite ? -2.0 : HERO_Y
+
+    const renderer = new THREE.WebGLRenderer({ antialias: !lite, alpha: true, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, dprCap))
+    renderer.setSize(window.innerWidth, window.innerHeight)
+    renderer.setClearColor(0x000000, 0)
+    // Canvas sits under the CSS vignette/grain overlays (rendered as siblings).
+    Object.assign(renderer.domElement.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', zIndex: '0' })
+    mount.appendChild(renderer.domElement)
+
+    // Shared sprite textures: warm studio glow + soft lift halo behind product.
+    const glowTex = makeRadialTexture([[0, 'rgba(255,247,233,1)'], [0.42, 'rgba(255,244,224,0.5)'], [1, 'rgba(255,244,224,0)']])
+    const liftTex = makeRadialTexture([[0, 'rgba(58,58,50,0.5)'], [0.5, 'rgba(58,58,50,0.2)'], [1, 'rgba(58,58,50,0)']])
+    disposables.push(glowTex, liftTex)
+
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(FOV, window.innerWidth / window.innerHeight, 0.1, 100)
+    camera.position.set(0, 0, baseCamZ)
+
+    // ── Soft-green bokeh depth (atmosphere, far back) ─────────────────────
+    const bokeh: THREE.Mesh[] = []
+    const bokehGeo = new THREE.CircleGeometry(1, 40)
+    disposables.push(bokehGeo)
+    const bokehCount = lite ? 6 : 10
+    for (let i = 0; i < bokehCount; i++) {
+      const mat = new THREE.MeshBasicMaterial({ color: SAGE, transparent: true, opacity: 0.05 + (i % 3) * 0.014 })
+      disposables.push(mat)
+      const m = new THREE.Mesh(bokehGeo, mat)
+      m.scale.setScalar(0.5 + rnd(i) * 1.4)
+      m.position.set((i - 5) * SPACING * 0.6 + (rnd(i + 9) - 0.5) * 4, (rnd(i + 3) - 0.5) * 4.5, -7 - rnd(i + 7) * 3)
+      m.userData = { baseX: m.position.x, baseY: m.position.y, phase: i * 1.3 }
+      scene.add(m)
+      bokeh.push(m)
+    }
+
+    interface Card { mesh: THREE.Mesh; baseX: number; baseY: number; baseZ: number; phase: number; depth: number; focus: () => number }
+    const heroes: Card[] = []
+    const cards: Card[] = []
+    const heroFx: Array<{ lift: THREE.Mesh; glow: THREE.Mesh; focus: () => number }> = []
+    let faceRig: { focus: () => number; update: (t: number) => void } | null = null
+
+    const focusAt = (baseX: number) => () => {
+      const camX = camera.position.x - pointerRef.current.x * 0.4
+      return Math.max(0, 1 - Math.abs((baseX - camX) / SPACING))
+    }
+
+    // ── Face-recognition rig: a floating selfie framed by scan brackets, a
+    // sweeping scan line, and landmark nodes. Speaks the product's core
+    // language (guests find themselves by face). Lives at the faces scene.
+    const buildFaceRig = (baseX: number, tex: THREE.Texture) => {
+      const group = new THREE.Group()
+      // On narrow/portrait the rig sits closer to centre and smaller so it stays
+      // in frame beside the product; on desktop it floats out to the side.
+      const narrow = isNarrow()
+      const RIG_X = baseX + (narrow ? -0.85 : -2.05), RIG_Y = HY + (narrow ? 1.05 : 0.9)
+      group.position.set(RIG_X, RIG_Y, 1.2)
+      group.rotation.z = 0.04
+      group.scale.setScalar(narrow ? 0.72 : 1)
+      scene.add(group)
+
+      const fade: Array<{ mat: THREE.MeshBasicMaterial; max: number }> = []
+      const mk = (mat: THREE.MeshBasicMaterial, max: number) => { disposables.push(mat); fade.push({ mat, max }); return mat }
+
+      // Selfie card — portrait crop of a face from the faces render.
+      const timg = tex.image as HTMLImageElement
+      const tAspect = timg && timg.width && timg.height ? timg.width / timg.height : 16 / 9
+      const cw = 0.15, ch = 0.32, u0 = 0.44, v0 = 0.42
+      const cardH = 1.5, cardW = cardH * ((cw * tAspect) / ch)
+      const cgeo = new THREE.PlaneGeometry(cardW, cardH); cropUV(cgeo, u0, v0, cw, ch)
+      disposables.push(cgeo)
+      const card = new THREE.Mesh(cgeo, mk(new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0 }), 1))
+      group.add(card)
+
+      // Scan brackets (4 corners, sage L-shapes).
+      const hw = cardW / 2 + 0.06, hh = cardH / 2 + 0.06, armL = 0.3, th = 0.032
+      const barGeoH = new THREE.PlaneGeometry(armL, th)
+      const barGeoV = new THREE.PlaneGeometry(th, armL)
+      disposables.push(barGeoH, barGeoV)
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        const h = new THREE.Mesh(barGeoH, mk(new THREE.MeshBasicMaterial({ color: SAGE, transparent: true, opacity: 0 }), 0.9))
+        h.position.set(sx * (hw - armL / 2), sy * hh, 0.02)
+        group.add(h)
+        const v = new THREE.Mesh(barGeoV, mk(new THREE.MeshBasicMaterial({ color: SAGE, transparent: true, opacity: 0 }), 0.9))
+        v.position.set(sx * hw, sy * (hh - armL / 2), 0.02)
+        group.add(v)
+      }
+
+      // (No sweeping scan line — per request. The corner brackets + landmark
+      // nodes carry the face-recognition language on their own.)
+
+      // Landmark nodes (eyes, nose, mouth, chin) — the recognition "mesh".
+      const nodeGeo = new THREE.CircleGeometry(0.028, 16)
+      disposables.push(nodeGeo)
+      const nodes: Array<[number, number]> = [[-0.16, 0.3], [0.16, 0.3], [0, 0.08], [-0.12, -0.12], [0.12, -0.12], [0, -0.32]]
+      for (const [nx, ny] of nodes) {
+        const n = new THREE.Mesh(nodeGeo, mk(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), 0.9))
+        n.position.set(nx, ny, 0.05)
+        group.add(n)
+      }
+
+      return {
+        focus: focusAt(baseX),
+        update: (t: number) => {
+          const foc = focusAt(baseX)()
+          // Everything fades in with the scene's focus. No sweeping line.
+          for (const it of fade) it.mat.opacity = it.max * Math.pow(foc, 1.4)
+          const p = pointerRef.current
+          group.position.x = RIG_X + p.x * 0.6
+          group.position.y = RIG_Y + Math.sin(t * 0.6) * 0.06 - p.y * 0.4
+        },
+      }
+    }
+
+    const buildScene = (heroTex: THREE.Texture[], poolTex: THREE.Texture[]) => {
+      if (disposed) return
+      heroTex.forEach((tex, i) => {
+        const img = tex.image as HTMLImageElement
+        const aspect = img && img.width && img.height ? img.width / img.height : 16 / 9
+        const baseX = i * SPACING
+
+        // Hero plane — sits LOW (HERO_Y) so it showcases below the copy band,
+        // never behind it. The upper band of the viewport stays clean cream.
+        const geo = new THREE.PlaneGeometry(PLANE_H * aspect, PLANE_H)
+        disposables.push(geo)
+        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 1 })
+        disposables.push(mat)
+        const mesh = new THREE.Mesh(geo, mat)
+        mesh.position.set(baseX, HY, -0.6)
+        scene.add(mesh)
+        heroes.push({ mesh, baseX, baseY: HY, baseZ: -0.6, phase: i * 0.9, depth: 0, focus: focusAt(baseX) })
+
+        // Soft lift halo behind the product (separates it from the cream → a
+        // premium floating-panel feel) + a warm studio glow that blooms as the
+        // scene comes into focus. Both fade with focus; additive glow = "light".
+        const liftGeo = new THREE.PlaneGeometry(PLANE_H * aspect * 1.55, PLANE_H * 1.55)
+        const liftMat = new THREE.MeshBasicMaterial({ map: liftTex, transparent: true, opacity: 0, depthWrite: false })
+        disposables.push(liftGeo, liftMat)
+        const lift = new THREE.Mesh(liftGeo, liftMat)
+        lift.position.set(baseX, HY - 0.12, -0.9)
+        scene.add(lift)
+
+        const glowGeo = new THREE.PlaneGeometry(PLANE_H * aspect * 2.2, PLANE_H * 2.2)
+        const glowMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
+        disposables.push(glowGeo, glowMat)
+        const glow = new THREE.Mesh(glowGeo, glowMat)
+        glow.position.set(baseX, HY + 0.5, -2.4)
+        scene.add(glow)
+
+        heroFx.push({ lift, glow, focus: focusAt(baseX) })
+
+        // Orbiting floating cards — unique crops of the whole render pool.
+        for (let k = 0; k < cardsPerHero; k++) {
+          const seed = i * 100 + k
+          const tx = poolTex[(i + k) % poolTex.length]
+          const timg = tx.image as HTMLImageElement
+          const tAspect = timg && timg.width && timg.height ? timg.width / timg.height : 16 / 9
+          const cw = 0.28 + rnd(seed) * 0.12
+          const ch = 0.26 + rnd(seed + 1) * 0.12
+          const u0 = rnd(seed + 2) * (1 - cw)
+          const v0 = rnd(seed + 3) * (1 - ch)
+          const cardH = 0.5 + rnd(seed + 4) * 0.4
+          const cardW = cardH * ((cw * tAspect) / ch)
+          const cgeo = new THREE.PlaneGeometry(cardW, cardH)
+          cropUV(cgeo, u0, v0, cw, ch)
+          disposables.push(cgeo)
+          const cmat = new THREE.MeshBasicMaterial({ map: tx, transparent: true, opacity: 0 })
+          disposables.push(cmat)
+          const cm = new THREE.Mesh(cgeo, cmat)
+          // Scatter around the LOWER product zone (never up in the copy band):
+          // wide horizontal spread, vertical biased to/below centre.
+          const angle = rnd(seed + 5) * Math.PI * 2
+          const radius = 2.4 + rnd(seed + 6) * 1.9
+          const foreground = k % 2 === 0
+          const depth = foreground ? 0.8 + rnd(seed + 7) * 1.6 : -1.4 - rnd(seed + 7) * 1.8
+          const ox = Math.cos(angle) * radius * 1.35
+          const oy = HY + (rnd(seed + 9) - 0.32) * 2.5
+          cm.position.set(baseX + ox, oy, depth)
+          cm.rotation.z = (rnd(seed + 8) - 0.5) * 0.25
+          scene.add(cm)
+          cards.push({ mesh: cm, baseX: baseX + ox, baseY: oy, baseZ: depth, phase: seed, depth, focus: focusAt(baseX) })
+        }
+      })
+
+      const facesIdx = scenes.findIndex(s => s.id === 'faces')
+      if (facesIdx >= 0) faceRig = buildFaceRig(facesIdx * SPACING, heroTex[facesIdx])
+
+      onReady?.()
+    }
+
+    const loader = new THREE.TextureLoader()
+    const maxAniso = renderer.capabilities.getMaxAnisotropy()
+    const heroUrls = scenes.map(s => s.img)
+    const poolUrls = [...heroUrls, ...EXTRA_TEXTURES]
+    Promise.all(poolUrls.map(u => loadTexture(loader, u)))
+      .then(all => {
+        all.forEach(t => { t.anisotropy = maxAniso; disposables.push(t) })
+        buildScene(all.slice(0, heroUrls.length), all)
+      })
+      .catch(() => { onReady?.() })
+
+    // ── ScrollTrigger: scroll → 0..1 progress (section i centred at i/(N-1)) ─
+    const st = ScrollTrigger.create({
+      trigger: storyEl,
+      start: 'top top',
+      end: 'bottom bottom',
+      scrub: 0.6,
+      onUpdate: self => { progressRef.current = self.progress },
+    })
+
+    const onPointer = (e: PointerEvent) => {
+      pointerRef.current.x = (e.clientX / window.innerWidth) * 2 - 1
+      pointerRef.current.y = (e.clientY / window.innerHeight) * 2 - 1
+    }
+    window.addEventListener('pointermove', onPointer, { passive: true })
+
+    const onResize = () => {
+      camera.aspect = window.innerWidth / window.innerHeight
+      camera.updateProjectionMatrix()
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, dprCap))
+      renderer.setSize(window.innerWidth, window.innerHeight)
+      baseCamZ = baseCamZFor()
+    }
+    window.addEventListener('resize', onResize, { passive: true })
+
+    const clock = new THREE.Clock()
+    let camX = 0
+    const N = scenes.length
+    const render = () => {
+      if (disposed) return
+      raf = requestAnimationFrame(render)
+      // Skip GPU work when the tab is hidden or the user has scrolled past the
+      // story (the opaque pricing/CTA fully cover the canvas). Saves battery,
+      // especially on mobile. rAF keeps ticking cheaply so we resume instantly.
+      if (document.hidden) return
+      if (window.scrollY > storyEl.offsetTop + storyEl.offsetHeight) return
+      const t = clock.getElapsedTime()
+      const p = pointerRef.current
+
+      const targetX = progressRef.current * (N - 1) * SPACING
+      camX += (targetX - camX) * 0.07
+      // Gentle idle drift keeps the scene alive between scroll/mouse input.
+      camera.position.x = camX + p.x * 0.4 + Math.sin(t * 0.12) * 0.05
+      camera.position.y = -p.y * 0.26 + Math.sin(t * 0.17) * 0.03
+
+      // Studio halos + a subtle dolly-in as a scene reaches focus.
+      let focusMax = 0
+      for (const fx of heroFx) {
+        const f = fx.focus()
+        focusMax = Math.max(focusMax, f)
+        ;(fx.lift.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.pow(f, 1.6)
+        ;(fx.glow.material as THREE.MeshBasicMaterial).opacity = 0.26 * Math.pow(f, 1.4)
+      }
+      camera.position.z = baseCamZ - 0.5 * focusMax
+      // Look straight ahead (no tilt/keystone) so the low product stays in the
+      // bottom band and the top band stays clear for the copy.
+      camera.lookAt(camX, camera.position.y, 0)
+
+      if (faceRig) faceRig.update(t)
+
+      for (const h of heroes) {
+        const f = h.focus()
+        const mat = h.mesh.material as THREE.MeshBasicMaterial
+        mat.opacity = 0.12 + 0.88 * Math.pow(f, 1.5)
+        h.mesh.scale.setScalar(0.86 + 0.14 * f)
+        const dNorm = (h.baseX - camX) / SPACING
+        h.mesh.position.z = -0.6 - 1.8 * (1 - f)
+        h.mesh.position.y = h.baseY + Math.sin(t * 0.6 + h.phase) * 0.06 * (0.4 + f)
+        h.mesh.rotation.y = dNorm * 0.5
+        h.mesh.rotation.x = Math.sin(t * 0.4 + h.phase) * 0.014
+      }
+
+      for (const c of cards) {
+        const f = c.focus()
+        const mat = c.mesh.material as THREE.MeshBasicMaterial
+        // Foreground cards a touch more transparent so they never fight the copy.
+        const cap = c.depth > 0 ? 0.62 : 0.8
+        mat.opacity = cap * Math.pow(f, 1.8)
+        const par = 0.5 + c.depth * 0.25
+        c.mesh.position.x = c.baseX + p.x * par
+        c.mesh.position.y = c.baseY + Math.sin(t * 0.7 + c.phase) * 0.12 - p.y * par * 0.7
+        c.mesh.rotation.y = (c.baseX - camX) / SPACING * 0.35
+      }
+
+      for (const b of bokeh) {
+        b.position.x = b.userData.baseX + Math.sin(t * 0.15 + b.userData.phase) * 0.4 + p.x * 1.4
+        b.position.y = b.userData.baseY + Math.cos(t * 0.12 + b.userData.phase) * 0.3 - p.y * 0.9
+      }
+
+      renderer.render(scene, camera)
+    }
+    render()
+
+    return () => {
+      disposed = true
+      cancelAnimationFrame(raf)
+      st.kill()
+      window.removeEventListener('pointermove', onPointer)
+      window.removeEventListener('resize', onResize)
+      for (const d of disposables) { try { d.dispose() } catch { /* noop */ } }
+      renderer.dispose()
+      renderer.forceContextLoss()
+      if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <>
+      {/* WebGL canvas host (bg cream world). The canvas is appended here. */}
+      <div
+        ref={mountRef}
+        aria-hidden
+        style={{
+          position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
+          background: 'radial-gradient(120% 120% at 50% 0%, #F6F3ED 0%, #F2EFE9 46%, #E9EBE0 100%)',
+        }}
+      />
+      {/* Filmic overlays above the canvas: soft olive vignette + cream floor
+          fade, and a very fine film grain. Both purely decorative. */}
+      <div
+        aria-hidden
+        style={{
+          position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
+          background:
+            'radial-gradient(115% 95% at 50% 40%, transparent 58%, rgba(70,78,58,0.11) 100%), linear-gradient(to bottom, transparent 84%, rgba(233,235,224,0.65) 100%)',
+        }}
+      />
+      <div
+        aria-hidden
+        style={{
+          position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
+          opacity: 0.05, mixBlendMode: 'overlay',
+          backgroundSize: '180px 180px',
+          backgroundImage:
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
+        }}
+      />
+    </>
+  )
+}
