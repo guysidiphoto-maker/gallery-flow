@@ -12,6 +12,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { withSentry } from '../server/sentryServer.js'
 
 // Read Supabase credentials from server env vars (set in Vercel project
 // settings as SUPABASE_URL + SUPABASE_ANON_KEY). Falls back to the
@@ -45,7 +46,7 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;')
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Vary', 'User-Agent')
   const ua = req.headers['user-agent'] || ''
   const idParam = (req.query.gallery as string | undefined) || (req.query.id as string | undefined)
@@ -158,3 +159,5 @@ function spaShell(): string {
 </body>
 </html>`
 }
+
+export default withSentry('share', handler)

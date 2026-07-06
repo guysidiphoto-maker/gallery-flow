@@ -23,6 +23,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { withSentry } from '../server/sentryServer.js'
 
 export const maxDuration = 60
 
@@ -1017,7 +1018,7 @@ async function handlePublicGallerySession(
 
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'method_not_allowed' })
   }
@@ -1058,3 +1059,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   return res.status(400).json({ ok: false, error: 'unknown_action', detail: String(action) })
 }
+
+export default withSentry('append-event-posts', handler)

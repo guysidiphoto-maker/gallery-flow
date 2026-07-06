@@ -18,6 +18,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { withSentry } from '../server/sentryServer.js'
 import { requireBusinessOwnerOfClient } from '../server/ownerAuth.js'
 
 export const maxDuration = 60
@@ -174,7 +175,7 @@ ${scheduleLines}
 Suggest 1–3 posts for the new event. Output strict JSON only.`
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   const t0 = Date.now()
   const ALLOWED_ORIGINS = new Set([
     'https://pixflow-ai.com',
@@ -435,3 +436,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     trace_ms: Date.now() - t0,
   })
 }
+
+export default withSentry('plan-event', handler)
