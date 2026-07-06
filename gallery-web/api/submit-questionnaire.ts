@@ -70,6 +70,13 @@ async function sendSms(
 // ─── Handler ────────────────────────────────────────────────────────────────
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // OFF by default — this public questionnaire form is not part of the current
+  // launch. Return a clean disabled response before ANY work (no SMS, no email,
+  // no Supabase write, no provider call). Flip PUBLIC_FORMS_ENABLED=true to
+  // re-enable; the validation + rate-limit protections stay active behind it.
+  if (process.env.PUBLIC_FORMS_ENABLED !== 'true') {
+    return res.status(404).json({ error: 'This endpoint is not enabled' })
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const { questionnaireId, respondentName, respondentPhone, respondentEmail, answers } = req.body || {}

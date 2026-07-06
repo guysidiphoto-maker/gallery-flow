@@ -81,6 +81,13 @@ async function sendSms(
 // ─── Handler ────────────────────────────────────────────────────────────────
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // OFF by default — this public lead form is not part of the current launch.
+  // Return a clean disabled response before ANY work (no SMS, no Supabase write,
+  // no provider call). Flip PUBLIC_FORMS_ENABLED=true to re-enable; all the
+  // validation + rate-limit protections below stay active behind that flag.
+  if (process.env.PUBLIC_FORMS_ENABLED !== 'true') {
+    return res.status(404).json({ error: 'This endpoint is not enabled' })
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const { eventId, name, phone, email } = req.body || {}
