@@ -1,7 +1,18 @@
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import {
+  isUuid, isValidEmail, cleanText, clientIp, maskPhone, maskEmail,
+  countSince, verifyTurnstile,
+} from '../server/publicEndpointGuards.js'
 
 const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
+
+// Abuse limits (persistent, counted from questionnaire_responses.created_at).
+const RESP_MAX_PER_QUESTIONNAIRE_PER_MIN = 25  // burst cap per questionnaire / 60s
+const RESP_MAX_PER_CONTACT_PER_HOUR = 5        // same email/phone / 3600s
+const NAME_MAX = 80
+const ANSWER_MAX = 2000                        // per-answer char cap
+const ANSWERS_MAX_BYTES = 20000                // reject pathological payloads
 
 // ─── Phone normalization ────────────────────────────────────────────────────
 
@@ -59,18 +70,55 @@ async function sendSms(
 // ─── Handler ────────────────────────────────────────────────────────────────
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // OFF by default — this public questionnaire form is not part of the current
+  // launch. Return a clean disabled response before ANY work (no SMS, no email,
+  // no Supabase write, no provider call). Flip PUBLIC_FORMS_ENABLED=true to
+  // re-enable; the validation + rate-limit protections stay active behind it.
+  if (process.env.PUBLIC_FORMS_ENABLED !== 'true') {
+    return res.status(404).json({ error: 'This endpoint is not enabled' })
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const { questionnaireId, respondentName, respondentPhone, respondentEmail, answers } = req.body || {}
+  const ip = clientIp(req)
 
-  if (!questionnaireId || typeof questionnaireId !== 'string') {
+  // ── Input validation ──────────────────────────────────────────────────────
+  if (!isUuid(questionnaireId)) {
     return res.status(400).json({ ok: false, error: 'missing_questionnaire_id' })
   }
-  if (!respondentName || typeof respondentName !== 'string' || respondentName.trim().length === 0) {
+  const name = cleanText(respondentName, NAME_MAX)
+  if (!name) {
     return res.status(400).json({ ok: false, error: 'missing_name' })
   }
-  if (!answers || typeof answers !== 'object') {
+  let email: string | null = null
+  const rawEmail = cleanText(respondentEmail, 254)
+  if (rawEmail) {
+    if (!isValidEmail(rawEmail)) {
+      return res.status(400).json({ ok: false, error: 'invalid_email' })
+    }
+    email = rawEmail
+  }
+  const rawPhone = cleanText(respondentPhone, 40)
+  const phone = rawPhone || null
+
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
     return res.status(400).json({ ok: false, error: 'missing_answers' })
+  }
+  // Reject pathological payloads, then cap + coerce each answer to a string.
+  if (JSON.stringify(answers).length > ANSWERS_MAX_BYTES) {
+    return res.status(400).json({ ok: false, error: 'payload_too_large' })
+  }
+  const cleanAnswers: Record<string, string> = {}
+  for (const [k, v] of Object.entries(answers as Record<string, unknown>)) {
+    if (typeof k !== 'string' || k.length > 120) continue
+    cleanAnswers[k] = cleanText(v, ANSWER_MAX)
+  }
+
+  // Turnstile verify-if-present (not hard-required yet — see report).
+  const turnstileToken = cleanText(req.body?.turnstileToken, 4096)
+  if (turnstileToken && !(await verifyTurnstile(turnstileToken, ip))) {
+    console.warn(`[submit-questionnaire] blocked reason=turnstile q=${questionnaireId} ip=${ip}`)
+    return res.status(400).json({ ok: false, error: 'turnstile_failed' })
   }
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -91,10 +139,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(410).json({ ok: false, error: 'questionnaire_closed' })
   }
 
-  // Validate required questions
+  // ── Rate limiting (persistent: counts questionnaire_responses in the window) ─
+  const perQ = await countSince(supabase, 'questionnaire_responses', 'questionnaire_id', questionnaireId, 60)
+  if (perQ >= RESP_MAX_PER_QUESTIONNAIRE_PER_MIN) {
+    console.warn(`[submit-questionnaire] blocked reason=rate_q q=${questionnaireId} ip=${ip} count=${perQ}`)
+    return res.status(429).json({ ok: false, error: 'rate_limited', retry_after_seconds: 60 })
+  }
+  if (email) {
+    const perEmail = await countSince(supabase, 'questionnaire_responses', 'respondent_email', email, 3600)
+    if (perEmail >= RESP_MAX_PER_CONTACT_PER_HOUR) {
+      console.warn(`[submit-questionnaire] blocked reason=rate_email email=${maskEmail(email)} ip=${ip} count=${perEmail}`)
+      return res.status(429).json({ ok: false, error: 'rate_limited', retry_after_seconds: 3600 })
+    }
+  }
+  if (phone) {
+    const perPhone = await countSince(supabase, 'questionnaire_responses', 'respondent_phone', phone, 3600)
+    if (perPhone >= RESP_MAX_PER_CONTACT_PER_HOUR) {
+      console.warn(`[submit-questionnaire] blocked reason=rate_phone phone=${maskPhone(phone)} ip=${ip} count=${perPhone}`)
+      return res.status(429).json({ ok: false, error: 'rate_limited', retry_after_seconds: 3600 })
+    }
+  }
+
+  // Validate required questions (against the cleaned answers)
   const questions = questionnaire.questions as { id: string; label: string; required: boolean }[]
   for (const q of questions) {
-    if (q.required && (!answers[q.id] || typeof answers[q.id] !== 'string' || !answers[q.id].trim())) {
+    if (q.required && !cleanAnswers[q.id]?.trim()) {
       return res.status(400).json({ ok: false, error: 'missing_required', field: q.id })
     }
   }
@@ -104,10 +173,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from('questionnaire_responses')
     .insert({
       questionnaire_id: questionnaireId,
-      respondent_name: respondentName.trim(),
-      respondent_phone: respondentPhone || null,
-      respondent_email: respondentEmail || null,
-      answers,
+      respondent_name: name,
+      respondent_phone: phone,
+      respondent_email: email,
+      answers: cleanAnswers,
     })
 
   if (insertErr) {
@@ -117,9 +186,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ── Send SMS if configured ──
   let smsSent = false
-  console.log('[submit-questionnaire] send_method:', questionnaire.send_method, 'phone:', respondentPhone)
-  if (questionnaire.send_method === 'sms' && respondentPhone) {
-    const normalized = normalizePhone(respondentPhone)
+  if (questionnaire.send_method === 'sms' && phone) {
+    const normalized = normalizePhone(phone)
     if (normalized) {
       // Build gallery URL if gallery is linked
       let galleryUrl: string | null = null
@@ -127,29 +195,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         galleryUrl = `https://pixflow-ai.com/gallery/${questionnaire.gallery_id}`
       }
 
-      console.log('[submit-questionnaire] Sending SMS to', normalized, 'gallery:', galleryUrl)
-      const result = await sendSms(normalized, respondentName.trim(), galleryUrl)
+      const result = await sendSms(normalized, name, galleryUrl)
       smsSent = result.ok
-      console.log('[submit-questionnaire] SMS result:', JSON.stringify(result))
       if (!result.ok) {
-        console.error('[submit-questionnaire] SMS error:', result.error)
+        // Provider error stays server-side; never surfaced to the client.
+        console.error(`[submit-questionnaire] SMS failed q=${questionnaireId} to=${maskPhone(normalized)}`)
       }
     }
   }
 
   // ── Send email if configured ──
   let emailSent = false
-  if (questionnaire.send_method === 'email' && respondentEmail) {
+  if (questionnaire.send_method === 'email' && email) {
     let galleryUrl: string | null = null
     if (questionnaire.gallery_id) {
       galleryUrl = `https://pixflow-ai.com/gallery/${questionnaire.gallery_id}`
     }
 
     const resendKey = process.env.RESEND_API_KEY
-    console.log('[submit-questionnaire] RESEND_API_KEY exists:', !!resendKey, 'email:', respondentEmail)
     if (resendKey) {
       try {
-        const name = respondentName.trim()
 
         const html = `<!DOCTYPE html>
 <html dir="rtl" lang="he">
@@ -204,16 +269,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
           body: JSON.stringify({
             from: 'Pixflow <noreply@pixflow-ai.com>',
-            to: [respondentEmail.trim()],
+            to: [email],
             subject: 'תודה שמילאת את השאלון 📸',
             html,
           }),
         })
 
-        const data = await resp.json()
         emailSent = resp.ok
         if (!resp.ok) {
-          console.error('[submit-questionnaire] Email error:', JSON.stringify(data))
+          // PII-safe: log status + masked recipient, not the provider payload.
+          console.error(`[submit-questionnaire] Email failed q=${questionnaireId} to=${maskEmail(email)} status=${resp.status}`)
         }
       } catch (err) {
         console.error('[submit-questionnaire] Email error:', err instanceof Error ? err.message : err)
