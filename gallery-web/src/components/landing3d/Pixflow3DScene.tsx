@@ -74,6 +74,22 @@ function cropUV(geo: THREE.PlaneGeometry, u0: number, v0: number, w: number, h: 
   uv.needsUpdate = true
 }
 
+// A soft radial sprite baked to a canvas (center → transparent edge). Used for
+// the warm studio glow behind the product and its lift halo.
+function makeRadialTexture(stops: Array<[number, string]>): THREE.CanvasTexture {
+  const size = 256
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const ctx = c.getContext('2d')!
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  for (const [o, col] of stops) g.addColorStop(o, col)
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, size, size)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
 export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
   const mountRef = useRef<HTMLDivElement>(null)
   const progressRef = useRef(0)
@@ -92,7 +108,14 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(window.innerWidth, window.innerHeight)
     renderer.setClearColor(0x000000, 0)
+    // Canvas sits under the CSS vignette/grain overlays (rendered as siblings).
+    Object.assign(renderer.domElement.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', zIndex: '0' })
     mount.appendChild(renderer.domElement)
+
+    // Shared sprite textures: warm studio glow + soft lift halo behind product.
+    const glowTex = makeRadialTexture([[0, 'rgba(255,247,233,1)'], [0.42, 'rgba(255,244,224,0.5)'], [1, 'rgba(255,244,224,0)']])
+    const liftTex = makeRadialTexture([[0, 'rgba(58,58,50,0.5)'], [0.5, 'rgba(58,58,50,0.2)'], [1, 'rgba(58,58,50,0)']])
+    disposables.push(glowTex, liftTex)
 
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(FOV, window.innerWidth / window.innerHeight, 0.1, 100)
@@ -116,6 +139,7 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
     interface Card { mesh: THREE.Mesh; baseX: number; baseY: number; baseZ: number; phase: number; depth: number; focus: () => number }
     const heroes: Card[] = []
     const cards: Card[] = []
+    const heroFx: Array<{ lift: THREE.Mesh; glow: THREE.Mesh; focus: () => number }> = []
 
     const focusAt = (baseX: number) => () => {
       const camX = camera.position.x - pointerRef.current.x * 0.4
@@ -139,6 +163,25 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
         mesh.position.set(baseX, HERO_Y, -0.6)
         scene.add(mesh)
         heroes.push({ mesh, baseX, baseY: HERO_Y, baseZ: -0.6, phase: i * 0.9, depth: 0, focus: focusAt(baseX) })
+
+        // Soft lift halo behind the product (separates it from the cream → a
+        // premium floating-panel feel) + a warm studio glow that blooms as the
+        // scene comes into focus. Both fade with focus; additive glow = "light".
+        const liftGeo = new THREE.PlaneGeometry(PLANE_H * aspect * 1.55, PLANE_H * 1.55)
+        const liftMat = new THREE.MeshBasicMaterial({ map: liftTex, transparent: true, opacity: 0, depthWrite: false })
+        disposables.push(liftGeo, liftMat)
+        const lift = new THREE.Mesh(liftGeo, liftMat)
+        lift.position.set(baseX, HERO_Y - 0.12, -0.9)
+        scene.add(lift)
+
+        const glowGeo = new THREE.PlaneGeometry(PLANE_H * aspect * 2.2, PLANE_H * 2.2)
+        const glowMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
+        disposables.push(glowGeo, glowMat)
+        const glow = new THREE.Mesh(glowGeo, glowMat)
+        glow.position.set(baseX, HERO_Y + 0.5, -2.4)
+        scene.add(glow)
+
+        heroFx.push({ lift, glow, focus: focusAt(baseX) })
 
         // Orbiting floating cards — unique crops of the whole render pool.
         for (let k = 0; k < CARDS_PER_HERO; k++) {
@@ -219,9 +262,20 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
       const p = pointerRef.current
 
       const targetX = progressRef.current * (N - 1) * SPACING
-      camX += (targetX - camX) * 0.08
-      camera.position.x = camX + p.x * 0.4
-      camera.position.y = -p.y * 0.26
+      camX += (targetX - camX) * 0.07
+      // Gentle idle drift keeps the scene alive between scroll/mouse input.
+      camera.position.x = camX + p.x * 0.4 + Math.sin(t * 0.12) * 0.05
+      camera.position.y = -p.y * 0.26 + Math.sin(t * 0.17) * 0.03
+
+      // Studio halos + a subtle dolly-in as a scene reaches focus.
+      let focusMax = 0
+      for (const fx of heroFx) {
+        const f = fx.focus()
+        focusMax = Math.max(focusMax, f)
+        ;(fx.lift.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.pow(f, 1.6)
+        ;(fx.glow.material as THREE.MeshBasicMaterial).opacity = 0.26 * Math.pow(f, 1.4)
+      }
+      camera.position.z = CAM_Z - 0.5 * focusMax
       // Look straight ahead (no tilt/keystone) so the low product stays in the
       // bottom band and the top band stays clear for the copy.
       camera.lookAt(camX, camera.position.y, 0)
@@ -274,13 +328,36 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
   }, [])
 
   return (
-    <div
-      ref={mountRef}
-      aria-hidden
-      style={{
-        position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
-        background: 'radial-gradient(120% 120% at 50% 0%, #F6F3ED 0%, #F2EFE9 46%, #E9EBE0 100%)',
-      }}
-    />
+    <>
+      {/* WebGL canvas host (bg cream world). The canvas is appended here. */}
+      <div
+        ref={mountRef}
+        aria-hidden
+        style={{
+          position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
+          background: 'radial-gradient(120% 120% at 50% 0%, #F6F3ED 0%, #F2EFE9 46%, #E9EBE0 100%)',
+        }}
+      />
+      {/* Filmic overlays above the canvas: soft olive vignette + cream floor
+          fade, and a very fine film grain. Both purely decorative. */}
+      <div
+        aria-hidden
+        style={{
+          position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
+          background:
+            'radial-gradient(115% 95% at 50% 40%, transparent 58%, rgba(70,78,58,0.11) 100%), linear-gradient(to bottom, transparent 84%, rgba(233,235,224,0.65) 100%)',
+        }}
+      />
+      <div
+        aria-hidden
+        style={{
+          position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
+          opacity: 0.05, mixBlendMode: 'overlay',
+          backgroundSize: '180px 180px',
+          backgroundImage:
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
+        }}
+      />
+    </>
   )
 }
