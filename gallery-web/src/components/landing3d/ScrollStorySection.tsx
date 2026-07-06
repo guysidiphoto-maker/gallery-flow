@@ -174,15 +174,17 @@ export function ScrollStorySection({ scene, image = false, children }: Props) {
   return (
     <section
       id={scene.id}
+      className="pf-snap"
       style={{
         position: 'relative',
         zIndex: 1,
         minHeight: image ? undefined : '100svh',
         display: 'flex',
-        // Copy in the UPPER band (clean cream); the 3D product showcases below.
+        // Copy sits HIGH in the band (just under the sticky header) so it always
+        // reads clearly above the product, and lands at the top of each snap.
         alignItems: 'flex-start',
         justifyContent: 'center',
-        padding: `${image ? `${space[7]}px` : isHero ? 'clamp(78px, 9vh, 112px)' : 'clamp(92px, 12vh, 150px)'} clamp(20px, 5vw, 64px) ${space[8]}px`,
+        padding: `${image ? `${space[7]}px` : isHero ? 'clamp(56px, 5.5vh, 80px)' : 'clamp(60px, 7vh, 96px)'} clamp(20px, 5vw, 64px) ${space[8]}px`,
         pointerEvents: 'none',
       }}
     >

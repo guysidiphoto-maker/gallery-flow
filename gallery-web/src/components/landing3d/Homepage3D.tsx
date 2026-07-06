@@ -16,7 +16,7 @@
 import { lazy, Suspense, useRef } from 'react'
 import { signInWithGoogle } from '../../lib/auth'
 import { Button } from '../ui'
-import { color, text, font, space } from '../../theme'
+import { color, text, font, space, shadow } from '../../theme'
 import { SCENES } from './scenes'
 import { ScrollStorySection } from './ScrollStorySection'
 import { HomepagePricing } from './HomepagePricing'
@@ -29,11 +29,26 @@ const CREAM_BG = 'radial-gradient(120% 120% at 50% 0%, #F6F3ED 0%, #F2EFE9 46%, 
 
 function HeroCTAs() {
   return (
-    <div style={{ display: 'flex', gap: space[3], flexWrap: 'wrap' }}>
-      <Button size="lg" onClick={() => signInWithGoogle()} style={{ padding: '15px 34px', fontSize: 16 }}>
+    <div style={{ display: 'flex', gap: space[3], flexWrap: 'wrap', justifyContent: 'center' }}>
+      <Button
+        size="lg"
+        onClick={() => signInWithGoogle()}
+        style={{ padding: '15px 34px', fontSize: 16, boxShadow: '0 10px 26px rgba(107,126,95,.34)' }}
+      >
         התחילו עכשיו
       </Button>
-      <Button variant="secondary" size="lg" onClick={() => { window.location.href = '/demo' }}>
+      {/* Solid cream surface + border + shadow so it never blends into the busy
+          product image behind the hero CTAs. */}
+      <Button
+        variant="secondary"
+        size="lg"
+        onClick={() => { window.location.href = '/demo' }}
+        style={{
+          background: color.surface,
+          border: `1.5px solid ${color.borderStrong}`,
+          boxShadow: shadow.md,
+        }}
+      >
         צפו בדמו
       </Button>
     </div>
@@ -82,10 +97,20 @@ function Footer() {
 }
 
 // Injected once: hide secondary nav links on narrow screens; guard the page
-// against horizontal overflow regardless of path.
+// against horizontal overflow; and snap the CINEMATIC STORY (the five 3D
+// scenes, each tagged .pf-snap) so a scroll settles on a scene with its copy at
+// the top instead of stopping halfway. Only those sections are snap targets, so
+// the pricing / final CTA / FAQ / footer below scroll normally (the "calm"
+// outro). Gentle `proximity` snap on all devices — a scroll settles toward the
+// nearest scene without feeling locked; reduced-motion opts out.
 const PAGE_CSS = `
   .pf-home-3d { overflow-x: hidden; }
   @media (max-width: 640px) { .pf-hide-sm { display: none !important; } }
+  html { scroll-behavior: smooth; scroll-snap-type: y proximity; }
+  .pf-snap { scroll-snap-align: start; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-snap-type: none; scroll-behavior: auto; }
+  }
 `
 
 export function Homepage3D() {
