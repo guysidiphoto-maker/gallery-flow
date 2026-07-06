@@ -35,6 +35,8 @@ const SAGE = 0x9db089
 interface Props {
   scenes: StoryScene[]
   storyRef: React.RefObject<HTMLDivElement | null>
+  /** Lighter mode for mobile/low-power: fewer cards, lower DPR, pulled-back cam. */
+  lite?: boolean
   onReady?: () => void
 }
 
@@ -90,7 +92,7 @@ function makeRadialTexture(stops: Array<[number, string]>): THREE.CanvasTexture 
   return tex
 }
 
-export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
+export default function Pixflow3DScene({ scenes, storyRef, lite = false, onReady }: Props) {
   const mountRef = useRef<HTMLDivElement>(null)
   const progressRef = useRef(0)
   const pointerRef = useRef({ x: 0, y: 0 })
@@ -104,8 +106,20 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
     let raf = 0
     const disposables: Array<{ dispose: () => void }> = []
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    // Portrait / narrow viewports pull the camera back so the landscape product
+    // still frames well; base camera Z is recomputed on resize.
+    const NARROW_ASPECT = 1.05
+    const isNarrow = () => window.innerWidth / window.innerHeight < NARROW_ASPECT
+    const baseCamZFor = () => (isNarrow() ? 8.4 : CAM_Z)
+    let baseCamZ = baseCamZFor()
+    const cardsPerHero = lite ? 3 : CARDS_PER_HERO
+    const dprCap = lite ? 1.5 : 2
+    // Product sits a bit lower on mobile so the taller mobile copy has a clean
+    // band above it (avoids CTA/text crashing into the product).
+    const HY = lite ? -2.0 : HERO_Y
+
+    const renderer = new THREE.WebGLRenderer({ antialias: !lite, alpha: true, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, dprCap))
     renderer.setSize(window.innerWidth, window.innerHeight)
     renderer.setClearColor(0x000000, 0)
     // Canvas sits under the CSS vignette/grain overlays (rendered as siblings).
@@ -119,13 +133,14 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
 
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(FOV, window.innerWidth / window.innerHeight, 0.1, 100)
-    camera.position.set(0, 0, CAM_Z)
+    camera.position.set(0, 0, baseCamZ)
 
     // ── Soft-green bokeh depth (atmosphere, far back) ─────────────────────
     const bokeh: THREE.Mesh[] = []
     const bokehGeo = new THREE.CircleGeometry(1, 40)
     disposables.push(bokehGeo)
-    for (let i = 0; i < 10; i++) {
+    const bokehCount = lite ? 6 : 10
+    for (let i = 0; i < bokehCount; i++) {
       const mat = new THREE.MeshBasicMaterial({ color: SAGE, transparent: true, opacity: 0.05 + (i % 3) * 0.014 })
       disposables.push(mat)
       const m = new THREE.Mesh(bokehGeo, mat)
@@ -152,9 +167,13 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
     // language (guests find themselves by face). Lives at the faces scene.
     const buildFaceRig = (baseX: number, tex: THREE.Texture) => {
       const group = new THREE.Group()
-      const RIG_X = baseX - 2.05, RIG_Y = HERO_Y + 0.9
+      // On narrow/portrait the rig sits closer to centre and smaller so it stays
+      // in frame beside the product; on desktop it floats out to the side.
+      const narrow = isNarrow()
+      const RIG_X = baseX + (narrow ? -0.85 : -2.05), RIG_Y = HY + (narrow ? 1.05 : 0.9)
       group.position.set(RIG_X, RIG_Y, 1.2)
       group.rotation.z = 0.04
+      group.scale.setScalar(narrow ? 0.72 : 1)
       scene.add(group)
 
       const fade: Array<{ mat: THREE.MeshBasicMaterial; max: number }> = []
@@ -224,9 +243,9 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
         const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 1 })
         disposables.push(mat)
         const mesh = new THREE.Mesh(geo, mat)
-        mesh.position.set(baseX, HERO_Y, -0.6)
+        mesh.position.set(baseX, HY, -0.6)
         scene.add(mesh)
-        heroes.push({ mesh, baseX, baseY: HERO_Y, baseZ: -0.6, phase: i * 0.9, depth: 0, focus: focusAt(baseX) })
+        heroes.push({ mesh, baseX, baseY: HY, baseZ: -0.6, phase: i * 0.9, depth: 0, focus: focusAt(baseX) })
 
         // Soft lift halo behind the product (separates it from the cream → a
         // premium floating-panel feel) + a warm studio glow that blooms as the
@@ -235,20 +254,20 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
         const liftMat = new THREE.MeshBasicMaterial({ map: liftTex, transparent: true, opacity: 0, depthWrite: false })
         disposables.push(liftGeo, liftMat)
         const lift = new THREE.Mesh(liftGeo, liftMat)
-        lift.position.set(baseX, HERO_Y - 0.12, -0.9)
+        lift.position.set(baseX, HY - 0.12, -0.9)
         scene.add(lift)
 
         const glowGeo = new THREE.PlaneGeometry(PLANE_H * aspect * 2.2, PLANE_H * 2.2)
         const glowMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
         disposables.push(glowGeo, glowMat)
         const glow = new THREE.Mesh(glowGeo, glowMat)
-        glow.position.set(baseX, HERO_Y + 0.5, -2.4)
+        glow.position.set(baseX, HY + 0.5, -2.4)
         scene.add(glow)
 
         heroFx.push({ lift, glow, focus: focusAt(baseX) })
 
         // Orbiting floating cards — unique crops of the whole render pool.
-        for (let k = 0; k < CARDS_PER_HERO; k++) {
+        for (let k = 0; k < cardsPerHero; k++) {
           const seed = i * 100 + k
           const tx = poolTex[(i + k) % poolTex.length]
           const timg = tx.image as HTMLImageElement
@@ -272,7 +291,7 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
           const foreground = k % 2 === 0
           const depth = foreground ? 0.8 + rnd(seed + 7) * 1.6 : -1.4 - rnd(seed + 7) * 1.8
           const ox = Math.cos(angle) * radius * 1.35
-          const oy = HERO_Y + (rnd(seed + 9) - 0.32) * 2.5
+          const oy = HY + (rnd(seed + 9) - 0.32) * 2.5
           cm.position.set(baseX + ox, oy, depth)
           cm.rotation.z = (rnd(seed + 8) - 0.5) * 0.25
           scene.add(cm)
@@ -315,8 +334,9 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
     const onResize = () => {
       camera.aspect = window.innerWidth / window.innerHeight
       camera.updateProjectionMatrix()
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, dprCap))
       renderer.setSize(window.innerWidth, window.innerHeight)
+      baseCamZ = baseCamZFor()
     }
     window.addEventListener('resize', onResize, { passive: true })
 
@@ -326,6 +346,11 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
     const render = () => {
       if (disposed) return
       raf = requestAnimationFrame(render)
+      // Skip GPU work when the tab is hidden or the user has scrolled past the
+      // story (the opaque pricing/CTA fully cover the canvas). Saves battery,
+      // especially on mobile. rAF keeps ticking cheaply so we resume instantly.
+      if (document.hidden) return
+      if (window.scrollY > storyEl.offsetTop + storyEl.offsetHeight) return
       const t = clock.getElapsedTime()
       const p = pointerRef.current
 
@@ -343,7 +368,7 @@ export default function Pixflow3DScene({ scenes, storyRef, onReady }: Props) {
         ;(fx.lift.material as THREE.MeshBasicMaterial).opacity = 0.5 * Math.pow(f, 1.6)
         ;(fx.glow.material as THREE.MeshBasicMaterial).opacity = 0.26 * Math.pow(f, 1.4)
       }
-      camera.position.z = CAM_Z - 0.5 * focusMax
+      camera.position.z = baseCamZ - 0.5 * focusMax
       // Look straight ahead (no tilt/keystone) so the low product stays in the
       // bottom band and the top band stays clear for the copy.
       camera.lookAt(camX, camera.position.y, 0)

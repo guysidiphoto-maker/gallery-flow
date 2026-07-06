@@ -90,7 +90,7 @@ const PAGE_CSS = `
 
 export function Homepage3D() {
   const storyRef = useRef<HTMLDivElement>(null)
-  const { use3D, ready } = useDeviceCapability()
+  const { use3D, lite, ready } = useDeviceCapability()
 
   const start = () => signInWithGoogle()
 
@@ -113,7 +113,7 @@ export function Homepage3D() {
       <div className="pf-home-3d" style={{ background: CREAM_BG }}>
         <style>{PAGE_CSS}</style>
         <Suspense fallback={null}>
-          <Pixflow3DScene scenes={SCENES} storyRef={storyRef} />
+          <Pixflow3DScene scenes={SCENES} storyRef={storyRef} lite={lite} />
         </Suspense>
         <Header />
         {/* Tall trigger: each 100vh section drives one camera beat. */}

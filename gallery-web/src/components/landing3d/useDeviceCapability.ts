@@ -10,12 +10,14 @@
 import { useEffect, useState } from 'react'
 
 export interface DeviceCapability {
-  /** Render the Three.js canvas scene. */
+  /** Render the Three.js canvas scene (desktop AND mobile). */
   use3D: boolean
   /** OS-level reduced-motion preference. */
   reducedMotion: boolean
-  /** Narrow / touch device — gets the static story. */
+  /** Narrow / touch device. */
   isMobile: boolean
+  /** Low-power / mobile — the 3D scene runs in a lighter mode. */
+  lite: boolean
   /** Resolved after mount (SSR/first paint renders the safe fallback). */
   ready: boolean
 }
@@ -49,30 +51,17 @@ export function useDeviceCapability(): DeviceCapability {
     use3D: false,
     reducedMotion: false,
     isMobile: true,
+    lite: true,
     ready: false,
   })
 
   useEffect(() => {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const desktop = isDesktopClass()
-    const isMobile = !desktop
-    const use3D = desktop && !reducedMotion && webglAvailable()
-
-    setCap({ use3D, reducedMotion, isMobile, ready: true })
-
-    // Re-evaluate on resize (rotate a tablet, drag a window between displays)
-    // — but only downgrade live to avoid tearing down/rebuilding the canvas on
-    // every pixel of a resize. If we start 3D and the window shrinks below the
-    // desktop threshold, drop to the static story.
-    const onResize = () => {
-      setCap(prev => {
-        if (!prev.use3D) return prev
-        if (isDesktopClass()) return prev
-        return { ...prev, use3D: false, isMobile: true }
-      })
-    }
-    window.addEventListener('resize', onResize, { passive: true })
-    return () => window.removeEventListener('resize', onResize)
+    // 3D runs on mobile too now (in a lighter mode). Static fallback is only
+    // for no-WebGL or reduced-motion devices.
+    const use3D = !reducedMotion && webglAvailable()
+    setCap({ use3D, reducedMotion, isMobile: !desktop, lite: !desktop, ready: true })
   }, [])
 
   return cap
