@@ -82,10 +82,18 @@ function Footer() {
 }
 
 // Injected once: hide secondary nav links on narrow screens; guard the page
-// against horizontal overflow regardless of path.
+// against horizontal overflow; and drive the scroll story as snap "pulses" so
+// each scene settles with its copy at the top. scroll-padding-top clears the
+// sticky header; only the story sections (.pf-snap) are snap targets, so the
+// pricing / CTA / footer below scroll freely. Reduced-motion opts out.
 const PAGE_CSS = `
   .pf-home-3d { overflow-x: hidden; }
   @media (max-width: 640px) { .pf-hide-sm { display: none !important; } }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; scroll-padding-top: 0; }
+  .pf-snap { scroll-snap-align: start; scroll-snap-stop: always; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-snap-type: none; scroll-behavior: auto; }
+  }
 `
 
 export function Homepage3D() {
