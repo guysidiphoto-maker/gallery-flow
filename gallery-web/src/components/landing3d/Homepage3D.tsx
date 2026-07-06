@@ -19,6 +19,7 @@ import { Button } from '../ui'
 import { color, text, font, space } from '../../theme'
 import { SCENES } from './scenes'
 import { ScrollStorySection } from './ScrollStorySection'
+import { HomepagePricing } from './HomepagePricing'
 import { HomepageCTA } from './HomepageCTA'
 import { useDeviceCapability } from './useDeviceCapability'
 
@@ -123,6 +124,7 @@ export function Homepage3D() {
             </ScrollStorySection>
           ))}
         </div>
+        <HomepagePricing onStart={start} />
         <HomepageCTA onStart={start} />
         <Footer />
       </div>
@@ -141,6 +143,7 @@ export function Homepage3D() {
           </ScrollStorySection>
         ))}
       </div>
+      <HomepagePricing onStart={start} />
       <HomepageCTA onStart={start} />
       <Footer />
     </div>
