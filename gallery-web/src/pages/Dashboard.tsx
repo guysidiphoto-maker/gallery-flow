@@ -56,6 +56,35 @@ const GALLERY_BILLING_ON = import.meta.env.VITE_FEATURE_GALLERY_BILLING === 'tru
 // VITE_FEATURE_GALLERY_BILLING=true once checkout is live.
 const TOKEN_BILLING_ON = import.meta.env.VITE_FEATURE_GALLERY_BILLING === 'true'
 
+// ─── Upload validation (client-side gate, before any bytes leave the browser) ──
+// Runs inside handleFileUpload, which is the single choke point for BOTH the
+// file <input> and the drag-and-drop handler — so both paths are validated (the
+// input's `accept` is only a hint, never the gate). Blocks non-images, unknown
+// MIME types, empty files, HEIC/HEIF (the app can't decode/transform them yet),
+// oversized files, and pathologically large batches. Valid files still upload.
+const UPLOAD_ACCEPTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const UPLOAD_MAX_BYTES = 25 * 1024 * 1024   // 25MB per image
+const UPLOAD_MAX_BATCH = 500                 // files per batch (concurrency is 8)
+
+type UploadBlockReason = 'unsupported' | 'heic' | 'empty' | 'toobig'
+interface UploadBlocked { name: string; reason: UploadBlockReason }
+
+function validateUploadFiles(files: File[]): { valid: File[]; blocked: UploadBlocked[] } {
+  const valid: File[] = []
+  const blocked: UploadBlocked[] = []
+  for (const f of files) {
+    const type = (f.type || '').toLowerCase()
+    const name = (f.name || '')
+    const isHeic = type === 'image/heic' || type === 'image/heif' || /\.hei[cf]$/i.test(name)
+    if (isHeic) { blocked.push({ name, reason: 'heic' }); continue }
+    if (!UPLOAD_ACCEPTED_TYPES.has(type)) { blocked.push({ name, reason: 'unsupported' }); continue }
+    if (f.size === 0) { blocked.push({ name, reason: 'empty' }); continue }
+    if (f.size > UPLOAD_MAX_BYTES) { blocked.push({ name, reason: 'toobig' }); continue }
+    valid.push(f)
+  }
+  return { valid, blocked }
+}
+
 interface Gallery {
   id: string
   name: string
@@ -926,8 +955,26 @@ export function Dashboard() {
 
   async function handleFileUpload(files: FileList | null) {
     if (!files || !editingGallery || !businessId || !businessSlug) return
-    if (tokenBalance < files.length) {
-      const wanted = files.length
+
+    const incoming = Array.from(files)
+    // Pathologically large drops would strain the browser — block up-front.
+    if (incoming.length > UPLOAD_MAX_BATCH) {
+      showToast({ kind: 'error', text: `אפשר להעלות עד ${UPLOAD_MAX_BATCH} תמונות בבת אחת. חלקו להעלאות קטנות יותר.` })
+      return
+    }
+    // Client-side validation — covers BOTH the <input> and drag-and-drop paths.
+    // Invalid files are dropped with a clear Hebrew message; valid files proceed.
+    const { valid, blocked } = validateUploadFiles(incoming)
+    if (blocked.length > 0) {
+      const shown = blocked.slice(0, 4).map(b => b.name).filter(Boolean).join(', ')
+      const more = blocked.length > 4 ? ` ועוד ${blocked.length - 4}` : ''
+      const list = shown ? ` (${shown}${more})` : ''
+      showToast({ kind: 'error', text: `חלק מהקבצים לא הועלו כי הם לא בפורמט תמונה נתמך (JPEG/PNG/WebP) או שהם גדולים מ-25MB${list}.` })
+    }
+    if (valid.length === 0) return
+
+    if (tokenBalance < valid.length) {
+      const wanted = valid.length
       const have = tokenBalance
       showToast({ kind: 'error', text: `אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}.` })
       // Only surface the buy-tokens modal when checkout is actually wired.
@@ -937,9 +984,9 @@ export function Dashboard() {
     // Photos land in the active section (or a freshly-created default one).
     const targetSectionId = await ensureUploadSection()
     setUploading(true)
-    setUploadBatch({ completed: 0, total: files.length, failed: 0 })
+    setUploadBatch({ completed: 0, total: valid.length, failed: 0 })
     const result = await uploadMany(
-      Array.from(files),
+      valid,
       {
         galleryId: editingGallery.id,
         businessSlug,
@@ -973,7 +1020,7 @@ export function Dashboard() {
     // Breadcrumb after batch so a crash in the post-upload refresh / face
     // reindex carries the count of photos that were just uploaded.
     trackAction('upload', 'photo', {
-      count: files.length,
+      count: valid.length,
       ok: result.ok.length,
       failed: result.failed.length,
       gallery_id: editingGallery.id,
@@ -3422,7 +3469,9 @@ export function Dashboard() {
                           </div>
                         )
                       })()}
-                      <input ref={fileInputRef} type="file" multiple accept="image/*"
+                      {/* accept is only a picker hint — the real gate is
+                          validateUploadFiles() inside handleFileUpload. */}
+                      <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp"
                         style={{ display: 'none' }}
                         onChange={e => handleFileUpload(e.target.files)} />
                       {/* Right cluster — sort dropdown + grid size toggle + Add Media */}
