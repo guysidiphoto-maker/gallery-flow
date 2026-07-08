@@ -27,6 +27,10 @@ const Homepage3D = lazy(() =>
 const LandingPage = lazy(() =>
   import('./pages/LandingPage').then(m => ({ default: m.LandingPage })),
 )
+// Dedicated acquisition landing page for Israeli event photographers.
+const PhotographersLanding = lazy(() =>
+  import('./pages/PhotographersLanding').then(m => ({ default: m.PhotographersLanding })),
+)
 const SeoLanding = lazy(() =>
   import('./pages/SeoLanding').then(m => ({ default: m.SeoLanding })),
 )
@@ -242,6 +246,7 @@ function Router() {
   // Previous Hebrew homepage — kept reachable for side-by-side comparison and a
   // one-line rollback (repoint `/` back to <LandingPageHe />).
   if (path === '/home-legacy') return <LandingPageHe />
+  if (path === '/photographers' || path === '/photographers/') return <PhotographersLanding />
   if (path === '/en' || path === '/en/') return <LandingPage />
   // Content-driven SEO landing pages (single source: seo/content.ts). Single
   // segment, so they precede the multi-segment gallery matchers below.
