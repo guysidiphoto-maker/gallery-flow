@@ -9,6 +9,7 @@
     { "source": "/stories-bundle/(.*)", "destination": "/stories-bundle/$1" },
     { "source": "/", "destination": "/api/page?route=home-he" },
     { "source": "/en", "destination": "/api/page?route=home-en" },
+    { "source": "/photographers", "destination": "/api/page?route=photographers" },
     { "source": "/demo", "destination": "/api/page?route=demo" },
     { "source": "/terms", "destination": "/api/page?route=terms" },
     { "source": "/privacy", "destination": "/api/page?route=privacy" },
