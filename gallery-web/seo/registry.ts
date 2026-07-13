@@ -619,6 +619,48 @@ const STATIC_ROUTES: SeoRoute[] = [
     ],
   },
   {
+    key: 'photographers',
+    path: '/photographers',
+    lang: 'he',
+    dir: 'rtl',
+    title: 'Pixflow לצלמי אירועים — מעלים פעם אחת, האורחים מוצאים את עצמם',
+    description:
+      'פלטפורמת אספקת תמונות לצלמי אירועים: מעלים את התמונות פעם אחת, שולחים קישור אחד ממותג, והאורחים מוצאים את עצמם לבד עם סלפי וזיהוי פנים — בלי אפליקציה לאורחים.',
+    alternates: { he: '/photographers' },
+    changefreq: 'monthly',
+    priority: 0.8,
+    indexable: true,
+    // The /photographers browser view renders the real cream/sage React landing
+    // page (src/pages/PhotographersLanding.tsx) into #root. Like the homepage,
+    // we emit NO visible SSR scaffold — a plain SEO body would flash before
+    // React mounts and replaces it. Crawlers and link-preview bots (WhatsApp,
+    // Meta ads) still get the full <head> + JSON-LD below, which is the point:
+    // a correct title, description and OG card for shared/advertised links.
+    bodyHtml: '',
+    jsonLd: [
+      organizationLd(),
+      softwareApplicationLd(),
+      serviceLd({
+        name: 'אספקת גלריות אירועים ממותגות עם זיהוי פנים',
+        description:
+          'פלטפורמה לצלמי אירועים לאספקת תמונות: העלאה אחת, קישור ממותג אחד, ואורחים שמוצאים את עצמם עם סלפי וזיהוי פנים מבוסס AI.',
+        audience: 'Event photographers',
+        lang: 'he',
+      }),
+      breadcrumbLd([
+        { name: 'בית', path: '/' },
+        { name: 'לצלמי אירועים', path: '/photographers' },
+      ]),
+      faqLd([
+        { q: 'האורחים צריכים להוריד אפליקציה?', a: 'לא. פותחים קישור בדפדפן, גם מהטלפון.' },
+        { q: 'זה מתאים לאירועים גדולים?', a: 'כן. Pixflow נבנה בדיוק למקרים שבהם יש הרבה תמונות והרבה אנשים שרוצים למצוא את עצמם.' },
+        { q: 'מה קורה אם מישהו לא מצא את עצמו?', a: 'עדיין אפשר לדפדף בגלריה. הזיהוי נועד לקצר את הדרך, לא לנעול את החוויה.' },
+        { q: 'אפשר להשתמש בזה עם המיתוג שלי?', a: 'כן. המטרה היא שהגלריה תיראה כמו חלק מהמותג של הצלם, לא כמו קישור גנרי.' },
+        { q: 'זיהוי הפנים תמיד מושלם?', a: 'לא מבטיחים קסמים. בתנאי צילום טובים Pixflow מגיע עד 99%, אבל איכות הזיהוי תלויה בתאורה, בזוויות ובאיכות התמונות.' },
+      ]),
+    ],
+  },
+  {
     key: 'demo',
     path: '/demo',
     lang: 'he',
