@@ -76,11 +76,24 @@ const BrandKit = lazy(() =>
   import('./pages/BrandKit').then(m => ({ default: m.BrandKit })),
 )
 
+// The public marketing surfaces where the advertising pixel may fire. Everything
+// else (gallery viewer at `/:business/:gallery`, dashboard, /q/, /event/, /vendor/)
+// is intentionally excluded to keep advertising trackers off client-facing pages.
+function isMarketingPath(pathname: string): boolean {
+  const p = pathname.replace(/\/+$/, '') || '/'
+  if (['/', '/home-legacy', '/photographers', '/en', '/pricing', '/demo'].includes(p)) return true
+  if (p === '/blog' || p.startsWith('/blog/')) return true
+  return LANDING_PATHS.has(p)
+}
+
 initSentry()
 // Analytics is a no-op unless VITE_GA4_MEASUREMENT_ID is set (see lib/analytics).
 initAnalytics()
-// Meta Pixel is a no-op unless VITE_META_PIXEL_ID is set (see lib/metaPixel).
-initMetaPixel()
+// Meta Pixel (advertising) is scoped to the PUBLIC MARKETING FUNNEL only — never
+// on client gallery views, the dashboard, or questionnaire/event pages — so the
+// privacy promise to gallery guests (no advertising tracking) still holds. Also a
+// no-op unless VITE_META_PIXEL_ID is set (see lib/metaPixel).
+if (isMarketingPath(window.location.pathname)) initMetaPixel()
 
 // ── Global ErrorBoundary ─────────────────────────────────────────────────
 // Catches uncaught render errors anywhere in the tree (e.g. lazy-chunk fetch
