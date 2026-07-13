@@ -21,7 +21,7 @@ const ASSET = (name: string) => `/assets/pixflow-landing/${name}`
 const STEPS = [
   { n: '1', t: 'מעלים את התמונות', d: 'גוררים תיקייה שלמה וסוגרים עניין.', g: 'linear-gradient(150deg,#C8B49E,#A98F76)' },
   { n: '2', t: 'Pixflow מסדר את הגלריה', d: 'גלריה נקייה ומהירה, מוכנה לשיתוף.', g: 'linear-gradient(150deg,#C7A6A6,#A87E7E)' },
-  { n: '3', t: 'שולחים קישור אחד', d: 'וואטסאפ, QR או מייל — בלי אפליקציה לאורחים.', g: 'linear-gradient(150deg,#B7A6C7,#8E7EA8)' },
+  { n: '3', t: 'שולחים קישור אחד', d: 'וואטסאפ, QR או מייל. בלי אפליקציה לאורחים.', g: 'linear-gradient(150deg,#B7A6C7,#8E7EA8)' },
   { n: '4', t: 'האורחים מוצאים את עצמם עם סלפי', d: 'סלפי אחד, וזיהוי הפנים עושה את השאר.', g: 'linear-gradient(150deg,#9FB0A0,#7B8F6E)' },
 ]
 
@@ -103,12 +103,12 @@ export function PhotographersLanding() {
           <Reveal>
             <span style={eyebrow}>לצלמי אירועים</span>
             <h1 style={{ ...text.display, margin: 0 }}>
-              מעלים פעם אחת.<br />שולחים קישור אחד.<br />האורחים מוצאים<br />את עצמם לבד.
+              הגלריות שלך מעולם<br />לא היו יפות<br />ויעילות כל כך.
             </h1>
           </Reveal>
           <Reveal delay={90}>
             <p style={{ ...text.body, fontSize: 18, color: color.inkSoft, margin: `${space[4]}px 0 ${space[5]}px`, maxWidth: 480 }}>
-              Pixflow הופך מסירת תמונות מאירוע לגלריה ממותגת עם זיהוי פנים — פחות הודעות, פחות הסברים, ויותר חוויה ללקוח.
+              Pixflow הופך מסירת תמונות מאירוע לגלריה ממותגת עם זיהוי פנים. פחות הודעות, פחות הסברים, ויותר חוויה ללקוח.
             </p>
           </Reveal>
           <Reveal delay={170}>
@@ -175,7 +175,7 @@ export function PhotographersLanding() {
           display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: space[7], justifyContent: 'center',
         }}>
           <div style={{ flex: '1 1 380px', maxWidth: 500 }}>
-            <Reveal><Shot src={ASSET('face-recognition.webp')} alt="חיפוש סלפי — זיהוי פנים ב-Pixflow" /></Reveal>
+            <Reveal><Shot src={ASSET('face-recognition.webp')} alt="חיפוש סלפי, זיהוי פנים ב-Pixflow" /></Reveal>
           </div>
           <div style={{ flex: '1 1 380px', maxWidth: 520 }}>
             <Reveal>
@@ -204,7 +204,7 @@ export function PhotographersLanding() {
           </Reveal>
           <Reveal delay={90}>
             <p style={{ ...text.body, fontSize: 17, color: color.inkSoft, margin: `${space[4]}px 0 0`, maxWidth: 480, lineHeight: 1.8 }}>
-              גלריה נקייה, ממותגת ונוחה לפתיחה מכל מכשיר — עם חוויה שמתאימה לצלמים
+              גלריה נקייה, ממותגת ונוחה לפתיחה מכל מכשיר, עם חוויה שמתאימה לצלמים
               שרוצים להיראות מקצועיים גם אחרי שהאירוע נגמר.
             </p>
           </Reveal>
@@ -249,7 +249,7 @@ export function PhotographersLanding() {
             <Badge tone="accent">זיהוי פנים כלול בכל מסלול</Badge>
             <h2 style={{ ...text.h1, fontSize: 'clamp(24px,3.5vw,34px)', margin: 0 }}>בחרו מסלול שמתאים לקצב האירועים שלכם</h2>
             <p style={{ ...text.body, color: color.inkSoft, margin: 0, maxWidth: 520, lineHeight: 1.7 }}>
-              מסלול לכל היקף עבודה — מאירוע בודד ועד עונת אירועים מלאה.
+              מסלול לכל היקף עבודה: מאירוע בודד ועד עונת אירועים מלאה.
             </p>
             <div style={{ display: 'flex', gap: space[3], marginTop: space[2], flexWrap: 'wrap', justifyContent: 'center' }}>
               <Button size="lg" onClick={go}>צרו גלריה ראשונה</Button>
