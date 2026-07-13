@@ -108,7 +108,7 @@ export function PhotographersLanding() {
           </Reveal>
           <Reveal delay={90}>
             <p style={{ ...text.body, fontSize: 18, color: color.inkSoft, margin: `${space[4]}px 0 ${space[5]}px`, maxWidth: 480 }}>
-              Pixflow הופך מסירת תמונות מאירוע לגלריה ממותגת עם זיהוי פנים. פחות הודעות, פחות הסברים, ויותר חוויה ללקוח.
+              גלריה ממותגת ומוקפדת שנראית יוצאת דופן, עם זיהוי פנים שנותן לכל אורח למצוא את עצמו בשניות. יפה ללקוח, פשוט לכם.
             </p>
           </Reveal>
           <Reveal delay={170}>
@@ -204,8 +204,8 @@ export function PhotographersLanding() {
           </Reveal>
           <Reveal delay={90}>
             <p style={{ ...text.body, fontSize: 17, color: color.inkSoft, margin: `${space[4]}px 0 0`, maxWidth: 480, lineHeight: 1.8 }}>
-              גלריה נקייה, ממותגת ונוחה לפתיחה מכל מכשיר, עם חוויה שמתאימה לצלמים
-              שרוצים להיראות מקצועיים גם אחרי שהאירוע נגמר.
+              עיצוב נקי ומוקפד, הלוגו והצבעים שלכם, ופתיחה חלקה מכל מכשיר. הגלריה נראית
+              כמו המשך של העבודה שלכם, לא כמו קישור גנרי.
             </p>
           </Reveal>
         </div>
