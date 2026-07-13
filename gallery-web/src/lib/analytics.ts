@@ -13,6 +13,8 @@
 //
 // No private IDs are hardcoded. The ID comes only from the environment.
 
+import { trackMetaStandard, trackMetaCustom, metaPixelEnabled } from './metaPixel'
+
 const GA_ID: string | undefined = import.meta.env.VITE_GA4_MEASUREMENT_ID
 
 // Canonical event taxonomy. Page-level views are captured automatically by GA4
@@ -30,6 +32,22 @@ export const AnalyticsEvent = {
 
 export type AnalyticsEventName =
   (typeof AnalyticsEvent)[keyof typeof AnalyticsEvent]
+
+// Map our event taxonomy → Meta events. Standard events are the ones Meta's
+// optimizer understands; everything else is a Custom event so the real Standard
+// conversions (Lead/CompleteRegistration) stay clean. Per docs/PIXFLOW_TRACKING_PLAN.
+const META_STANDARD: Partial<Record<AnalyticsEventName, string>> = {
+  [AnalyticsEvent.CONVERSION]: 'CompleteRegistration',
+  [AnalyticsEvent.LEAD_CLICK]: 'Lead',
+}
+const META_CUSTOM: Partial<Record<AnalyticsEventName, string>> = {
+  [AnalyticsEvent.CTA_CLICK]: 'ClickStart',
+  [AnalyticsEvent.DEMO_CLICK]: 'DemoClick',
+  [AnalyticsEvent.PRICING_CLICK]: 'PricingClick',
+  [AnalyticsEvent.SEO_LANDING_VIEW]: 'SeoLandingView',
+  [AnalyticsEvent.BLOG_VIEW]: 'BlogView',
+  [AnalyticsEvent.LANGUAGE_ROUTE]: 'LanguageRoute',
+}
 
 declare global {
   interface Window {
@@ -66,20 +84,31 @@ export function initAnalytics(): void {
   }
 }
 
-/** Fire a custom event. No-op if GA4 isn't loaded. */
+/**
+ * Fire a conversion/CTA event to every configured destination (GA4 + Meta
+ * Pixel). Each destination is independently gated by its own env var, so this
+ * is a no-op for whichever one isn't configured.
+ */
 export function track(
   event: AnalyticsEventName,
   params?: Record<string, unknown>,
 ): void {
+  // GA4
   try {
-    if (!GA_ID || typeof window === 'undefined' || !window.gtag) return
-    window.gtag('event', event, params || {})
+    if (GA_ID && typeof window !== 'undefined' && window.gtag) {
+      window.gtag('event', event, params || {})
+    }
   } catch {
     /* swallow — analytics must never throw into the app */
   }
+  // Meta Pixel (no-op unless VITE_META_PIXEL_ID is set)
+  const std = META_STANDARD[event]
+  if (std) trackMetaStandard(std, params)
+  const custom = META_CUSTOM[event]
+  if (custom) trackMetaCustom(custom, params)
 }
 
-/** True when analytics is actually active (ID configured). */
+/** True when any analytics destination is active (GA4 or Meta Pixel). */
 export function analyticsEnabled(): boolean {
-  return Boolean(GA_ID)
+  return Boolean(GA_ID) || metaPixelEnabled()
 }
