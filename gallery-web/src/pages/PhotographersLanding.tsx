@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { signInWithGoogle } from '../lib/auth'
+import { track, AnalyticsEvent } from '../lib/analytics'
 import { color, text, space, radius, font, shadow } from '../theme'
 import { Button, Card, Badge, Reveal, Detect } from '../components/ui'
 
@@ -66,7 +67,12 @@ function Shot({ src, alt, eager = false }: { src: string; alt: string; eager?: b
 }
 
 export function PhotographersLanding() {
-  const go = () => signInWithGoogle()
+  const go = () => {
+    // Top-of-funnel conversion for the ad campaign: user starts signup from the
+    // photographers landing page. Fires GA4 cta_click + Meta Custom ClickStart.
+    track(AnalyticsEvent.CTA_CLICK, { location: 'photographers' })
+    signInWithGoogle()
+  }
   const scrollHow = () => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' })
 
   const eyebrow: React.CSSProperties = {
