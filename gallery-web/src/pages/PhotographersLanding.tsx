@@ -34,6 +34,37 @@ const FAQS = [
   { q: 'זיהוי הפנים תמיד מושלם?', a: 'לא מבטיחים קסמים. בתנאי צילום טובים Pixflow מגיע עד 99%, אבל איכות הזיהוי תלויה בתאורה, בזוויות ובאיכות התמונות.' },
 ]
 
+// Pricing tiers. Framed the way the market sells (Pixieset/Pic-Time): by total
+// STORAGE, not a monthly photo quota — storage is the real accumulating limit and
+// what photographers understand. Caps match migration 075 (75GB/400GB/1.5TB).
+// Each tier is laddered by customer profile with a "most popular" middle tier.
+const PLANS = [
+  {
+    name: 'מקצועי',
+    price: '79',
+    audience: 'לצלם עצמאי',
+    storage: '75GB אחסון',
+    perks: ['זיהוי פנים כלול', 'מיתוג הגלריה בלוגו שלכם', 'שיתוף בקישור אחד'],
+    popular: false,
+  },
+  {
+    name: 'עסקי',
+    price: '159',
+    audience: 'לעסק עם אירועים שוטפים',
+    storage: '400GB אחסון',
+    perks: ['כל מה שבמקצועי', 'מיתוג מלא בצבעים שלכם', 'עדיפות בעיבוד התמונות'],
+    popular: true,
+  },
+  {
+    name: 'סוכנות',
+    price: '349',
+    audience: 'לסוכנות וצוותי צלמים',
+    storage: '1.5TB אחסון',
+    perks: ['כל מה שבעסקי', 'מתאים לצוות מרובה-צלמים', 'עדיפות בתמיכה'],
+    popular: false,
+  },
+]
+
 function Faq({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false)
   return (
@@ -245,23 +276,56 @@ export function PhotographersLanding() {
         </div>
       </section>
 
-      {/* ── Pricing preview (PLACEHOLDER — final pricing pending approval) ── */}
-      <section style={{ maxWidth: 1000, margin: '0 auto', padding: `${space[6]}px clamp(20px, 5vw, 56px)` }}>
-        <Detect>
-          <Card pad={36} style={{
-            textAlign: 'center', background: color.surface,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space[3],
-          }}>
-            <Badge tone="accent">זיהוי פנים כלול בכל מסלול</Badge>
-            <h2 style={{ ...text.h1, fontSize: 'clamp(24px,3.5vw,34px)', margin: 0 }}>בחרו מסלול שמתאים לקצב האירועים שלכם</h2>
-            <p style={{ ...text.body, color: color.inkSoft, margin: 0, maxWidth: 520, lineHeight: 1.7 }}>
-              מסלול לכל היקף עבודה: מאירוע בודד ועד עונת אירועים מלאה.
+      {/* ── Pricing ── */}
+      <section id="pricing" style={{ maxWidth: 1080, margin: '0 auto', padding: sectionPad }}>
+        <Reveal>
+          <div style={{ textAlign: 'center', marginBottom: space[6] }}>
+            <span style={eyebrow}>תמחור</span>
+            <h2 style={{ ...text.h1, margin: 0 }}>תמחור שגדל עם קצב האירועים שלכם</h2>
+            <p style={{ ...text.body, fontSize: 17, color: color.inkSoft, margin: `${space[3]}px auto 0`, maxWidth: 520, lineHeight: 1.7 }}>
+              מתחילים חינם, ומשדרגים כשהעבודה גדלה. זיהוי פנים כלול בכל המסלולים.
             </p>
-            <div style={{ display: 'flex', gap: space[3], marginTop: space[2], flexWrap: 'wrap', justifyContent: 'center' }}>
-              <Button size="lg" onClick={go}>צרו גלריה ראשונה</Button>
-            </div>
-          </Card>
-        </Detect>
+          </div>
+        </Reveal>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: space[4], alignItems: 'stretch' }}>
+          {PLANS.map((p, i) => (
+            <Detect key={p.name} delay={i * 80}>
+              <Card elevated pad={30} style={{
+                height: '100%', display: 'flex', flexDirection: 'column', gap: space[3],
+                background: p.popular ? color.accentSoft : color.surface,
+                border: `1px solid ${p.popular ? color.accentBorder : color.border}`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space[2] }}>
+                  <h3 style={{ ...text.h3, margin: 0 }}>{p.name}</h3>
+                  {p.popular && <Badge tone="accent">הכי פופולרי</Badge>}
+                </div>
+                <p style={{ ...text.small, color: color.textMuted, margin: 0 }}>{p.audience}</p>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                  <span style={{ ...text.display, fontSize: 'clamp(34px,5vw,46px)', lineHeight: 1 }}>{p.price}</span>
+                  <span style={{ ...text.small, color: color.textMuted }}>₪ לחודש</span>
+                </div>
+                <p style={{ ...text.small, color: color.inkSoft, margin: 0, fontWeight: 600 }}>{p.storage}</p>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: space[2] }}>
+                  {p.perks.map(perk => (
+                    <li key={perk} style={{ ...text.small, color: color.inkSoft, display: 'flex', gap: 8, lineHeight: 1.5 }}>
+                      <span style={{ color: color.accent, fontWeight: 700, flexShrink: 0 }}>✓</span>{perk}
+                    </li>
+                  ))}
+                </ul>
+                <div style={{ marginTop: 'auto', paddingTop: space[3] }}>
+                  <Button size="lg" fullWidth variant={p.popular ? 'primary' : 'secondary'} onClick={go}>
+                    צרו גלריה ראשונה
+                  </Button>
+                </div>
+              </Card>
+            </Detect>
+          ))}
+        </div>
+        <Reveal delay={120}>
+          <p style={{ ...text.small, color: color.textMuted, textAlign: 'center', margin: `${space[5]}px auto 0`, maxWidth: 560, lineHeight: 1.7 }}>
+            מעדיפים לשלם לפי אירוע? גלריה בודדת חד-פעמית ב-590 ₪, בלי מנוי.
+          </p>
+        </Reveal>
       </section>
 
       {/* ── FAQ ── */}
