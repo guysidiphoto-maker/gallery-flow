@@ -34,27 +34,32 @@ const FAQS = [
   { q: 'זיהוי הפנים תמיד מושלם?', a: 'לא מבטיחים קסמים. בתנאי צילום טובים Pixflow מגיע עד 99%, אבל איכות הזיהוי תלויה בתאורה, בזוויות ובאיכות התמונות.' },
 ]
 
-// Pricing tiers — the locked Pricing v2 model (monthly photo allowance that
-// resets each cycle). Numbers match docs/pricing-and-cost-model + migration 075.
+// Pricing tiers. Framed the way the market sells (Pixieset/Pic-Time): by total
+// STORAGE, not a monthly photo quota — storage is the real accumulating limit and
+// what photographers understand. Caps match migration 075 (75GB/400GB/1.5TB).
+// Each tier is laddered by customer profile with a "most popular" middle tier.
 const PLANS = [
   {
     name: 'מקצועי',
     price: '79',
-    photos: 'עד 2,000 תמונות בחודש',
+    audience: 'לצלם עצמאי',
+    storage: '75GB אחסון',
     perks: ['זיהוי פנים כלול', 'מיתוג הגלריה בלוגו שלכם', 'שיתוף בקישור אחד'],
     popular: false,
   },
   {
     name: 'עסקי',
     price: '159',
-    photos: 'עד 10,000 תמונות בחודש',
+    audience: 'לעסק עם אירועים שוטפים',
+    storage: '400GB אחסון',
     perks: ['כל מה שבמקצועי', 'מיתוג מלא בצבעים שלכם', 'עדיפות בעיבוד התמונות'],
     popular: true,
   },
   {
     name: 'סוכנות',
     price: '349',
-    photos: 'עד 30,000 תמונות בחודש',
+    audience: 'לסוכנות וצוותי צלמים',
+    storage: '1.5TB אחסון',
     perks: ['כל מה שבעסקי', 'מתאים לצוות מרובה-צלמים', 'עדיפות בתמיכה'],
     popular: false,
   },
@@ -294,11 +299,12 @@ export function PhotographersLanding() {
                   <h3 style={{ ...text.h3, margin: 0 }}>{p.name}</h3>
                   {p.popular && <Badge tone="accent">הכי פופולרי</Badge>}
                 </div>
+                <p style={{ ...text.small, color: color.textMuted, margin: 0 }}>{p.audience}</p>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                   <span style={{ ...text.display, fontSize: 'clamp(34px,5vw,46px)', lineHeight: 1 }}>{p.price}</span>
                   <span style={{ ...text.small, color: color.textMuted }}>₪ לחודש</span>
                 </div>
-                <p style={{ ...text.small, color: color.inkSoft, margin: 0, fontWeight: 600 }}>{p.photos}</p>
+                <p style={{ ...text.small, color: color.inkSoft, margin: 0, fontWeight: 600 }}>{p.storage}</p>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: space[2] }}>
                   {p.perks.map(perk => (
                     <li key={perk} style={{ ...text.small, color: color.inkSoft, display: 'flex', gap: 8, lineHeight: 1.5 }}>
