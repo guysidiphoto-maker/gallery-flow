@@ -139,6 +139,16 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    // ── Rate limiting computed BEFORE the insert, so the current request's own
+    // row is NOT counted (mirrors capture-lead.ts). Over the limit, the
+    // response is still saved but SMS/email are withheld. ──
+    const perQuestionnaire = await countSince(supabase, 'questionnaire_responses', 'questionnaire_id', questionnaireId, 60)
+    const contactCol = phone ? 'respondent_phone' : email ? 'respondent_email' : null
+    const contactVal = phone || email || ''
+    const perContact = contactCol ? await countSince(supabase, 'questionnaire_responses', contactCol, contactVal, 3600) : 0
+    const withholdNotify =
+      perQuestionnaire >= RESP_MAX_PER_QUESTIONNAIRE_PER_MIN || perContact >= RESP_MAX_PER_CONTACT_PER_HOUR
+
     // Insert response (preserve data before any notification)
     const { error: insertErr } = await supabase
       .from('questionnaire_responses')
@@ -155,13 +165,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ ok: false, error: 'storage_failed' })
     }
 
-    // ── Rate limiting: over the limit, the response is saved but SMS/email are
-    // withheld (persistent DB row-count). ──
-    const perQuestionnaire = await countSince(supabase, 'questionnaire_responses', 'questionnaire_id', questionnaireId, 60)
-    const contactCol = phone ? 'respondent_phone' : email ? 'respondent_email' : null
-    const contactVal = phone || email || ''
-    const perContact = contactCol ? await countSince(supabase, 'questionnaire_responses', contactCol, contactVal, 3600) : 0
-    if (perQuestionnaire >= RESP_MAX_PER_QUESTIONNAIRE_PER_MIN || perContact >= RESP_MAX_PER_CONTACT_PER_HOUR) {
+    if (withholdNotify) {
       console.warn(`[submit-questionnaire] notify withheld reason=rate questionnaire=${questionnaireId} contact=${phone ? maskPhone(phone) : maskEmail(email ?? '')} ip=${ip}`)
       return res.status(200).json({ ok: true, smsSent: false, emailSent: false, reason: 'rate_limited' })
     }
