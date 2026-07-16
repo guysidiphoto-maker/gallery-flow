@@ -1,7 +1,20 @@
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import {
+  isPublicFormsEnabled, isUuid, isValidEmail, cleanText, clientIp,
+  maskPhone, maskEmail, countSince, verifyTurnstileToken,
+} from '../server/publicEndpointGuards.js'
+import { withSentry, captureApiError } from '../server/sentryServer.js'
 
 const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
+
+// ── Abuse limits (SINGLE SOURCE OF TRUTH for this endpoint) ───────────────────
+// Over the limit, the response is still PERSISTED — only the cost-bearing
+// SMS/email notification is withheld.
+const RESP_MAX_PER_QUESTIONNAIRE_PER_MIN = 60  // burst cap per questionnaire / 60s
+const RESP_MAX_PER_CONTACT_PER_HOUR = 5        // same email/phone / 3600s
+const NAME_MAX = 80
+const ANSWERS_MAX_BYTES = 20000                // reject pathological payloads
 
 // ─── Phone normalization ────────────────────────────────────────────────────
 
@@ -58,100 +71,126 @@ async function sendSms(
 
 // ─── Handler ────────────────────────────────────────────────────────────────
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
+  // Emergency kill switch.
+  if (!isPublicFormsEnabled()) {
+    return res.status(404).json({ error: 'This endpoint is not enabled' })
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { questionnaireId, respondentName, respondentPhone, respondentEmail, answers } = req.body || {}
+  const { questionnaireId, respondentName, respondentPhone, respondentEmail, answers, turnstileToken } = req.body || {}
+  const ip = clientIp(req)
 
-  if (!questionnaireId || typeof questionnaireId !== 'string') {
+  // ── Input validation ──────────────────────────────────────────────────────
+  if (!isUuid(questionnaireId)) {
     return res.status(400).json({ ok: false, error: 'missing_questionnaire_id' })
   }
-  if (!respondentName || typeof respondentName !== 'string' || respondentName.trim().length === 0) {
+  const name = cleanText(respondentName, NAME_MAX)
+  if (!name) {
     return res.status(400).json({ ok: false, error: 'missing_name' })
   }
-  if (!answers || typeof answers !== 'object') {
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
     return res.status(400).json({ ok: false, error: 'missing_answers' })
+  }
+  if (JSON.stringify(answers).length > ANSWERS_MAX_BYTES) {
+    return res.status(400).json({ ok: false, error: 'answers_too_large' })
+  }
+  const phone = cleanText(respondentPhone, 40) || null
+  let email: string | null = null
+  const rawEmail = cleanText(respondentEmail, 254)
+  if (rawEmail) {
+    if (!isValidEmail(rawEmail)) {
+      return res.status(400).json({ ok: false, error: 'invalid_email' })
+    }
+    email = rawEmail
+  }
+
+  // ── Turnstile (end-to-end): hard-block ONLY a definitively invalid token. ──
+  const ts = await verifyTurnstileToken(cleanText(turnstileToken, 4096), ip)
+  if (ts === 'invalid') {
+    console.warn(`[submit-questionnaire] blocked reason=turnstile questionnaire=${questionnaireId} ip=${ip}`)
+    return res.status(400).json({ ok: false, error: 'turnstile_failed' })
   }
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceKey) return res.status(500).json({ ok: false, error: 'Server misconfigured' })
   const supabase = createClient(SUPABASE_URL, serviceKey)
 
-  // Fetch questionnaire with send_method and gallery info
-  const { data: questionnaire, error: qErr } = await supabase
-    .from('questionnaires')
-    .select('id, questions, is_active, send_method, gallery_id')
-    .eq('id', questionnaireId)
-    .single()
+  try {
+    // Fetch questionnaire with send_method and gallery info
+    const { data: questionnaire, error: qErr } = await supabase
+      .from('questionnaires')
+      .select('id, questions, is_active, send_method, gallery_id')
+      .eq('id', questionnaireId)
+      .single()
 
-  if (qErr || !questionnaire) {
-    return res.status(404).json({ ok: false, error: 'questionnaire_not_found' })
-  }
-  if (!questionnaire.is_active) {
-    return res.status(410).json({ ok: false, error: 'questionnaire_closed' })
-  }
-
-  // Validate required questions
-  const questions = questionnaire.questions as { id: string; label: string; required: boolean }[]
-  for (const q of questions) {
-    if (q.required && (!answers[q.id] || typeof answers[q.id] !== 'string' || !answers[q.id].trim())) {
-      return res.status(400).json({ ok: false, error: 'missing_required', field: q.id })
+    if (qErr || !questionnaire) {
+      return res.status(404).json({ ok: false, error: 'questionnaire_not_found' })
     }
-  }
+    if (!questionnaire.is_active) {
+      return res.status(410).json({ ok: false, error: 'questionnaire_closed' })
+    }
 
-  // Insert response
-  const { error: insertErr } = await supabase
-    .from('questionnaire_responses')
-    .insert({
-      questionnaire_id: questionnaireId,
-      respondent_name: respondentName.trim(),
-      respondent_phone: respondentPhone || null,
-      respondent_email: respondentEmail || null,
-      answers,
-    })
-
-  if (insertErr) {
-    console.error('[submit-questionnaire] insert error:', insertErr.message)
-    return res.status(500).json({ ok: false, error: 'storage_failed' })
-  }
-
-  // ── Send SMS if configured ──
-  let smsSent = false
-  console.log('[submit-questionnaire] send_method:', questionnaire.send_method, 'phone:', respondentPhone)
-  if (questionnaire.send_method === 'sms' && respondentPhone) {
-    const normalized = normalizePhone(respondentPhone)
-    if (normalized) {
-      // Build gallery URL if gallery is linked
-      let galleryUrl: string | null = null
-      if (questionnaire.gallery_id) {
-        galleryUrl = `https://pixflow-ai.com/gallery/${questionnaire.gallery_id}`
-      }
-
-      console.log('[submit-questionnaire] Sending SMS to', normalized, 'gallery:', galleryUrl)
-      const result = await sendSms(normalized, respondentName.trim(), galleryUrl)
-      smsSent = result.ok
-      console.log('[submit-questionnaire] SMS result:', JSON.stringify(result))
-      if (!result.ok) {
-        console.error('[submit-questionnaire] SMS error:', result.error)
+    // Validate required questions
+    const questions = questionnaire.questions as { id: string; label: string; required: boolean }[]
+    for (const q of questions) {
+      if (q.required && (!answers[q.id] || typeof answers[q.id] !== 'string' || !answers[q.id].trim())) {
+        return res.status(400).json({ ok: false, error: 'missing_required', field: q.id })
       }
     }
-  }
 
-  // ── Send email if configured ──
-  let emailSent = false
-  if (questionnaire.send_method === 'email' && respondentEmail) {
-    let galleryUrl: string | null = null
-    if (questionnaire.gallery_id) {
-      galleryUrl = `https://pixflow-ai.com/gallery/${questionnaire.gallery_id}`
+    // Insert response (preserve data before any notification)
+    const { error: insertErr } = await supabase
+      .from('questionnaire_responses')
+      .insert({
+        questionnaire_id: questionnaireId,
+        respondent_name: name,
+        respondent_phone: phone,
+        respondent_email: email,
+        answers,
+      })
+
+    if (insertErr) {
+      await captureApiError(insertErr, { endpoint: 'submit-questionnaire', action: 'insert_response', status: 500, questionnaireId, reason: 'storage_failed' })
+      return res.status(500).json({ ok: false, error: 'storage_failed' })
     }
 
-    const resendKey = process.env.RESEND_API_KEY
-    console.log('[submit-questionnaire] RESEND_API_KEY exists:', !!resendKey, 'email:', respondentEmail)
-    if (resendKey) {
-      try {
-        const name = respondentName.trim()
+    // ── Rate limiting: over the limit, the response is saved but SMS/email are
+    // withheld (persistent DB row-count). ──
+    const perQuestionnaire = await countSince(supabase, 'questionnaire_responses', 'questionnaire_id', questionnaireId, 60)
+    const contactCol = phone ? 'respondent_phone' : email ? 'respondent_email' : null
+    const contactVal = phone || email || ''
+    const perContact = contactCol ? await countSince(supabase, 'questionnaire_responses', contactCol, contactVal, 3600) : 0
+    if (perQuestionnaire >= RESP_MAX_PER_QUESTIONNAIRE_PER_MIN || perContact >= RESP_MAX_PER_CONTACT_PER_HOUR) {
+      console.warn(`[submit-questionnaire] notify withheld reason=rate questionnaire=${questionnaireId} contact=${phone ? maskPhone(phone) : maskEmail(email ?? '')} ip=${ip}`)
+      return res.status(200).json({ ok: true, smsSent: false, emailSent: false, reason: 'rate_limited' })
+    }
 
-        const html = `<!DOCTYPE html>
+    // Build gallery URL if a gallery is linked.
+    const galleryUrl = questionnaire.gallery_id
+      ? `https://pixflow-ai.com/gallery/${questionnaire.gallery_id}`
+      : null
+
+    // ── Send SMS if configured ──
+    let smsSent = false
+    if (questionnaire.send_method === 'sms' && phone) {
+      const normalized = normalizePhone(phone)
+      if (normalized) {
+        const result = await sendSms(normalized, name, galleryUrl)
+        smsSent = result.ok
+        if (!result.ok) {
+          console.warn(`[submit-questionnaire] sms failed to=${maskPhone(normalized)}: ${result.error}`)
+        }
+      }
+    }
+
+    // ── Send email if configured ──
+    let emailSent = false
+    if (questionnaire.send_method === 'email' && email) {
+      const resendKey = process.env.RESEND_API_KEY
+      if (resendKey) {
+        try {
+          const html = `<!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
@@ -196,30 +235,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 </body>
 </html>`
 
-        const resp = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${resendKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: 'Pixflow <noreply@pixflow-ai.com>',
-            to: [respondentEmail.trim()],
-            subject: 'תודה שמילאת את השאלון 📸',
-            html,
-          }),
-        })
+          const resp = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${resendKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: 'Pixflow <noreply@pixflow-ai.com>',
+              to: [email],
+              subject: 'תודה שמילאת את השאלון 📸',
+              html,
+            }),
+          })
 
-        const data = await resp.json()
-        emailSent = resp.ok
-        if (!resp.ok) {
-          console.error('[submit-questionnaire] Email error:', JSON.stringify(data))
+          emailSent = resp.ok
+          if (!resp.ok) {
+            console.warn(`[submit-questionnaire] email failed to=${maskEmail(email)}: HTTP ${resp.status}`)
+          }
+        } catch (err) {
+          console.warn('[submit-questionnaire] email error:', err instanceof Error ? err.message : err)
         }
-      } catch (err) {
-        console.error('[submit-questionnaire] Email error:', err instanceof Error ? err.message : err)
       }
     }
-  }
 
-  return res.status(200).json({ ok: true, smsSent, emailSent })
+    return res.status(200).json({ ok: true, smsSent, emailSent })
+  } catch (err) {
+    await captureApiError(err, { endpoint: 'submit-questionnaire', status: 500, questionnaireId, reason: 'unhandled' })
+    return res.status(500).json({ ok: false, error: 'internal_error' })
+  }
 }
+
+export default withSentry('submit-questionnaire', handler)

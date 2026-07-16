@@ -1,6 +1,11 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../supabase'
+import { TurnstileWidget } from '../components/TurnstileWidget'
 import type { EventConfig } from '../types'
+
+// Public Cloudflare Turnstile site key. When unset (local dev) the widget
+// isn't rendered and the server falls back to rate limiting, so dev still works.
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_CF_TURNSTILE_SITE_KEY as string | undefined
 
 // ─── Phone validation (IL mobile) ───────────────────────────────────────────
 
@@ -62,6 +67,7 @@ export function EventCapturePage() {
   const [whatsappSent, setWhatsappSent] = useState(true)
   const [galleryUrl, setGalleryUrl] = useState('')
   const [offline, setOffline] = useState(!navigator.onLine)
+  const [turnstileToken, setTurnstileToken] = useState('')
 
   const phoneRef = useRef<HTMLInputElement>(null)
 
@@ -124,6 +130,7 @@ export function EventCapturePage() {
       name: trimName,
       phone: trimPhone,
       email: email.trim() || undefined,
+      turnstileToken: turnstileToken || undefined,
     }
 
     setPhase('submitting')
@@ -344,6 +351,11 @@ export function EventCapturePage() {
             }}>
               בלחיצה על &quot;שלח&quot; אני מסכים/ה לקבל הודעה עם קישור לגלריית התמונות
             </p>
+
+            {/* Invisible bot-check (managed mode: silent for real users) */}
+            {TURNSTILE_SITE_KEY && (
+              <TurnstileWidget siteKey={TURNSTILE_SITE_KEY} onToken={setTurnstileToken} />
+            )}
 
             {/* Submit */}
             <button
