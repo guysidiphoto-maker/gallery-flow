@@ -1,7 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { getClientIp, passesHumanCheck } from './_security'
 
 const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
+
+// Max responses accepted per questionnaire per hour before the cost-bearing
+// SMS/email notification is withheld (the response is still stored).
+const MAX_RESPONSES_PER_QUESTIONNAIRE_PER_HOUR = 120
 
 // ─── Phone normalization ────────────────────────────────────────────────────
 
@@ -61,7 +66,7 @@ async function sendSms(
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { questionnaireId, respondentName, respondentPhone, respondentEmail, answers } = req.body || {}
+  const { questionnaireId, respondentName, respondentPhone, respondentEmail, answers, turnstileToken } = req.body || {}
 
   if (!questionnaireId || typeof questionnaireId !== 'string') {
     return res.status(400).json({ ok: false, error: 'missing_questionnaire_id' })
@@ -113,6 +118,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (insertErr) {
     console.error('[submit-questionnaire] insert error:', insertErr.message)
     return res.status(500).json({ ok: false, error: 'storage_failed' })
+  }
+
+  // ── Abuse gate ──────────────────────────────────────────────────────────
+  // The response is stored above regardless. SMS/email are cost-bearing, so
+  // only dispatch them to a Turnstile-verified human and within a per-
+  // questionnaire hourly cap.
+  const ip = getClientIp(req)
+  const humanVerified = await passesHumanCheck(String(turnstileToken || ''), ip)
+  let withinRate = true
+  if (humanVerified) {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const { count } = await supabase
+      .from('questionnaire_responses')
+      .select('id', { count: 'exact', head: true })
+      .eq('questionnaire_id', questionnaireId)
+      .gte('created_at', oneHourAgo)
+    withinRate = (count ?? 0) <= MAX_RESPONSES_PER_QUESTIONNAIRE_PER_HOUR
+  }
+  if (!humanVerified || !withinRate) {
+    const reason = !humanVerified ? 'verification_required' : 'rate_limited'
+    console.warn('[submit-questionnaire] notification withheld:', reason, '| questionnaire:', questionnaireId, '| ip:', ip)
+    return res.status(200).json({ ok: true, smsSent: false, emailSent: false, reason })
   }
 
   // ── Send SMS if configured ──

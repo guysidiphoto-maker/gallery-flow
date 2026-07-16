@@ -1,7 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { getClientIp, passesHumanCheck } from './_security'
 
 const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
+
+// Max SMS-triggering leads accepted per event per hour. A legitimate event
+// tops out in the low hundreds over a whole evening; this caps a single
+// event's blast radius if the Turnstile gate is ever bypassed.
+const MAX_LEADS_PER_EVENT_PER_HOUR = 120
 
 // ─── Phone normalization ────────────────────────────────────────────────────
 
@@ -74,7 +80,7 @@ async function sendSms(
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { eventId, name, phone, email } = req.body || {}
+  const { eventId, name, phone, email, turnstileToken } = req.body || {}
 
   // Validate required fields
   if (!eventId || typeof eventId !== 'string') {
@@ -137,6 +143,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       smsSent: true,
       duplicate: true,
     })
+  }
+
+  // ── Abuse gate ──────────────────────────────────────────────────────────
+  // SMS is cost-bearing, so only send it to a Turnstile-verified human and
+  // within a per-event throughput cap. The lead is already persisted above,
+  // so a failed gate never loses legitimate data — it only withholds the
+  // outbound SMS (the client still surfaces the gallery link on screen).
+  const ip = getClientIp(req)
+  const humanVerified = await passesHumanCheck(String(turnstileToken || ''), ip)
+
+  let withinRate = true
+  if (humanVerified) {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const { count } = await supabase
+      .from('event_leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_id', eventId)
+      .gte('created_at', oneHourAgo)
+    withinRate = (count ?? 0) <= MAX_LEADS_PER_EVENT_PER_HOUR
+  }
+
+  if (!humanVerified || !withinRate) {
+    const reason = !humanVerified ? 'verification_required' : 'rate_limited'
+    console.warn('[capture-lead] SMS withheld:', reason, '| event:', eventId, '| ip:', ip)
+    await supabase
+      .from('event_leads')
+      .update({ whatsapp_status: 'pending', whatsapp_error: reason })
+      .eq('id', lead.id)
+    return res.status(200).json({ ok: true, galleryUrl: event.gallery_url, smsSent: false, reason })
   }
 
   // Send SMS
