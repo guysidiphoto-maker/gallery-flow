@@ -46,6 +46,52 @@ export interface UploadProgress {
 
 export type ProgressFn = (p: UploadProgress) => void
 
+// ── upload validation ───────────────────────────────────────────────────────
+//
+// The file <input> carries accept="image/*", but drag-and-drop bypasses it —
+// so this is the real gate that keeps PDFs, videos, and oversized files out of
+// storage (and stops them from consuming an upload token). Enforced both here
+// (defensively, inside uploadMany) and up-front in the Dashboard so the user
+// gets a clear message before the batch starts.
+
+/** Hard ceiling per original. Real camera JPEG/HEIC tops out well under this;
+ *  anything larger is almost certainly not a deliverable photo. */
+export const MAX_UPLOAD_BYTES = 75 * 1024 * 1024 // 75 MB
+
+/** Extensions we accept even when the browser reports a blank/odd MIME type
+ *  (common for HEIC/HEIF straight off an iPhone). */
+const ALLOWED_IMAGE_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'avif', 'bmp', 'tif', 'tiff',
+])
+
+export type UploadRejectReason = 'invalid_type' | 'too_large' | 'empty_file'
+
+/** Returns a machine reason if the file must be rejected, or null if it's a
+ *  valid image within limits. Callers map the reason to a user-facing message. */
+export function validateUploadFile(file: File): UploadRejectReason | null {
+  if (!file || file.size === 0) return 'empty_file'
+  if (file.size > MAX_UPLOAD_BYTES) return 'too_large'
+  const type = (file.type || '').toLowerCase()
+  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : ''
+  const looksLikeImage = type.startsWith('image/') || ALLOWED_IMAGE_EXTENSIONS.has(ext)
+  if (!looksLikeImage) return 'invalid_type'
+  return null
+}
+
+/** Split a file list into images we'll upload vs. rejected files with reasons. */
+export function partitionUploadFiles(
+  files: File[],
+): { valid: File[]; rejected: Array<{ file: File; reason: UploadRejectReason }> } {
+  const valid: File[] = []
+  const rejected: Array<{ file: File; reason: UploadRejectReason }> = []
+  for (const file of files) {
+    const reason = validateUploadFile(file)
+    if (reason) rejected.push({ file, reason })
+    else valid.push(file)
+  }
+  return { valid, rejected }
+}
+
 // ── string + filename helpers ──────────────────────────────────────────────
 
 export function sanitizeFilename(name: string): string {
@@ -223,6 +269,15 @@ export async function uploadMany(
       if (idx >= total) return
       const file = files[idx]
       onBatch({ completed, total, failed: failed.length, current: file.name })
+      // Defensive gate: never upload a non-image or oversized file, even if a
+      // caller forgot to pre-filter. Keeps storage + tokens clean.
+      const rejectReason = validateUploadFile(file)
+      if (rejectReason) {
+        failed.push({ file, error: rejectReason })
+        completed++
+        onBatch({ completed, total, failed: failed.length, current: file.name })
+        continue
+      }
       try {
         const r = await uploadOneImage(file, {
           ...opts, sortOrder: (opts.sortOrder ?? 0) + idx,

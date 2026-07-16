@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { FixedSizeGrid, type GridChildComponentProps } from 'react-window'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
-import { uploadMany } from '../lib/uploadPipeline'
+import { uploadMany, partitionUploadFiles } from '../lib/uploadPipeline'
+import { captureException } from '@sentry/react'
 import { signedStorageUrl } from '../lib/signedStorage'
 import { warmGalleryCache } from '../lib/warmCache'
 import { SignedImg } from '../components/SignedImg'
@@ -926,8 +927,24 @@ export function Dashboard() {
 
   async function handleFileUpload(files: FileList | null) {
     if (!files || !editingGallery || !businessId || !businessSlug) return
-    if (tokenBalance < files.length) {
-      const wanted = files.length
+
+    // Gate non-images / oversized files up front, before the token check —
+    // they must not count against the balance or reach storage. accept="image/*"
+    // only guards the file picker; drag-and-drop arrives here unfiltered.
+    const { valid, rejected } = partitionUploadFiles(Array.from(files))
+    if (rejected.length > 0) {
+      const tooLarge = rejected.some(r => r.reason === 'too_large')
+      showToast({
+        kind: 'error',
+        text: tooLarge
+          ? `${rejected.length} קבצים נדחו (לא תמונה, או גדול מ-75MB).`
+          : `${rejected.length} קבצים נדחו (רק קבצי תמונה נתמכים).`,
+      })
+    }
+    if (valid.length === 0) return
+
+    if (tokenBalance < valid.length) {
+      const wanted = valid.length
       const have = tokenBalance
       showToast({ kind: 'error', text: `אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}.` })
       // Only surface the buy-tokens modal when checkout is actually wired.
@@ -937,9 +954,9 @@ export function Dashboard() {
     // Photos land in the active section (or a freshly-created default one).
     const targetSectionId = await ensureUploadSection()
     setUploading(true)
-    setUploadBatch({ completed: 0, total: files.length, failed: 0 })
+    setUploadBatch({ completed: 0, total: valid.length, failed: 0 })
     const result = await uploadMany(
-      Array.from(files),
+      valid,
       {
         galleryId: editingGallery.id,
         businessSlug,
@@ -956,6 +973,23 @@ export function Dashboard() {
         if (TOKEN_BILLING_ON) setShowBuyTokens(true)
       } else {
         showToast({ kind: 'error', text: `${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.` })
+        // Surface genuinely unexpected upload failures (storage / RPC /
+        // network) to Sentry — validation rejects and token exhaustion are
+        // handled above, so anything reaching here was previously invisible.
+        const unexpected = result.failed.filter(
+          f => !['invalid_type', 'too_large', 'empty_file'].includes(f.error),
+        )
+        if (unexpected.length > 0) {
+          captureException(new Error('photo_upload_failed'), {
+            tags: { area: 'upload' },
+            extra: {
+              gallery_id: editingGallery.id,
+              failed_count: unexpected.length,
+              total: valid.length,
+              sample_errors: unexpected.slice(0, 5).map(f => f.error),
+            },
+          })
+        }
       }
     }
     // Refresh balance + image list
@@ -973,7 +1007,7 @@ export function Dashboard() {
     // Breadcrumb after batch so a crash in the post-upload refresh / face
     // reindex carries the count of photos that were just uploaded.
     trackAction('upload', 'photo', {
-      count: files.length,
+      count: valid.length,
       ok: result.ok.length,
       failed: result.failed.length,
       gallery_id: editingGallery.id,
