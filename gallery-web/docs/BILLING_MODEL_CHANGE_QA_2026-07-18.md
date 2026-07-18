@@ -1,7 +1,7 @@
 # Face-recognition billing model — QA evidence & design
 
 **Date:** 2026-07-18
-**Migration:** `supabase/migrations/082_face_index_billing_model.sql` (+ `_rollback.sql`)
+**Migration:** `supabase/migrations/083_face_index_billing_model.sql` (+ `_rollback.sql`)
 **Validated on:** Supabase preview branch `tmresrsyypzethfofaxn` (production left untouched)
 
 ---
@@ -136,11 +136,11 @@ reviewed.
 
 ## Deploy order (after review & merge — nothing auto-applied)
 
-1. Apply migration `082` to production (adds column/table/RPCs/trigger; free,
+1. Apply migration `083` to production (adds column/table/RPCs/trigger; free,
    storage-capped uploads take effect).
 2. Deploy the `rekognition` edge function.
 3. Redeploy the web app (copy relabels + preflight are build-time).
 4. Run `restore_upload_consumed_credits()` once and verify the 74-credit impact.
 
-Rollback: `082_face_index_billing_model_rollback.sql` (non-destructive by
+Rollback: `083_face_index_billing_model_rollback.sql` (non-destructive by
 default; restores per-upload token deduction and the prior completion trigger).

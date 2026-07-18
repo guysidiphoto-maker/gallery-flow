@@ -1,4 +1,7 @@
--- 082_face_index_billing_model.sql
+-- 083_face_index_billing_model.sql
+--
+-- NOTE: 082 is intentionally reserved for the planned security/p1-read-leak
+-- migration, which must be created and applied BEFORE this one.
 --
 -- BILLING MODEL CHANGE: uploads become free (storage-capped only); a
 -- face-recognition credit is consumed only when an image is actually indexed
@@ -19,10 +22,10 @@
 -- Validated end-to-end on Supabase preview branch tmresrsyypzethfofaxn
 -- (15/15 assertions: credit lifecycle 11/11, storage cap 4/4).
 --
--- ROLLBACK: see 082_face_index_billing_model_rollback.sql. In short — restore
+-- ROLLBACK: see 083_face_index_billing_model_rollback.sql. In short — restore
 -- the previous record_image_upload (065) so uploads deduct a token again, drop
 -- the reserve/finalize/fail RPCs, restore check_gallery_face_index_complete to
--- its pre-082 form, and (optionally) drop business_storage +
+-- its pre-083 form, and (optionally) drop business_storage +
 -- images.face_index_status. No data is destroyed by this migration; the ledger
 -- keeps an auditable trail of every face_index / face_index_refund.
 

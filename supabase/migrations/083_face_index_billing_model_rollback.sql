@@ -1,6 +1,6 @@
--- 082_face_index_billing_model_rollback.sql
+-- 083_face_index_billing_model_rollback.sql
 --
--- Reverts 082. Restores per-upload token deduction and the pre-082 gallery
+-- Reverts 083. Restores per-upload token deduction and the pre-083 gallery
 -- completion trigger. Non-destructive: face_index_status, business_storage and
 -- the ledger history are LEFT IN PLACE (dropping them loses audit trail and
 -- storage counters). Uncomment the final section only if you truly want them
@@ -8,7 +8,7 @@
 
 BEGIN;
 
--- 1. Restore the token-deducting upload (pre-082 / migration 065 behaviour).
+-- 1. Restore the token-deducting upload (pre-083 / migration 065 behaviour).
 --    Uploads deduct one token again; storage cap is not enforced here.
 CREATE OR REPLACE FUNCTION public.record_image_upload(
   p_gallery_id uuid, p_filename text, p_web_preview_path text, p_thumbnail_path text,
@@ -42,7 +42,7 @@ BEGIN
   RETURN v_image_id;
 END $function$;
 
--- 2. Restore the pre-082 completion trigger (flip 'done' by timestamp).
+-- 2. Restore the pre-083 completion trigger (flip 'done' by timestamp).
 CREATE OR REPLACE FUNCTION public.check_gallery_face_index_complete() RETURNS trigger
 LANGUAGE plpgsql AS $function$
 DECLARE total_images INT; indexed_images INT;

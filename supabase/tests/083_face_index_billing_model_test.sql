@@ -1,11 +1,11 @@
--- 082_face_index_billing_model_test.sql
+-- 083_face_index_billing_model_test.sql
 --
--- Re-runnable validation for migration 082. Self-contained: builds a disposable
+-- Re-runnable validation for migration 083. Self-contained: builds a disposable
 -- fixture, asserts the credit lifecycle + storage cap + completion trigger, then
--- ROLLS BACK so nothing is persisted. Run against any DB that has migration 082
+-- ROLLS BACK so nothing is persisted. Run against any DB that has migration 083
 -- applied (a preview branch is recommended):
 --
---   psql "$DATABASE_URL" -f supabase/tests/082_face_index_billing_model_test.sql
+--   psql "$DATABASE_URL" -f supabase/tests/083_face_index_billing_model_test.sql
 --
 -- The final SELECT prints one row per assertion (PASS/FAIL) BEFORE the rollback.
 -- Requires an auth user id for the owner; uses a fixed UUID that need not exist
@@ -17,7 +17,7 @@ BEGIN;
 INSERT INTO plans(id,name,token_count,storage_limit_bytes)
   VALUES ('t_tiny','TestTiny',10,1000) ON CONFLICT (id) DO UPDATE SET token_count=10, storage_limit_bytes=1000;
 INSERT INTO businesses(id,user_id,business_name)
-  VALUES ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-9999-9999-9999-000000000001','T082') ON CONFLICT (id) DO NOTHING;
+  VALUES ('aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-9999-9999-9999-000000000001','T083') ON CONFLICT (id) DO NOTHING;
 INSERT INTO subscriptions(business_id,plan_id,status)
   VALUES ('aaaaaaaa-0000-0000-0000-000000000001','t_tiny','active') ON CONFLICT DO NOTHING;
 INSERT INTO business_tokens(business_id,balance,lifetime_consumed)
