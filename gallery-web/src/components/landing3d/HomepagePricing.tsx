@@ -27,19 +27,19 @@ interface Tier {
 
 const TIERS: Tier[] = [
   {
-    id: 'pro', name: 'מקצועי', priceIls: 79, tagline: 'לצלם העצמאי',
+    id: 'pro', name: 'Solo', priceIls: 99, tagline: 'לצלם העצמאי',
     photosPerMonth: '2,000 תמונות בחודש', storage: '75GB אחסון',
     features: ['זיהוי פנים כלול', 'ללא ווטרמרק', 'סטוריז', 'מיתוג אישי'],
   },
   {
-    id: 'business', name: 'עסקי', priceIls: 159, tagline: 'לעסק שצומח', highlight: true,
+    id: 'business', name: 'Pro', priceIls: 199, tagline: 'לעסק שצומח', highlight: true,
     photosPerMonth: '10,000 תמונות בחודש', storage: '400GB אחסון',
-    features: ['כל מה שב"מקצועי"', 'דומיין מותאם אישית', 'גלריות ללא הגבלה', 'תמיכה מועדפת'],
+    features: ['כל מה שב-Solo', 'דומיין מותאם אישית', 'גלריות ללא הגבלה', 'תמיכה מועדפת'],
   },
   {
-    id: 'agency', name: 'סוכנות', priceIls: 349, tagline: 'לחברות הפקה',
+    id: 'agency', name: 'Studio', priceIls: 449, tagline: 'לסטודיו ולצוות',
     photosPerMonth: '30,000 תמונות בחודש', storage: '1.5TB אחסון',
-    features: ['כל מה שב"עסקי"', 'כלי ה-AI לסושיאל', 'ניהול מספר צלמים', 'ליווי אישי'],
+    features: ['כל מה שב-Pro', 'כלי ה-AI לסושיאל', 'ניהול מספר צלמים', 'ליווי אישי'],
   },
 ]
 
