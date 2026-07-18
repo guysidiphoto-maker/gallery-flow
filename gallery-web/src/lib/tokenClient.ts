@@ -56,22 +56,22 @@ export interface TokenPackage {
 export const TOKEN_PACKAGES: TokenPackage[] = [
   {
     planId: 'pro',
-    name: 'מקצועי',
+    name: 'Solo',
     tokens: 2000,
-    pricePerMonthIls: 79,
+    pricePerMonthIls: 99,
   },
   {
     planId: 'business',
-    name: 'עסקי',
+    name: 'Pro',
     tokens: 10000,
-    pricePerMonthIls: 159,
+    pricePerMonthIls: 199,
     highlight: 'הכי משתלם',
   },
   {
     planId: 'agency',
-    name: 'סוכנות',
+    name: 'Studio',
     tokens: 30000,
-    pricePerMonthIls: 349,
+    pricePerMonthIls: 449,
   },
 ]
 
