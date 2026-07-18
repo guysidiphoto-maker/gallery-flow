@@ -40,27 +40,27 @@ const FAQS = [
 // Each tier is laddered by customer profile with a "most popular" middle tier.
 const PLANS = [
   {
-    name: 'מקצועי',
-    price: '79',
+    name: 'Solo',
+    price: '39',
     audience: 'לצלם עצמאי',
     storage: '75GB אחסון',
     perks: ['זיהוי פנים כלול', 'מיתוג הגלריה בלוגו שלכם', 'שיתוף בקישור אחד'],
     popular: false,
   },
   {
-    name: 'עסקי',
-    price: '159',
+    name: 'Pro',
+    price: '75',
     audience: 'לעסק עם אירועים שוטפים',
     storage: '400GB אחסון',
-    perks: ['כל מה שבמקצועי', 'מיתוג מלא בצבעים שלכם', 'עדיפות בעיבוד התמונות'],
+    perks: ['כל מה שב-Solo', 'מיתוג מלא בצבעים שלכם', 'עדיפות בעיבוד התמונות'],
     popular: true,
   },
   {
-    name: 'סוכנות',
-    price: '349',
+    name: 'Studio',
+    price: '120',
     audience: 'לסוכנות וצוותי צלמים',
     storage: '1.5TB אחסון',
-    perks: ['כל מה שבעסקי', 'מתאים לצוות מרובה-צלמים', 'עדיפות בתמיכה'],
+    perks: ['כל מה שב-Pro', 'מתאים לצוות מרובה-צלמים', 'עדיפות בתמיכה'],
     popular: false,
   },
 ]
@@ -301,8 +301,8 @@ export function PhotographersLanding() {
                 </div>
                 <p style={{ ...text.small, color: color.textMuted, margin: 0 }}>{p.audience}</p>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                  <span style={{ ...text.display, fontSize: 'clamp(34px,5vw,46px)', lineHeight: 1 }}>{p.price}</span>
-                  <span style={{ ...text.small, color: color.textMuted }}>₪ לחודש</span>
+                  <span style={{ ...text.display, fontSize: 'clamp(34px,5vw,46px)', lineHeight: 1 }}>${p.price}</span>
+                  <span style={{ ...text.small, color: color.textMuted }}>/ לחודש</span>
                 </div>
                 <p style={{ ...text.small, color: color.inkSoft, margin: 0, fontWeight: 600 }}>{p.storage}</p>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: space[2] }}>
@@ -323,7 +323,7 @@ export function PhotographersLanding() {
         </div>
         <Reveal delay={120}>
           <p style={{ ...text.small, color: color.textMuted, textAlign: 'center', margin: `${space[5]}px auto 0`, maxWidth: 560, lineHeight: 1.7 }}>
-            מעדיפים לשלם לפי אירוע? גלריה בודדת חד-פעמית ב-590 ₪, בלי מנוי.
+            מעדיפים לשלם לפי אירוע? גלריה בודדת חד-פעמית ב-$150, בלי מנוי.
           </p>
         </Reveal>
       </section>

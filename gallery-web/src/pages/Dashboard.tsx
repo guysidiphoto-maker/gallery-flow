@@ -42,7 +42,7 @@ type GalleryStatus = 'draft' | 'live' | 'archived'
 const STORY_GENERATE_MIN_PHOTOS = STORY_MIN_PHOTOS
 const STORY_GENERATE_MAX_PHOTOS = STORY_MAX_PHOTOS
 
-// Gallery one-time billing controls (paywall toggle + ₪590 unlock button) stay
+// Gallery one-time billing controls (paywall toggle + $150 unlock button) stay
 // behind a flag until LemonSqueezy checkout is wired + the edge functions are
 // deployed. OFF in production prevents a photographer from locking a real
 // gallery with no working way to pay. Flip VITE_FEATURE_GALLERY_BILLING=true
@@ -72,7 +72,7 @@ interface Gallery {
   // canonical source for the rekognition RPC, JSONB for the public viewer.
   face_index_enabled?: boolean | null
   // One-time gallery purchase (migrations 075-077). requires_payment opts a
-  // gallery into the ₪590 model; one_time_paid flips true once it's bought.
+  // gallery into the $150 model; one_time_paid flips true once it's bought.
   requires_payment?: boolean | null
   one_time_paid?: boolean | null
   paid_expires_at?: string | null
@@ -2925,7 +2925,7 @@ export function Dashboard() {
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   {GALLERY_BILLING_ON && (<>
                   {/* Toggle: opt this gallery into the one-time model. When on
-                      and unpaid, the public viewer locks behind a ₪590 paywall
+                      and unpaid, the public viewer locks behind a $150 paywall
                       (server-enforced). Off by default. */}
                   <button
                     onClick={async () => {
@@ -2937,7 +2937,7 @@ export function Dashboard() {
                       setGalleries(prev => prev.map(g => g.id === editingGallery.id ? { ...g, requires_payment: next } : g))
                       showToast({ kind: 'success', text: next ? 'הגלריה נעולה ללקוח עד תשלום.' : 'נעילת התשלום בוטלה.' })
                     }}
-                    title="כשפעיל, הלקוח רואה מסך תשלום (₪590) עד שמשלמים"
+                    title="כשפעיל, הלקוח רואה מסך תשלום ($150) עד שמשלמים"
                     style={{
                       background: editingGallery.requires_payment ? 'rgba(166,124,82,.14)' : 'transparent',
                       color: editingGallery.requires_payment ? '#A67C52' : textSecondary,
@@ -2948,7 +2948,7 @@ export function Dashboard() {
                   >
                     {editingGallery.requires_payment ? 'תשלום-לקוח: פעיל' : 'תשלום-לקוח: כבוי'}
                   </button>
-                  {/* One-time gallery unlock (₪590). Paid → badge; unpaid → buy
+                  {/* One-time gallery unlock ($150). Paid → badge; unpaid → buy
                       button. Independent of subscription tokens. */}
                   {editingGallery.one_time_paid ? (
                     <span style={{
@@ -2973,7 +2973,7 @@ export function Dashboard() {
                         padding: '6px 12px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
                       }}
                     >
-                      פתח גלריה · ₪{GALLERY_UNLOCK_PRICE_ILS}
+                      פתח גלריה · ${GALLERY_UNLOCK_PRICE_ILS}
                     </button>
                   )}
                   </>)}
@@ -6653,7 +6653,7 @@ export function Dashboard() {
                   </div>
                   <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>טוקנים בחודש</div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: '#16a274' }}>
-                    ₪{pkg.pricePerMonthIls}
+                    ${pkg.pricePerMonthIls}
                     <span style={{ fontSize: 12, fontWeight: 500, color: textMuted }}> / חודש</span>
                   </div>
                 </button>

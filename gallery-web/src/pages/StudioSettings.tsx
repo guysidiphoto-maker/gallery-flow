@@ -848,7 +848,7 @@ export function StudioSettings() {
                   </div>
                   <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>טוקנים בחודש</div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: statusLive }}>
-                    ₪{pkg.pricePerMonthIls}
+                    ${pkg.pricePerMonthIls}
                     <span style={{ fontSize: 12, fontWeight: 500, color: textMuted }}> / חודש</span>
                   </div>
                 </button>
