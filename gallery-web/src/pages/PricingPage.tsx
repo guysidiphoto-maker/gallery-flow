@@ -1,6 +1,6 @@
 // PricingPage (/pricing) — first surface built on the Editorial design system.
 // Transparent pricing the marketing site previously lacked. Prices mirror the
-// `plans` table (migration 075) + the ₪590 one-time gallery (076-078).
+// `plans` table (migration 075) + the $150 one-time gallery (076-078).
 
 import { color, text, space, radius, font } from '../theme'
 import { Button, Card, Badge, Reveal, Detect } from '../components/ui'
@@ -19,19 +19,19 @@ interface Tier {
 
 const TIERS: Tier[] = [
   {
-    id: 'pro', name: 'Solo', priceIls: 99,
+    id: 'pro', name: 'Solo', priceIls: 39,
     tagline: 'לצלם העצמאי',
     photosPerMonth: '2,000 תמונות בחודש', storage: '75GB אחסון',
     features: ['זיהוי פנים כלול', 'ללא ווטרמרק', 'סטוריז', 'מיתוג אישי'],
   },
   {
-    id: 'business', name: 'Pro', priceIls: 199,
+    id: 'business', name: 'Pro', priceIls: 75,
     tagline: 'לעסק שצומח', highlight: true,
     photosPerMonth: '10,000 תמונות בחודש', storage: '400GB אחסון',
     features: ['כל מה שב-Solo', 'דומיין מותאם אישית', 'גלריות ללא הגבלה', 'תמיכה מועדפת'],
   },
   {
-    id: 'agency', name: 'Studio', priceIls: 449,
+    id: 'agency', name: 'Studio', priceIls: 120,
     tagline: 'לסטודיו ולצוות',
     photosPerMonth: '30,000 תמונות בחודש', storage: '1.5TB אחסון',
     features: ['כל מה שב-Pro', 'כלי ה-AI לסושיאל', 'ניהול מספר צלמים', 'ליווי אישי'],
@@ -101,7 +101,7 @@ export default function PricingPage() {
             <div style={{ ...text.label, color: color.textMuted }}>{tier.tagline}</div>
             <div style={{ ...text.h2, fontFamily: font.display, marginTop: space[1] }}>{tier.name}</div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: `${space[3]}px 0` }}>
-              <span style={{ fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em' }}>₪{tier.priceIls}</span>
+              <span style={{ fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em' }}>${tier.priceIls}</span>
               <span style={{ ...text.small, color: color.textMuted }}>/ חודש</span>
             </div>
             <div style={{ ...text.body, fontWeight: 600 }}>{tier.photosPerMonth}</div>
@@ -140,7 +140,7 @@ export default function PricingPage() {
             </p>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em' }}>₪590</div>
+            <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em' }}>$150</div>
             <div style={{ ...text.small, color: color.textMuted, marginBottom: space[3] }}>לגלריה</div>
             <Button size="lg" onClick={() => { window.location.href = '/dashboard' }}>צור גלריה</Button>
           </div>

@@ -1658,8 +1658,8 @@ export function App() {
         }}>{gallery.name}</h1>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'rgba(255,255,255,.65)', margin: '0 0 24px', maxWidth: 420 }}>
           {isRtl
-            ? `הגלריה מוכנה. לפתיחה מלאה — צפייה, חיפוש פנים והורדות — נדרש תשלום חד-פעמי של ₪${GALLERY_UNLOCK_PRICE_ILS}.`
-            : `Your gallery is ready. A one-time ₪${GALLERY_UNLOCK_PRICE_ILS} payment unlocks full viewing, face search and downloads.`}
+            ? `הגלריה מוכנה. לפתיחה מלאה — צפייה, חיפוש פנים והורדות — נדרש תשלום חד-פעמי של $${GALLERY_UNLOCK_PRICE_ILS}.`
+            : `Your gallery is ready. A one-time $${GALLERY_UNLOCK_PRICE_ILS} payment unlocks full viewing, face search and downloads.`}
         </p>
         <button
           onClick={async () => {
@@ -1672,7 +1672,7 @@ export function App() {
             cursor: 'pointer', letterSpacing: '-0.01em',
           }}
         >
-          {isRtl ? `שחרר את הגלריה · ₪${GALLERY_UNLOCK_PRICE_ILS}` : `Unlock gallery · ₪${GALLERY_UNLOCK_PRICE_ILS}`}
+          {isRtl ? `שחרר את הגלריה · $${GALLERY_UNLOCK_PRICE_ILS}` : `Unlock gallery · $${GALLERY_UNLOCK_PRICE_ILS}`}
         </button>
       </div>
     )
