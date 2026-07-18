@@ -427,13 +427,21 @@ export function Dashboard() {
   const [galleryCode, setGalleryCode] = useState('')
   const [trackDownloads, setTrackDownloads] = useState(false)
   const [feedLayout, setFeedLayout] = useState<'grid' | 'masonry' | 'carousel'>('grid')
-  // Face recognition (זיהוי פנים) — opt-in feature with token cost. The
-  // confirm dialog explains the cost before turning on; once on, a privacy
-  // mode picker appears so the photographer chooses whether everyone sees
-  // everything (open) or each guest only sees their own selfie matches (private).
+  // Face recognition (זיהוי פנים) — opt-in feature that consumes one
+  // face-recognition photo per indexed image. The confirm dialog runs a
+  // pre-flight (get_gallery_index_summary) so the photographer sees, before
+  // indexing starts, how many photos will be indexed, how many are remaining
+  // in the monthly allowance, and how many process now. Once on, a privacy mode
+  // picker appears so the photographer chooses whether everyone sees everything
+  // (open) or each guest only sees their own selfie matches (private).
   const [faceRecognition, setFaceRecognition] = useState(false)
   const [facePrivacyMode, setFacePrivacyMode] = useState<'open' | 'private'>('open')
   const [showFaceConfirm, setShowFaceConfirm] = useState(false)
+  // Pre-flight summary for the face-rec confirm dialog. Null until fetched (or
+  // when the gallery has no photos yet — then the dialog shows generic copy).
+  const [faceSummary, setFaceSummary] = useState<{
+    total: number; indexed: number; remaining: number; allowance: number; will_process_now: number
+  } | null>(null)
 
   // ── Gallery export (portable ZIP) ──────────────────────────────────────────
   // Photographer-driven backup: button lives in the Settings tab and pulls
@@ -928,10 +936,12 @@ export function Dashboard() {
   async function handleFileUpload(files: FileList | null) {
     if (!files || !editingGallery || !businessId || !businessSlug) return
 
-    // Gate non-images / HEIC / oversized files / oversized batch BEFORE the
-    // token check, so rejected files never count against the balance or reach
-    // storage. accept="image/*" only guards the file picker; drag-and-drop
-    // arrives here unfiltered. Limits live in uploadPipeline (single source).
+    // Gate non-images / HEIC / oversized files / oversized batch before upload.
+    // accept="image/*" only guards the file picker; drag-and-drop arrives here
+    // unfiltered. Limits live in uploadPipeline (single source). Uploads are
+    // FREE under the face-recognition billing model — no per-photo credit is
+    // charged here; the only server-side cap is the plan's storage allowance
+    // (enforced atomically in record_image_upload → 'storage_limit_exceeded').
     const { valid, rejected, truncated } = partitionUploadFiles(Array.from(files))
     if (rejected.length > 0 || truncated) {
       const msgs: string[] = []
@@ -945,14 +955,6 @@ export function Dashboard() {
     }
     if (valid.length === 0) return
 
-    if (tokenBalance < valid.length) {
-      const wanted = valid.length
-      const have = tokenBalance
-      showToast({ kind: 'error', text: `אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}.` })
-      // Only surface the buy-tokens modal when checkout is actually wired.
-      if (TOKEN_BILLING_ON) setShowBuyTokens(true)
-      return
-    }
     // Photos land in the active section (or a freshly-created default one).
     const targetSectionId = await ensureUploadSection()
     setUploading(true)
@@ -969,17 +971,17 @@ export function Dashboard() {
       8,
     )
     if (result.failed.length > 0) {
-      const insufficient = result.failed.find(f => f.error.includes('insufficient_tokens'))
-      if (insufficient) {
-        showToast({ kind: 'error', text: 'הטוקנים נגמרו באמצע ההעלאה.' })
+      const outOfStorage = result.failed.find(f => f.error.includes('storage_limit_exceeded'))
+      if (outOfStorage) {
+        showToast({ kind: 'error', text: 'נגמר שטח האחסון של המסלול. שדרג מסלול כדי להעלות עוד.' })
         if (TOKEN_BILLING_ON) setShowBuyTokens(true)
       } else {
         showToast({ kind: 'error', text: `${result.failed.length} תמונות נכשלו. השאר עלו בהצלחה.` })
         // Report genuinely unexpected upload failures (storage / RPC / network)
-        // to Sentry — validation rejects + token exhaustion are handled above,
+        // to Sentry — validation rejects + storage exhaustion are handled above,
         // so anything here was previously invisible. No PII in the payload.
         const unexpected = result.failed.filter(
-          f => !['heic', 'unsupported', 'empty', 'too_large', 'insufficient_tokens'].some(k => f.error.includes(k)),
+          f => !['heic', 'unsupported', 'empty', 'too_large', 'storage_limit_exceeded'].some(k => f.error.includes(k)),
         )
         if (unexpected.length > 0) {
           captureException(new Error('photo_upload_failed'), {
@@ -2352,8 +2354,8 @@ export function Dashboard() {
                 fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
               }}>
-                <span>Tokens</span>
-                {low && <span style={{ color: '#A67C52', letterSpacing: '0.14em' }}>Low</span>}
+                <span>תמונות שנותרו</span>
+                {low && <span style={{ color: '#A67C52', letterSpacing: '0.14em' }}>נמוך</span>}
               </div>
               <div style={{
                 fontSize: 26, fontWeight: 500, color: textPrimary,
@@ -2368,7 +2370,7 @@ export function Dashboard() {
                   display: 'flex', alignItems: 'center', gap: 6,
                   paddingTop: 10, borderTop: `1px solid ${border}`,
                 }}>
-                  Buy more
+                  שדרג מסלול
                   <span style={{ marginInlineStart: 'auto' }}>→</span>
                 </div>
               )}
@@ -2570,7 +2572,7 @@ export function Dashboard() {
                 color: textMuted, fontSize: 11, marginBottom: 36,
                 fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
               }}>
-                100 free tokens · 100 photos
+100 תמונות זיהוי פנים חינם · העלאות ללא הגבלה
               </p>
               <div style={{
                 display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap',
@@ -6106,6 +6108,15 @@ export function Dashboard() {
                     setFaceRecognition(false)
                     setFacePrivacyMode('open')
                   } else {
+                    // Pre-flight: fetch how many photos will index vs allowance
+                    // before the photographer confirms. Only meaningful once the
+                    // gallery has photos; a brand-new gallery shows generic copy.
+                    setFaceSummary(null)
+                    if (editingGallery) {
+                      void supabase
+                        .rpc('get_gallery_index_summary', { p_gallery_id: editingGallery.id })
+                        .then(({ data }) => { if (data) setFaceSummary(data as typeof faceSummary) })
+                    }
                     setShowFaceConfirm(true)
                   }
                 }}
@@ -6324,21 +6335,41 @@ export function Dashboard() {
                 <p style={{
                   color: textSecondary, fontSize: 14, lineHeight: 1.65, margin: '0 0 14px',
                 }}>
-                  כל תמונה שתעלה לגלריה זו תאונדקס במנוע זיהוי פנים. אורחים יצלמו סלפי וימצאו את התמונות שלהם תוך שניות.
+                  כל תמונה בגלריה זו תאונדקס במנוע זיהוי פנים. אורחים יצלמו סלפי וימצאו את התמונות שלהם תוך שניות. תמונה מאונדקסת אחת = תמונת זיהוי פנים אחת מהמכסה החודשית.
                 </p>
-                <p style={{
-                  color: textSecondary, fontSize: 14, lineHeight: 1.65, margin: '0 0 24px',
-                }}>
-                  <strong style={{ color: textPrimary, fontWeight: 600 }}>עלות:</strong>{' '}
-                  ללא תוספת טוקנים — נשאר <strong style={{ color: textPrimary }}>1 טוקן לתמונה</strong>. יתרת הטוקנים שלך כרגע: <strong style={{ color: textPrimary }}>{tokenBalance.toLocaleString('he-IL')}</strong>.
-                </p>
-                <div style={{
-                  padding: '12px 14px', background: bgSubtle,
-                  border: `1px solid ${border}`, marginBottom: 24,
-                  fontSize: 12, color: textSecondary, lineHeight: 1.55,
-                }}>
-                  ההעלאה תהיה איטית מעט יותר כי כל תמונה עוברת אינדוקס. אפשר להפעיל ולהשבית בכל רגע.
-                </div>
+                {faceSummary && faceSummary.total > 0 ? (
+                  <div style={{
+                    padding: '14px 16px', background: bgSubtle,
+                    border: `1px solid ${border}`, marginBottom: 24,
+                    fontSize: 13, color: textSecondary, lineHeight: 1.9,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>תמונות שממתינות לזיהוי</span>
+                      <strong style={{ color: textPrimary }}>{faceSummary.remaining.toLocaleString('he-IL')}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>תמונות זיהוי פנים שנותרו החודש</span>
+                      <strong style={{ color: textPrimary }}>{faceSummary.allowance.toLocaleString('he-IL')}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: `1px solid ${border}`, marginTop: 6, paddingTop: 6 }}>
+                      <span>יעובדו כעת</span>
+                      <strong style={{ color: textPrimary }}>{faceSummary.will_process_now.toLocaleString('he-IL')}</strong>
+                    </div>
+                    {faceSummary.will_process_now < faceSummary.remaining && (
+                      <div style={{ marginTop: 8, color: '#b45309', fontSize: 12, lineHeight: 1.5 }}>
+                        המכסה החודשית לא מספיקה לכל התמונות. {faceSummary.will_process_now.toLocaleString('he-IL')} מתוך {faceSummary.remaining.toLocaleString('he-IL')} יעובדו כעת; השאר ימתינו עד שתשדרג מסלול.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{
+                    padding: '12px 14px', background: bgSubtle,
+                    border: `1px solid ${border}`, marginBottom: 24,
+                    fontSize: 12, color: textSecondary, lineHeight: 1.55,
+                  }}>
+                    יתרת תמונות זיהוי פנים שלך כרגע: <strong style={{ color: textPrimary }}>{tokenBalance.toLocaleString('he-IL')}</strong>. כל תמונה שתוסיף לגלריה תעבור אינדוקס. אפשר להפעיל ולהשבית בכל רגע.
+                  </div>
+                )}
                 <div className="dash-modal-actions" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                   <button
                     onClick={() => setShowFaceConfirm(false)}
@@ -6601,7 +6632,7 @@ export function Dashboard() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
               <h2 id="buy-tokens-heading" style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
-                קנה טוקנים
+                שדרג מסלול
               </h2>
               <button onClick={() => setShowBuyTokens(false)} aria-label="סגירה" style={{
                 background: 'transparent', border: 'none', color: textMuted, fontSize: 22,
@@ -6609,7 +6640,7 @@ export function Dashboard() {
               }}>×</button>
             </div>
             <p style={{ fontSize: 14, color: textSecondary, margin: '0 0 24px', lineHeight: 1.5 }}>
-              טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#16a274' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
+              העלאות ותמונות ללא הגבלה. המכסה החודשית נספרת רק על תמונות שעוברות זיהוי פנים. תמונות זיהוי פנים שנותרו: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#16a274' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
@@ -6651,7 +6682,7 @@ export function Dashboard() {
                   <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 4, letterSpacing: '-0.02em' }}>
                     {pkg.tokens.toLocaleString('he-IL')}
                   </div>
-                  <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>טוקנים בחודש</div>
+                  <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>תמונות זיהוי פנים בחודש</div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: '#16a274' }}>
                     ${pkg.pricePerMonthIls}
                     <span style={{ fontSize: 12, fontWeight: 500, color: textMuted }}> / חודש</span>
@@ -6662,7 +6693,7 @@ export function Dashboard() {
 
             <p style={{ fontSize: 11, color: textMuted, margin: '20px 0 0', textAlign: 'center', lineHeight: 1.5 }}>
               חיוב חודשי דרך LemonSqueezy. אפשר לבטל בכל זמן.<br />
-              המכסה מתחדשת בתחילת כל חודש (טוקנים שלא נוצלו אינם מצטברים).
+              מכסת זיהוי הפנים מתחדשת בתחילת כל חודש (תמונות שלא נוצלו אינן מצטברות).
             </p>
           </div>
         </div>
