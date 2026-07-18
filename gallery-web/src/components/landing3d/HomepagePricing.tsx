@@ -141,7 +141,7 @@ export function HomepagePricing({ onStart }: Props) {
                 רק גלריה אחת? שלמו פעם אחת.
               </h3>
               <p style={{ ...text.body, color: color.inkSoft, margin: 0, lineHeight: 1.6 }}>
-                מושלם לאירוע בודד. הזוג מקבל גלריה מלאה עם זיהוי פנים והורדות, אחסון ל-12 חודשים. בלי מנוי מתחדש.
+                מושלם לאירוע בודד. גלריה אחת, עד 10,000 תמונות עם זיהוי פנים והורדות, עד 75GB אחסון, לשנה. בלי מנוי מתחדש.
               </p>
             </div>
             <div style={{ textAlign: 'center' }}>

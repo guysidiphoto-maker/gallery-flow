@@ -441,6 +441,8 @@ export function Dashboard() {
   // when the gallery has no photos yet — then the dialog shows generic copy).
   const [faceSummary, setFaceSummary] = useState<{
     total: number; indexed: number; remaining: number; allowance: number; will_process_now: number
+    gallery_allowance?: number; gallery_remaining?: number; business_allowance?: number
+    is_one_time_paid?: boolean; paid_expires_at?: string | null
   } | null>(null)
 
   // ── Gallery export (portable ZIP) ──────────────────────────────────────────
@@ -6347,8 +6349,14 @@ export function Dashboard() {
                       <span>תמונות שממתינות לזיהוי</span>
                       <strong style={{ color: textPrimary }}>{faceSummary.remaining.toLocaleString('he-IL')}</strong>
                     </div>
+                    {faceSummary.is_one_time_paid && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>נותרו בחבילת הגלריה החד-פעמית</span>
+                        <strong style={{ color: textPrimary }}>{(faceSummary.gallery_remaining ?? 0).toLocaleString('he-IL')}</strong>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>תמונות זיהוי פנים שנותרו החודש</span>
+                      <span>{faceSummary.is_one_time_paid ? 'סה״כ זמין (גלריה + חודשי)' : 'תמונות זיהוי פנים שנותרו החודש'}</span>
                       <strong style={{ color: textPrimary }}>{faceSummary.allowance.toLocaleString('he-IL')}</strong>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: `1px solid ${border}`, marginTop: 6, paddingTop: 6 }}>

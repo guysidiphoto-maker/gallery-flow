@@ -48,6 +48,28 @@ UPDATE images SET face_index_status = 'indexed'
 CREATE INDEX IF NOT EXISTS idx_images_gallery_face_index_status
   ON images (gallery_id, face_index_status);
 
+-- ─── 1b. One-time gallery entitlement (per-gallery face-rec + storage) ───────
+-- A $150 one-time purchase grants ONE gallery: up to 10,000 face-recognition
+-- photos + 75 GB storage, valid 12 months (existing paid_expires_at). The
+-- entitlement is gallery-specific and non-transferable — indexing a paid
+-- gallery consumes the GALLERY allowance first, then falls back to the business
+-- monthly balance; uploads to a paid gallery count against the gallery's 75 GB,
+-- not the business plan's storage cap.
+ALTER TABLE galleries
+  ADD COLUMN IF NOT EXISTS face_index_allowance INT    NOT NULL DEFAULT 0,   -- granted gallery face-rec photos (10000 when paid)
+  ADD COLUMN IF NOT EXISTS gallery_credit_used  INT    NOT NULL DEFAULT 0,   -- consumed against the gallery entitlement
+  ADD COLUMN IF NOT EXISTS storage_used_bytes   BIGINT NOT NULL DEFAULT 0,   -- gallery-specific storage counter
+  ADD COLUMN IF NOT EXISTS storage_limit_bytes  BIGINT;                       -- gallery-specific cap (NULL = use business limit)
+
+ALTER TABLE images
+  ADD COLUMN IF NOT EXISTS face_index_credit_source TEXT,                          -- which pool the reserved credit came from
+  ADD COLUMN IF NOT EXISTS counted_gallery_storage  BOOLEAN NOT NULL DEFAULT false; -- did this upload count against the gallery storage pool?
+
+DO $$ BEGIN
+  ALTER TABLE images ADD CONSTRAINT images_face_index_credit_source_check
+    CHECK (face_index_credit_source IS NULL OR face_index_credit_source IN ('gallery','business'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- ─── 2. Ledger reasons + gallery 'partial' status ───────────────────────────
 
 ALTER TABLE token_ledger DROP CONSTRAINT IF EXISTS token_ledger_reason_check;
@@ -82,12 +104,21 @@ CREATE OR REPLACE FUNCTION trg_image_storage_dec() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $$
 DECLARE v_biz UUID;
 BEGIN
-  SELECT business_id INTO v_biz FROM galleries WHERE id = OLD.gallery_id;
-  IF v_biz IS NOT NULL THEN
-    UPDATE business_storage
-       SET used_bytes = GREATEST(0, used_bytes - COALESCE(OLD.original_size_bytes,0)),
-           updated_at = now()
-     WHERE business_id = v_biz;
+  -- Decrement whichever pool this image's bytes were counted against at upload
+  -- (counted_gallery_storage is stamped by record_image_upload). This stays
+  -- correct even if the gallery entitlement later expires.
+  IF COALESCE(OLD.counted_gallery_storage, false) THEN
+    UPDATE galleries
+       SET storage_used_bytes = GREATEST(0, storage_used_bytes - COALESCE(OLD.original_size_bytes,0))
+     WHERE id = OLD.gallery_id;
+  ELSE
+    SELECT business_id INTO v_biz FROM galleries WHERE id = OLD.gallery_id;
+    IF v_biz IS NOT NULL THEN
+      UPDATE business_storage
+         SET used_bytes = GREATEST(0, used_bytes - COALESCE(OLD.original_size_bytes,0)),
+             updated_at = now()
+       WHERE business_id = v_biz;
+    END IF;
   END IF;
   RETURN OLD;
 END $$;
@@ -106,28 +137,44 @@ RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $f
 DECLARE
   v_business_id UUID; v_owner_user UUID; v_image_id UUID; v_section UUID := p_section_id;
   v_size BIGINT := COALESCE(p_original_size,0); v_limit BIGINT; v_used BIGINT; v_has_sub BOOLEAN;
+  v_one_time_paid BOOLEAN; v_expires TIMESTAMPTZ; v_gallery_limit BIGINT; v_gallery_pool BOOLEAN := false;
 BEGIN
-  SELECT g.business_id, b.user_id INTO v_business_id, v_owner_user
+  SELECT g.business_id, b.user_id, g.one_time_paid, g.paid_expires_at, g.storage_limit_bytes
+    INTO v_business_id, v_owner_user, v_one_time_paid, v_expires, v_gallery_limit
     FROM galleries g JOIN businesses b ON b.id=g.business_id WHERE g.id=p_gallery_id;
   IF v_business_id IS NULL THEN RAISE EXCEPTION 'gallery_not_found'; END IF;
   IF v_owner_user IS NULL OR v_owner_user <> auth.uid() THEN RAISE EXCEPTION 'not_authorized'; END IF;
 
-  -- Resolve the active plan's storage cap (fall back to the free 'starter' cap).
-  SELECT p.storage_limit_bytes, true INTO v_limit, v_has_sub
-    FROM subscriptions s JOIN plans p ON p.id=s.plan_id
-   WHERE s.business_id=v_business_id AND s.status IN ('active','trial') ORDER BY s.plan_id LIMIT 1;
-  IF v_has_sub IS NULL THEN SELECT storage_limit_bytes INTO v_limit FROM plans WHERE id='starter'; END IF;
+  -- A one-time-paid (non-expired) gallery has its OWN storage pool (75 GB); its
+  -- uploads must NOT be gated by the business plan's cap (e.g. free 2 GB).
+  v_gallery_pool := COALESCE(v_one_time_paid,false)
+                    AND (v_expires IS NULL OR v_expires > now())
+                    AND v_gallery_limit IS NOT NULL;
 
-  -- Atomic storage cap: the guarded UPDATE only succeeds while the new total
-  -- fits under the limit, so concurrent uploads can never collectively exceed
-  -- the cap (each commits its own +size or is rejected). A NULL limit = no cap.
-  INSERT INTO business_storage(business_id,used_bytes) VALUES (v_business_id,0) ON CONFLICT DO NOTHING;
-  IF v_limit IS NULL THEN
-    UPDATE business_storage SET used_bytes=used_bytes+v_size, updated_at=now() WHERE business_id=v_business_id;
-  ELSE
-    UPDATE business_storage SET used_bytes=used_bytes+v_size, updated_at=now()
-      WHERE business_id=v_business_id AND used_bytes+v_size <= v_limit RETURNING used_bytes INTO v_used;
+  IF v_gallery_pool THEN
+    -- Atomic gallery-storage cap.
+    UPDATE galleries SET storage_used_bytes = storage_used_bytes + v_size
+      WHERE id=p_gallery_id AND storage_used_bytes + v_size <= v_gallery_limit
+      RETURNING storage_used_bytes INTO v_used;
     IF v_used IS NULL THEN RAISE EXCEPTION 'storage_limit_exceeded'; END IF;
+  ELSE
+    -- Business plan storage pool (fall back to the free 'starter' cap).
+    SELECT p.storage_limit_bytes, true INTO v_limit, v_has_sub
+      FROM subscriptions s JOIN plans p ON p.id=s.plan_id
+     WHERE s.business_id=v_business_id AND s.status IN ('active','trial') ORDER BY s.plan_id LIMIT 1;
+    IF v_has_sub IS NULL THEN SELECT storage_limit_bytes INTO v_limit FROM plans WHERE id='starter'; END IF;
+
+    -- Atomic storage cap: the guarded UPDATE only succeeds while the new total
+    -- fits under the limit, so concurrent uploads can never collectively exceed
+    -- the cap (each commits its own +size or is rejected). A NULL limit = no cap.
+    INSERT INTO business_storage(business_id,used_bytes) VALUES (v_business_id,0) ON CONFLICT DO NOTHING;
+    IF v_limit IS NULL THEN
+      UPDATE business_storage SET used_bytes=used_bytes+v_size, updated_at=now() WHERE business_id=v_business_id;
+    ELSE
+      UPDATE business_storage SET used_bytes=used_bytes+v_size, updated_at=now()
+        WHERE business_id=v_business_id AND used_bytes+v_size <= v_limit RETURNING used_bytes INTO v_used;
+      IF v_used IS NULL THEN RAISE EXCEPTION 'storage_limit_exceeded'; END IF;
+    END IF;
   END IF;
 
   IF v_section IS NULL THEN
@@ -135,9 +182,9 @@ BEGIN
   END IF;
 
   INSERT INTO images (gallery_id,filename,web_preview_path,thumbnail_path,original_path,
-    original_uploaded,original_size_bytes,section_id,sort_order,is_top_pick,public_thumb_present,face_index_status)
+    original_uploaded,original_size_bytes,section_id,sort_order,is_top_pick,public_thumb_present,face_index_status,counted_gallery_storage)
   VALUES (p_gallery_id,p_filename,p_web_preview_path,p_thumbnail_path,p_original_path,
-    p_original_path IS NOT NULL,p_original_size,v_section,COALESCE(p_sort_order,0),false,COALESCE(p_public_thumb_present,false),'pending')
+    p_original_path IS NOT NULL,p_original_size,v_section,COALESCE(p_sort_order,0),false,COALESCE(p_public_thumb_present,false),'pending',v_gallery_pool)
   RETURNING id INTO v_image_id;
   UPDATE galleries SET image_count=COALESCE(image_count,0)+1 WHERE id=p_gallery_id;
   RETURN v_image_id;  -- NO token deduction: uploads are free, only storage-capped
@@ -152,22 +199,50 @@ END $function$;
 --   'reserved' | 'no_allowance' | 'not_claimable' | 'gallery_not_found'.
 CREATE OR REPLACE FUNCTION public.reserve_face_index_credit(p_gallery_id uuid, p_image_id uuid)
 RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
-DECLARE v_biz UUID; v_claimed UUID; v_bal INTEGER;
+DECLARE
+  v_biz UUID; v_claimed UUID; v_bal INTEGER; v_used INTEGER;
+  v_one_time_paid BOOLEAN; v_expires TIMESTAMPTZ; v_gallery_allow INTEGER; v_active_entitlement BOOLEAN;
 BEGIN
-  SELECT business_id INTO v_biz FROM galleries WHERE id=p_gallery_id;
+  SELECT business_id, one_time_paid, paid_expires_at, face_index_allowance
+    INTO v_biz, v_one_time_paid, v_expires, v_gallery_allow
+    FROM galleries WHERE id=p_gallery_id;
   IF v_biz IS NULL THEN RETURN 'gallery_not_found'; END IF;
+
+  -- Claim the image (pending|skipped -> processing).
   UPDATE images SET face_index_status='processing'
     WHERE id=p_image_id AND gallery_id=p_gallery_id AND face_index_status IN ('pending','skipped_no_allowance')
     RETURNING id INTO v_claimed;
   IF v_claimed IS NULL THEN RETURN 'not_claimable'; END IF;
+
+  -- 1) Gallery-specific entitlement FIRST (one-time-paid galleries, non-expired,
+  --    with remaining gallery allowance). Atomic guard mirrors the balance>0
+  --    guard: gallery_credit_used < face_index_allowance -> never overshoot the
+  --    10,000 cap. This credit is NOT drawn from the business monthly balance.
+  v_active_entitlement := COALESCE(v_one_time_paid, false)
+                          AND (v_expires IS NULL OR v_expires > now())
+                          AND COALESCE(v_gallery_allow,0) > 0;
+  IF v_active_entitlement THEN
+    UPDATE galleries SET gallery_credit_used = gallery_credit_used + 1
+      WHERE id=p_gallery_id AND gallery_credit_used < face_index_allowance
+      RETURNING gallery_credit_used INTO v_used;
+    IF v_used IS NOT NULL THEN
+      UPDATE images SET face_index_credit_source='gallery' WHERE id=p_image_id;
+      INSERT INTO token_ledger(business_id,delta,reason,ref_id,metadata)
+        VALUES (v_biz,0,'face_index',p_image_id, jsonb_build_object('gallery_id',p_gallery_id,'source','gallery'));
+      RETURN 'reserved';
+    END IF;
+  END IF;
+
+  -- 2) Fall back to the business monthly balance (balance>0 guard = never negative).
   UPDATE business_tokens SET balance=balance-1, lifetime_consumed=lifetime_consumed+1, updated_at=now()
     WHERE business_id=v_biz AND balance>0 RETURNING balance INTO v_bal;
   IF v_bal IS NULL THEN
-    UPDATE images SET face_index_status='skipped_no_allowance' WHERE id=p_image_id;
+    UPDATE images SET face_index_status='skipped_no_allowance', face_index_credit_source=NULL WHERE id=p_image_id;
     RETURN 'no_allowance';
   END IF;
+  UPDATE images SET face_index_credit_source='business' WHERE id=p_image_id;
   INSERT INTO token_ledger(business_id,delta,reason,ref_id,metadata)
-    VALUES (v_biz,-1,'face_index',p_image_id, jsonb_build_object('gallery_id',p_gallery_id));
+    VALUES (v_biz,-1,'face_index',p_image_id, jsonb_build_object('gallery_id',p_gallery_id,'source','business'));
   RETURN 'reserved';
 END $function$;
 
@@ -189,19 +264,32 @@ END $function$;
 -- can never clobber a finalize that actually landed.
 CREATE OR REPLACE FUNCTION public.fail_face_index(p_image_id uuid, p_error text, p_terminal boolean)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
-DECLARE v_gallery UUID; v_biz UUID;
+DECLARE v_gallery UUID; v_biz UUID; v_source TEXT;
 BEGIN
-  SELECT gallery_id INTO v_gallery FROM images WHERE id=p_image_id AND face_index_status='processing';
+  SELECT gallery_id, face_index_credit_source INTO v_gallery, v_source
+    FROM images WHERE id=p_image_id AND face_index_status='processing';
   IF v_gallery IS NULL THEN RETURN false; END IF;
   SELECT business_id INTO v_biz FROM galleries WHERE id=v_gallery;
-  UPDATE business_tokens SET balance=balance+1, lifetime_consumed=GREATEST(0,lifetime_consumed-1), updated_at=now()
-    WHERE business_id=v_biz;
-  INSERT INTO token_ledger(business_id,delta,reason,ref_id,metadata)
-    VALUES (v_biz,1,'face_index_refund',p_image_id, jsonb_build_object('gallery_id',v_gallery,'error',left(p_error,200)));
-  IF p_terminal THEN
-    UPDATE images SET face_index_status='failed', face_index_error=left(p_error,500) WHERE id=p_image_id;
+
+  -- Refund to the SAME pool the credit was reserved from (never cross-subsidise).
+  IF v_source = 'gallery' THEN
+    UPDATE galleries SET gallery_credit_used = GREATEST(0, gallery_credit_used - 1) WHERE id=v_gallery;
+    INSERT INTO token_ledger(business_id,delta,reason,ref_id,metadata)
+      VALUES (v_biz,0,'face_index_refund',p_image_id, jsonb_build_object('gallery_id',v_gallery,'source','gallery','error',left(p_error,200)));
   ELSE
-    UPDATE images SET face_index_status='pending', face_index_attempts=COALESCE(face_index_attempts,0)+1, face_index_error=left(p_error,500) WHERE id=p_image_id;
+    -- business (or legacy NULL — treat as business)
+    UPDATE business_tokens SET balance=balance+1, lifetime_consumed=GREATEST(0,lifetime_consumed-1), updated_at=now()
+      WHERE business_id=v_biz;
+    INSERT INTO token_ledger(business_id,delta,reason,ref_id,metadata)
+      VALUES (v_biz,1,'face_index_refund',p_image_id, jsonb_build_object('gallery_id',v_gallery,'source','business','error',left(p_error,200)));
+  END IF;
+
+  -- Clear the source so a retry re-decides which pool to draw from.
+  IF p_terminal THEN
+    UPDATE images SET face_index_status='failed', face_index_credit_source=NULL, face_index_error=left(p_error,500) WHERE id=p_image_id;
+  ELSE
+    UPDATE images SET face_index_status='pending', face_index_credit_source=NULL,
+      face_index_attempts=COALESCE(face_index_attempts,0)+1, face_index_error=left(p_error,500) WHERE id=p_image_id;
   END IF;
   RETURN true;
 END $function$;
@@ -210,17 +298,36 @@ END $function$;
 -- will process now (min(remaining, allowance)).
 CREATE OR REPLACE FUNCTION public.get_gallery_index_summary(p_gallery_id uuid)
 RETURNS json LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
-DECLARE v_biz UUID; v_bal INTEGER; r RECORD;
+DECLARE
+  v_biz UUID; v_bal INTEGER; r RECORD;
+  v_one_time_paid BOOLEAN; v_expires TIMESTAMPTZ; v_gallery_allow INTEGER; v_gallery_used INTEGER;
+  v_active BOOLEAN; v_gallery_remaining INTEGER; v_effective INTEGER;
 BEGIN
-  SELECT business_id INTO v_biz FROM galleries WHERE id=p_gallery_id;
+  SELECT business_id, one_time_paid, paid_expires_at, face_index_allowance, gallery_credit_used
+    INTO v_biz, v_one_time_paid, v_expires, v_gallery_allow, v_gallery_used
+    FROM galleries WHERE id=p_gallery_id;
   SELECT COALESCE(balance,0) INTO v_bal FROM business_tokens WHERE business_id=v_biz;
   SELECT count(*) AS total,
          count(*) FILTER (WHERE face_index_status='indexed') AS indexed,
          count(*) FILTER (WHERE face_index_status IN ('pending','skipped_no_allowance')) AS remaining,
          count(*) FILTER (WHERE face_index_status='failed') AS failed
     INTO r FROM images WHERE gallery_id=p_gallery_id;
-  RETURN json_build_object('total',r.total,'indexed',r.indexed,'remaining',r.remaining,'failed',r.failed,
-    'allowance',COALESCE(v_bal,0),'will_process_now',LEAST(r.remaining,COALESCE(v_bal,0)));
+
+  v_active := COALESCE(v_one_time_paid,false) AND (v_expires IS NULL OR v_expires > now()) AND COALESCE(v_gallery_allow,0) > 0;
+  v_gallery_remaining := CASE WHEN v_active THEN GREATEST(COALESCE(v_gallery_allow,0) - COALESCE(v_gallery_used,0), 0) ELSE 0 END;
+  -- Effective allowance = gallery entitlement (consumed first) + business monthly.
+  v_effective := v_gallery_remaining + COALESCE(v_bal,0);
+
+  RETURN json_build_object(
+    'total', r.total, 'indexed', r.indexed, 'remaining', r.remaining, 'failed', r.failed,
+    'allowance', v_effective,                              -- total available (gallery + business)
+    'will_process_now', LEAST(r.remaining, v_effective),
+    'gallery_allowance', COALESCE(v_gallery_allow,0),      -- one-time entitlement size (e.g. 10000)
+    'gallery_used', COALESCE(v_gallery_used,0),
+    'gallery_remaining', v_gallery_remaining,
+    'business_allowance', COALESCE(v_bal,0),
+    'is_one_time_paid', v_active,
+    'paid_expires_at', v_expires);
 END $function$;
 
 -- ─── 6. Model-aware gallery completion trigger ──────────────────────────────
@@ -293,5 +400,77 @@ BEGIN
     END IF;
   END LOOP;
 END $function$;
+
+-- ─── 8. One-time gallery entitlement grant / revoke ─────────────────────────
+-- The $150 one-time purchase grants ONE gallery: 10,000 face-recognition photos
+-- + 75 GB storage, 12 months. mark_gallery_paid is called by the LemonSqueezy
+-- webhook with a stable per-order ref_id and is idempotent per order (the
+-- ref-check returns before the UPDATE), so webhook retries never grant twice;
+-- GREATEST() is a second belt so a re-grant can't stack the allowance.
+-- Entitlement constants are fixed by product definition (10,000 / 75 GB).
+CREATE OR REPLACE FUNCTION mark_gallery_paid(
+  p_business_id UUID, p_gallery_id UUID, p_ref_id UUID DEFAULT NULL,
+  p_months INTEGER DEFAULT 12, p_metadata JSONB DEFAULT NULL
+) RETURNS BOOLEAN
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_owner UUID; v_existing_ref UUID;
+BEGIN
+  SELECT business_id, one_time_order_ref INTO v_owner, v_existing_ref FROM galleries WHERE id = p_gallery_id;
+  IF v_owner IS NULL THEN RAISE EXCEPTION 'gallery_not_found'; END IF;
+  IF v_owner <> p_business_id THEN RAISE EXCEPTION 'gallery_business_mismatch'; END IF;
+  IF p_ref_id IS NOT NULL AND v_existing_ref = p_ref_id THEN RETURN false; END IF;  -- idempotent per order
+
+  UPDATE galleries
+     SET one_time_paid       = true,
+         one_time_paid_at    = now(),
+         paid_expires_at     = now() + make_interval(months => GREATEST(p_months, 1)),
+         one_time_order_ref  = COALESCE(p_ref_id, one_time_order_ref),
+         face_index_allowance = GREATEST(face_index_allowance, 10000),           -- grant, never shrink/stack
+         storage_limit_bytes  = GREATEST(COALESCE(storage_limit_bytes,0), 80530636800)  -- 75 GB
+   WHERE id = p_gallery_id;
+   -- gallery_credit_used / storage_used_bytes are intentionally preserved.
+  RETURN true;
+END $$;
+REVOKE EXECUTE ON FUNCTION mark_gallery_paid(UUID, UUID, UUID, INTEGER, JSONB) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION mark_gallery_paid(UUID, UUID, UUID, INTEGER, JSONB) TO service_role;
+
+-- Revoke on refund / payment reversal (LemonSqueezy order_refunded). Disables
+-- the entitlement (allowance -> 0, marks expired, re-gates the paywall). Already
+-- indexed photos and the business balance are untouched; gallery_credit_used is
+-- kept as a historical record. Idempotent: no-op if not currently paid.
+CREATE OR REPLACE FUNCTION revoke_gallery_paid(
+  p_business_id UUID, p_gallery_id UUID, p_ref_id UUID DEFAULT NULL, p_metadata JSONB DEFAULT NULL
+) RETURNS BOOLEAN
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_owner UUID; v_paid BOOLEAN;
+BEGIN
+  SELECT business_id, one_time_paid INTO v_owner, v_paid FROM galleries WHERE id = p_gallery_id;
+  IF v_owner IS NULL THEN RAISE EXCEPTION 'gallery_not_found'; END IF;
+  IF v_owner <> p_business_id THEN RAISE EXCEPTION 'gallery_business_mismatch'; END IF;
+  IF NOT COALESCE(v_paid, false) THEN RETURN false; END IF;  -- idempotent
+
+  UPDATE galleries
+     SET one_time_paid        = false,
+         face_index_allowance = 0,
+         paid_expires_at      = now()
+   WHERE id = p_gallery_id;
+  RETURN true;
+END $$;
+REVOKE EXECUTE ON FUNCTION revoke_gallery_paid(UUID, UUID, UUID, JSONB) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION revoke_gallery_paid(UUID, UUID, UUID, JSONB) TO service_role;
+
+-- ─── 9. Plan price metadata hygiene (display-only; NOT the source of truth) ──
+-- The charged price is ALWAYS the LemonSqueezy variant (env-keyed). These DB
+-- columns are read nowhere in app code (only seeded by migrations 015/075) but
+-- were left at the stale $19/$39/$94; align them with the current public
+-- monthly USD prices so they can't mislead. Annual is NOT offered (no annual
+-- LemonSqueezy variants configured) -> 0.  Solo=pro, Pro=business, Studio=agency.
+UPDATE plans SET price_monthly_cents = 3900,  price_annual_cents = 0 WHERE id = 'pro';       -- Solo  $39
+UPDATE plans SET price_monthly_cents = 7500,  price_annual_cents = 0 WHERE id = 'business';   -- Pro   $75
+UPDATE plans SET price_monthly_cents = 12000, price_annual_cents = 0 WHERE id = 'agency';     -- Studio $120
+COMMENT ON COLUMN plans.price_monthly_cents IS
+  'Display metadata only. Charged price = LemonSqueezy variant (env LEMONSQUEEZY_VARIANT_*). Current public monthly USD: Solo(pro)=$39, Pro(business)=$75, Studio(agency)=$120.';
+COMMENT ON COLUMN plans.price_annual_cents IS
+  'Annual billing is NOT offered (no annual LemonSqueezy variants configured). 0 = not available; do not surface as a price.';
 
 COMMIT;

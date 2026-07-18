@@ -64,11 +64,42 @@ DROP FUNCTION IF EXISTS public.fail_face_index(uuid, text, boolean);
 DROP FUNCTION IF EXISTS public.get_gallery_index_summary(uuid);
 DROP FUNCTION IF EXISTS public.restore_upload_consumed_credits();
 
--- 4. (Optional, DESTRUCTIVE) also remove the new state + storage counters.
+-- 4. Restore the pre-083 mark_gallery_paid (076 form — unlock only, no
+--    face-rec/storage entitlement) and drop the refund-revoke RPC. New one-time
+--    purchases then behave as they did before 083.
+CREATE OR REPLACE FUNCTION mark_gallery_paid(
+  p_business_id UUID, p_gallery_id UUID, p_ref_id UUID DEFAULT NULL,
+  p_months INTEGER DEFAULT 12, p_metadata JSONB DEFAULT NULL
+) RETURNS BOOLEAN
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_owner UUID; v_existing_ref UUID;
+BEGIN
+  SELECT business_id, one_time_order_ref INTO v_owner, v_existing_ref FROM galleries WHERE id = p_gallery_id;
+  IF v_owner IS NULL THEN RAISE EXCEPTION 'gallery_not_found'; END IF;
+  IF v_owner <> p_business_id THEN RAISE EXCEPTION 'gallery_business_mismatch'; END IF;
+  IF p_ref_id IS NOT NULL AND v_existing_ref = p_ref_id THEN RETURN false; END IF;
+  UPDATE galleries
+     SET one_time_paid=true, one_time_paid_at=now(),
+         paid_expires_at=now() + make_interval(months => GREATEST(p_months, 1)),
+         one_time_order_ref=COALESCE(p_ref_id, one_time_order_ref)
+   WHERE id = p_gallery_id;
+  RETURN true;
+END $$;
+DROP FUNCTION IF EXISTS public.revoke_gallery_paid(uuid, uuid, uuid, jsonb);
+
+-- NOTE: plan price metadata ($39/$75/$120) is display-only and is intentionally
+-- NOT rolled back to the stale $19/$39/$94 (that would re-introduce misleading
+-- values). LemonSqueezy variants remain the payment source of truth regardless.
+
+-- 5. (Optional, DESTRUCTIVE) also remove the new state + storage counters.
 -- DROP TRIGGER IF EXISTS images_storage_dec ON images;
 -- DROP FUNCTION IF EXISTS public.trg_image_storage_dec();
 -- DROP TABLE IF EXISTS business_storage;
 -- ALTER TABLE images DROP COLUMN IF EXISTS face_index_status;
+-- ALTER TABLE images DROP COLUMN IF EXISTS face_index_credit_source;
+-- ALTER TABLE images DROP COLUMN IF EXISTS counted_gallery_storage;
+-- ALTER TABLE galleries DROP COLUMN IF EXISTS face_index_allowance, DROP COLUMN IF EXISTS gallery_credit_used,
+--   DROP COLUMN IF EXISTS storage_used_bytes, DROP COLUMN IF EXISTS storage_limit_bytes;
 -- (Leave the token_ledger + galleries CHECK constraints widened — harmless.)
 
 COMMIT;

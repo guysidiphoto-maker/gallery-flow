@@ -93,6 +93,70 @@ Trigger fires on every terminal `face_index_status` transition (not just
 
 ---
 
+## One-time gallery entitlement ($150 SKU)
+
+A $150 one-time purchase grants **one specific gallery**: up to **10,000
+face-recognition photos**, **75 GB storage**, valid **12 months**. Gallery-specific
+and non-transferable.
+
+- **Grant** — `mark_gallery_paid` (LemonSqueezy `order_created`,
+  `custom_data.purpose='gallery_unlock'`) sets `face_index_allowance=10000`,
+  `storage_limit_bytes=75 GB`, `paid_expires_at=now()+12mo`. Idempotent per order
+  (stable `ref_id`), and `GREATEST()` prevents a re-grant from stacking.
+- **Consume gallery-first** — `reserve_face_index_credit` draws from the gallery
+  entitlement (atomic `gallery_credit_used < face_index_allowance` guard) BEFORE
+  the business monthly balance. `images.face_index_credit_source` records the pool
+  so `fail_face_index` refunds the right one. Same atomic / refund / retry /
+  crash-recovery / no-double-charge guarantees as the business pool.
+- **Cap at 10,000** — when the gallery entitlement is exhausted and the business
+  has no monthly balance, remaining photos are `skipped_no_allowance` (gallery
+  stays accessible, progress is exact, the UI offers a subscription upgrade). A
+  subscriber's monthly balance transparently continues past the gallery cap.
+- **Storage** — uploads to a paid gallery count against the gallery's 75 GB pool
+  (`galleries.storage_used_bytes`, atomic), NOT the business plan cap, so a
+  free-plan photographer is not blocked by the 2 GB business limit.
+  `images.counted_gallery_storage` routes the delete-decrement to the right pool.
+- **Refund/reversal** — `revoke_gallery_paid` (LemonSqueezy `order_refunded`)
+  disables the entitlement (allowance→0, re-gates the paywall); indexed photos and
+  the business balance are untouched. Idempotent.
+- **Copy** — the one-time card now reads "גלריה אחת, עד 10,000 תמונות עם זיהוי
+  פנים והורדות, עד 75GB אחסון, לשנה" (no more "full/unlimited" claim).
+
+### One-time gallery tests — 10/10 PASS
+
+| Assertion | Result |
+|---|---|
+| one-time payment grants 10,000 + 75 GB + 12 months | PASS |
+| webhook retry (same ref) does not grant twice | PASS |
+| face indexing works when business monthly balance is 0 (gallery pool) | PASS |
+| entitlement is gallery-specific — another gallery cannot use it | PASS |
+| subscriber: gallery pool consumed BEFORE business balance | PASS |
+| partial after the gallery cap (2 processed + 3 skipped, no overshoot) | PASS |
+| expired entitlement is inactive | PASS |
+| refund/reversal revokes the entitlement | PASS |
+| gallery 75 GB storage pool is atomic AND independent of business 2 GB cap | PASS |
+| (business-storage cap + delete-decrement, re-confirmed) | PASS |
+
+Full run on a prod-schema fixture: **20/20** (10 core credit/storage + 10
+one-time gallery). Two business-storage assertions initially reported FAIL due to
+a staging-only fixture quirk (`ON CONFLICT DO NOTHING` skipped the subscription
+row on staging's real table); re-run with the subscription forced in → PASS.
+
+---
+
+## Plan price metadata (stale $19/$39/$94 → corrected)
+
+`plans.price_monthly_cents` / `price_annual_cents` are **read nowhere** in app
+code (only seeded by migrations 015/075); the charged price is always the
+LemonSqueezy variant (env `LEMONSQUEEZY_VARIANT_*`). They were left at the stale
+$19/$39/$94. Migration 083 aligns them with the current public monthly USD
+prices — **Solo(pro)=$39, Pro(business)=$75, Studio(agency)=$120** — and sets
+`price_annual_cents=0` (annual is **not** offered — no annual LemonSqueezy
+variants are configured). `COMMENT ON COLUMN` documents both as display-only.
+LemonSqueezy variants remain the single source of truth for actual charges.
+
+---
+
 ## Crash-window / idempotency handling (edge function)
 
 `supabase/functions/rekognition/index.ts`:
@@ -136,10 +200,15 @@ reviewed.
 
 ## Deploy order (after review & merge — nothing auto-applied)
 
-1. Apply migration `083` to production (adds column/table/RPCs/trigger; free,
-   storage-capped uploads take effect).
-2. Deploy the `rekognition` edge function.
-3. Redeploy the web app (copy relabels + preflight are build-time).
+1. Apply migration `083` to production (adds columns/tables/RPCs/trigger +
+   gallery entitlement + price-metadata fix; free, storage-capped uploads and
+   the one-time gallery entitlement take effect). NOTE: create + apply the
+   reserved `082` security migration FIRST.
+2. Deploy the `rekognition` edge function AND the `lemonsqueezy-webhook` edge
+   function (the webhook now grants/revokes the gallery entitlement + handles
+   `order_refunded`).
+3. Redeploy the web app (copy relabels + preflight + one-time-gallery copy are
+   build-time).
 4. Run `restore_upload_consumed_credits()` once and verify the 74-credit impact.
 
 Rollback: `083_face_index_billing_model_rollback.sql` (non-destructive by
