@@ -26,7 +26,7 @@ export async function startCheckout(planId: PlanId): Promise<string | null> {
   return (data as { checkoutUrl?: string })?.checkoutUrl ?? null
 }
 
-/** Open the LemonSqueezy checkout for a one-time gallery unlock (₪590). Works
+/** Open the LemonSqueezy checkout for a one-time gallery unlock ($150). Works
  *  whether the caller is the authenticated photographer (buy + bundle) or an
  *  unauthenticated client paying directly from the gallery gate — the edge
  *  function resolves the owning business from the gallery id. */
@@ -47,7 +47,7 @@ export interface TokenPackage {
   planId: PlanId
   name: string
   tokens: number
-  pricePerMonthIls: number   // approximate ILS for display
+  pricePerMonthIls: number   // approximate USD for display
   highlight?: string
 }
 
@@ -58,22 +58,22 @@ export const TOKEN_PACKAGES: TokenPackage[] = [
     planId: 'pro',
     name: 'Solo',
     tokens: 2000,
-    pricePerMonthIls: 99,
+    pricePerMonthIls: 39,
   },
   {
     planId: 'business',
     name: 'Pro',
     tokens: 10000,
-    pricePerMonthIls: 199,
+    pricePerMonthIls: 75,
     highlight: 'הכי משתלם',
   },
   {
     planId: 'agency',
     name: 'Studio',
     tokens: 30000,
-    pricePerMonthIls: 449,
+    pricePerMonthIls: 120,
   },
 ]
 
-/** Display price for the one-time gallery unlock SKU (₪). */
-export const GALLERY_UNLOCK_PRICE_ILS = 590
+/** Display price for the one-time gallery unlock SKU ($). */
+export const GALLERY_UNLOCK_PRICE_ILS = 150
