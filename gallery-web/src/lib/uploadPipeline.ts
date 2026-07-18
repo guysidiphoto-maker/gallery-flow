@@ -46,6 +46,63 @@ export interface UploadProgress {
 
 export type ProgressFn = (p: UploadProgress) => void
 
+// ── Upload validation (SINGLE SOURCE OF TRUTH for all upload limits) ──────────
+//
+// The file <input> carries accept="image/*", but drag-and-drop bypasses it —
+// so validation is enforced HERE (defensively, inside uploadMany, the one choke
+// point every file passes) AND surfaced up-front in the Dashboard for clear
+// user messages. Both layers call THESE functions/constants; nothing redefines
+// a limit locally. See the reconciliation report for the value rationale.
+//
+//   • Supported formats: JPEG / PNG / WebP. HEIC/HEIF is explicitly REJECTED
+//     (with its own reason) because the on-the-fly transform pipeline can't
+//     decode it yet — accepting it would produce broken gallery images.
+//   • MAX_UPLOAD_BYTES: covers any real high-res JPEG/PNG deliverable while
+//     blocking RAW dumps / video / abuse.
+//   • MAX_UPLOAD_BATCH: guardrail against an accidental massive drag-drop;
+//     larger galleries upload across multiple batches.
+
+export const MAX_UPLOAD_BYTES = 40 * 1024 * 1024 // 40 MB per image
+export const MAX_UPLOAD_BATCH = 1000             // files per batch (concurrency is 8)
+
+const ALLOWED_UPLOAD_MIME = new Set(['image/jpeg', 'image/png', 'image/webp'])
+
+export type UploadRejectReason = 'heic' | 'unsupported' | 'empty' | 'too_large'
+
+/** Returns a machine reason if the file must be rejected, or null if valid. */
+export function validateUploadFile(file: File): UploadRejectReason | null {
+  const type = (file?.type || '').toLowerCase()
+  const name = file?.name || ''
+  // HEIC/HEIF first — it often reports a blank MIME, so match by extension too.
+  if (type === 'image/heic' || type === 'image/heif' || /\.hei[cf]$/i.test(name)) return 'heic'
+  if (!ALLOWED_UPLOAD_MIME.has(type)) return 'unsupported'
+  if (!file || file.size === 0) return 'empty'
+  if (file.size > MAX_UPLOAD_BYTES) return 'too_large'
+  return null
+}
+
+export interface UploadPartition {
+  valid: File[]
+  rejected: Array<{ file: File; reason: UploadRejectReason }>
+  /** True when more than MAX_UPLOAD_BATCH valid files were selected; `valid`
+   *  is capped to the first MAX_UPLOAD_BATCH and the rest should be re-added. */
+  truncated: boolean
+}
+
+/** Split a selection into files we'll upload vs. rejected files with reasons,
+ *  and cap the batch size. */
+export function partitionUploadFiles(files: File[]): UploadPartition {
+  const valid: File[] = []
+  const rejected: Array<{ file: File; reason: UploadRejectReason }> = []
+  for (const file of files) {
+    const reason = validateUploadFile(file)
+    if (reason) rejected.push({ file, reason })
+    else valid.push(file)
+  }
+  const truncated = valid.length > MAX_UPLOAD_BATCH
+  return { valid: truncated ? valid.slice(0, MAX_UPLOAD_BATCH) : valid, rejected, truncated }
+}
+
 // ── string + filename helpers ──────────────────────────────────────────────
 
 export function sanitizeFilename(name: string): string {
@@ -223,6 +280,15 @@ export async function uploadMany(
       if (idx >= total) return
       const file = files[idx]
       onBatch({ completed, total, failed: failed.length, current: file.name })
+      // Defensive gate: never upload a non-image / HEIC / oversized file, even
+      // if a caller forgot to pre-filter. Keeps storage + tokens clean.
+      const rejectReason = validateUploadFile(file)
+      if (rejectReason) {
+        failed.push({ file, error: rejectReason })
+        completed++
+        onBatch({ completed, total, failed: failed.length, current: file.name })
+        continue
+      }
       try {
         const r = await uploadOneImage(file, {
           ...opts, sortOrder: (opts.sortOrder ?? 0) + idx,

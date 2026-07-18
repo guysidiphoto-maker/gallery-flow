@@ -24,6 +24,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { withSentry } from '../server/sentryServer.js'
 import sharp from 'sharp'
 
 export const config = { runtime: 'nodejs' }
@@ -382,7 +383,7 @@ function sendImage(res: VercelResponse, buf: Buffer, mime: 'image/jpeg' | 'image
   res.status(200).send(buf)
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     res.status(405).json({ ok: false, error: 'method_not_allowed' }); return
   }
@@ -517,3 +518,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     sendImage(res, original, 'image/jpeg', fallbackName)
   }
 }
+
+export default withSentry('watermark', handler)

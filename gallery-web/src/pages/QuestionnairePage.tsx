@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
+import { TurnstileWidget } from '../components/TurnstileWidget'
 import type { QuestionnaireConfig } from '../types'
+
+// Public Cloudflare Turnstile site key. When unset (local dev) the widget
+// isn't rendered and the server falls back to rate limiting, so dev still works.
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_CF_TURNSTILE_SITE_KEY as string | undefined
 
 type Phase = 'loading' | 'form' | 'submitting' | 'done' | 'error'
 
@@ -14,6 +19,7 @@ export function QuestionnairePage() {
   const [errors, setErrors] = useState<Record<string, boolean>>({})
   const [consentTerms, setConsentTerms] = useState(false)
   const [consentComms, setConsentComms] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState('')
 
   // Support both /q/{uuid} and /q/{slug}
   const questionnaireIdOrSlug = (() => {
@@ -76,6 +82,7 @@ export function QuestionnairePage() {
           respondentPhone: phone.trim() || null,
           respondentEmail: email.trim() || null,
           answers,
+          turnstileToken: turnstileToken || undefined,
         }),
       })
 
@@ -452,6 +459,11 @@ export function QuestionnairePage() {
                 <p style={{ fontSize: 12, color: '#f87171', margin: '6px 0 0', direction: 'rtl' }}>יש לאשר קבלת הודעות</p>
               )}
             </div>
+
+            {/* Invisible bot-check (managed mode: silent for real users) */}
+            {TURNSTILE_SITE_KEY && (
+              <TurnstileWidget siteKey={TURNSTILE_SITE_KEY} onToken={setTurnstileToken} />
+            )}
 
             {/* Submit */}
             <button
