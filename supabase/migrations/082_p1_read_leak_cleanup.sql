@@ -121,11 +121,10 @@ COMMIT;
 --     no draft-preview flow that relied on anon gallery_get_meta breaks.
 --
 -- ── ROLLBACK ────────────────────────────────────────────────────────────────
--- BEGIN;
--- CREATE POLICY vendors_public_read ON public.vendors FOR SELECT TO anon USING (true);
--- DROP POLICY IF EXISTS image_scores_owner_read ON public.image_ai_scores;
--- CREATE POLICY image_scores_public_read ON public.image_ai_scores
---   FOR SELECT TO anon, authenticated USING (true);
--- -- and restore the prior gallery_get_meta body (without the owner draft gate),
--- --   available in migration 073_gallery_bootstrap.sql.
--- COMMIT;
+-- Use the dedicated, staging-proven rollback file:
+--   supabase/migrations/082_p1_read_leak_cleanup_rollback.sql
+-- It restores the EXACT pre-082 policies (vendors_public_read TO anon;
+-- image_scores_public_read TO {authenticated,anon}) and the pre-082
+-- gallery_get_meta body (no draft owner-gate), and drops image_scores_owner_read.
+-- Validated: forward 082 + rollback returns the objects to their pre-082 state
+-- (6/6, incl. draft metadata visible to anon again).
