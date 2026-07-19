@@ -303,10 +303,12 @@ second call returns no rows and writes no new ledger entries.
 
 Preserve `token_ledger` history at all times — **never delete financial/audit records.**
 
-**9.1 Migration 082** — run `082`'s embedded rollback block (bottom of the file):
-recreate `vendors_public_read`, drop `image_scores_owner_read` + recreate
-`image_scores_public_read`, and restore the prior `gallery_get_meta` body (from
-`073_gallery_bootstrap.sql`). Safe/reversible.  ‹PROD CHANGE - db›
+**9.1 Migration 082** — run the dedicated, staging-proven rollback file
+`supabase/migrations/082_p1_read_leak_cleanup_rollback.sql`. It restores the
+exact pre-082 policies (`vendors_public_read` TO anon; `image_scores_public_read`
+TO {authenticated,anon}) + the pre-082 `gallery_get_meta` body, and drops
+`image_scores_owner_read`. ⚠️ Re-opens the three anon read-leaks — only run to
+revert 082. Safe/reversible.  ‹PROD CHANGE - db›
 
 **9.2 Migration 083** — run `supabase/migrations/083_face_index_billing_model_rollback.sql`.
 It restores the token-deducting `record_image_upload` (065 form), restores the
@@ -364,6 +366,29 @@ WHERE gallery_credit_used > face_index_allowance OR gallery_credit_used < 0;    
 ```sql
 SELECT ref_id, count(*) FROM token_ledger WHERE reason='face_index' AND delta=-1
 GROUP BY ref_id HAVING count(*) > 1;                                                -- expect none
+```
+- **Storage reconciliation (counters vs actual image bytes) — expect 0 drift rows:**
+```sql
+-- Business pool == SUM(business-counted image bytes)
+SELECT bs.business_id, bs.used_bytes AS counter, COALESCE(s.bytes,0) AS actual
+FROM business_storage bs LEFT JOIN (
+  SELECT g.business_id, SUM(COALESCE(i.original_size_bytes,0)) bytes
+  FROM images i JOIN galleries g ON g.id=i.gallery_id
+  WHERE NOT COALESCE(i.counted_gallery_storage,false) GROUP BY g.business_id) s
+  ON s.business_id=bs.business_id
+WHERE bs.used_bytes <> COALESCE(s.bytes,0);
+-- Paid-gallery pool == SUM(gallery-counted image bytes)
+SELECT g.id, g.storage_used_bytes AS counter,
+       COALESCE(SUM(COALESCE(i.original_size_bytes,0)),0) AS actual
+FROM galleries g LEFT JOIN images i ON i.gallery_id=g.id AND COALESCE(i.counted_gallery_storage,false)
+GROUP BY g.id, g.storage_used_bytes
+HAVING g.storage_used_bytes <> COALESCE(SUM(COALESCE(i.original_size_bytes,0)),0);
+```
+- **RPC authorization spot-check** (should all be `f` except service/authenticated as noted):
+```sql
+SELECT has_function_privilege('anon','public.reserve_face_index_credit(uuid,uuid)','EXECUTE') AS anon_reserve,       -- f
+       has_function_privilege('anon','public.get_gallery_index_summary(uuid)','EXECUTE') AS anon_summary,             -- f
+       has_function_privilege('authenticated','public.record_image_upload(uuid,text,text,text,text,bigint,uuid,integer,boolean)','EXECUTE') AS auth_upload; -- t
 ```
 - **LemonSqueezy webhook failures** — webhook logs + LemonSqueezy dashboard delivery status.
 - **Storage-limit rejection rate** — frequency of `storage_limit_exceeded` (frontend toast / function logs); a spike may mean a mis-set plan/gallery limit.

@@ -213,3 +213,106 @@ reviewed.
 
 Rollback: `083_face_index_billing_model_rollback.sql` (non-destructive by
 default; restores per-upload token deduction and the prior completion trigger).
+
+---
+
+## Code-review hardening (2026-07-19)
+
+A direct code review flagged release-blocking issues; all fixed on the branches.
+
+### P0
+- **RPC authorization** — migration 083 adds a least-privilege block: `REVOKE
+  EXECUTE ... FROM PUBLIC, anon, authenticated` on every service-only SECURITY
+  DEFINER function (`reserve_face_index_credit`, `finalize_face_index`,
+  `fail_face_index`, `restore_upload_consumed_credits`, `mark_gallery_paid`,
+  `revoke_gallery_paid`, trigger fns, + pre-existing maintenance fns guarded by
+  `to_regprocedure`), `GRANT ... TO service_role`. `record_image_upload` =
+  authenticated + service_role (keeps its `auth.uid()` owner check).
+  `get_gallery_index_summary` = authenticated + service_role and now verifies
+  `auth.uid()` owns the gallery's business (service_role, the only uid-null caller
+  once anon is revoked, is trusted) — never leaks another business's balance /
+  allowance / payment status.
+- **Atomic refund** — `fail_face_index` claims + transitions in ONE guarded
+  `UPDATE ... WHERE face_index_status='processing' RETURNING gallery_id,
+  face_index_credit_source`. Only the caller that transitions refunds; a NULL /
+  unknown source refunds nothing (no minting).
+- **Rekognition error handling** — every Supabase call is error-checked
+  (image_faces delete/insert, reserve/finalize/fail, summary, gallery updates).
+  An image is reported `indexed` only if AWS + image_faces persist + finalize all
+  succeed; a post-AWS persistence failure raises `PersistenceError` → the image
+  stays `processing` (recoverable), never refunded, never marked indexed. The
+  summary now returns a `processing` count and the worker refuses to flip a
+  gallery `done` while any remain. `runBounded` removes settled promises in
+  `finally()` and captures rejections (a bad worker can't wedge the batch).
+- **Order identity** — `revoke_gallery_paid` revokes only when `p_ref_id` matches
+  the gallery's active `one_time_order_ref` (an older/unrelated refund is a
+  no-op). `mark_gallery_paid` grants +10,000 per DISTINCT paid order (idempotent
+  per order), so a second $150 purchase is never silently uncredited; the latest
+  order controls revocation.
+
+### P1
+- **Storage size** — `record_image_upload` derives the authoritative size from
+  `storage.objects.metadata->>'size'` (the browser uploads the original before
+  calling the RPC), rejecting `original_object_missing` / `size_mismatch` instead
+  of trusting the client. A BEFORE-DELETE trigger on `galleries` decrements the
+  business counter for cascaded image deletes (the per-image trigger can't look
+  up the gallery once it's gone). Existing active paid galleries are backfilled
+  into the gallery pool; `mark_gallery_paid` transfers already-uploaded bytes
+  business→gallery atomically on purchase.
+- **Deterministic order** — stable `(sort_order, id)` tie-breaker everywhere
+  indexing work is selected (images has no `created_at`; `id` is the stable key).
+- **Copy** — removed false "unlimited uploads" wording (uploads are storage-
+  capped): "העלאות ללא חיוב לפי תמונה, בכפוף למגבלת האחסון במסלול" /
+  "המכסה החודשית חלה רק על תמונות שעוברות זיהוי פנים". One-time-gallery pre-flight
+  now shows gallery-remaining, monthly-remaining, whether monthly will also be
+  consumed, and total processing now. No customer-facing "tokens/טוקנים" remains.
+
+### Test evidence — 30/30 new + hardened assertions (staging, BEGIN/ROLLBACK)
+| Group | Result |
+|---|---|
+| Authorization: privileges (reserve/mark/record/summary), anon RPC denied, cross-business NULL, owner/service OK | 8/8 PASS |
+| Atomic refund: two fails → one transition + one refund; finalize-vs-fail; NULL source no-mint | PASS |
+| Order identity: retry no-double-grant; 2nd distinct order +10000; late refund of superseded order no-op; active-order refund revokes; duplicate refund no-op | PASS |
+| Server-authoritative size: mismatch rejected, missing object rejected, server size used | PASS |
+| Gallery-delete cascade decrements business storage | PASS |
+| Reconciliation: `business_storage == SUM(non-gallery image sizes)` | PASS |
+| Core credit + gallery entitlement re-run against hardened fns (atomic fail, size-checked upload, completion trigger) | 9/9 PASS |
+
+The repo test `supabase/tests/083_face_index_billing_model_test.sql` now has 6
+blocks (credit lifecycle · gallery entitlement · authorization · atomic refund ·
+order identity · server-storage/deletion/reconciliation).
+
+**Edge-function failure-injection (item 13)** — the DB-observable cases are
+covered above (finalize-vs-fail, fail-RPC idempotency). The purely TS paths
+(AWS-success-then-insert-failure → stay processing; summary-RPC-failure → don't
+flip done; worker rejection → runBounded catch) are covered by the error-checked
+code structure; a Deno integration harness to exercise them is a follow-up.
+
+### Storage reconciliation queries (item 22 — run post-deploy)
+```sql
+-- Business pool must equal the sum of business-counted (non-gallery) image bytes.
+SELECT bs.business_id, bs.used_bytes AS counter,
+       COALESCE(s.bytes,0) AS actual, bs.used_bytes - COALESCE(s.bytes,0) AS drift
+FROM business_storage bs
+LEFT JOIN (
+  SELECT g.business_id, SUM(COALESCE(i.original_size_bytes,0)) bytes
+  FROM images i JOIN galleries g ON g.id=i.gallery_id
+  WHERE NOT COALESCE(i.counted_gallery_storage,false)
+  GROUP BY g.business_id
+) s ON s.business_id = bs.business_id
+WHERE bs.used_bytes <> COALESCE(s.bytes,0);   -- expect 0 rows
+
+-- Each paid gallery's pool must equal the sum of its gallery-counted image bytes.
+SELECT g.id, g.storage_used_bytes AS counter,
+       COALESCE(SUM(COALESCE(i.original_size_bytes,0)),0) AS actual
+FROM galleries g LEFT JOIN images i
+  ON i.gallery_id=g.id AND COALESCE(i.counted_gallery_storage,false)
+GROUP BY g.id, g.storage_used_bytes
+HAVING g.storage_used_bytes <> COALESCE(SUM(COALESCE(i.original_size_bytes,0)),0);  -- expect 0 rows
+```
+
+### Note — out of scope
+`gallery-web/src/pages/LandingPage.tsx` still shows stale marketing (old prices
+$19/$39, wrong photo counts, and an "אחסון ללא הגבלה" / unlimited-storage claim).
+That whole block predates pricing-v2 and is unrelated marketing (the original
+change scope excludes marketing pages); flagged here for a separate cleanup.
