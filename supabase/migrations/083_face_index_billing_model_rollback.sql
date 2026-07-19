@@ -87,9 +87,18 @@ BEGIN
 END $$;
 DROP FUNCTION IF EXISTS public.revoke_gallery_paid(uuid, uuid, uuid, jsonb);
 
+-- 4b. Remove the gallery-delete storage trigger added by 083 (the per-image
+--     images_storage_dec trigger + restored record_image_upload are enough for
+--     the pre-083 model).
+DROP TRIGGER IF EXISTS galleries_storage_dec ON galleries;
+DROP FUNCTION IF EXISTS public.trg_gallery_storage_dec_before();
+
 -- NOTE: plan price metadata ($39/$75/$120) is display-only and is intentionally
 -- NOT rolled back to the stale $19/$39/$94 (that would re-introduce misleading
 -- values). LemonSqueezy variants remain the payment source of truth regardless.
+-- NOTE: EXECUTE grants tightened by 083's authorization block are left in place
+-- (least-privilege is safe to keep); the restored record_image_upload/
+-- mark_gallery_paid keep their authenticated/service_role grants.
 
 -- 5. (Optional, DESTRUCTIVE) also remove the new state + storage counters.
 -- DROP TRIGGER IF EXISTS images_storage_dec ON images;

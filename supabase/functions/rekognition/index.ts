@@ -207,6 +207,24 @@ async function purgeExistingFaces(collectionId: string, imageId: string): Promis
  *  (credit reserved by a previous, dead run). Never reserves — the credit is
  *  already spent; on success we keep it, on terminal/transient failure
  *  fail_face_index refunds it. */
+/** AWS IndexFaces succeeded but a DB write (image_faces insert / finalize) did
+ *  not. The image MUST stay 'processing' (recoverable) — we neither refund nor
+ *  mark it indexed; recoverStuckProcessing re-runs it later, reusing the held
+ *  credit. Distinct from a pre-persistence failure, which refunds via fail. */
+class PersistenceError extends Error {}
+
+/** Transition a processing image to failed/pending + refund, checking the RPC
+ *  result. If fail_face_index itself errors, the row stays 'processing' with its
+ *  reserved credit → recovery converges it. We never throw past the batch. */
+async function failImage(sb: SupabaseClient, image: IndexableImage, msg: string, terminal: boolean): Promise<void> {
+  const { error } = await sb.rpc('fail_face_index', {
+    p_image_id: image.id, p_error: msg, p_terminal: terminal,
+  })
+  if (error) {
+    console.error('[failImage] fail_face_index RPC failed; left processing for recovery:', image.id, error.message)
+  }
+}
+
 async function indexReserved(
   sb: SupabaseClient,
   collectionId: string,
@@ -218,19 +236,20 @@ async function indexReserved(
   const isRetry = (image.face_index_attempts ?? 0) > 0
   try {
     if (isRetry) {
-      await purgeExistingFaces(collectionId, image.id)
-      await sb.from('image_faces').delete().eq('image_id', image.id)
+      await purgeExistingFaces(collectionId, image.id) // throws on AWS error → caught → refund (pre-persistence)
+      const { error: delErr } = await sb.from('image_faces').delete().eq('image_id', image.id)
+      if (delErr) throw new Error(`image_faces delete failed: ${delErr.message}`)
     }
 
     // Missing preview path = unindexable. Refund the reserved credit (the
     // service was never used) and mark the image failed (terminal).
     if (!image.storage_path) {
-      await sb.rpc('fail_face_index', { p_image_id: image.id, p_error: 'Web preview not available', p_terminal: true })
+      await failImage(sb, image, 'Web preview not available', true)
       return { outcome: 'failed', faceCount: 0, error: 'no preview path' }
     }
 
     const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${image.storage_path}`
-    const bytes = await fetchImageBytes(publicUrl)
+    const bytes = await fetchImageBytes(publicUrl) // throws on fetch error → refund (pre-AWS)
 
     const result = await rekognition.send(new IndexFacesCommand({
       CollectionId: collectionId,
@@ -239,8 +258,10 @@ async function indexReserved(
       DetectionAttributes: [],
       MaxFaces: INDEX_MAX_FACES_PER_IMAGE,
       QualityFilter: 'AUTO',
-    }))
+    })) // throws on AWS error → refund (AWS did not complete)
 
+    // ── AWS has now SUCCEEDED. Any failure below is a PersistenceError: keep the
+    //    image 'processing' (recoverable), never refund, never mark indexed. ──
     const records = (result.FaceRecords ?? [])
       .map(fr => ({
         gallery_id: galleryId,
@@ -252,24 +273,36 @@ async function indexReserved(
       .filter(r => r.rekognition_face_id)
 
     if (records.length > 0) {
-      await sb.from('image_faces').insert(records)
+      const { error: insErr } = await sb.from('image_faces').insert(records)
+      if (insErr) throw new PersistenceError(`image_faces insert failed: ${insErr.message}`)
     }
 
-    // processing → indexed, keeps the reserved credit. Idempotent on status,
-    // so a duplicate call (e.g. after a crash-window retry) can't double-count.
-    // NOTE: a successful AWS index with ZERO faces STILL keeps the credit —
-    // the paid service was used. finalize with face_count=0 is deliberate.
-    await sb.rpc('finalize_face_index', { p_image_id: image.id, p_face_count: records.length })
+    // processing → indexed, keeps the reserved credit. Idempotent on status.
+    // A successful AWS index with ZERO faces STILL keeps the credit (service used).
+    const { data: fin, error: finErr } = await sb.rpc('finalize_face_index', {
+      p_image_id: image.id, p_face_count: records.length,
+    })
+    if (finErr) throw new PersistenceError(`finalize_face_index failed: ${finErr.message}`)
+    if (fin !== true) {
+      // Row was no longer 'processing' when we finalized (should be unreachable
+      // under single-ownership). Do NOT claim indexed; leave state as-is.
+      console.warn('[indexReserved] finalize returned false (row not processing):', image.id)
+      return { outcome: 'contended', faceCount: records.length }
+    }
     return { outcome: 'indexed', faceCount: records.length }
   } catch (err) {
+    if (err instanceof PersistenceError) {
+      // AWS succeeded, DB persistence/finalize failed → preserve recoverable
+      // 'processing' state. Never refund, never mark indexed. Recovery re-runs it.
+      console.error('[indexReserved] persistence failure, left processing for recovery:', image.id, err.message)
+      return { outcome: 'retry', faceCount: 0, error: err.message }
+    }
+    // Pre-persistence failure (retry purge/delete, storage fetch, AWS IndexFaces):
+    // the index did not complete → REFUND via fail_face_index (terminal after
+    // MAX_INDEX_ATTEMPTS). fail only touches rows still 'processing'.
     const msg = err instanceof Error ? err.message : String(err)
-    // AWS/DB failure: from our POV the index did not complete, so REFUND the
-    // reserved credit (a failed AWS request must never permanently consume
-    // allowance). Terminal after MAX_INDEX_ATTEMPTS; otherwise back to pending
-    // for a later pass. fail_face_index only touches rows still 'processing',
-    // so it can't clobber a finalize that actually landed.
     const terminal = (image.face_index_attempts ?? 0) + 1 >= MAX_INDEX_ATTEMPTS
-    await sb.rpc('fail_face_index', { p_image_id: image.id, p_error: msg, p_terminal: terminal })
+    await failImage(sb, image, msg, terminal)
     return { outcome: terminal ? 'failed' : 'retry', faceCount: 0, error: msg }
   }
 }
@@ -281,27 +314,42 @@ async function reserveAndIndex(
   galleryId: string,
   image: IndexableImage,
 ): Promise<{ outcome: IndexOutcome; faceCount: number; error?: string }> {
-  const { data: reserve } = await sb.rpc('reserve_face_index_credit', {
+  const { data: reserve, error: resErr } = await sb.rpc('reserve_face_index_credit', {
     p_gallery_id: galleryId,
     p_image_id: image.id,
   })
+  if (resErr) {
+    // Reserve RPC failed — do NOT index (no credit claimed). Leave the image
+    // pending/skipped for the next pass. Never index without a reservation.
+    console.error('[reserveAndIndex] reserve_face_index_credit failed:', image.id, resErr.message)
+    return { outcome: 'contended', faceCount: 0, error: resErr.message }
+  }
   if (reserve === 'no_allowance') return { outcome: 'skipped', faceCount: 0 }
   if (reserve !== 'reserved') return { outcome: 'contended', faceCount: 0 } // not_claimable / gallery_not_found
   return indexReserved(sb, collectionId, galleryId, image)
 }
 
-/** Bounded-concurrency map — at most INDEX_CONCURRENCY in flight at once. */
-async function runBounded<T, R>(items: T[], worker: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = []
+/** Bounded-concurrency map — at most INDEX_CONCURRENCY in flight. A worker that
+ *  rejects is captured as { ok:false } (never aborts the batch), and every
+ *  settled promise is removed from the in-flight set in finally() so the loop
+ *  can't wedge on a rejection. */
+async function runBounded<T, R>(
+  items: T[],
+  worker: (item: T) => Promise<R>,
+): Promise<Array<{ ok: true; value: R } | { ok: false; error: unknown }>> {
+  const results: Array<{ ok: true; value: R } | { ok: false; error: unknown }> = []
   let cursor = 0
   const running = new Set<Promise<void>>()
   while (cursor < items.length || running.size > 0) {
     while (cursor < items.length && running.size < INDEX_CONCURRENCY) {
       const item = items[cursor++]
-      const p = worker(item).then(r => { results.push(r); running.delete(p) })
+      const p = worker(item)
+        .then(value => { results.push({ ok: true, value }) })
+        .catch(error => { results.push({ ok: false, error }) })
+        .finally(() => { running.delete(p) })
       running.add(p)
     }
-    if (running.size > 0) await Promise.race(running)
+    if (running.size > 0) await Promise.race(running).catch(() => {})
   }
   return results
 }
@@ -317,13 +365,18 @@ async function recoverStuckProcessing(
   galleryId: string,
   collectionId: string,
 ): Promise<void> {
-  const { data: stuck } = await sb
+  const { data: stuck, error: stuckErr } = await sb
     .from('images')
     .select('id, storage_path:web_preview_path, face_index_attempts')
     .eq('gallery_id', galleryId)
     .eq('face_index_status', 'processing')
     .order('sort_order', { ascending: true })
+    .order('id', { ascending: true }) // stable tie-breaker: sort_order is not unique
 
+  if (stuckErr) {
+    console.error('[recoverStuckProcessing] select failed:', galleryId, stuckErr.message)
+    return // leave orphans 'processing' for the next run
+  }
   const orphans = stuck ?? []
   if (orphans.length === 0) return
 
@@ -355,18 +408,29 @@ async function processGallery(
 
   // 2. Fetch remaining work in deterministic upload order. 'skipped_no_allowance'
   //    is included so that adding allowance and re-running resumes those images.
-  const { data: imgs } = await sb
+  const { data: imgs, error: workErr } = await sb
     .from('images')
     .select('id, storage_path:web_preview_path, face_index_attempts')
     .eq('gallery_id', galleryId)
     .in('face_index_status', ['pending', 'skipped_no_allowance'])
     .order('sort_order', { ascending: true })
+    .order('id', { ascending: true }) // stable tie-breaker: sort_order is not unique
 
+  if (workErr) {
+    // Could not read the worklist — abort this run WITHOUT touching gallery
+    // status; a later invocation retries. Never flip 'done' on incomplete data.
+    console.error('[processGallery] worklist select failed:', galleryId, workErr.message)
+    return
+  }
   const work = (imgs ?? []) as IndexableImage[]
 
   if (work.length > 0) {
-    const { data: summary } = await sb.rpc('get_gallery_index_summary', { p_gallery_id: galleryId })
-    const allowance = (summary?.allowance as number) ?? 0
+    const { data: summary, error: sumErr } = await sb.rpc('get_gallery_index_summary', { p_gallery_id: galleryId })
+    if (sumErr || !summary) {
+      console.error('[processGallery] summary RPC failed:', galleryId, sumErr?.message)
+      return // do not proceed without an allowance figure; leave status as 'indexing'
+    }
+    const allowance = (summary.allowance as number) ?? 0
 
     if (allowance >= work.length) {
       // Ample allowance: every image will get a credit, so reserve+index
@@ -379,20 +443,22 @@ async function processGallery(
       const reserved: IndexableImage[] = []
       for (const img of work) {
         if (reserved.length >= allowance) break
-        const { data: r } = await sb.rpc('reserve_face_index_credit', {
+        const { data: r, error: rErr } = await sb.rpc('reserve_face_index_credit', {
           p_gallery_id: galleryId,
           p_image_id: img.id,
         })
+        if (rErr) { console.error('[processGallery] reserve failed:', img.id, rErr.message); break }
         if (r === 'reserved') reserved.push(img)
         else if (r === 'no_allowance') break // balance changed under us — stop
         // 'not_claimable': another worker/state took it; skip.
       }
       // Everything still pending/skipped beyond the allowance stays deferred.
-      await sb
+      const { error: skipErr } = await sb
         .from('images')
         .update({ face_index_status: 'skipped_no_allowance' })
         .eq('gallery_id', galleryId)
         .eq('face_index_status', 'pending')
+      if (skipErr) console.error('[processGallery] bulk-skip update failed:', galleryId, skipErr.message)
 
       await runBounded(reserved, (img) => indexReserved(sb, collectionId, galleryId, img))
     }
@@ -401,10 +467,23 @@ async function processGallery(
   // 3. Authoritative final status from terminal counts. The DB trigger also
   //    flips done/partial on each finalize; this is the safety net that also
   //    covers the all-skipped case (where no finalize fires).
-  const { data: fin } = await sb.rpc('get_gallery_index_summary', { p_gallery_id: galleryId })
-  const indexed = (fin?.indexed as number) ?? 0
-  const remaining = (fin?.remaining as number) ?? 0 // pending + skipped_no_allowance
-  const failed = (fin?.failed as number) ?? 0
+  const { data: fin, error: finErr } = await sb.rpc('get_gallery_index_summary', { p_gallery_id: galleryId })
+  if (finErr || !fin) {
+    console.error('[processGallery] final summary RPC failed; leaving status indexing:', galleryId, finErr?.message)
+    return
+  }
+  const indexed = (fin.indexed as number) ?? 0
+  const remaining = (fin.remaining as number) ?? 0 // pending + skipped_no_allowance
+  const processing = (fin.processing as number) ?? 0 // recoverable images still in flight
+  const failed = (fin.failed as number) ?? 0
+
+  // Item 11: never flip a gallery to a terminal status while images remain
+  // 'processing' (e.g. a post-AWS persistence failure left them recoverable).
+  // Leave it 'indexing' so the next invocation's recovery converges them.
+  if (processing > 0) {
+    console.warn('[processGallery] images still processing; leaving status indexing:', galleryId, processing)
+    return
+  }
 
   let status: 'done' | 'partial' | 'failed'
   if (remaining > 0) status = 'partial' // allowance ran out — resumable
@@ -416,11 +495,12 @@ async function processGallery(
     update.face_indexed_at = new Date().toISOString()
     update.face_index_error = null
   }
-  await sb
+  const { error: statusErr } = await sb
     .from('galleries')
     .update(update)
     .eq('id', galleryId)
     .in('face_index_status', ['indexing', 'partial'])
+  if (statusErr) console.error('[processGallery] final gallery status update failed:', galleryId, statusErr.message)
 }
 
 // ─── Actions ────────────────────────────────────────────────────────────────

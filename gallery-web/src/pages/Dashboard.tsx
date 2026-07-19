@@ -2574,7 +2574,7 @@ export function Dashboard() {
                 color: textMuted, fontSize: 11, marginBottom: 36,
                 fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
               }}>
-100 תמונות זיהוי פנים חינם · העלאות ללא הגבלה
+100 תמונות זיהוי פנים חינם · העלאות ללא חיוב לפי תמונה (בכפוף למגבלת האחסון)
               </p>
               <div style={{
                 display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap',
@@ -6356,16 +6356,23 @@ export function Dashboard() {
                       </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{faceSummary.is_one_time_paid ? 'סה״כ זמין (גלריה + חודשי)' : 'תמונות זיהוי פנים שנותרו החודש'}</span>
-                      <strong style={{ color: textPrimary }}>{faceSummary.allowance.toLocaleString('he-IL')}</strong>
+                      <span>נותרו במכסה החודשית של המסלול</span>
+                      <strong style={{ color: textPrimary }}>{(faceSummary.business_allowance ?? 0).toLocaleString('he-IL')}</strong>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: `1px solid ${border}`, marginTop: 6, paddingTop: 6 }}>
                       <span>יעובדו כעת</span>
                       <strong style={{ color: textPrimary }}>{faceSummary.will_process_now.toLocaleString('he-IL')}</strong>
                     </div>
+                    {/* Whether the monthly plan allowance will ALSO be consumed
+                        (only when the gallery-specific pool is not enough). */}
+                    {faceSummary.is_one_time_paid && faceSummary.will_process_now > (faceSummary.gallery_remaining ?? 0) && (
+                      <div style={{ marginTop: 8, color: textSecondary, fontSize: 12, lineHeight: 1.5 }}>
+                        {(faceSummary.gallery_remaining ?? 0).toLocaleString('he-IL')} מתוך חבילת הגלריה, ועוד {(faceSummary.will_process_now - (faceSummary.gallery_remaining ?? 0)).toLocaleString('he-IL')} ייספרו מהמכסה החודשית של המסלול.
+                      </div>
+                    )}
                     {faceSummary.will_process_now < faceSummary.remaining && (
                       <div style={{ marginTop: 8, color: '#b45309', fontSize: 12, lineHeight: 1.5 }}>
-                        המכסה החודשית לא מספיקה לכל התמונות. {faceSummary.will_process_now.toLocaleString('he-IL')} מתוך {faceSummary.remaining.toLocaleString('he-IL')} יעובדו כעת; השאר ימתינו עד שתשדרג מסלול.
+                        אין מספיק מכסה לכל התמונות. {faceSummary.will_process_now.toLocaleString('he-IL')} מתוך {faceSummary.remaining.toLocaleString('he-IL')} יעובדו כעת; השאר ימתינו עד שתשדרג מסלול.
                       </div>
                     )}
                   </div>
@@ -6648,7 +6655,7 @@ export function Dashboard() {
               }}>×</button>
             </div>
             <p style={{ fontSize: 14, color: textSecondary, margin: '0 0 24px', lineHeight: 1.5 }}>
-              העלאות ותמונות ללא הגבלה. המכסה החודשית נספרת רק על תמונות שעוברות זיהוי פנים. תמונות זיהוי פנים שנותרו: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#16a274' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
+              העלאות ללא חיוב לפי תמונה, בכפוף למגבלת האחסון במסלול. המכסה החודשית חלה רק על תמונות שעוברות זיהוי פנים. תמונות זיהוי פנים שנותרו: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#16a274' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>

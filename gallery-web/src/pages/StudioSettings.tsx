@@ -746,7 +746,7 @@ export function StudioSettings() {
                 {tokenBalance.toLocaleString('he-IL')}
               </div>
               <div style={{ fontSize: 12, color: textMuted, marginTop: 6 }}>
-                העלאות ללא הגבלה. המכסה נספרת רק על תמונות עם זיהוי פנים.
+                העלאות ללא חיוב לפי תמונה, בכפוף למגבלת האחסון במסלול. המכסה החודשית חלה רק על תמונות שעוברות זיהוי פנים.
               </div>
             </div>
             {TOKEN_BILLING_ON && (
@@ -806,7 +806,7 @@ export function StudioSettings() {
               >×</button>
             </div>
             <p style={{ fontSize: 14, color: textSecondary, margin: '0 0 24px', lineHeight: 1.5 }}>
-              העלאות ותמונות ללא הגבלה. המכסה החודשית נספרת רק על תמונות שעוברות זיהוי פנים. תמונות זיהוי פנים שנותרו: <strong style={{ color: tokenBalance < 50 ? '#A67C52' : statusLive }}>{tokenBalance.toLocaleString('he-IL')}</strong>
+              העלאות ללא חיוב לפי תמונה, בכפוף למגבלת האחסון במסלול. המכסה החודשית חלה רק על תמונות שעוברות זיהוי פנים. תמונות זיהוי פנים שנותרו: <strong style={{ color: tokenBalance < 50 ? '#A67C52' : statusLive }}>{tokenBalance.toLocaleString('he-IL')}</strong>
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
