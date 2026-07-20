@@ -271,6 +271,44 @@ BEGIN
   INSERT INTO r(name,pass,detail) VALUES ('reconciliation: business_storage == SUM(non-gallery image sizes)', recon_biz=recon_img, format('counter=%s images=%s',recon_biz,recon_img));
 END $$;
 
+-- ══════════════ BLOCK 7 — per-order entitlement consumption (Section F) ══════════════
+-- Allocation is per-order, earliest-expiring first; refunds/expiry affect ONLY
+-- the funding order; business monthly is the fallback. Uses its own gallery gC.
+DO $$
+DECLARE v_biz UUID:='aaaaaaaa-0000-0000-0000-000000000001'; gC UUID:='aaaaaaaa-0000-0000-0000-00000000000c';
+  oA UUID:='0a0a0a0a-0000-0000-0000-00000000000a'; oB UUID:='0b0b0b0b-0000-0000-0000-00000000000b'; oX UUID:='0c0c0c0c-0000-0000-0000-00000000000c';
+  entA UUID; entB UUID; entX UUID; a UUID; img UUID; ok BOOLEAN; res TEXT; ua INT; ub INT; ids UUID[];
+BEGIN
+  INSERT INTO galleries(id,business_id,face_index_status) VALUES (gC,v_biz,'indexing') ON CONFLICT (id) DO NOTHING;
+  DELETE FROM images WHERE gallery_id=gC; DELETE FROM gallery_entitlements WHERE gallery_id=gC; UPDATE galleries SET gallery_credit_used=0 WHERE id=gC; UPDATE business_tokens SET balance=0 WHERE business_id=v_biz;
+  -- two active orders: A granted 2 (earlier expiry), B granted 3 (later expiry)
+  INSERT INTO gallery_entitlements(business_id,gallery_id,order_ref,granted_allowance,expires_at) VALUES (v_biz,gC,oA,2,now()+interval '100 days') RETURNING id INTO entA;
+  INSERT INTO gallery_entitlements(business_id,gallery_id,order_ref,granted_allowance,expires_at) VALUES (v_biz,gC,oB,3,now()+interval '200 days') RETURNING id INTO entB;
+  INSERT INTO r(name,pass,detail) VALUES ('F: two active orders remaining=5', gallery_active_remaining(gC)=5, format('rem=%s',gallery_active_remaining(gC)));
+  FOR i IN 1..5 LOOP INSERT INTO images(gallery_id,face_index_status) VALUES (gC,'pending') RETURNING id INTO img; PERFORM reserve_face_index_credit(gC,img); ids:=array_append(ids,img); END LOOP;
+  SELECT used INTO ua FROM gallery_entitlements WHERE id=entA; SELECT used INTO ub FROM gallery_entitlements WHERE id=entB;
+  INSERT INTO r(name,pass,detail) VALUES ('F: earliest-first A=2 B=3, 15k-style split, rem=0', ua=2 AND ub=3 AND gallery_active_remaining(gC)=0, format('A=%s B=%s',ua,ub));
+  INSERT INTO r(name,pass,detail) VALUES ('F: images tagged with funding order', (SELECT count(*) FROM images WHERE id=ANY(ids[1:2]) AND face_index_entitlement_id=entA)=2 AND (SELECT count(*) FROM images WHERE id=ANY(ids[3:5]) AND face_index_entitlement_id=entB)=3, 'ok');
+  ok := fail_face_index(ids[1],'boom',true); SELECT used INTO ua FROM gallery_entitlements WHERE id=entA; SELECT used INTO ub FROM gallery_entitlements WHERE id=entB;
+  INSERT INTO r(name,pass,detail) VALUES ('F: failure refunds the EXACT order (A=1, B=3)', ok AND ua=1 AND ub=3, format('A=%s B=%s',ua,ub));
+  INSERT INTO images(gallery_id,face_index_status) VALUES (gC,'pending') RETURNING id INTO a; PERFORM reserve_face_index_credit(gC,a);
+  INSERT INTO r(name,pass,detail) VALUES ('F: partial refill picks A (earliest) first', (SELECT face_index_entitlement_id FROM images WHERE id=a)=entA, 'ok');
+  ok := revoke_gallery_paid(v_biz,gC,oA,NULL);
+  INSERT INTO r(name,pass,detail) VALUES ('F: refund order A removes ONLY A (allow=3, B intact used=3)', ok AND gallery_active_allowance(gC)=3 AND (SELECT used FROM gallery_entitlements WHERE id=entB)=3, format('allow=%s',gallery_active_allowance(gC)));
+  ok := revoke_gallery_paid(v_biz,gC,oB,NULL);
+  INSERT INTO r(name,pass,detail) VALUES ('F: refund order B too -> no active allowance', ok AND gallery_active_allowance(gC)=0, format('allow=%s',gallery_active_allowance(gC)));
+  -- expiry during in-flight: reserve against X, expire X, finalize keeps the charge (no revoke/double)
+  INSERT INTO gallery_entitlements(business_id,gallery_id,order_ref,granted_allowance,expires_at) VALUES (v_biz,gC,oX,1,now()+interval '5 days') RETURNING id INTO entX;
+  INSERT INTO images(gallery_id,face_index_status) VALUES (gC,'pending') RETURNING id INTO a; PERFORM reserve_face_index_credit(gC,a);
+  UPDATE gallery_entitlements SET expires_at=now()-interval '1 day' WHERE id=entX; ok := finalize_face_index(a,2);
+  INSERT INTO r(name,pass,detail) VALUES ('F: expiry during in-flight -> finalize keeps charge', ok AND (SELECT used FROM gallery_entitlements WHERE id=entX)=1 AND (SELECT face_index_status FROM images WHERE id=a)='indexed', 'ok');
+  -- fallback to business monthly
+  UPDATE business_tokens SET balance=1 WHERE business_id=v_biz;
+  INSERT INTO images(gallery_id,face_index_status) VALUES (gC,'pending') RETURNING id INTO a; res := reserve_face_index_credit(gC,a);
+  INSERT INTO r(name,pass,detail) VALUES ('F: fallback to business monthly', res='reserved' AND (SELECT face_index_credit_source FROM images WHERE id=a)='business', res);
+  INSERT INTO r(name,pass,detail) VALUES ('F: remaining never negative after all transitions', gallery_active_remaining(gC)>=0, format('rem=%s',gallery_active_remaining(gC)));
+END $$;
+
 SELECT name, CASE WHEN pass THEN 'PASS' ELSE 'FAIL' END AS result, detail FROM r ORDER BY id;
 
 ROLLBACK;

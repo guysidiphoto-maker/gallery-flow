@@ -63,6 +63,7 @@ ALTER TABLE galleries
 
 ALTER TABLE images
   ADD COLUMN IF NOT EXISTS face_index_credit_source TEXT,                          -- which pool the reserved credit came from
+  ADD COLUMN IF NOT EXISTS face_index_entitlement_id UUID,                          -- which gallery_entitlements order funded it (Section F)
   ADD COLUMN IF NOT EXISTS counted_gallery_storage  BOOLEAN NOT NULL DEFAULT false; -- did this upload count against the gallery storage pool?
 
 DO $$ BEGIN
@@ -85,6 +86,7 @@ CREATE TABLE IF NOT EXISTS gallery_entitlements (
   gallery_id            UUID NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
   order_ref             UUID NOT NULL UNIQUE,                 -- stable LemonSqueezy order id -> idempotency
   granted_allowance     INT NOT NULL DEFAULT 10000,           -- face-rec photos this order grants
+  used                  INT NOT NULL DEFAULT 0 CHECK (used >= 0 AND used <= granted_allowance), -- credits consumed FROM THIS order (Section F)
   granted_storage_bytes BIGINT NOT NULL DEFAULT 80530636800,  -- 75 GB this order grants
   purchased_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at            TIMESTAMPTZ NOT NULL,
@@ -92,7 +94,10 @@ CREATE TABLE IF NOT EXISTS gallery_entitlements (
   refunded_at           TIMESTAMPTZ,
   metadata              JSONB
 );
+-- Older runs may predate `used`; add it defensively.
+ALTER TABLE gallery_entitlements ADD COLUMN IF NOT EXISTS used INT NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_gallery_entitlements_gallery ON gallery_entitlements (gallery_id, status);
+CREATE INDEX IF NOT EXISTS idx_gallery_entitlements_alloc ON gallery_entitlements (gallery_id, status, expires_at) WHERE status='active';
 -- Financial table: deny ALL direct client access. RLS with no policies denies
 -- anon/authenticated via PostgREST; the SECURITY DEFINER functions (owned by
 -- postgres, which has BYPASSRLS) read/write it. Only the webhook (service_role)
@@ -109,6 +114,18 @@ $$;
 CREATE OR REPLACE FUNCTION public.gallery_active_storage_limit(p_gallery_id uuid)
 RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $$
   SELECT COALESCE(SUM(granted_storage_bytes),0)::bigint FROM gallery_entitlements
+   WHERE gallery_id = p_gallery_id AND status='active' AND expires_at > now();
+$$;
+-- Remaining face-rec credits across ACTIVE, non-expired orders = SUM(granted-used).
+-- Section F source of truth for "gallery allowance remaining" (NOT gallery_credit_used).
+CREATE OR REPLACE FUNCTION public.gallery_active_remaining(p_gallery_id uuid)
+RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $$
+  SELECT COALESCE(SUM(GREATEST(granted_allowance - used, 0)),0)::int FROM gallery_entitlements
+   WHERE gallery_id = p_gallery_id AND status='active' AND expires_at > now();
+$$;
+CREATE OR REPLACE FUNCTION public.gallery_active_used(p_gallery_id uuid)
+RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $$
+  SELECT COALESCE(SUM(used),0)::int FROM gallery_entitlements
    WHERE gallery_id = p_gallery_id AND status='active' AND expires_at > now();
 $$;
 
@@ -355,7 +372,7 @@ END $function$;
 CREATE OR REPLACE FUNCTION public.reserve_face_index_credit(p_gallery_id uuid, p_image_id uuid)
 RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
 DECLARE
-  v_biz UUID; v_claimed UUID; v_bal INTEGER; v_used INTEGER;
+  v_biz UUID; v_claimed UUID; v_bal INTEGER; v_cand UUID; v_ent UUID;
 BEGIN
   SELECT business_id INTO v_biz FROM galleries WHERE id=p_gallery_id;
   IF v_biz IS NULL THEN RETURN 'gallery_not_found'; END IF;
@@ -366,21 +383,31 @@ BEGIN
     RETURNING id INTO v_claimed;
   IF v_claimed IS NULL THEN RETURN 'not_claimable'; END IF;
 
-  -- 1) Gallery entitlement FIRST. The atomic guard compares gallery_credit_used
-  --    against the LIVE active allowance (SUM over active, non-expired,
-  --    non-refunded orders) evaluated INSIDE the row-locked UPDATE, so it never
-  --    overshoots and stays correct as orders refund/expire. A NULL result means
-  --    no active entitlement OR it's exhausted -> fall through to business.
-  UPDATE galleries SET gallery_credit_used = gallery_credit_used + 1
-    WHERE id=p_gallery_id
-      AND gallery_credit_used < (
-        SELECT COALESCE(SUM(granted_allowance),0) FROM gallery_entitlements
-         WHERE gallery_id=p_gallery_id AND status='active' AND expires_at > now())
-    RETURNING gallery_credit_used INTO v_used;
-  IF v_used IS NOT NULL THEN
-    UPDATE images SET face_index_credit_source='gallery' WHERE id=p_image_id;
+  -- 1) Gallery entitlement FIRST — allocated to a SPECIFIC order (Section F).
+  --    Pick the EARLIEST-EXPIRING active order with remaining capacity and
+  --    atomically bump its own `used` under the per-row guard `used<granted`.
+  --    The loop re-picks if a concurrent worker exhausted the chosen row between
+  --    SELECT and UPDATE, so: no entitlement ever overspends, allocation is
+  --    deterministic (earliest-expiring first), and the credit is bound to that
+  --    exact order for correct per-order refund. gallery_credit_used is kept only
+  --    as a derived cache (NOT the source of truth).
+  LOOP
+    SELECT id INTO v_cand FROM gallery_entitlements
+      WHERE gallery_id=p_gallery_id AND status='active' AND expires_at > now() AND used < granted_allowance
+      ORDER BY expires_at ASC, id ASC LIMIT 1;
+    EXIT WHEN v_cand IS NULL;                 -- no active order with capacity
+    UPDATE gallery_entitlements SET used = used + 1
+      WHERE id = v_cand AND used < granted_allowance
+      RETURNING id INTO v_ent;
+    EXIT WHEN v_ent IS NOT NULL;              -- claimed a credit from this order
+    -- else: raced to exhaustion by a concurrent worker; loop re-picks the next.
+  END LOOP;
+
+  IF v_ent IS NOT NULL THEN
+    UPDATE images SET face_index_credit_source='gallery', face_index_entitlement_id=v_ent WHERE id=p_image_id;
+    UPDATE galleries SET gallery_credit_used = COALESCE(gallery_credit_used,0) + 1 WHERE id=p_gallery_id;  -- derived cache
     INSERT INTO token_ledger(business_id,delta,reason,ref_id,metadata)
-      VALUES (v_biz,0,'face_index',p_image_id, jsonb_build_object('gallery_id',p_gallery_id,'source','gallery'));
+      VALUES (v_biz,0,'face_index',p_image_id, jsonb_build_object('gallery_id',p_gallery_id,'source','gallery','entitlement_id',v_ent));
     RETURN 'reserved';
   END IF;
 
@@ -388,10 +415,10 @@ BEGIN
   UPDATE business_tokens SET balance=balance-1, lifetime_consumed=lifetime_consumed+1, updated_at=now()
     WHERE business_id=v_biz AND balance>0 RETURNING balance INTO v_bal;
   IF v_bal IS NULL THEN
-    UPDATE images SET face_index_status='skipped_no_allowance', face_index_credit_source=NULL WHERE id=p_image_id;
+    UPDATE images SET face_index_status='skipped_no_allowance', face_index_credit_source=NULL, face_index_entitlement_id=NULL WHERE id=p_image_id;
     RETURN 'no_allowance';
   END IF;
-  UPDATE images SET face_index_credit_source='business' WHERE id=p_image_id;
+  UPDATE images SET face_index_credit_source='business', face_index_entitlement_id=NULL WHERE id=p_image_id;
   INSERT INTO token_ledger(business_id,delta,reason,ref_id,metadata)
     VALUES (v_biz,-1,'face_index',p_image_id, jsonb_build_object('gallery_id',p_gallery_id,'source','business'));
   RETURN 'reserved';
@@ -415,7 +442,7 @@ END $function$;
 -- can never clobber a finalize that actually landed.
 CREATE OR REPLACE FUNCTION public.fail_face_index(p_image_id uuid, p_error text, p_terminal boolean)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
-DECLARE v_gallery UUID; v_biz UUID; v_source TEXT;
+DECLARE v_gallery UUID; v_biz UUID; v_source TEXT; v_ent UUID;
 BEGIN
   -- ATOMIC claim + transition. The guarded UPDATE flips the row out of
   -- 'processing' and returns the credit source that was on it. Row-locking +
@@ -431,18 +458,22 @@ BEGIN
                                     ELSE COALESCE(face_index_attempts,0) + 1 END,
          face_index_error = left(p_error,500)
    WHERE id = p_image_id AND face_index_status = 'processing'
-   RETURNING gallery_id, face_index_credit_source INTO v_gallery, v_source;
+   RETURNING gallery_id, face_index_credit_source, face_index_entitlement_id INTO v_gallery, v_source, v_ent;
   IF v_gallery IS NULL THEN RETURN false; END IF;  -- lost the race / not processing
 
   SELECT business_id INTO v_biz FROM galleries WHERE id=v_gallery;
 
-  -- Refund to the EXACT pool the credit came from. An unknown / NULL source
-  -- must never mint or refund a balance (defensive: a processing row should
-  -- always carry a source, but we never fabricate one).
+  -- Refund to the EXACT pool/order the credit came from. Section F: a gallery
+  -- credit is refunded to the SPECIFIC entitlement that funded it (decrement its
+  -- own `used`) — even if that order has since expired/refunded, because the
+  -- failed image never really consumed it. An unknown / NULL source mints nothing.
   IF v_source = 'gallery' THEN
-    UPDATE galleries SET gallery_credit_used = GREATEST(0, gallery_credit_used - 1) WHERE id=v_gallery;
+    IF v_ent IS NOT NULL THEN
+      UPDATE gallery_entitlements SET used = GREATEST(0, used - 1) WHERE id = v_ent;
+    END IF;
+    UPDATE galleries SET gallery_credit_used = GREATEST(0, gallery_credit_used - 1) WHERE id=v_gallery;  -- derived cache
     INSERT INTO token_ledger(business_id,delta,reason,ref_id,metadata)
-      VALUES (v_biz,0,'face_index_refund',p_image_id, jsonb_build_object('gallery_id',v_gallery,'source','gallery','error',left(p_error,200)));
+      VALUES (v_biz,0,'face_index_refund',p_image_id, jsonb_build_object('gallery_id',v_gallery,'source','gallery','entitlement_id',v_ent,'error',left(p_error,200)));
   ELSIF v_source = 'business' THEN
     UPDATE business_tokens SET balance=balance+1, lifetime_consumed=GREATEST(0,lifetime_consumed-1), updated_at=now()
       WHERE business_id=v_biz;
@@ -454,9 +485,10 @@ BEGIN
       VALUES (v_biz,0,'face_index_refund',p_image_id, jsonb_build_object('gallery_id',v_gallery,'source','unknown','note','no refund: unknown source','error',left(p_error,200)));
   END IF;
 
-  -- Clear the source now that the row is out of 'processing' (safe: no other
-  -- caller can claim it). A 'pending' retry re-decides its pool on next reserve.
-  UPDATE images SET face_index_credit_source=NULL WHERE id=p_image_id;
+  -- Clear the source + entitlement id now that the row is out of 'processing'
+  -- (safe: no other caller can claim it). A 'pending' retry re-decides its pool
+  -- and re-allocates to a specific order on the next reserve.
+  UPDATE images SET face_index_credit_source=NULL, face_index_entitlement_id=NULL WHERE id=p_image_id;
   RETURN true;
 END $function$;
 
@@ -469,8 +501,8 @@ DECLARE
   v_expires TIMESTAMPTZ; v_gallery_allow INTEGER; v_gallery_used INTEGER;
   v_active BOOLEAN; v_gallery_remaining INTEGER; v_effective INTEGER;
 BEGIN
-  SELECT g.business_id, b.user_id, g.gallery_credit_used
-    INTO v_biz, v_owner, v_gallery_used
+  SELECT g.business_id, b.user_id
+    INTO v_biz, v_owner
     FROM galleries g JOIN businesses b ON b.id=g.business_id WHERE g.id=p_gallery_id;
   IF v_biz IS NULL THEN RETURN NULL; END IF;
 
@@ -484,8 +516,11 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  -- LIVE active entitlement (SUM over active, non-expired, non-refunded orders).
-  v_gallery_allow := public.gallery_active_allowance(p_gallery_id);
+  -- Section F: gallery figures are derived from ORDER-SPECIFIC usage
+  -- (SUM over active, non-expired orders), NOT galleries.gallery_credit_used.
+  v_gallery_allow     := public.gallery_active_allowance(p_gallery_id);   -- SUM(granted)
+  v_gallery_used      := public.gallery_active_used(p_gallery_id);        -- SUM(used)
+  v_gallery_remaining := public.gallery_active_remaining(p_gallery_id);   -- SUM(GREATEST(granted-used,0))
   SELECT MAX(expires_at) INTO v_expires FROM gallery_entitlements
    WHERE gallery_id=p_gallery_id AND status='active' AND expires_at > now();
   v_active := v_gallery_allow > 0;
@@ -498,7 +533,6 @@ BEGIN
          count(*) FILTER (WHERE face_index_status='failed') AS failed
     INTO r FROM images WHERE gallery_id=p_gallery_id;
 
-  v_gallery_remaining := GREATEST(COALESCE(v_gallery_allow,0) - COALESCE(v_gallery_used,0), 0);
   -- Effective allowance = gallery entitlement (consumed first) + business monthly.
   v_effective := v_gallery_remaining + COALESCE(v_bal,0);
 
@@ -692,6 +726,8 @@ BEGIN
     'revoke_gallery_paid(uuid, uuid, uuid, jsonb)',
     'gallery_active_allowance(uuid)',
     'gallery_active_storage_limit(uuid)',
+    'gallery_active_remaining(uuid)',
+    'gallery_active_used(uuid)',
     'recompute_gallery_entitlement_cache(uuid)',
     'check_gallery_face_index_complete()',
     'trg_image_storage_dec()',

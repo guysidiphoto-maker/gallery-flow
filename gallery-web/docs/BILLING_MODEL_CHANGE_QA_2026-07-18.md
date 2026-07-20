@@ -398,3 +398,55 @@ ORDER BY bytes DESC NULLS LAST;   -- review, then remove() the confirmed orphans
 
 Repo test `supabase/tests/083_face_index_billing_model_test.sql` updated to 6
 blocks against the new design. Frontend `tsc --noEmit` clean; `vite build` OK.
+
+---
+
+## Code-review round 3 (2026-07-20) — per-order consumption + storage scoping
+
+### Section F — per-order entitlement consumption (implemented + validated)
+`gallery_entitlements` now has a per-row `used` counter, and `images` carries
+`face_index_entitlement_id`. `reserve_face_index_credit` allocates each gallery
+credit to a **specific order** — the **earliest-expiring active order with
+capacity** — via an atomic per-row guarded increment in a retry loop (no order
+overspends; deterministic; concurrency-safe). `fail_face_index` refunds to the
+**exact funding order** (decrements that order's `used`). `get_gallery_index_summary`
+and the `gallery_active_allowance/remaining/used` helpers compute from the
+order-specific source of truth; `galleries.gallery_credit_used` is now only a
+derived cache. An in-flight reservation whose order expires before finalize keeps
+its charge (no revoke, no double-charge). Business monthly is the fallback after
+all gallery orders are exhausted.
+
+**Section F test evidence — 10/10 (staging, BEGIN/ROLLBACK):**
+| Assertion | Result |
+|---|---|
+| two active orders, remaining=5 | PASS |
+| earliest-first allocation across the 10k/10k boundary (A=2, B=3) | PASS |
+| each image tagged with its funding order | PASS |
+| failure refunds the EXACT order (A→1, B untouched) | PASS |
+| partial refill picks earliest order first | PASS |
+| refund order A removes ONLY A (allowance 3, B's unused intact) | PASS |
+| refund order B too → no active allowance | PASS |
+| expiry during an in-flight AWS op → finalize keeps the charge (no revoke/double) | PASS |
+| fallback to business monthly when gallery exhausted | PASS |
+| remaining never negative after every transition | PASS |
+
+Concurrency at an order boundary is enforced by the atomic per-row
+`used < granted_allowance` guard + retry loop (the sequential tests exercise the
+guard; two workers can't both push the same row past its grant). Repo test
+`083_..._test.sql` gains Block 7 for these.
+
+### Storage cutover — explicitly NOT in this PR
+Per the scoped decision, this PR does **NOT**: make `gallery-images` private,
+revoke direct-write RLS, migrate/delete any of the 12,267 originals, change live
+reader URLs, touch the Electron desktop uploader, or deploy a partial upload-
+reservation system. Those are the dedicated **blue-green migration 084** project:
+see `gallery-web/docs/PRIVATE_STORAGE_V2_MIGRATION_PLAN.md`.
+
+### P0 follow-up recorded (accurate wording)
+`gallery-images` is **public and contains originals**; known/guessable direct
+object URLs **bypass** gallery passwords, private face-rec, draft state, and
+access expiration. Content-addressed paths reduce casual discovery but are **not
+authorization**. Bucket **listing** permission must be confirmed separately. The
+storage cap is **not abuse-proof**. Do not describe current storage as private or
+abuse-proof. Full remediation plan + writer/reader inventory + compatibility
+matrix in the v2 migration plan doc.

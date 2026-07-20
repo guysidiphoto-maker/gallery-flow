@@ -461,3 +461,26 @@ FROM galleries g
 WHERE g.gallery_credit_used > (SELECT COALESCE(SUM(granted_allowance),0) FROM gallery_entitlements e
          WHERE e.gallery_id=g.id AND e.status='active' AND e.expires_at>now());  -- expect 0 rows (informational; remaining is clamped ≥0)
 ```
+
+---
+
+## 13. Round-3 addenda (2026-07-20) — per-order consumption; storage cutover deferred
+
+- **Section F is now in 083:** `gallery_entitlements.used` per order +
+  `images.face_index_entitlement_id`. Credit is allocated to a specific order
+  (earliest-expiring first) and refunded to that exact order. Post-deploy checks:
+```sql
+-- No order may overspend its grant (expect 0 rows)
+SELECT id, order_ref, used, granted_allowance FROM gallery_entitlements WHERE used > granted_allowance;
+-- Gallery remaining (order-specific source of truth), for a gallery:
+SELECT gallery_active_allowance(g), gallery_active_used(g), gallery_active_remaining(g)
+FROM (SELECT '<gallery_uuid>'::uuid g) t;
+-- After a refund: only the refunded order's row is status='refunded'; others keep their used/remaining.
+```
+- **Storage cutover is NOT part of 082/083.** `gallery-images` stays public;
+  direct-write RLS is unchanged; no objects migrated. The private-storage move is
+  the separate **migration 084** blue-green project — do not conflate it with this
+  deploy. See `gallery-web/docs/PRIVATE_STORAGE_V2_MIGRATION_PLAN.md`.
+- **P0 exposure** (public bucket holds originals; direct URLs bypass app access
+  controls; cap not abuse-proof; confirm bucket LIST permission) is tracked in the
+  plan doc — schedule 084 before adversarial exposure.

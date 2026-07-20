@@ -91,6 +91,8 @@ DROP FUNCTION IF EXISTS public.revoke_gallery_paid(uuid, uuid, uuid, jsonb);
 --     above no longer references them).
 DROP FUNCTION IF EXISTS public.gallery_active_allowance(uuid);
 DROP FUNCTION IF EXISTS public.gallery_active_storage_limit(uuid);
+DROP FUNCTION IF EXISTS public.gallery_active_remaining(uuid);
+DROP FUNCTION IF EXISTS public.gallery_active_used(uuid);
 DROP FUNCTION IF EXISTS public.recompute_gallery_entitlement_cache(uuid);
 -- gallery_entitlements table is LEFT IN PLACE (financial audit trail; dropping it
 -- loses order history). Uncomment to remove entirely:
