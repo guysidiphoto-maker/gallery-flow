@@ -428,3 +428,36 @@ SELECT has_function_privilege('anon','public.reserve_face_index_credit(uuid,uuid
 > Reminder: this runbook does not merge, deploy, apply migrations, restore
 > credits, or switch LemonSqueezy to Live. Each of those is an explicit,
 > approval-gated human action above.
+
+---
+
+## 12. Round-2 review addenda (2026-07-20)
+
+- **Order-entitlement ledger.** 083 adds `gallery_entitlements` (one row per
+  LemonSqueezy order). One-time gallery allowance/storage/expiry are derived live
+  from active rows. Verify after a Test-mode purchase: a row exists with
+  `status='active'`; a **second distinct** order adds a second row (allowance
+  stacks, +12mo); a refund of the matching order sets only that row `refunded`;
+  an older/unrelated refund is a no-op.
+- **New `record_image_upload` rejections** to watch in logs / QA:
+  `invalid_object_path` (path not `<slug>/<gallery>/originals/…`),
+  `original_object_size_missing`, `size_mismatch`, `storage_limit_exceeded`.
+  On any of these the browser now deletes the just-uploaded original (orphan
+  cleanup); cleanup failures appear in Sentry as `orphan_upload_cleanup_failed`.
+- **⚠️ Storage cap is not abuse-proof** against a malicious authenticated client
+  (direct bucket writes bypass the counter). See the QA doc "Storage-cap abuse
+  limitation + two-phase proposal". Do not advertise the cap as abuse-proof;
+  schedule the two-phase reservation follow-up before adversarial exposure.
+- **Orphan reconciliation** (run periodically): the query in the QA doc lists
+  `gallery-images/**/originals/*` objects with no matching `images` row; review
+  then `storage.remove()` confirmed orphans.
+- **Monitoring — order ledger integrity:**
+```sql
+-- gallery_credit_used must never exceed the live active allowance
+SELECT g.id, g.gallery_credit_used,
+       (SELECT COALESCE(SUM(granted_allowance),0) FROM gallery_entitlements e
+         WHERE e.gallery_id=g.id AND e.status='active' AND e.expires_at>now()) AS active_allow
+FROM galleries g
+WHERE g.gallery_credit_used > (SELECT COALESCE(SUM(granted_allowance),0) FROM gallery_entitlements e
+         WHERE e.gallery_id=g.id AND e.status='active' AND e.expires_at>now());  -- expect 0 rows (informational; remaining is clamped ≥0)
+```

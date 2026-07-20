@@ -4,18 +4,20 @@
 //   1) Resize to a web preview (~1600px max side, jpeg 82%) via canvas
 //   2) Resize to a thumbnail (~360px max side, jpeg 75%) via canvas
 //   3) Upload thumbnail + web preview + the original to gallery-images
-//   4) Call record_image_upload() — atomic: token consumed + images row
+//   4) Call record_image_upload() — FREE (no per-photo charge). It derives the
+//      authoritative byte size from the just-uploaded storage object, enforces
+//      the plan/gallery storage cap atomically, and inserts the images row.
 //
 // Path scheme matches the desktop pipeline:
 //   {slug}/{galleryId}/{thumbs|web|originals}/{hash8}_{filename}
 //
-// Token consumption is enforced server-side inside record_image_upload(); a
-// failure there ('insufficient_tokens') aborts the storage cleanup the same
-// way a network error would (we leave the orphaned objects for the next
-// upload retry — the path is filename-deterministic so the same key gets
-// overwritten on retry, no garbage accrues).
+// Billing: uploads no longer consume tokens. record_image_upload can still fail
+// (e.g. 'storage_limit_exceeded' / 'size_mismatch' / 'invalid_object_path'). On
+// failure we DELETE the just-uploaded original so it can't linger as orphaned,
+// billable Storage (see uploadOneImage); cleanup failures go to Sentry.
 
 import { supabase } from '../supabase'
+import { captureException } from '@sentry/react'
 
 const BUCKET = 'gallery-images'
 // Phase 4.2: thumbs are dual-written here (public bucket) for crawlers / OG /
@@ -240,7 +242,21 @@ export async function uploadOneImage(file: File, opts: UploadOptions): Promise<U
     p_sort_order:            sortOrder ?? 0,
     p_public_thumb_present:  false,
   })
-  if (error) throw error
+  if (error) {
+    // record_image_upload failed AFTER the original landed in Storage. Delete
+    // the just-uploaded object so a rejected upload (storage cap, size mismatch,
+    // invalid path, auth) can't leave real billable bytes behind. Report cleanup
+    // failures to Sentry (PII-safe: path + error messages only); never mask the
+    // original error — always rethrow it.
+    const { error: rmErr } = await supabase.storage.from(BUCKET).remove([origPath])
+    if (rmErr) {
+      captureException(new Error('orphan_upload_cleanup_failed'), {
+        tags: { area: 'upload' },
+        extra: { path: origPath, record_error: error.message, remove_error: rmErr.message },
+      })
+    }
+    throw error
+  }
   const imageId = String(data)
 
   onProgress?.({ phase: 'done' })

@@ -316,3 +316,85 @@ HAVING g.storage_used_bytes <> COALESCE(SUM(COALESCE(i.original_size_bytes,0)),0
 $19/$39, wrong photo counts, and an "אחסון ללא הגבלה" / unlimited-storage claim).
 That whole block predates pricing-v2 and is unrelated marketing (the original
 change scope excludes marketing pages); flagged here for a separate cleanup.
+
+---
+
+## Code-review hardening — round 2 (2026-07-20)
+
+### Fixes
+1. **Authoritative size persisted.** `record_image_upload` now writes the
+   server-derived `v_size` (not `p_original_size`) into `original_size_bytes`,
+   so delete-accounting + reconciliation use the trusted value. A present object
+   whose `metadata->>'size'` is missing is **rejected** (`original_object_size_missing`)
+   — never a silent client fallback.
+2. **Object ownership + path binding.** The path must be
+   `<business_slug>/<gallery_id>/originals/<file>` and bind to the requested
+   gallery + business (`storage.foldername[2]=gallery_id`, `[1]=slug`,
+   `[3]='originals'`), else `invalid_object_path`. Prevents attaching another
+   gallery's/business's object. The storage RLS `gallery_storage_owner_write`
+   also enforces `foldername[2]=owned gallery` at write time.
+3. **Orphaned uploads.** `uploadPipeline` deletes the just-uploaded original if
+   `record_image_upload` fails (storage cap / size mismatch / invalid path /
+   auth), so a rejected upload leaves no billable bytes; cleanup failures →
+   Sentry (`orphan_upload_cleanup_failed`, path + messages only). Stale
+   "token consumed" comments removed. **Bucket audit + abuse limitation below.**
+4. **Order-specific entitlement ledger.** New `gallery_entitlements` table (one
+   row per LemonSqueezy `order_ref`; `granted_allowance`, `granted_storage_bytes`,
+   `purchased_at`, `expires_at`, `status ∈ {active,refunded,reversed}`,
+   `refunded_at`, `metadata`; UNIQUE(order_ref); RLS-denied to clients). Active
+   gallery allowance / storage / expiry are computed **LIVE** from active,
+   non-expired, non-refunded rows; the `galleries.*` columns are a cache. This
+   makes multi-order, per-order refund, and per-order expiration correct.
+5. **Copy.** Face-rec toggle desc → "האינדוקס משתמש במכסת תמונות זיהוי הפנים שלך"
+   (no "tokens"). Repo-wide sweep: no customer-facing token/tokens/טוקן remains.
+6. **LandingPage (`/en`).** Updated to Solo $39 / Pro $75 / Studio $120 with
+   2,000 / 10,000 / 30,000 face-rec photos and 75 GB / 400 GB / 1.5 TB; removed
+   the "unlimited storage" claim and the (non-offered) annual discount; FAQ free
+   tier corrected to 100 face-rec photos/mo + no per-photo charge.
+
+### ⚠️ Storage-cap abuse limitation + two-phase proposal (item 3)
+**The storage cap is NOT abuse-proof against a malicious authenticated client.**
+Bucket `gallery-images` is public-read, 100 MB/file, `image/*`. The write policy
+`gallery_storage_owner_write` (ALL, authenticated) lets an owner upload objects
+to `foldername[2]=<their gallery>` **directly**, bypassing `record_image_upload`.
+Such objects are not counted in `business_storage`, so a malicious owner can
+exceed their plan storage (bounded only by 100 MB × `image/*` on their own
+galleries). `record_image_upload`'s atomic cap only governs the honest client
+path. **Do not claim the cap is abuse-proof.**
+
+**Smallest safe two-phase design (proposed, not implemented):**
+1. Tighten storage RLS so authenticated users **cannot** directly `INSERT` into
+   `gallery-images` (remove the broad ALL write policy).
+2. Add a `reserve-upload` edge function (service_role) that, per file: atomically
+   reserves N bytes in `business_storage` (guarded `used+N<=limit`), then returns
+   a short-lived **signed upload URL** scoped to the exact `slug/gallery/originals`
+   path. Upload goes only through that URL.
+3. `finalize` (record_image_upload) confirms the object + reconciles the reserved
+   bytes with the real object size (release the diff / reject + delete on abuse).
+This moves the quota gate BEFORE bytes land, so a client cannot write un-metered
+objects. Effort: one edge function + an RLS change + a small reservation table
+(or reuse `business_storage` with a pending column). Tracked as a follow-up.
+
+### Orphan-reconciliation query (run periodically / post-deploy)
+```sql
+-- Storage objects under gallery-images/originals with NO matching images row
+-- (client crash between upload and record, or a bypassed direct upload).
+SELECT o.name, (o.metadata->>'size')::bigint AS bytes
+FROM storage.objects o
+LEFT JOIN images i ON i.original_path = o.name
+WHERE o.bucket_id='gallery-images'
+  AND (storage.foldername(o.name))[3]='originals'
+  AND i.id IS NULL
+ORDER BY bytes DESC NULLS LAST;   -- review, then remove() the confirmed orphans
+```
+
+### Round-2 test evidence (staging, BEGIN/ROLLBACK)
+| Group | Result |
+|---|---|
+| item 1 — NULL client size→server persisted; small diff→server size; missing size-metadata rejected; delete subtracts exact server size; reconciliation zero | PASS (5/5) |
+| item 2 — path binding rejects wrong gallery / wrong slug / 2-seg structure | PASS (3/3) |
+| item 4 — order1→10000; order2 distinct→20000 (2 rows); retry idempotent; refund order1 removes only its 10000 (still paid); duplicate/older refund no-op; order2 expiry independent→0, remaining≥0; reserve→no_allowance when all inactive | PASS (7/7) |
+| Blocks 1+2 re-run on the order-ledger design + valid paths + completion trigger | PASS (12/12) |
+
+Repo test `supabase/tests/083_face_index_billing_model_test.sql` updated to 6
+blocks against the new design. Frontend `tsc --noEmit` clean; `vite build` OK.

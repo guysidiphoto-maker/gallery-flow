@@ -87,6 +87,15 @@ BEGIN
 END $$;
 DROP FUNCTION IF EXISTS public.revoke_gallery_paid(uuid, uuid, uuid, jsonb);
 
+-- 4a. Drop the order-entitlement ledger helpers (the restored mark_gallery_paid
+--     above no longer references them).
+DROP FUNCTION IF EXISTS public.gallery_active_allowance(uuid);
+DROP FUNCTION IF EXISTS public.gallery_active_storage_limit(uuid);
+DROP FUNCTION IF EXISTS public.recompute_gallery_entitlement_cache(uuid);
+-- gallery_entitlements table is LEFT IN PLACE (financial audit trail; dropping it
+-- loses order history). Uncomment to remove entirely:
+-- DROP TABLE IF EXISTS public.gallery_entitlements;
+
 -- 4b. Remove the gallery-delete storage trigger added by 083 (the per-image
 --     images_storage_dec trigger + restored record_image_upload are enough for
 --     the pre-083 model).

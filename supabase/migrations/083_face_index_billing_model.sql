@@ -70,6 +70,66 @@ DO $$ BEGIN
     CHECK (face_index_credit_source IS NULL OR face_index_credit_source IN ('gallery','business'));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- ─── 1c. Order-specific entitlement ledger (financially-correct multi-order) ─
+-- Each paid $150 order is one row keyed by the stable LemonSqueezy order ref.
+-- The gallery's active face-rec allowance / storage limit / expiry are DERIVED
+-- LIVE from active, non-expired, non-refunded rows here (never a stacked single
+-- number on galleries). This makes multi-order, per-order refund, and per-order
+-- expiration all correct: refunding/expiring one order affects only that order.
+-- galleries.{face_index_allowance,storage_limit_bytes,one_time_paid,
+-- paid_expires_at} are a cache recomputed from this table for the paywall +
+-- observability; the credit paths compute LIVE so expiry needs no event.
+CREATE TABLE IF NOT EXISTS gallery_entitlements (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id           UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  gallery_id            UUID NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
+  order_ref             UUID NOT NULL UNIQUE,                 -- stable LemonSqueezy order id -> idempotency
+  granted_allowance     INT NOT NULL DEFAULT 10000,           -- face-rec photos this order grants
+  granted_storage_bytes BIGINT NOT NULL DEFAULT 80530636800,  -- 75 GB this order grants
+  purchased_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at            TIMESTAMPTZ NOT NULL,
+  status                TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','refunded','reversed')),
+  refunded_at           TIMESTAMPTZ,
+  metadata              JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_gallery_entitlements_gallery ON gallery_entitlements (gallery_id, status);
+-- Financial table: deny ALL direct client access. RLS with no policies denies
+-- anon/authenticated via PostgREST; the SECURITY DEFINER functions (owned by
+-- postgres, which has BYPASSRLS) read/write it. Only the webhook (service_role)
+-- and the credit paths ever touch it.
+ALTER TABLE gallery_entitlements ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON gallery_entitlements FROM PUBLIC, anon, authenticated;
+
+-- Live active aggregates (STABLE; used by reserve/summary/upload + the cache).
+CREATE OR REPLACE FUNCTION public.gallery_active_allowance(p_gallery_id uuid)
+RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $$
+  SELECT COALESCE(SUM(granted_allowance),0)::int FROM gallery_entitlements
+   WHERE gallery_id = p_gallery_id AND status='active' AND expires_at > now();
+$$;
+CREATE OR REPLACE FUNCTION public.gallery_active_storage_limit(p_gallery_id uuid)
+RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $$
+  SELECT COALESCE(SUM(granted_storage_bytes),0)::bigint FROM gallery_entitlements
+   WHERE gallery_id = p_gallery_id AND status='active' AND expires_at > now();
+$$;
+
+-- Refresh the galleries cache columns from the active entitlement rows. Called
+-- on every order/refund. (Expiry is time-based and handled live by the credit
+-- paths + the paywall's own paid_expires_at>now() check, so no cron is needed.)
+CREATE OR REPLACE FUNCTION public.recompute_gallery_entitlement_cache(p_gallery_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $$
+DECLARE v_alw INT; v_store BIGINT; v_exp TIMESTAMPTZ; v_active BOOLEAN;
+BEGIN
+  SELECT COALESCE(SUM(granted_allowance),0), COALESCE(SUM(granted_storage_bytes),0), MAX(expires_at), count(*) > 0
+    INTO v_alw, v_store, v_exp, v_active
+    FROM gallery_entitlements WHERE gallery_id=p_gallery_id AND status='active' AND expires_at > now();
+  UPDATE galleries SET
+    one_time_paid        = COALESCE(v_active,false),
+    paid_expires_at      = v_exp,
+    face_index_allowance = COALESCE(v_alw,0),
+    storage_limit_bytes  = NULLIF(COALESCE(v_store,0), 0)
+  WHERE id = p_gallery_id;
+END $$;
+
 -- ─── 2. Ledger reasons + gallery 'partial' status ───────────────────────────
 
 ALTER TABLE token_ledger DROP CONSTRAINT IF EXISTS token_ledger_reason_check;
@@ -98,23 +158,29 @@ FROM galleries g LEFT JOIN images i ON i.gallery_id = g.id
 GROUP BY g.business_id
 ON CONFLICT (business_id) DO UPDATE SET used_bytes = EXCLUDED.used_bytes, updated_at = now();
 
--- Item 20: backfill galleries ALREADY one-time-paid (from migration 076) into the
--- entitlement model + their own 75 GB storage pool. The business_storage backfill
--- above counted ALL image bytes (incl. paid galleries'); here we grant the
--- entitlement and MOVE each active-paid gallery's bytes out of the business pool
--- into its gallery pool, flipping counted_gallery_storage. Idempotent (only acts
--- on images not already gallery-counted). Prod currently has 0 such galleries.
+-- Item 20: backfill galleries ALREADY one-time-paid (migration 076) into the
+-- order-entitlement ledger, then move each active-paid gallery's bytes out of the
+-- business pool into its gallery pool. One synthetic entitlement row per paid
+-- gallery keyed by its existing one_time_order_ref (idempotent via UNIQUE).
+-- Then recompute the galleries cache from the ledger. Prod currently has 0 paid.
+-- NOTE: this runs AFTER section 1c (gallery_entitlements) + the cache fn, which
+-- are defined above in the file, so the objects exist by the time this executes.
 DO $$
 DECLARE rec RECORD; v_bytes BIGINT;
 BEGIN
   FOR rec IN
-    SELECT id, business_id FROM galleries
-    WHERE one_time_paid = true AND (paid_expires_at IS NULL OR paid_expires_at > now())
+    SELECT id, business_id, one_time_order_ref, one_time_paid_at, paid_expires_at FROM galleries
+    WHERE one_time_paid = true AND one_time_order_ref IS NOT NULL
+      AND (paid_expires_at IS NULL OR paid_expires_at > now())
   LOOP
-    UPDATE galleries SET
-      face_index_allowance = GREATEST(face_index_allowance, 10000),
-      storage_limit_bytes  = GREATEST(COALESCE(storage_limit_bytes,0), 80530636800)
-    WHERE id = rec.id;
+    INSERT INTO gallery_entitlements(business_id, gallery_id, order_ref, granted_allowance,
+      granted_storage_bytes, purchased_at, expires_at, status, metadata)
+    VALUES (rec.business_id, rec.id, rec.one_time_order_ref, 10000, 80530636800,
+      COALESCE(rec.one_time_paid_at, now()), COALESCE(rec.paid_expires_at, now() + interval '12 months'),
+      'active', jsonb_build_object('backfill', true))
+    ON CONFLICT (order_ref) DO NOTHING;
+
+    PERFORM recompute_gallery_entitlement_cache(rec.id);
 
     SELECT COALESCE(SUM(COALESCE(original_size_bytes,0)),0) INTO v_bytes
       FROM images WHERE gallery_id = rec.id AND NOT COALESCE(counted_gallery_storage,false);
@@ -193,39 +259,52 @@ CREATE OR REPLACE FUNCTION public.record_image_upload(
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
 DECLARE
   v_business_id UUID; v_owner_user UUID; v_image_id UUID; v_section UUID := p_section_id;
-  v_size BIGINT := COALESCE(p_original_size,0); v_limit BIGINT; v_used BIGINT; v_has_sub BOOLEAN;
-  v_one_time_paid BOOLEAN; v_expires TIMESTAMPTZ; v_gallery_limit BIGINT; v_gallery_pool BOOLEAN := false;
-  v_server_size BIGINT;
+  v_size BIGINT := 0; v_limit BIGINT; v_used BIGINT; v_has_sub BOOLEAN;
+  v_gallery_limit BIGINT; v_gallery_pool BOOLEAN := false;
+  v_server_size BIGINT; v_slug TEXT; v_seg TEXT[];
 BEGIN
-  SELECT g.business_id, b.user_id, g.one_time_paid, g.paid_expires_at, g.storage_limit_bytes
-    INTO v_business_id, v_owner_user, v_one_time_paid, v_expires, v_gallery_limit
+  SELECT g.business_id, b.user_id, b.slug
+    INTO v_business_id, v_owner_user, v_slug
     FROM galleries g JOIN businesses b ON b.id=g.business_id WHERE g.id=p_gallery_id;
   IF v_business_id IS NULL THEN RAISE EXCEPTION 'gallery_not_found'; END IF;
   IF v_owner_user IS NULL OR v_owner_user <> auth.uid() THEN RAISE EXCEPTION 'not_authorized'; END IF;
 
-  -- Server-authoritative storage size. The browser uploads the original to the
-  -- 'gallery-images' bucket BEFORE calling this RPC, so the object + its true
-  -- byte size already exist in storage.objects. Never trust the client-supplied
-  -- p_original_size for the counter: derive from storage metadata, reject a
-  -- missing object, and reject a material mismatch (tamper / corruption).
   IF p_original_path IS NOT NULL THEN
+    -- Path binding (item 2): the object path MUST be <slug>/<gallery_id>/originals/<file>
+    -- and bind to THIS gallery + business, so a caller can't attach an arbitrary
+    -- bucket object (another gallery's / another business's) to their gallery.
+    -- The storage RLS (gallery_storage_owner_write) enforces path[2]=owned gallery
+    -- at write time; this is the SECURITY-DEFINER re-check (we bypass RLS here).
+    v_seg := storage.foldername(p_original_path);
+    IF array_length(v_seg,1) IS NULL OR array_length(v_seg,1) < 3
+       OR v_seg[2] <> p_gallery_id::text
+       OR v_seg[1] <> v_slug
+       OR v_seg[3] <> 'originals' THEN
+      RAISE EXCEPTION 'invalid_object_path';
+    END IF;
+
+    -- Server-authoritative size (item 1). The browser uploads the original
+    -- BEFORE this RPC, so the object + true size already exist in storage.objects.
+    -- Derive from metadata; reject a missing object, a present object whose size
+    -- metadata is missing (NEVER fall back to the untrusted client value), and a
+    -- material client/server mismatch. The AUTHORITATIVE size is persisted below.
     SELECT (metadata->>'size')::bigint INTO v_server_size
       FROM storage.objects WHERE bucket_id='gallery-images' AND name=p_original_path;
     IF NOT FOUND THEN RAISE EXCEPTION 'original_object_missing'; END IF;
-    IF v_server_size IS NOT NULL THEN
-      IF p_original_size IS NOT NULL
-         AND abs(p_original_size - v_server_size) > GREATEST(1024, v_server_size / 100) THEN
-        RAISE EXCEPTION 'size_mismatch';
-      END IF;
-      v_size := v_server_size;  -- authoritative
+    IF v_server_size IS NULL THEN RAISE EXCEPTION 'original_object_size_missing'; END IF;
+    IF p_original_size IS NOT NULL
+       AND abs(p_original_size - v_server_size) > GREATEST(1024, v_server_size / 100) THEN
+      RAISE EXCEPTION 'size_mismatch';
     END IF;
+    v_size := v_server_size;
   END IF;
 
-  -- A one-time-paid (non-expired) gallery has its OWN storage pool (75 GB); its
-  -- uploads must NOT be gated by the business plan's cap (e.g. free 2 GB).
-  v_gallery_pool := COALESCE(v_one_time_paid,false)
-                    AND (v_expires IS NULL OR v_expires > now())
-                    AND v_gallery_limit IS NOT NULL;
+  -- Gallery storage pool: an active one-time entitlement gives the gallery its
+  -- OWN storage limit (SUM of active orders), computed LIVE so it stays correct
+  -- as orders refund/expire. > 0 means an active entitlement exists; those
+  -- uploads must NOT be gated by the business plan cap (e.g. free 2 GB).
+  v_gallery_limit := gallery_active_storage_limit(p_gallery_id);
+  v_gallery_pool := v_gallery_limit > 0;
 
   IF v_gallery_pool THEN
     -- Atomic gallery-storage cap.
@@ -260,8 +339,8 @@ BEGIN
   INSERT INTO images (gallery_id,filename,web_preview_path,thumbnail_path,original_path,
     original_uploaded,original_size_bytes,section_id,sort_order,is_top_pick,public_thumb_present,face_index_status,counted_gallery_storage)
   VALUES (p_gallery_id,p_filename,p_web_preview_path,p_thumbnail_path,p_original_path,
-    p_original_path IS NOT NULL,p_original_size,v_section,COALESCE(p_sort_order,0),false,COALESCE(p_public_thumb_present,false),'pending',v_gallery_pool)
-  RETURNING id INTO v_image_id;
+    p_original_path IS NOT NULL,v_size,v_section,COALESCE(p_sort_order,0),false,COALESCE(p_public_thumb_present,false),'pending',v_gallery_pool)
+  RETURNING id INTO v_image_id;  -- original_size_bytes = v_size (server-authoritative), NOT the client value
   UPDATE galleries SET image_count=COALESCE(image_count,0)+1 WHERE id=p_gallery_id;
   RETURN v_image_id;  -- NO token deduction: uploads are free, only storage-capped
 END $function$;
@@ -277,11 +356,8 @@ CREATE OR REPLACE FUNCTION public.reserve_face_index_credit(p_gallery_id uuid, p
 RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
 DECLARE
   v_biz UUID; v_claimed UUID; v_bal INTEGER; v_used INTEGER;
-  v_one_time_paid BOOLEAN; v_expires TIMESTAMPTZ; v_gallery_allow INTEGER; v_active_entitlement BOOLEAN;
 BEGIN
-  SELECT business_id, one_time_paid, paid_expires_at, face_index_allowance
-    INTO v_biz, v_one_time_paid, v_expires, v_gallery_allow
-    FROM galleries WHERE id=p_gallery_id;
+  SELECT business_id INTO v_biz FROM galleries WHERE id=p_gallery_id;
   IF v_biz IS NULL THEN RETURN 'gallery_not_found'; END IF;
 
   -- Claim the image (pending|skipped -> processing).
@@ -290,23 +366,22 @@ BEGIN
     RETURNING id INTO v_claimed;
   IF v_claimed IS NULL THEN RETURN 'not_claimable'; END IF;
 
-  -- 1) Gallery-specific entitlement FIRST (one-time-paid galleries, non-expired,
-  --    with remaining gallery allowance). Atomic guard mirrors the balance>0
-  --    guard: gallery_credit_used < face_index_allowance -> never overshoot the
-  --    10,000 cap. This credit is NOT drawn from the business monthly balance.
-  v_active_entitlement := COALESCE(v_one_time_paid, false)
-                          AND (v_expires IS NULL OR v_expires > now())
-                          AND COALESCE(v_gallery_allow,0) > 0;
-  IF v_active_entitlement THEN
-    UPDATE galleries SET gallery_credit_used = gallery_credit_used + 1
-      WHERE id=p_gallery_id AND gallery_credit_used < face_index_allowance
-      RETURNING gallery_credit_used INTO v_used;
-    IF v_used IS NOT NULL THEN
-      UPDATE images SET face_index_credit_source='gallery' WHERE id=p_image_id;
-      INSERT INTO token_ledger(business_id,delta,reason,ref_id,metadata)
-        VALUES (v_biz,0,'face_index',p_image_id, jsonb_build_object('gallery_id',p_gallery_id,'source','gallery'));
-      RETURN 'reserved';
-    END IF;
+  -- 1) Gallery entitlement FIRST. The atomic guard compares gallery_credit_used
+  --    against the LIVE active allowance (SUM over active, non-expired,
+  --    non-refunded orders) evaluated INSIDE the row-locked UPDATE, so it never
+  --    overshoots and stays correct as orders refund/expire. A NULL result means
+  --    no active entitlement OR it's exhausted -> fall through to business.
+  UPDATE galleries SET gallery_credit_used = gallery_credit_used + 1
+    WHERE id=p_gallery_id
+      AND gallery_credit_used < (
+        SELECT COALESCE(SUM(granted_allowance),0) FROM gallery_entitlements
+         WHERE gallery_id=p_gallery_id AND status='active' AND expires_at > now())
+    RETURNING gallery_credit_used INTO v_used;
+  IF v_used IS NOT NULL THEN
+    UPDATE images SET face_index_credit_source='gallery' WHERE id=p_image_id;
+    INSERT INTO token_ledger(business_id,delta,reason,ref_id,metadata)
+      VALUES (v_biz,0,'face_index',p_image_id, jsonb_build_object('gallery_id',p_gallery_id,'source','gallery'));
+    RETURN 'reserved';
   END IF;
 
   -- 2) Fall back to the business monthly balance (balance>0 guard = never negative).
@@ -391,11 +466,11 @@ CREATE OR REPLACE FUNCTION public.get_gallery_index_summary(p_gallery_id uuid)
 RETURNS json LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $function$
 DECLARE
   v_biz UUID; v_owner UUID; v_bal INTEGER; r RECORD;
-  v_one_time_paid BOOLEAN; v_expires TIMESTAMPTZ; v_gallery_allow INTEGER; v_gallery_used INTEGER;
+  v_expires TIMESTAMPTZ; v_gallery_allow INTEGER; v_gallery_used INTEGER;
   v_active BOOLEAN; v_gallery_remaining INTEGER; v_effective INTEGER;
 BEGIN
-  SELECT g.business_id, b.user_id, g.one_time_paid, g.paid_expires_at, g.face_index_allowance, g.gallery_credit_used
-    INTO v_biz, v_owner, v_one_time_paid, v_expires, v_gallery_allow, v_gallery_used
+  SELECT g.business_id, b.user_id, g.gallery_credit_used
+    INTO v_biz, v_owner, v_gallery_used
     FROM galleries g JOIN businesses b ON b.id=g.business_id WHERE g.id=p_gallery_id;
   IF v_biz IS NULL THEN RETURN NULL; END IF;
 
@@ -409,6 +484,12 @@ BEGIN
     RETURN NULL;
   END IF;
 
+  -- LIVE active entitlement (SUM over active, non-expired, non-refunded orders).
+  v_gallery_allow := public.gallery_active_allowance(p_gallery_id);
+  SELECT MAX(expires_at) INTO v_expires FROM gallery_entitlements
+   WHERE gallery_id=p_gallery_id AND status='active' AND expires_at > now();
+  v_active := v_gallery_allow > 0;
+
   SELECT COALESCE(balance,0) INTO v_bal FROM business_tokens WHERE business_id=v_biz;
   SELECT count(*) AS total,
          count(*) FILTER (WHERE face_index_status='indexed') AS indexed,
@@ -417,8 +498,7 @@ BEGIN
          count(*) FILTER (WHERE face_index_status='failed') AS failed
     INTO r FROM images WHERE gallery_id=p_gallery_id;
 
-  v_active := COALESCE(v_one_time_paid,false) AND (v_expires IS NULL OR v_expires > now()) AND COALESCE(v_gallery_allow,0) > 0;
-  v_gallery_remaining := CASE WHEN v_active THEN GREATEST(COALESCE(v_gallery_allow,0) - COALESCE(v_gallery_used,0), 0) ELSE 0 END;
+  v_gallery_remaining := GREATEST(COALESCE(v_gallery_allow,0) - COALESCE(v_gallery_used,0), 0);
   -- Effective allowance = gallery entitlement (consumed first) + business monthly.
   v_effective := v_gallery_remaining + COALESCE(v_bal,0);
 
@@ -506,46 +586,41 @@ BEGIN
   END LOOP;
 END $function$;
 
--- ─── 8. One-time gallery entitlement grant / revoke ─────────────────────────
--- The $150 one-time purchase grants ONE gallery: 10,000 face-recognition photos
--- + 75 GB storage, 12 months. mark_gallery_paid is called by the LemonSqueezy
--- webhook with a stable per-order ref_id and is idempotent per order (the
--- ref-check returns before the UPDATE), so webhook retries never grant twice;
--- GREATEST() is a second belt so a re-grant can't stack the allowance.
--- Entitlement constants are fixed by product definition (10,000 / 75 GB).
+-- ─── 8. One-time gallery entitlement grant / revoke (order-ledger backed) ───
+-- Each $150 order = one row in gallery_entitlements keyed by the stable order
+-- ref (10,000 photos + 75 GB + 12 months). The gallery's active allowance /
+-- storage / expiry are DERIVED live from active rows, so multi-order, per-order
+-- refund and per-order expiration are all financially correct. mark/revoke keep
+-- the galleries cache in sync via recompute_gallery_entitlement_cache().
 CREATE OR REPLACE FUNCTION mark_gallery_paid(
   p_business_id UUID, p_gallery_id UUID, p_ref_id UUID DEFAULT NULL,
   p_months INTEGER DEFAULT 12, p_metadata JSONB DEFAULT NULL
 ) RETURNS BOOLEAN
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE v_owner UUID; v_existing_ref UUID; v_biz_bytes BIGINT;
+DECLARE v_owner UUID; v_biz_bytes BIGINT; v_inserted UUID;
 BEGIN
-  SELECT business_id, one_time_order_ref INTO v_owner, v_existing_ref FROM galleries WHERE id = p_gallery_id;
+  SELECT business_id INTO v_owner FROM galleries WHERE id = p_gallery_id;
   IF v_owner IS NULL THEN RAISE EXCEPTION 'gallery_not_found'; END IF;
   IF v_owner <> p_business_id THEN RAISE EXCEPTION 'gallery_business_mismatch'; END IF;
-  -- Idempotent per ORDER: a webhook retry carrying the SAME order id (=> same
-  -- ref) does not grant again.
-  IF p_ref_id IS NOT NULL AND v_existing_ref = p_ref_id THEN RETURN false; END IF;
+  IF p_ref_id IS NULL THEN RAISE EXCEPTION 'order_ref_required'; END IF;  -- entitlements are keyed by order
 
-  -- A DISTINCT paid order (or the first ever) grants one entitlement unit so the
-  -- customer always receives what they paid for (never "silently charged without
-  -- grant"). Two distinct $150 orders for the same gallery therefore STACK to
-  -- 20,000 photos and EXTEND expiry; the latest order id becomes the controlling
-  -- ref, so only its refund can revoke (see revoke_gallery_paid). Note: a refund
-  -- of a *superseded* order does not reduce the stacked allowance — precise
-  -- partial-refund accounting is a documented follow-up, intentionally traded off
-  -- against never letting an old refund nuke a newer entitlement.
-  UPDATE galleries
-     SET one_time_paid        = true,
-         one_time_paid_at     = now(),
-         paid_expires_at      = GREATEST(COALESCE(paid_expires_at, now()), now()) + make_interval(months => GREATEST(p_months, 1)),
-         one_time_order_ref   = COALESCE(p_ref_id, one_time_order_ref),
-         face_index_allowance = COALESCE(face_index_allowance,0) + 10000,               -- grant the purchased photos
-         storage_limit_bytes  = GREATEST(COALESCE(storage_limit_bytes,0), 80530636800)  -- 75 GB
-   WHERE id = p_gallery_id;
+  -- One row per ORDER. Idempotent per order via the UNIQUE(order_ref) constraint:
+  -- a webhook retry carrying the same order id conflicts and grants nothing.
+  INSERT INTO gallery_entitlements(business_id, gallery_id, order_ref, granted_allowance,
+    granted_storage_bytes, purchased_at, expires_at, status, metadata)
+  VALUES (p_business_id, p_gallery_id, p_ref_id, 10000, 80530636800, now(),
+    now() + make_interval(months => GREATEST(p_months,1)), 'active', p_metadata)
+  ON CONFLICT (order_ref) DO NOTHING
+  RETURNING id INTO v_inserted;
+  IF v_inserted IS NULL THEN RETURN false; END IF;  -- retry / already recorded
 
-  -- Item 21: transfer ALREADY-uploaded image bytes from the business pool into
-  -- this gallery's own pool, atomically. Only images not already gallery-counted.
+  -- Refresh the galleries cache (one_time_paid / paid_expires_at / allowance /
+  -- storage_limit) from active rows so the paywall + observability stay correct.
+  PERFORM recompute_gallery_entitlement_cache(p_gallery_id);
+
+  -- Transfer ALREADY-uploaded image bytes from the business pool into this
+  -- gallery's own pool, atomically. Idempotent (only images not gallery-counted;
+  -- a no-op on 2nd+ orders once the first grant flipped them).
   SELECT COALESCE(SUM(COALESCE(original_size_bytes,0)),0) INTO v_biz_bytes
     FROM images WHERE gallery_id = p_gallery_id AND NOT COALESCE(counted_gallery_storage,false);
   IF v_biz_bytes > 0 THEN
@@ -557,30 +632,30 @@ BEGIN
   RETURN true;
 END $$;
 
--- Revoke on refund / payment reversal (LemonSqueezy order_refunded). Disables
--- the entitlement (allowance -> 0, marks expired, re-gates the paywall). Already
--- indexed photos and the business balance are untouched; gallery_credit_used is
--- kept as a historical record.
+-- Revoke on refund / payment reversal (LemonSqueezy order_refunded). Marks ONLY
+-- the matching order's entitlement row refunded — other active orders keep the
+-- gallery paid; an older/unrelated refund cannot cancel a newer order. Already
+-- indexed photos + business balance untouched; gallery_credit_used is preserved
+-- (remaining can never go negative — reserve's live guard + summary's GREATEST).
 CREATE OR REPLACE FUNCTION revoke_gallery_paid(
   p_business_id UUID, p_gallery_id UUID, p_ref_id UUID DEFAULT NULL, p_metadata JSONB DEFAULT NULL
 ) RETURNS BOOLEAN
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE v_owner UUID; v_paid BOOLEAN; v_ref UUID;
+DECLARE v_owner UUID; v_id UUID;
 BEGIN
-  SELECT business_id, one_time_paid, one_time_order_ref INTO v_owner, v_paid, v_ref FROM galleries WHERE id = p_gallery_id;
+  SELECT business_id INTO v_owner FROM galleries WHERE id = p_gallery_id;
   IF v_owner IS NULL THEN RAISE EXCEPTION 'gallery_not_found'; END IF;
   IF v_owner <> p_business_id THEN RAISE EXCEPTION 'gallery_business_mismatch'; END IF;
-  IF NOT COALESCE(v_paid, false) THEN RETURN false; END IF;  -- idempotent: already unpaid
-  -- Items 14+15: ONLY the order that currently holds the entitlement may revoke
-  -- it. A refund/chargeback from an older or unrelated order (ref mismatch, or a
-  -- NULL ref) must NOT revoke a newer/active entitlement.
-  IF p_ref_id IS NULL OR v_ref IS DISTINCT FROM p_ref_id THEN RETURN false; END IF;
+  IF p_ref_id IS NULL THEN RETURN false; END IF;
 
-  UPDATE galleries
-     SET one_time_paid        = false,
-         face_index_allowance = 0,
-         paid_expires_at      = now()
-   WHERE id = p_gallery_id;
+  UPDATE gallery_entitlements
+     SET status = 'refunded', refunded_at = now(),
+         metadata = COALESCE(metadata,'{}'::jsonb) || COALESCE(p_metadata,'{}'::jsonb)
+   WHERE order_ref = p_ref_id AND gallery_id = p_gallery_id AND business_id = p_business_id AND status = 'active'
+   RETURNING id INTO v_id;
+  IF v_id IS NULL THEN RETURN false; END IF;  -- no matching active order (unknown/mismatch/already refunded)
+
+  PERFORM recompute_gallery_entitlement_cache(p_gallery_id);
   RETURN true;
 END $$;
 
@@ -615,6 +690,9 @@ BEGIN
     'restore_upload_consumed_credits()',
     'mark_gallery_paid(uuid, uuid, uuid, integer, jsonb)',
     'revoke_gallery_paid(uuid, uuid, uuid, jsonb)',
+    'gallery_active_allowance(uuid)',
+    'gallery_active_storage_limit(uuid)',
+    'recompute_gallery_entitlement_cache(uuid)',
     'check_gallery_face_index_complete()',
     'trg_image_storage_dec()',
     'trg_gallery_storage_dec_before()'

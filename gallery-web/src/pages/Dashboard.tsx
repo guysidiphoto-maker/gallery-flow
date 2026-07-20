@@ -4665,7 +4665,7 @@ export function Dashboard() {
                     <Section eyebrow="זיהוי פנים">
                       <ToggleRow
                         label="הפעל זיהוי פנים"
-                        desc="אורחים יוכלו למצוא את עצמם בסלפי. עלות: ללא תוספת טוקנים."
+                        desc="אורחים יוכלו למצוא את עצמם בסלפי. האינדוקס משתמש במכסת תמונות זיהוי הפנים שלך."
                         on={Boolean(ds.faceIndexEnabled)}
                         onChange={async () => {
                           // Write the column + JSONB key in ONE update so the
