@@ -75,6 +75,9 @@ const StudioSettings = lazy(() =>
 const BrandKit = lazy(() =>
   import('./pages/BrandKit').then(m => ({ default: m.BrandKit })),
 )
+const AdminPage = lazy(() =>
+  import('./pages/AdminPage').then(m => ({ default: m.AdminPage })),
+)
 
 // The public marketing surfaces where the advertising pixel may fire. Everything
 // else (gallery viewer at `/:business/:gallery`, dashboard, /q/, /event/, /vendor/)
@@ -276,6 +279,7 @@ function Router() {
   if (path === '/dashboard') return <Dashboard />
   if (path === '/studio-settings') return <StudioSettings />
   if (path === '/brand-kit') return <BrandKit />
+  if (path === '/admin' || path === '/admin/') return <AdminPage />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
   // Questionnaire
