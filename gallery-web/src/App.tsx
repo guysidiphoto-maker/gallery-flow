@@ -1509,11 +1509,8 @@ export function App() {
   // photographer just uploaded and indexing is catching up. A partial
   // index is still useful — Rekognition just searches against whatever
   // vectors exist, and the worker keeps adding more in the background.
-  // 'partial' = the monthly face-recognition allowance covered some but not all
-  // photos; the indexed ones are fully searchable, so treat it like 'done'.
   const faceSearchAvailable =
     gallery?.face_index_status === 'done' ||
-    gallery?.face_index_status === 'partial' ||
     (gallery?.face_index_status === 'indexing' && (gallery?.face_indexed_count ?? 0) > 0)
 
   const lang = (((gallery?.delivery_settings || {}) as Record<string, unknown>).language as Lang) || 'he'

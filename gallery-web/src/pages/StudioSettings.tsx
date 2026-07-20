@@ -727,7 +727,7 @@ export function StudioSettings() {
             Photographers were having to back out to the dashboard to see
             their balance; surfacing it on Studio Settings keeps the
             account-level concerns in one place. */}
-        <Section eyebrow="זיהוי פנים">
+        <Section eyebrow="טוקנים">
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             gap: 16, flexWrap: 'wrap',
@@ -737,7 +737,7 @@ export function StudioSettings() {
                 fontSize: 10, color: textMuted, marginBottom: 6,
                 fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
               }}>
-                תמונות שנותרו
+                Balance
               </div>
               <div style={{
                 fontSize: 36, fontWeight: 500, color: textPrimary,
@@ -746,7 +746,7 @@ export function StudioSettings() {
                 {tokenBalance.toLocaleString('he-IL')}
               </div>
               <div style={{ fontSize: 12, color: textMuted, marginTop: 6 }}>
-                העלאות ללא חיוב לפי תמונה, בכפוף למגבלת האחסון במסלול. המכסה החודשית חלה רק על תמונות שעוברות זיהוי פנים.
+                טוקן אחד = העלאת תמונה אחת
               </div>
             </div>
             {TOKEN_BILLING_ON && (
@@ -761,7 +761,7 @@ export function StudioSettings() {
                   textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >
-                שדרג מסלול
+                קנו עוד
               </button>
             )}
           </div>
@@ -794,7 +794,7 @@ export function StudioSettings() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
               <h2 id="studio-buy-tokens-heading" style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
-                שדרג מסלול
+                קנה טוקנים
               </h2>
               <button
                 onClick={() => setShowBuyTokens(false)}
@@ -806,7 +806,7 @@ export function StudioSettings() {
               >×</button>
             </div>
             <p style={{ fontSize: 14, color: textSecondary, margin: '0 0 24px', lineHeight: 1.5 }}>
-              העלאות ללא חיוב לפי תמונה, בכפוף למגבלת האחסון במסלול. המכסה החודשית חלה רק על תמונות שעוברות זיהוי פנים. תמונות זיהוי פנים שנותרו: <strong style={{ color: tokenBalance < 50 ? '#A67C52' : statusLive }}>{tokenBalance.toLocaleString('he-IL')}</strong>
+              טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong style={{ color: tokenBalance < 50 ? '#A67C52' : statusLive }}>{tokenBalance.toLocaleString('he-IL')}</strong>
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
@@ -846,7 +846,7 @@ export function StudioSettings() {
                   <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 4, letterSpacing: '-0.02em' }}>
                     {pkg.tokens.toLocaleString('he-IL')}
                   </div>
-                  <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>תמונות זיהוי פנים בחודש</div>
+                  <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>טוקנים בחודש</div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: statusLive }}>
                     ${pkg.pricePerMonthIls}
                     <span style={{ fontSize: 12, fontWeight: 500, color: textMuted }}> / חודש</span>
@@ -857,7 +857,7 @@ export function StudioSettings() {
 
             <p style={{ fontSize: 11, color: textMuted, margin: '20px 0 0', textAlign: 'center', lineHeight: 1.5 }}>
               חיוב חודשי דרך LemonSqueezy. אפשר לבטל בכל זמן.<br />
-              מכסת זיהוי הפנים מתחדשת בתחילת כל חודש (תמונות שלא נוצלו אינן מצטברות).
+              המכסה מתחדשת בתחילת כל חודש (טוקנים שלא נוצלו אינם מצטברים).
             </p>
           </div>
         </div>

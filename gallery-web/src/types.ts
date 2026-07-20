@@ -63,7 +63,7 @@ export interface Gallery {
   demo_expires_at?: string | null
   // Face search (AWS Rekognition per-gallery collection)
   face_index_enabled?: boolean
-  face_index_status?: 'pending' | 'indexing' | 'done' | 'failed' | 'partial' | null
+  face_index_status?: 'pending' | 'indexing' | 'done' | 'failed' | null
   face_indexed_count?: number
   // Phase 6 Step 2 — promoted typed columns. All nullable for the dual-read
   // transition; reads prefer the column and fall back to delivery_settings.
