@@ -86,8 +86,7 @@ async function resetMonthlyAllowance(
   console.log(`[webhook] Reset ${businessId} to ${count} tokens (${planId}, charge ${chargeId})`)
 }
 
-/** Mark a single gallery as paid (one-time unlock + face-rec/storage
- *  entitlement). Idempotent per order. */
+/** Mark a single gallery as paid (one-time unlock). Idempotent per order. */
 async function unlockGallery(
   businessId: string, galleryId: string, orderId: string, source: string,
 ): Promise<void> {
@@ -104,27 +103,6 @@ async function unlockGallery(
     throw new Error('mark_gallery_paid failed')
   }
   console.log(`[webhook] Unlocked gallery ${galleryId} for ${businessId} (order ${orderId})`)
-}
-
-/** Reverse a one-time gallery unlock on refund/chargeback. Disables the
- *  gallery entitlement (allowance -> 0, re-gates the paywall). Already-indexed
- *  photos and the business balance are left intact. Idempotent per RPC. */
-async function revokeGallery(
-  businessId: string, galleryId: string, orderId: string, source: string,
-): Promise<void> {
-  if (!businessId || !galleryId || !orderId) return
-  const refUuid = await stableUuid(orderId)
-  const { error } = await supabase.rpc('revoke_gallery_paid', {
-    p_business_id: businessId,
-    p_gallery_id: galleryId,
-    p_ref_id: refUuid,
-    p_metadata: { source, lemonsqueezy_order_id: orderId },
-  })
-  if (error) {
-    console.error('[webhook] revoke_gallery_paid failed:', error)
-    throw new Error('revoke_gallery_paid failed')
-  }
-  console.log(`[webhook] Revoked gallery ${galleryId} for ${businessId} (refund order ${orderId})`)
 }
 
 serve(async (req) => {
@@ -189,18 +167,6 @@ serve(async (req) => {
         if (custom.purpose === 'gallery_unlock' && businessId && custom.gallery_id) {
           const orderId = String(event.data?.id || attrs.order_id || '')
           if (orderId) await unlockGallery(businessId, custom.gallery_id, orderId, 'order_created')
-        }
-        break
-      }
-
-      case 'order_refunded': {
-        // Refund / payment reversal of a one-time gallery unlock → revoke the
-        // entitlement. Uses the ORIGINAL order id as the ref so it targets the
-        // same gallery that was unlocked. (Subscription refunds don't grant a
-        // gallery entitlement, so nothing to revoke there.)
-        if (custom.purpose === 'gallery_unlock' && businessId && custom.gallery_id) {
-          const orderId = String(event.data?.id || attrs.order_id || '')
-          if (orderId) await revokeGallery(businessId, custom.gallery_id, orderId, 'order_refunded')
         }
         break
       }
