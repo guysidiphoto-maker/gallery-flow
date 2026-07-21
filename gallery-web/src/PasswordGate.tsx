@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { verifyPassword, getStoredToken } from './lib/galleryClient'
 import { useFocusTrap } from './lib/useFocusTrap'
+import { CoverBackdrop } from './components/CoverBackdrop'
 
 interface PasswordGateProps {
   galleryId: string
@@ -55,9 +56,9 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken, l
   const [submitting, setSubmitting] = useState(false)
   const [cooldownLeft, setCooldownLeft] = useState(0)
   const tickRef = useRef<number | null>(null)
-  // Cover background: fade in only once the image actually decodes, and drop
-  // it entirely if it fails to load (broken-image fallback → flat-dark gate).
-  const [coverReady, setCoverReady] = useState(false)
+  // Cover background: drop the premium card treatment if the image fails to
+  // load (broken-image fallback → flat-dark gate). Fade/decoding is handled
+  // inside CoverBackdrop.
   const [coverFailed, setCoverFailed] = useState(false)
   const showCover = !!coverUrl && !coverFailed
 
@@ -123,31 +124,14 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken, l
     // announced as the dialog name when focus enters (WCAG 4.1.2, 1.3.1).
     <div
       ref={gateRef}
-      className={`pw-gate${showCover ? ' pw-gate--has-cover' : ''}${showCover && coverReady ? ' pw-gate--cover-ready' : ''}`}
+      className={`pw-gate${showCover ? ' pw-gate--has-cover' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="pw-gate-title"
     >
-      {/* Decorative cover background. aria-hidden + empty alt keeps it out of
-          the screen-reader tree (it's atmosphere, not content). Rendered as an
-          <img> so a load failure is detectable → graceful flat-dark fallback. */}
-      {showCover && (
-        <div className="pw-gate__cover" aria-hidden="true">
-          <img
-            className="pw-gate__cover-img"
-            src={coverUrl as string}
-            alt=""
-            decoding="async"
-            // A cached cover can finish loading before React attaches onLoad —
-            // the ref check catches that case so it still fades in (otherwise it
-            // would stay at opacity:0, i.e. invisible).
-            ref={el => { if (el && el.complete && el.naturalWidth > 0) setCoverReady(true) }}
-            onLoad={() => setCoverReady(true)}
-            onError={() => setCoverFailed(true)}
-          />
-          <div className="pw-gate__cover-scrim" />
-        </div>
-      )}
+      {/* Decorative cinematic cover (shared component). Falls back to the flat
+          dark gate if it fails to load. */}
+      {showCover && <CoverBackdrop coverUrl={coverUrl} onFailed={() => setCoverFailed(true)} />}
       <form className="pw-gate__card" onSubmit={handleSubmit}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,

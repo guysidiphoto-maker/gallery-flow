@@ -50,8 +50,8 @@
 @media (prefers-reduced-motion: reduce) {
   .hero__bg { animation: none; transform: scale(1.08) !important; }
   .hero__content { animation: none; }
-  /* Private-gate cover: freeze the cinematic zoom, keep the static framing. */
-  .pw-gate__cover-img { animation: none !important; transform: scale(1.12) !important; }
+  /* Cover backdrop: freeze the cinematic zoom, keep the static framing. */
+  .cover-backdrop__img { animation: none !important; transform: scale(1.12) !important; }
   .loader { animation: none; border-top-color: rgba(var(--accent), .9); }
   .wc-col { animation: none !important; }
   .story-circle__ring { transition: none; }
@@ -153,7 +153,9 @@ input, button, textarea, select {
    can't be read before unlock. */
 .pw-gate--has-cover::before { display: none; }   /* scrim replaces the glow */
 
-.pw-gate__cover {
+/* Reusable cinematic cover backdrop (see components/CoverBackdrop.tsx). Shared
+   by the PasswordGate and the private face-search locked welcome screen. */
+.cover-backdrop {
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -161,7 +163,7 @@ input, button, textarea, select {
   pointer-events: none;
 }
 
-.pw-gate__cover-img {
+.cover-backdrop__img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -176,7 +178,7 @@ input, button, textarea, select {
   animation: pw-cover-zoom 26s ease-in-out infinite alternate;
 }
 
-.pw-gate--cover-ready .pw-gate__cover-img { opacity: 1; }
+.cover-backdrop--ready .cover-backdrop__img { opacity: 1; }
 
 @keyframes pw-cover-zoom {
   from { transform: scale(1.10); }
@@ -185,7 +187,7 @@ input, button, textarea, select {
 
 /* Dark overlay + soft vignette + gradient behind the central content. Tuned so
    the card area (upper-middle) stays darkest for contrast. */
-.pw-gate__cover-scrim {
+.cover-backdrop__scrim {
   position: absolute;
   inset: 0;
   z-index: 0;

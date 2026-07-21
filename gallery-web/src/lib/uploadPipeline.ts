@@ -59,11 +59,16 @@ export type ProgressFn = (p: UploadProgress) => void
 //     decode it yet — accepting it would produce broken gallery images.
 //   • MAX_UPLOAD_BYTES: covers any real high-res JPEG/PNG deliverable while
 //     blocking RAW dumps / video / abuse.
-//   • MAX_UPLOAD_BATCH: guardrail against an accidental massive drag-drop;
-//     larger galleries upload across multiple batches.
+//   • MAX_UPLOAD_BATCH: high guardrail against a pathological drag-drop only.
+//     It is NOT a per-gallery limit — uploadMany streams with bounded
+//     concurrency (~8 in flight), so a real wedding selection (often
+//     1,000–3,000) uploads in one go. It used to be 1,000, which SILENTLY
+//     dropped everything past the first 1,000 (e.g. 1,165 selected → 1,000
+//     uploaded, 165 lost). Raised so normal large galleries are never
+//     truncated; anything beyond this still surfaces a visible warning.
 
 export const MAX_UPLOAD_BYTES = 40 * 1024 * 1024 // 40 MB per image
-export const MAX_UPLOAD_BATCH = 1000             // files per batch (concurrency is 8)
+export const MAX_UPLOAD_BATCH = 5000             // files per selection (concurrency is 8)
 
 const ALLOWED_UPLOAD_MIME = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
