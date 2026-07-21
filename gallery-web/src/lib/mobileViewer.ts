@@ -77,3 +77,43 @@ export function pickDownloadPath(opts: {
 export function downloadCacheKey(imageId: string, quality: DownloadQuality): string {
   return `${imageId}::${quality}`
 }
+
+/**
+ * Whether to warm downloadable Files for grid tiles. Only mobile needs it:
+ * iOS Safari's one-tap `navigator.share` requires the File to already exist at
+ * tap time, and Android benefits from the instant share too. Desktop downloads
+ * via an `<a download>` anchor, which is not gesture-bound, so warming there
+ * would just waste bandwidth. Gated on downloads actually being enabled.
+ */
+export function shouldWarmDownload(opts: { isMobile: boolean; downloadsEnabled: boolean }): boolean {
+  return opts.isMobile && opts.downloadsEnabled
+}
+
+/**
+ * Given insertion-ordered cache keys and a cap, return the oldest keys that
+ * must be evicted to keep the download-File cache bounded (FIFO). Empty when
+ * within the cap.
+ */
+export function keysOverCap(orderedKeys: string[], cap: number): string[] {
+  if (orderedKeys.length <= cap) return []
+  return orderedKeys.slice(0, orderedKeys.length - cap)
+}
+
+export type DownloadErrorKind = 'cancelled' | 'preparation' | 'failure'
+
+/**
+ * Classify a thrown download error so the UI only shows a failure message on a
+ * REAL failure — never during normal preparation.
+ * - AbortError: the guest dismissed the share sheet (or we aborted a warm). Silent.
+ * - NotAllowedError: iOS rejected `share()` because the File was not ready in
+ *   time and the gesture lapsed. That is a preparation-timing issue, not a
+ *   failure — stay silent; the File is now warmed so the next tap is instant.
+ * - anything else (network / fetch / storage error): a real failure → show the
+ *   retry message.
+ */
+export function classifyDownloadError(err: unknown): DownloadErrorKind {
+  const name = (err as { name?: string } | null)?.name
+  if (name === 'AbortError') return 'cancelled'
+  if (name === 'NotAllowedError') return 'preparation'
+  return 'failure'
+}

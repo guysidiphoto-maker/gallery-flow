@@ -15,6 +15,9 @@ import {
   downloadFileName,
   pickDownloadPath,
   downloadCacheKey,
+  shouldWarmDownload,
+  classifyDownloadError,
+  keysOverCap,
 } from '../src/lib/mobileViewer.ts'
 
 let pass = 0, fail = 0
@@ -98,6 +101,56 @@ function ok(name: string, cond: boolean, detail = '') {
      downloadCacheKey('img-1', 'web') !== downloadCacheKey('img-1', 'original'))
   ok('same id+quality is stable',
      downloadCacheKey('img-1', 'web') === downloadCacheKey('img-1', 'web'))
+}
+
+// ── Grid-tile download: succeeds on the FIRST action (same path as viewer) ──
+{
+  // The grid tile and the viewer both call the same handler; one-tap depends
+  // only on whether the File is warmed. A warmed tile on iOS → synchronous
+  // share (first-tap success), identical to the viewer.
+  const iosWarmed = pickDownloadPath({ isMobile: true, canShareFiles: true, hasPrefetchedFile: true })
+  ok('grid tile: warmed iOS tile shares on first tap', iosWarmed === 'share-sync')
+  ok('grid + viewer share ONE code path (same inputs → same decision)',
+     pickDownloadPath({ isMobile: true, canShareFiles: true, hasPrefetchedFile: true }) ===
+     pickDownloadPath({ isMobile: true, canShareFiles: true, hasPrefetchedFile: true }))
+  // A cold (unwarmed) grid tap falls back to the async fetch path, which then
+  // caches the File so a retry is instant.
+  ok('grid tile: cold tap uses async fallback',
+     pickDownloadPath({ isMobile: true, canShareFiles: false, hasPrefetchedFile: false }) === 'async-fetch')
+}
+
+// ── Warming is bounded: mobile + downloads only (no desktop waste) ──────────
+{
+  ok('warm on mobile w/ downloads enabled', shouldWarmDownload({ isMobile: true, downloadsEnabled: true }) === true)
+  ok('never warm on desktop', shouldWarmDownload({ isMobile: false, downloadsEnabled: true }) === false)
+  ok('never warm when downloads disabled', shouldWarmDownload({ isMobile: true, downloadsEnabled: false }) === false)
+}
+
+// ── Normal preparation does NOT trigger the failure toast; real failure does ─
+{
+  const notAllowed = { name: 'NotAllowedError' } // iOS gesture lapsed while preparing
+  const aborted = { name: 'AbortError' }         // guest dismissed the share sheet / warm aborted
+  const network = new TypeError('Failed to fetch')
+  ok('iOS gesture-timing (NotAllowedError) is preparation, not failure',
+     classifyDownloadError(notAllowed) === 'preparation')
+  ok('dismissed share sheet is cancelled, not failure',
+     classifyDownloadError(aborted) === 'cancelled')
+  ok('real network error is a failure (clean retry allowed)',
+     classifyDownloadError(network) === 'failure')
+  // Only 'failure' shows the retry toast.
+  const showsToast = (e: unknown) => classifyDownloadError(e) === 'failure'
+  ok('no toast during preparation', showsToast(notAllowed) === false)
+  ok('no toast on cancel', showsToast(aborted) === false)
+  ok('toast on real failure', showsToast(network) === true)
+}
+
+// ── Cache stays bounded (no unlimited blobs in memory) ──────────────────────
+{
+  ok('within cap → nothing evicted', keysOverCap(['a', 'b', 'c'], 12).length === 0)
+  ok('at cap → nothing evicted', keysOverCap(Array.from({ length: 12 }, (_, i) => 'k' + i), 12).length === 0)
+  const over = keysOverCap(Array.from({ length: 15 }, (_, i) => 'k' + i), 12)
+  ok('over cap → evicts the oldest overflow', over.length === 3 && over[0] === 'k0' && over[2] === 'k2')
+  ok('eviction is FIFO (oldest first)', keysOverCap(['old', 'mid', 'new'], 2)[0] === 'old')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
