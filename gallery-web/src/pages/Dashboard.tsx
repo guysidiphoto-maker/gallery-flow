@@ -5,6 +5,8 @@ import { supabase, storageUrl } from '../supabase'
 import { uploadMany, partitionUploadFiles, MAX_UPLOAD_BATCH, type UploadRejectReason } from '../lib/uploadPipeline'
 import { uploadCoverImage, deleteCoverObject, CoverUploadError, type CoverUploadPhase } from '../lib/coverUpload'
 import { readCoverConfig } from '../lib/coverImage'
+import { fetchAllGalleryImages } from '../lib/fetchAllImages'
+import { classifyForUpload, extractExistingKeys, type ExistingImageRef } from '../lib/dedupeUpload'
 import { captureException } from '@sentry/react'
 import { signedStorageUrl } from '../lib/signedStorage'
 import { warmGalleryCache } from '../lib/warmCache'
@@ -370,6 +372,15 @@ export function Dashboard() {
   const [coverUploading, setCoverUploading] = useState(false)
   const [coverUploadPhase, setCoverUploadPhase] = useState<CoverUploadPhase | null>(null)
   const [coverDragOver, setCoverDragOver] = useState(false)
+  // Pre-upload duplicate summary — shown when a (re)upload contains files that
+  // already exist in the gallery or share a filename with an existing image.
+  const [pendingUpload, setPendingUpload] = useState<{
+    newFiles: File[]
+    duplicates: File[]
+    review: File[]
+    selectedTotal: number
+    droppedOverLimit: number
+  } | null>(null)
   const [imageMenuOpenId, setImageMenuOpenId] = useState<string | null>(null)
   const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
   const [photoSort, setPhotoSort] = useState<'order' | 'name' | 'newest'>('order')
@@ -752,12 +763,13 @@ export function Dashboard() {
     // flag or stale cache-buster.
     setUnpublishedChanges(false)
     setPreviewRefreshKey(0)
-    const [imagesRes, sectionsRes, storiesRes] = await Promise.all([
-      supabase
-        .from('images')
-        .select('id, filename, storage_path:web_preview_path, thumbnail_path, original_path, is_top_pick, sort_order, section_id')
-        .eq('gallery_id', g.id)
-        .order('sort_order', { ascending: true }),
+    const [imagesAll, sectionsRes, storiesRes] = await Promise.all([
+      // Paginated: galleries can exceed PostgREST's 1000-row cap. A plain
+      // .select() here silently truncated large galleries to 1000 in the editor.
+      fetchAllGalleryImages<GalleryImage & { section_id?: string | null }>(
+        g.id,
+        'id, filename, storage_path:web_preview_path, thumbnail_path, original_path, is_top_pick, sort_order, section_id',
+      ),
       supabase
         .from('gallery_sections')
         .select('id, name, sort_order, description')
@@ -773,7 +785,7 @@ export function Dashboard() {
         .eq('gallery_id', g.id)
         .order('created_at', { ascending: true }),
     ])
-    const imgs = imagesRes.data ?? []
+    const imgs = imagesAll
     let secs = sectionsRes.data ?? []
 
     // New model: every photo belongs to a section (no "all photos" catch-all).
@@ -935,6 +947,7 @@ export function Dashboard() {
 
   async function handleFileUpload(files: FileList | null) {
     if (!files || !editingGallery || !businessId || !businessSlug) return
+    const selectedTotal = files.length
 
     // Gate non-images / HEIC / oversized files / oversized batch BEFORE the
     // token check, so rejected files never count against the balance or reach
@@ -953,8 +966,43 @@ export function Dashboard() {
     }
     if (valid.length === 0) return
 
-    if (tokenBalance < valid.length) {
-      const wanted = valid.length
+    const droppedOverLimit = truncated ? selectedTotal - valid.length : 0
+
+    // Duplicate-safe classification against the images already in this gallery.
+    // Lets a re-upload restore only the MISSING files without creating a
+    // duplicate DB row for the ones already present. Genuinely different photos
+    // (even same filename) fall into `review`, never silently skipped.
+    const cls = classifyForUpload(
+      valid,
+      editingGallery.id,
+      extractExistingKeys(galleryImages as ExistingImageRef[]),
+    )
+
+    // Nothing ambiguous → upload straight away (fast path, unchanged behavior).
+    if (cls.duplicates.length === 0 && cls.review.length === 0) {
+      await runUpload(cls.newFiles, { selectedTotal, droppedOverLimit, skipped: 0 })
+      return
+    }
+    // Otherwise show a clear pre-upload summary and let the owner decide.
+    setPendingUpload({ ...cls, selectedTotal, droppedOverLimit })
+  }
+
+  // Executes the actual upload for a resolved list of files (post-dedup).
+  async function runUpload(
+    filesToUpload: File[],
+    meta: { selectedTotal: number; droppedOverLimit: number; skipped: number },
+  ) {
+    if (!editingGallery || !businessSlug) return
+    if (filesToUpload.length === 0) {
+      const parts = [`נבחרו ${meta.selectedTotal}`]
+      if (meta.skipped > 0) parts.push(`${meta.skipped} כבר קיימות (דולגו)`)
+      if (meta.droppedOverLimit > 0) parts.push(`מעל המגבלה ${meta.droppedOverLimit}`)
+      showToast({ kind: 'info', text: `אין קבצים חדשים להעלאה · ${parts.join(' · ')}` })
+      return
+    }
+
+    if (tokenBalance < filesToUpload.length) {
+      const wanted = filesToUpload.length
       const have = tokenBalance
       showToast({ kind: 'error', text: `אין מספיק טוקנים. צריך ${wanted}, יש לך ${have}.` })
       // Only surface the buy-tokens modal when checkout is actually wired.
@@ -964,9 +1012,9 @@ export function Dashboard() {
     // Photos land in the active section (or a freshly-created default one).
     const targetSectionId = await ensureUploadSection()
     setUploading(true)
-    setUploadBatch({ completed: 0, total: valid.length, failed: 0 })
+    setUploadBatch({ completed: 0, total: filesToUpload.length, failed: 0 })
     const result = await uploadMany(
-      valid,
+      filesToUpload,
       {
         galleryId: editingGallery.id,
         businessSlug,
@@ -995,29 +1043,48 @@ export function Dashboard() {
             extra: {
               gallery_id: editingGallery.id,
               failed_count: unexpected.length,
-              total: valid.length,
+              total: filesToUpload.length,
               sample_errors: unexpected.slice(0, 5).map(f => f.error),
             },
           })
         }
       }
     }
-    // Refresh balance + image list
+    // Refresh balance + image list. Paginated so the grid/count reflect the
+    // full gallery after uploading more than 1000 images (a plain .select()
+    // silently capped the refresh at 1000, so the counter stuck at 1000).
     fetchTokenBalance()
-    const { data } = await supabase
-      .from('images')
-      .select('id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order, section_id')
-      .eq('gallery_id', editingGallery.id)
-      .order('sort_order', { ascending: true })
-    setGalleryImages(data ?? [])
+    const refreshed = await fetchAllGalleryImages<GalleryImage>(
+      editingGallery.id,
+      'id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick, sort_order, section_id',
+    ).catch(() => null)
+    if (refreshed) setGalleryImages(refreshed)
     setUploading(false)
     setUploadBatch(null)
     if (result.ok.length > 0) markDirty()
 
+    // Trustworthy upload summary — never report "done" while files were
+    // dropped/failed/skipped/pending without saying so.
+    {
+      const okN = result.ok.length
+      const failN = result.failed.length
+      const droppedN = meta.droppedOverLimit
+      const skipN = meta.skipped
+      if (failN === 0 && droppedN === 0 && skipN === 0) {
+        showToast({ kind: 'success', text: `הועלו ${okN} תמונות בהצלחה` })
+      } else {
+        const parts = [`נבחרו ${meta.selectedTotal}`, `הועלו ${okN}`]
+        if (skipN > 0) parts.push(`${skipN} כבר קיימות (דולגו)`)
+        if (failN > 0) parts.push(`נכשלו ${failN}`)
+        if (droppedN > 0) parts.push(`מעל המגבלה ${droppedN} (העלו שוב)`)
+        showToast({ kind: failN > 0 || droppedN > 0 ? 'error' : 'info', text: parts.join(' · ') })
+      }
+    }
+
     // Breadcrumb after batch so a crash in the post-upload refresh / face
     // reindex carries the count of photos that were just uploaded.
     trackAction('upload', 'photo', {
-      count: valid.length,
+      count: filesToUpload.length,
       ok: result.ok.length,
       failed: result.failed.length,
       gallery_id: editingGallery.id,
@@ -1969,15 +2036,17 @@ export function Dashboard() {
   // images.select(), then hands the list to purgeStorageForImages. Best-
   // effort; never throws, never blocks the gallery delete itself.
   async function purgeStorageForGallery(galleryId: string) {
-    const { data, error } = await supabase
-      .from('images')
-      .select('id, filename, storage_path:web_preview_path, thumbnail_path, original_path, is_top_pick, sort_order, section_id')
-      .eq('gallery_id', galleryId)
-    if (error || !data) {
+    // Paginated: a plain .select() capped at 1000, orphaning storage objects
+    // for images 1001+ on delete (files left in the bucket, costing money).
+    try {
+      const data = await fetchAllGalleryImages<GalleryImage>(
+        galleryId,
+        'id, filename, storage_path:web_preview_path, thumbnail_path, original_path, is_top_pick, sort_order, section_id',
+      )
+      await purgeStorageForImages(data)
+    } catch (error) {
       console.warn('[purgeStorageForGallery] could not list images', error)
-      return
     }
-    await purgeStorageForImages(data as GalleryImage[])
   }
 
   async function bulkDeleteSelected() {
@@ -2286,6 +2355,88 @@ export function Dashboard() {
     }}>
       {/* In-app toasts (replaces silent alert() / vanished error states). */}
       <ToastContainer />
+
+      {/* Pre-upload duplicate summary. Shown when a (re)upload contains files
+          already in the gallery (skipped to avoid duplicate rows) or files that
+          share a filename with an existing image but differ (surfaced for
+          review, never auto-skipped). Lets the owner restore only the missing
+          files safely. */}
+      {pendingUpload && (() => {
+        const { newFiles, duplicates, review, selectedTotal, droppedOverLimit } = pendingUpload
+        const start = (includeReview: boolean) => {
+          const filesToUpload = includeReview ? [...newFiles, ...review] : newFiles
+          const skipped = includeReview ? duplicates.length : duplicates.length + review.length
+          setPendingUpload(null)
+          void runUpload(filesToUpload, { selectedTotal, droppedOverLimit, skipped })
+        }
+        const Row = ({ label, n, tone }: { label: string; n: number; tone: string }) => (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${border}` }}>
+            <span style={{ fontSize: 13, color: textMuted }}>{label}</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: tone }}>{n}</span>
+          </div>
+        )
+        return (
+          <div role="dialog" aria-modal="true" aria-label="סיכום העלאה" style={{
+            position: 'fixed', inset: 0, zIndex: 4000, direction: 'rtl',
+            background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+          }}>
+            <div style={{ width: '100%', maxWidth: 440, background: '#FBFAF8', borderRadius: 16, padding: 24, boxShadow: '0 24px 70px rgba(0,0,0,.35)' }}>
+              <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700, color: textPrimary }}>סיכום לפני העלאה</h2>
+              <p style={{ margin: '0 0 16px', fontSize: 12.5, color: textMuted, lineHeight: 1.5 }}>
+                חלק מהקבצים כבר קיימים בגלריה. כדי לא ליצור כפילויות, נעלה רק את החדשים.
+              </p>
+              <Row label="חדשות (יועלו)" n={newFiles.length} tone={textPrimary} />
+              <Row label="כבר קיימות (יידולגו)" n={duplicates.length} tone={textMuted} />
+              {review.length > 0 && <Row label="שם זהה, קובץ שונה — לבדיקה" n={review.length} tone="#b45309" />}
+              {droppedOverLimit > 0 && <Row label={`מעל המגבלה (${MAX_UPLOAD_BATCH})`} n={droppedOverLimit} tone="#dc2626" />}
+              {review.length > 0 && (
+                <p style={{ margin: '12px 0 0', fontSize: 11.5, color: '#b45309', lineHeight: 1.5 }}>
+                  קבצים ״לבדיקה״ נושאים שם של תמונה קיימת אך הם קובץ אחר — ייתכן שאלו תמונות שונות. הם לא יידלגו אוטומטית.
+                </p>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
+                {(newFiles.length > 0 || review.length === 0) && (
+                  <button
+                    type="button"
+                    onClick={() => start(false)}
+                    disabled={newFiles.length === 0}
+                    style={{
+                      flex: 1, minWidth: 120, padding: '11px 16px', borderRadius: 10, border: 'none',
+                      cursor: newFiles.length === 0 ? 'default' : 'pointer', fontFamily: 'inherit',
+                      fontSize: 13.5, fontWeight: 600, color: '#fff',
+                      background: newFiles.length === 0 ? '#cfcdc9' : textPrimary,
+                    }}>
+                    {newFiles.length > 0 ? `העלה ${newFiles.length} חדשות` : 'אין חדשות להעלאה'}
+                  </button>
+                )}
+                {review.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => start(true)}
+                    style={{
+                      flex: 1, minWidth: 120, padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
+                      border: `1px solid ${border}`, background: 'transparent', color: textPrimary,
+                      fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
+                    }}>
+                    כלול גם {review.length} לבדיקה
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPendingUpload(null)}
+                  style={{
+                    padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
+                    border: `1px solid ${border}`, background: 'transparent', color: textMuted,
+                    fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500,
+                  }}>
+                  ביטול
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Lightbox — full-screen photo preview. Mounted only when open, so the
           dashboard pays nothing for it most of the time. */}

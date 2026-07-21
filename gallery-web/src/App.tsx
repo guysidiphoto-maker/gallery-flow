@@ -5,6 +5,8 @@ import { signedStorageUrl, signedWatermarkedUrl } from './lib/signedStorage'
 import { preloadGalleryThumbs, GRID_WIDTHS } from './lib/warmCache'
 import { TurnstileWidget } from './components/TurnstileWidget'
 import { SignedImg } from './components/SignedImg'
+import { CoverBackdrop } from './components/CoverBackdrop'
+import { OpeningText } from './components/OpeningText'
 import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from './types'
 import { Viewer } from './Viewer'
 import { PasswordGate, isGalleryUnlocked } from './PasswordGate'
@@ -401,7 +403,7 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
 
 // ─── Welcome Screen ─────────────────────────────────────────────────────────
 
-function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, welcomeMessage, textAnimation = 'blur', animationSpeed = 'normal', eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos, lang = 'he', headingFont, bodyFont }: {
+function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, welcomeMessage, textAnimation = 'blur', animationSpeed = 'normal', eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, gateCoverUrl, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos, lang = 'he', headingFont, bodyFont }: {
   style?: 'mosaic' | 'cinematic' | 'minimal'
   galleryTitle: string
   galleryDescription?: string
@@ -417,6 +419,10 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
   storageUrl: (path: string) => string
   coverImageUrl?: string | null
   coverCrop?: { zoom: number; x: number; y: number } | null
+  // Private face-search moment A only: an optimized cover render URL. When set,
+  // the cinematic background uses the shared premium CoverBackdrop treatment
+  // (blur + scrim + vignette + zoom) instead of the plain welcome cover.
+  gateCoverUrl?: string | null
   onEnter: () => void
   faceSearchAvailable: boolean
   facePrivacyMode: 'open' | 'private' | null
@@ -510,61 +516,9 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
         </div>
       )}
 
-      {/* Welcome message — animated */}
-      {welcomeMessage && (() => {
-        // Split into tokens: words + line breaks
-        const tokens: Array<{ text: string; isBreak: boolean }> = []
-        welcomeMessage.split('\n').forEach((line, li) => {
-          if (li > 0) tokens.push({ text: '', isBreak: true })
-          line.split(' ').filter(Boolean).forEach(w => tokens.push({ text: w, isBreak: false }))
-        })
-        const wordCount = tokens.filter(t => !t.isBreak).length
-        const msgRTL = /[\u0590-\u05FF\u0600-\u06FF]/.test(welcomeMessage.charAt(0))
-        const speedMul = animationSpeed === 'slow' ? 1.5 : animationSpeed === 'fast' ? 0.6 : 1
-        const baseDelay = 0.8 * speedMul
-        const perWord = Math.min(0.12, 2 / wordCount) * speedMul
-
-        const animKeyframes = {
-          blur: `@keyframes wcWordIn { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: blur(0); } }`,
-          typewriter: `@keyframes wcWordIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`,
-          slide: `@keyframes wcWordIn { from { opacity: 0; transform: translateX(${msgRTL ? '20px' : '-20px'}); } to { opacity: 1; transform: translateX(0); } }`,
-        }
-        const wordDuration = textAnimation === 'typewriter' ? 0.3 : textAnimation === 'slide' ? 0.5 : 0.4
-
-        return (<>
-          <style>{animKeyframes[textAnimation]}</style>
-          <div style={{
-            margin: '24px auto 0', maxWidth: 520, padding: '0 20px',
-            direction: msgRTL ? 'rtl' : 'ltr',
-            textAlign: 'center',
-          }}>
-            <p style={{
-              fontSize: 'clamp(15px, 2vw, 20px)',
-              color: 'rgba(255,255,255,.7)',
-              margin: 0, fontWeight: 400,
-              lineHeight: 1.7,
-              fontStyle: 'italic',
-              letterSpacing: '0.01em',
-            }}>
-              {(() => {
-                let wordIdx = 0
-                return tokens.map((token, ti) => {
-                  if (token.isBreak) return <br key={`br-${ti}`} />
-                  const wi = wordIdx++
-                  return (
-                    <span key={ti} style={{
-                      opacity: 0,
-                      animation: visible ? `wcWordIn ${wordDuration}s cubic-bezier(.16,1,.3,1) ${baseDelay + wi * perWord}s both` : 'none',
-                    }}>
-                      {token.text}{' '}
-                    </span>
-                  )
-                })
-              })()}
-            </p>
-          </div>
-        </>)
-      })()}
+      {/* Welcome message — animated (shared component, reused on the private
+          face-search results screen so both look identical) */}
+      <OpeningText message={welcomeMessage} animation={textAnimation} speed={animationSpeed} animate={visible} marginTop={24} />
 
       {/* Event meta */}
       {(eventDate || eventLocation) && (
@@ -750,6 +704,12 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
 
   // ── Cinematic background ──
   const renderCinematicBg = () => {
+    // Private face-search moment A: reuse the shared premium cover backdrop
+    // (same treatment as the password gate). Falls through to the plain
+    // cinematic bg when no cover is configured or it fails to load.
+    if (isPrivate && gateCoverUrl) {
+      return <CoverBackdrop coverUrl={gateCoverUrl} />
+    }
     const bgSrc = coverImageUrl || (images.length > 0 ? getUrl(images[0].thumbnail_path || images[0].storage_path) : null)
     return (
       <>
@@ -1835,6 +1795,7 @@ export function App() {
           images={welcomeImages}
           coverImageUrl={effectiveResolvedCoverUrl}
           coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
+          gateCoverUrl={isPrivateFaceMode ? gateCoverBackgroundUrl(_hookRaw, imgBucket) : null}
           storageUrl={(path: string) => displayUrl(imgBucket, path, 1280, 65)}
           onEnter={() => setShowWelcome(false)}
           faceSearchAvailable={faceSearchAvailable}
@@ -2493,6 +2454,19 @@ export function App() {
                 <p className="hero__eyebrow">{studioName}</p>
               )}
               <h1 className="hero__title" style={{ fontSize: 'clamp(24px, 4vw, 44px)' }}>{galleryTitle}</h1>
+
+              {/* Opening text — the SAME animated welcome message as the public
+                  gallery (shared OpeningText component). Shown once matches load
+                  (Moment B), never on the locked entry (Moment A). It mounts
+                  once here, so it does not replay on view toggles / rerenders;
+                  on refresh the guest re-enters via face search and it replays,
+                  matching the public gallery's per-load behavior. */}
+              <OpeningText
+                message={(rawSettings as Record<string, unknown>).welcomeMessage as string | undefined}
+                animation={((rawSettings as Record<string, unknown>).welcomeTextAnimation as 'blur' | 'typewriter' | 'slide') || 'blur'}
+                speed={((rawSettings as Record<string, unknown>).welcomeAnimationSpeed as 'slow' | 'normal' | 'fast') || 'normal'}
+                marginTop={18}
+              />
 
               {/* Secured badge for face-search hero */}
               {facePrivacyMode === 'private' && (
