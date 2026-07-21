@@ -4,6 +4,7 @@ import { Icon } from './components/Icon'
 import { signedStorageUrl } from './lib/signedStorage'
 import { displayUrl } from './supabase'
 import { useFocusTrap } from './lib/useFocusTrap'
+import { shouldRenderFullImage, shouldShowUnavailable, isRealLoadError } from './lib/mobileViewer'
 
 // Buckets that support Supabase on-the-fly image transforms. For these, the
 // fullscreen view loads a bounded ~2048px transform (sharp + fast) instead of
@@ -228,24 +229,37 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
           />
         )}
 
-        <img
-          key={currentSrc}
-          className="viewer__img"
-          src={currentSrc}
-          alt=""
-          onLoad={() => setLoadedSrc(currentSrc)}
-          onError={() => setLoadError(true)}
-          style={{
-            opacity: loadedSrc === currentSrc ? 1 : 0,
-            transition: 'opacity .25s ease',
-            position: 'relative',
-            display: loadError ? 'none' : undefined,
-          }}
-        />
+        {/* Never render an <img> with an empty src — in Safari/Chrome that
+            resolves to the document URL and fires onError, which is what made
+            the FIRST-opened photo flash "Image unavailable" before the effect
+            had assigned the real URL. Only mount once we hold a real source. */}
+        {shouldRenderFullImage(currentSrc) && (
+          <img
+            key={currentSrc}
+            className="viewer__img"
+            src={currentSrc}
+            alt=""
+            decoding="async"
+            // @ts-expect-error fetchpriority is valid HTML but not yet in the React 18 DOM types
+            fetchpriority="high"
+            onLoad={() => setLoadedSrc(currentSrc)}
+            // Ignore a late error from the previous (unmounting) image after a
+            // swipe, or from any stale src — only the active source may trip the
+            // error state. Resets are handled when currentSrc changes.
+            onError={(e) => { if (isRealLoadError(e.currentTarget.getAttribute('src'), currentSrc)) setLoadError(true) }}
+            style={{
+              opacity: loadedSrc === currentSrc ? 1 : 0,
+              transition: 'opacity .25s ease',
+              position: 'relative',
+              display: loadError ? 'none' : undefined,
+            }}
+          />
+        )}
 
         {/* Storage 404 / network failure: show an inline message + next-photo
-            CTA instead of an endlessly spinning loader on a black screen. */}
-        {loadError && (
+            CTA instead of an endlessly spinning loader on a black screen. Only
+            after a real failure of a real source — never during loading. */}
+        {shouldShowUnavailable(loadError, currentSrc) && (
           <div
             role="status"
             style={{
