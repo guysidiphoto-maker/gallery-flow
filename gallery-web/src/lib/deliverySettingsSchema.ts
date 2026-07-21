@@ -118,6 +118,8 @@ const RULES: Record<string, FieldRule> = {
   coverImageUrl:        maxLength('cover url', 500),
   coverImageId:         maxLength('cover id', 64),
   coverCrop:            coverCrop('coverCrop'),
+  coverEnabled:         boolean('הצגת תמונת שער'),
+  coverSource:          oneOf('מקור תמונת שער', ['none', 'gallery_asset', 'custom_upload'] as const),
 
   // Access
   accessType:           oneOf('גישה', ['public', 'password', 'code'] as const),

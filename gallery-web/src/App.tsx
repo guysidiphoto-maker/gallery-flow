@@ -22,6 +22,7 @@ import {
 } from './lib/galleryClient'
 import { logDownload, logBatchDownload } from './lib/activityLog'
 import { startGalleryCheckout, GALLERY_UNLOCK_PRICE_ILS } from './lib/tokenClient'
+import { coverIsEnabled, gateCoverBackgroundUrl } from './lib/coverImage'
 
 // Both surfaces only mount once a guest opts in (face search button / story
 // circle). Lazy-loading keeps their JS (camera pipeline + autoplay video
@@ -1601,6 +1602,15 @@ export function App() {
     return () => { cancelled = true }
   }, [_hookImgBucket, _hookCoverImage?.storage_path])
 
+  // Master on/off. The owner can disable the cover independently of the gallery
+  // privacy setting; when off, the welcome/hero cover and the private-gate
+  // background both fall back to their current no-cover behavior (no empty
+  // placeholder). Backward-compatible for galleries created before the toggle
+  // (see readCoverConfig): a cover chosen the old way stays on.
+  const coverEnabled = coverIsEnabled(_hookRaw)
+  const effectiveResolvedCoverUrl = coverEnabled ? resolvedCoverUrl : null
+  const effectiveCoverUrl = coverEnabled ? coverUrl : null
+
   if (error) {
     // Map internal English error keys to a localized, branded fallback. The
     // raw "Gallery not found" string was leaking to Hebrew clients hitting a
@@ -1763,6 +1773,7 @@ export function App() {
         onUnlock={handleUnlock}
         requireToken={signedGateOn}
         lang={lang}
+        coverUrl={gateCoverBackgroundUrl(_hookRaw, _hookImgBucket)}
       />
     )
   }
@@ -1822,7 +1833,7 @@ export function App() {
           studioName={studioName}
           studioWebsite={studioWebsite}
           images={welcomeImages}
-          coverImageUrl={resolvedCoverUrl}
+          coverImageUrl={effectiveResolvedCoverUrl}
           coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
           storageUrl={(path: string) => displayUrl(imgBucket, path, 1280, 65)}
           onEnter={() => setShowWelcome(false)}
@@ -2377,15 +2388,15 @@ export function App() {
     ?? images.find(_isLandscape)
     ?? images.find(im => im.is_top_pick)
     ?? images[0]
-  const heroBgUrl = resolvedCoverUrl
-    || coverUrl
+  const heroBgUrl = effectiveResolvedCoverUrl
+    || effectiveCoverUrl
     // Blurred+dimmed hero — a small server-side transform is plenty and never
     // pulls the multi-MB original (storage_path is the original in the
     // originals-only model).
     || (heroFallbackImage
         ? displayUrl(imgBucket, heroFallbackImage.storage_path, 1280, 60)
         : null)
-  const hasCustomCover = !!(resolvedCoverUrl || coverUrl)
+  const hasCustomCover = !!(effectiveResolvedCoverUrl || effectiveCoverUrl)
 
   // Convert the chosen theme accent (#rrggbb) to "r, g, b" so it can override
   // the existing --accent CSS variable used everywhere in styles.css.

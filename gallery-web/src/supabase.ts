@@ -6,11 +6,14 @@ import { createClient } from '@supabase/supabase-js'
 // before. A staging preview sets the two VITE_ vars to point the whole client
 // (auth + storage URLs + render URLs) at pixflow-staging, fully isolated from
 // production.
+// Optional-chain import.meta.env: under Vite it's always defined; under a bare
+// node/tsx test runner it's undefined, so we fall back to the prod values below
+// (identical to the normal prod build) instead of throwing at import time.
 const SUPABASE_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string | undefined) ||
+  (import.meta.env?.VITE_SUPABASE_URL as string | undefined) ||
   'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
 const SUPABASE_ANON_KEY =
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ||
+  (import.meta.env?.VITE_SUPABASE_ANON_KEY as string | undefined) ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZseWlxZmF3a3JqdnFjbWtwZnZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5ODg3NzksImV4cCI6MjA5MDU2NDc3OX0.ionfOl71NrBO-0iBVBAu6oiTUzkJuIu-drEkY1cmsFY'
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)

@@ -13,6 +13,11 @@ interface PasswordGateProps {
   // Gallery delivery language — drives the gate's copy so a Hebrew gallery no
   // longer shows an English gate. Defaults to 'he' (the app default).
   lang?: 'he' | 'en'
+  // Optional cover background. When the owner enabled a cover, this is a small,
+  // heavily-compressed render URL (see gateCoverBackgroundUrl) shown behind the
+  // gate with blur + scrim + vignette + a slow cinematic zoom. It is purely
+  // decorative and deliberately low-res so faces can't be read before unlock.
+  coverUrl?: string | null
 }
 
 // Legacy session flag — kept so existing tabs unlocked before the rollout
@@ -43,13 +48,18 @@ const GATE_STRINGS = {
   },
 } as const
 
-export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken, lang = 'he' }: PasswordGateProps) {
+export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken, lang = 'he', coverUrl }: PasswordGateProps) {
   const str = GATE_STRINGS[lang] ?? GATE_STRINGS.he
   const [value, setValue] = useState('')
   const [error, setError] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [cooldownLeft, setCooldownLeft] = useState(0)
   const tickRef = useRef<number | null>(null)
+  // Cover background: fade in only once the image actually decodes, and drop
+  // it entirely if it fails to load (broken-image fallback → flat-dark gate).
+  const [coverReady, setCoverReady] = useState(false)
+  const [coverFailed, setCoverFailed] = useState(false)
+  const showCover = !!coverUrl && !coverFailed
 
   // Focus trap — the password gate covers the entire screen and must not let
   // Tab escape into background content (WCAG 2.1.2).
@@ -113,11 +123,31 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken, l
     // announced as the dialog name when focus enters (WCAG 4.1.2, 1.3.1).
     <div
       ref={gateRef}
-      className="pw-gate"
+      className={`pw-gate${showCover ? ' pw-gate--has-cover' : ''}${showCover && coverReady ? ' pw-gate--cover-ready' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="pw-gate-title"
     >
+      {/* Decorative cover background. aria-hidden + empty alt keeps it out of
+          the screen-reader tree (it's atmosphere, not content). Rendered as an
+          <img> so a load failure is detectable → graceful flat-dark fallback. */}
+      {showCover && (
+        <div className="pw-gate__cover" aria-hidden="true">
+          <img
+            className="pw-gate__cover-img"
+            src={coverUrl as string}
+            alt=""
+            decoding="async"
+            // A cached cover can finish loading before React attaches onLoad —
+            // the ref check catches that case so it still fades in (otherwise it
+            // would stay at opacity:0, i.e. invisible).
+            ref={el => { if (el && el.complete && el.naturalWidth > 0) setCoverReady(true) }}
+            onLoad={() => setCoverReady(true)}
+            onError={() => setCoverFailed(true)}
+          />
+          <div className="pw-gate__cover-scrim" />
+        </div>
+      )}
       <form className="pw-gate__card" onSubmit={handleSubmit}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,

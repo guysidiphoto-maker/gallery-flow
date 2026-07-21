@@ -12,7 +12,17 @@ export interface DeliverySettings {
   clientName: string
   coverImageId: string | null
   coverImageUrl: string | null
+  /** Storage path (in the gallery bucket) of the chosen cover — stable, and
+   *  preferred over coverImageUrl for resolving a fresh render URL. */
+  coverImagePath?: string | null
   coverCrop: { zoom: number; x: number; y: number } | null
+  /** Owner's explicit "show cover image" switch, independent of gallery
+   *  privacy. undefined on galleries created before the toggle existed →
+   *  treated as ON iff a cover was already chosen (see readCoverConfig). */
+  coverEnabled?: boolean
+  /** Where the cover comes from. 'custom_upload' is a separate image that is
+   *  NOT added to the gallery grid. */
+  coverSource?: 'none' | 'gallery_asset' | 'custom_upload'
   galleryDescription: string
   welcomeMessage?: string
   eventDate: string

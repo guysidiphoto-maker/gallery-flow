@@ -3,6 +3,8 @@ import { FixedSizeGrid, type GridChildComponentProps } from 'react-window'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany, partitionUploadFiles, MAX_UPLOAD_BATCH, type UploadRejectReason } from '../lib/uploadPipeline'
+import { uploadCoverImage, deleteCoverObject, CoverUploadError, type CoverUploadPhase } from '../lib/coverUpload'
+import { readCoverConfig } from '../lib/coverImage'
 import { captureException } from '@sentry/react'
 import { signedStorageUrl } from '../lib/signedStorage'
 import { warmGalleryCache } from '../lib/warmCache'
@@ -362,6 +364,12 @@ export function Dashboard() {
   // Photo-grid view state — hovered tile + open per-tile menu + grid size
   // (Pixieset offers Regular/Large) + sort order.
   const [hoveredImageId, setHoveredImageId] = useState<string | null>(null)
+  // Cover-image editor state (Design → Cover). `coverMode` chooses between
+  // picking an existing photo and uploading a separate cover.
+  const [coverMode, setCoverMode] = useState<'gallery' | 'upload'>('gallery')
+  const [coverUploading, setCoverUploading] = useState(false)
+  const [coverUploadPhase, setCoverUploadPhase] = useState<CoverUploadPhase | null>(null)
+  const [coverDragOver, setCoverDragOver] = useState(false)
   const [imageMenuOpenId, setImageMenuOpenId] = useState<string | null>(null)
   const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
   const [photoSort, setPhotoSort] = useState<'order' | 'name' | 'newest'>('order')
@@ -1806,6 +1814,98 @@ export function Dashboard() {
   }
 
   const imgUrl = (path: string) => storageUrl('gallery-images', path)
+
+  // ─── Cover image: separate upload / selection / removal ───────────────────
+  // Upload a cover that is NOT added to the gallery grid (no images row, no
+  // token consumed). On success we delete the previously-uploaded custom cover
+  // (guarded to covers/ paths) so replacing doesn't orphan storage, then save
+  // the new path + a stable public URL + source discriminator through the
+  // validated settings RPC.
+  async function handleCoverFile(file: File | null | undefined) {
+    if (!file || !editingGallery || !businessSlug) return
+    if (coverUploading) return
+    const prev = (editingGallery.delivery_settings ?? {}) as Record<string, unknown>
+    const prevPath = prev.coverImagePath as string | null | undefined
+    const prevSource = readCoverConfig(prev).source
+    setCoverUploading(true)
+    setCoverUploadPhase('validating')
+    try {
+      const res = await uploadCoverImage(file, {
+        galleryId: editingGallery.id,
+        businessSlug,
+        onPhase: setCoverUploadPhase,
+      })
+      await updateGallerySettings({
+        coverEnabled: true,
+        coverSource: 'custom_upload',
+        coverImagePath: res.path,
+        coverImageUrl: res.url,
+        coverImageId: null,
+      })
+      // Best-effort cleanup of the replaced custom cover (never a gallery photo).
+      if (prevSource === 'custom_upload' && prevPath && prevPath !== res.path) {
+        void deleteCoverObject(prevPath)
+      }
+      showToast({ kind: 'success', text: 'תמונת השער עודכנה' })
+    } catch (e) {
+      const reason = e instanceof CoverUploadError ? e.reason : 'upload_failed'
+      const msg =
+        reason === 'too_large' ? 'הקובץ גדול מדי (עד 40MB)'
+        : reason === 'heic' ? 'קובץ HEIC אינו נתמך. המירו ל-JPG'
+        : reason === 'unsupported' ? 'סוג קובץ לא נתמך (JPG / PNG / WebP בלבד)'
+        : reason === 'empty' ? 'הקובץ ריק'
+        : reason === 'decode_failed' ? 'לא ניתן לקרוא את התמונה'
+        : 'העלאת השער נכשלה. נסו שוב'
+      showToast({ kind: 'error', text: msg })
+    } finally {
+      setCoverUploading(false)
+      setCoverUploadPhase(null)
+      setCoverDragOver(false)
+    }
+  }
+
+  // Remove any cover (existing-photo selection OR uploaded file). Deletes the
+  // storage object only when it's a custom upload; a gallery photo used as a
+  // cover is left untouched. Sets coverEnabled=false so the toggle reflects it.
+  async function handleCoverRemove() {
+    if (!editingGallery) return
+    const prev = (editingGallery.delivery_settings ?? {}) as Record<string, unknown>
+    const cfg = readCoverConfig(prev)
+    await updateGallerySettings({
+      coverEnabled: false,
+      coverSource: 'none',
+      coverImagePath: null,
+      coverImageUrl: null,
+      coverImageId: null,
+    })
+    if (cfg.source === 'custom_upload' && cfg.path) void deleteCoverObject(cfg.path)
+  }
+
+  // Pick an existing gallery photo as the cover. Switching away from a custom
+  // upload removes the now-unused uploaded object.
+  async function selectGalleryCover(img: GalleryImage) {
+    if (!editingGallery) return
+    const prevCfg = readCoverConfig((editingGallery.delivery_settings ?? {}) as Record<string, unknown>)
+    await updateGallerySettings({
+      coverEnabled: true,
+      coverSource: 'gallery_asset',
+      coverImagePath: img.storage_path,
+      coverImageUrl: imgUrl(img.storage_path),
+      coverImageId: img.id,
+    })
+    if (prevCfg.source === 'custom_upload' && prevCfg.path && prevCfg.path !== img.storage_path) {
+      void deleteCoverObject(prevCfg.path)
+    }
+  }
+
+  // Default the cover editor to the tab matching the current source whenever a
+  // different gallery is opened for editing.
+  useEffect(() => {
+    if (!editingGallery) return
+    const src = readCoverConfig((editingGallery.delivery_settings ?? {}) as Record<string, unknown>).source
+    setCoverMode(src === 'custom_upload' ? 'upload' : 'gallery')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingGallery?.id])
 
   // ─── Bulk actions (selectMode) ───────────────────────────────────────────
   function exitSelectMode() {
@@ -5232,107 +5332,208 @@ export function Dashboard() {
                           </div>
                         </div>
 
-                        {/* Cover image picker — always visible (any welcome
-                            style can use a cover, not just cinematic). */}
-                        {galleryImages.length > 0 && (
+                        {/* ── Cover image — enable toggle + source + previews ──
+                            One clear section. The cover is independent of the
+                            gallery privacy setting: it shows as the public hero
+                            AND as the blurred background of the private entry
+                            screen. */}
+                        {(() => {
+                          const coverCfg = readCoverConfig(ds)
+                          const coverPreviewUrl =
+                            (ds.coverImageUrl as string | null) ||
+                            (coverCfg.path ? imgUrl(coverCfg.path) : null)
+                          const phaseLabel: Record<string, string> = {
+                            validating: 'בודק קובץ…',
+                            processing: 'מעבד תמונה…',
+                            uploading: 'מעלה…',
+                            done: 'הושלם',
+                            error: 'שגיאה',
+                          }
+                          return (
                           <div>
-                            <div style={{
-                              ...labelStyle, marginBottom: 12,
-                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            }}>
-                              <span>תמונת שער · ראש הגלריה</span>
-                              {Boolean(ds.coverImageUrl || ds.coverImagePath) && (
-                                <button onClick={() => updateGallerySettings({ coverImageUrl: null, coverImagePath: null })} style={{
-                                  background: 'transparent', border: 'none', cursor: 'pointer',
-                                  color: textMuted, fontFamily: 'inherit',
-                                  fontSize: 9, fontWeight: 500, letterSpacing: '0.18em',
-                                  textTransform: 'uppercase', padding: 0,
-                                }}>נקה</button>
-                              )}
+                            {/* Toggle: show cover image */}
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+                              <div>
+                                <div style={{ fontSize: 13.5, fontWeight: 600, color: textPrimary, marginBottom: 3 }}>תמונת שער</div>
+                                <div style={{ fontSize: 11.5, color: textMuted, lineHeight: 1.5, maxWidth: 380 }}>
+                                  תמונה גדולה בראש הגלריה. בגלריה פרטית היא מופיעה מטושטשת ואפלה ברקע מסך הכניסה, לאווירה יוקרתית בלי לחשוף את התוכן.
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={coverCfg.enabled}
+                                aria-label="הצגת תמונת שער"
+                                onClick={() => {
+                                  const next = !coverCfg.enabled
+                                  if (next) updateGallerySetting('coverEnabled', true)
+                                  else void handleCoverRemove()
+                                }}
+                                style={{
+                                  flexShrink: 0, width: 46, height: 26, borderRadius: 999,
+                                  border: 'none', cursor: 'pointer', position: 'relative',
+                                  background: coverCfg.enabled ? textPrimary : '#cfcdc9',
+                                  transition: 'background .18s',
+                                }}
+                              >
+                                <span style={{
+                                  position: 'absolute', top: 3, insetInlineStart: coverCfg.enabled ? 23 : 3,
+                                  width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                                  transition: 'inset-inline-start .18s',
+                                  boxShadow: '0 1px 2px rgba(0,0,0,.25)',
+                                }} />
+                              </button>
                             </div>
 
-                            {/* Live preview of what the gallery header (hero)
-                                will show — makes the cover choice obvious and
-                                WYSIWYG instead of buried in a thumbnail grid. */}
-                            <div style={{
-                              position: 'relative', width: '100%', aspectRatio: '16 / 7',
-                              borderRadius: 10, overflow: 'hidden', marginBottom: 14,
-                              background: '#0a0a0f',
-                            }}>
-                              {((ds.coverImageUrl as string) || galleryImages[0]) && (
-                                <img
-                                  src={(ds.coverImageUrl as string) || imgUrl(galleryImages[0].thumbnail_path || galleryImages[0].storage_path)}
-                                  alt=""
-                                  style={{
-                                    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                                    filter: ds.coverImageUrl ? 'none' : 'blur(3px) brightness(0.55)',
-                                  }}
-                                />
-                              )}
-                              <div style={{
-                                position: 'absolute', inset: 0,
-                                display: 'flex', flexDirection: 'column',
-                                alignItems: 'center', justifyContent: 'center', gap: 5, padding: 12,
-                                background: 'linear-gradient(to bottom, rgba(0,0,0,.15), rgba(0,0,0,.6))',
-                                color: '#fff', textAlign: 'center',
-                              }}>
-                                <div style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', opacity: 0.8 }}>
-                                  תצוגה מקדימה · ראש הגלריה
+                            {coverCfg.enabled && (
+                              <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 18 }}>
+                                {/* Responsive previews: desktop public / mobile public / private entry */}
+                                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                                  {/* Desktop public hero */}
+                                  <div style={{ flex: '1 1 200px', minWidth: 180 }}>
+                                    <div style={{ fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: textMuted, marginBottom: 6 }}>דסקטופ · ציבורי</div>
+                                    <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 7', borderRadius: 8, overflow: 'hidden', background: '#0a0a0f' }}>
+                                      {coverPreviewUrl && <img src={coverPreviewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                                      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 8, textAlign: 'center', color: '#fff', background: 'linear-gradient(to bottom, rgba(0,0,0,.1), rgba(0,0,0,.5))' }}>
+                                        <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.15 }}>{(ds.galleryTitle as string) || editingGallery.name}</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {/* Mobile public */}
+                                  <div style={{ width: 92 }}>
+                                    <div style={{ fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: textMuted, marginBottom: 6 }}>מובייל</div>
+                                    <div style={{ position: 'relative', width: '100%', aspectRatio: '9 / 16', borderRadius: 10, overflow: 'hidden', background: '#0a0a0f', border: `2px solid ${border}` }}>
+                                      {coverPreviewUrl && <img src={coverPreviewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 6, textAlign: 'center', color: '#fff', background: 'linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,.6))' }}>
+                                        <div style={{ fontSize: 9, fontWeight: 700, lineHeight: 1.1 }}>{(ds.galleryTitle as string) || editingGallery.name}</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {/* Private entry */}
+                                  <div style={{ width: 92 }}>
+                                    <div style={{ fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: textMuted, marginBottom: 6 }}>מסך כניסה</div>
+                                    <div style={{ position: 'relative', width: '100%', aspectRatio: '9 / 16', borderRadius: 10, overflow: 'hidden', background: '#0a0a0f', border: `2px solid ${border}` }}>
+                                      {coverPreviewUrl && <img src={coverPreviewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', filter: 'blur(6px) brightness(.55) saturate(.85)', transform: 'scale(1.12)' }} />}
+                                      <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(120% 90% at 50% 40%, rgba(10,10,15,.35), rgba(10,10,15,.85))' }} />
+                                      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, padding: 6 }}>
+                                        <div style={{ width: 18, height: 15, borderRadius: 3, border: '1.5px solid rgba(255,255,255,.55)' }} />
+                                        <div style={{ width: '70%', height: 8, borderRadius: 4, background: 'rgba(255,255,255,.14)' }} />
+                                        <div style={{ width: '70%', height: 8, borderRadius: 4, background: 'rgba(255,255,255,.28)' }} />
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
-                                <div style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.2 }}>
-                                  {(ds.galleryTitle as string) || editingGallery.name}
+
+                                {/* Source mode switch */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                  <button type="button" onClick={() => setCoverMode('gallery')} style={tileStyle(coverMode === 'gallery')}>
+                                    <Icon name="gallery" size={18} strokeWidth={coverMode === 'gallery' ? 1.85 : 1.4} />
+                                    <div style={{ fontSize: 12.5, fontWeight: coverMode === 'gallery' ? 600 : 500, color: textPrimary }}>בחירה מהגלריה</div>
+                                  </button>
+                                  <button type="button" onClick={() => setCoverMode('upload')} style={tileStyle(coverMode === 'upload')}>
+                                    <Icon name="photo" size={18} strokeWidth={coverMode === 'upload' ? 1.85 : 1.4} />
+                                    <div style={{ fontSize: 12.5, fontWeight: coverMode === 'upload' ? 600 : 500, color: textPrimary }}>העלאת תמונה נפרדת</div>
+                                  </button>
                                 </div>
-                                {!ds.coverImageUrl && (
-                                  <div style={{ fontSize: 10.5, opacity: 0.8 }}>
-                                    לא נבחר שער — מוצגת התמונה הראשונה. בחר תמונה למטה ↓
+
+                                {coverMode === 'gallery' ? (
+                                  galleryImages.length > 0 ? (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 4, maxHeight: 320, overflowY: 'auto' }}>
+                                      {galleryImages.slice(0, 48).map(img => {
+                                        const isCover =
+                                          coverCfg.source === 'gallery_asset' &&
+                                          ((ds.coverImagePath as string | undefined) === img.storage_path ||
+                                            (ds.coverImageId as string | undefined) === img.id)
+                                        return (
+                                          <button key={img.id}
+                                            type="button"
+                                            onClick={() => void selectGalleryCover(img)}
+                                            aria-label={isCover ? 'תמונת שער נוכחית' : 'הגדר כתמונת שער'}
+                                            aria-pressed={isCover}
+                                            style={{
+                                              padding: 0, border: 'none', background: 'transparent',
+                                              aspectRatio: '4 / 3', overflow: 'hidden', cursor: 'pointer',
+                                              outline: isCover ? `2px solid ${textPrimary}` : 'none',
+                                              outlineOffset: isCover ? -2 : 0,
+                                              opacity: isCover ? 1 : 0.92,
+                                              transition: 'outline-offset .15s, opacity .15s',
+                                            }}>
+                                            <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path}
+                                              alt="" loading="lazy"
+                                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <div style={{ fontSize: 12, color: textMuted, padding: '10px 0' }}>
+                                      אין עדיין תמונות בגלריה. העלו תמונות, או בחרו "העלאת תמונה נפרדת".
+                                    </div>
+                                  )
+                                ) : (
+                                  <div>
+                                    <label
+                                      htmlFor="cover-upload-input"
+                                      onDragOver={e => { e.preventDefault(); setCoverDragOver(true) }}
+                                      onDragLeave={() => setCoverDragOver(false)}
+                                      onDrop={e => { e.preventDefault(); void handleCoverFile(e.dataTransfer.files?.[0]) }}
+                                      style={{
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                        gap: 8, padding: '28px 16px', borderRadius: 10, textAlign: 'center',
+                                        border: `1.5px dashed ${coverDragOver ? textPrimary : border}`,
+                                        background: coverDragOver ? 'rgba(20,20,19,.03)' : 'transparent',
+                                        cursor: coverUploading ? 'default' : 'pointer',
+                                        transition: 'border-color .15s, background .15s',
+                                      }}>
+                                      <Icon name="photo" size={24} strokeWidth={1.4} />
+                                      {coverUploading ? (
+                                        <>
+                                          <div style={{ fontSize: 12.5, fontWeight: 600, color: textPrimary }}>
+                                            {coverUploadPhase ? phaseLabel[coverUploadPhase] : 'מעלה…'}
+                                          </div>
+                                          <div style={{ width: '70%', maxWidth: 220, height: 4, borderRadius: 4, overflow: 'hidden', background: '#e6e4e0' }}>
+                                            <div style={{ width: '45%', height: '100%', background: textPrimary, borderRadius: 4, animation: 'dl-progress-pulse 1.1s ease-in-out infinite' }} />
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <div style={{ fontSize: 13, fontWeight: 600, color: textPrimary }}>גררו תמונה לכאן או לחצו לבחירה</div>
+                                          <div style={{ fontSize: 11, color: textMuted }}>JPG · PNG · WebP · עד 40MB</div>
+                                        </>
+                                      )}
+                                      <input
+                                        id="cover-upload-input"
+                                        type="file"
+                                        accept="image/jpeg,image/png,image/webp"
+                                        disabled={coverUploading}
+                                        onChange={e => { void handleCoverFile(e.target.files?.[0]); e.currentTarget.value = '' }}
+                                        style={{ display: 'none' }}
+                                      />
+                                    </label>
+                                    <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.5, marginTop: 8 }}>
+                                      תמונה שמועלית כאן משמשת <strong>כשער בלבד</strong> ולא תתווסף לתמונות הגלריה.
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Current cover + remove */}
+                                {coverCfg.source !== 'none' && (
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 4 }}>
+                                    <div style={{ fontSize: 11.5, color: textMuted }}>
+                                      {coverCfg.source === 'custom_upload' ? 'שער: תמונה שהועלתה בנפרד' : 'שער: תמונה מתוך הגלריה'}
+                                    </div>
+                                    <button type="button" onClick={() => void handleCoverRemove()} style={{
+                                      background: 'transparent', border: `1px solid ${border}`, borderRadius: 8,
+                                      cursor: 'pointer', color: textPrimary, fontFamily: 'inherit',
+                                      fontSize: 11.5, fontWeight: 500, padding: '6px 12px',
+                                    }}>הסרת תמונת שער</button>
                                   </div>
                                 )}
                               </div>
-                            </div>
-                            <div style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
-                              gap: 4,
-                            }}>
-                              {galleryImages.slice(0, 48).map(img => {
-                                const url = imgUrl(img.storage_path)
-                                // Prefer the canonical storage_path comparison
-                                // — the URL form drifts when buckets switch from
-                                // public to signed URLs or when VITE_SUPABASE_URL
-                                // changes per env. Fall back to URL match so
-                                // legacy galleries (no coverImagePath yet) still
-                                // highlight the right tile.
-                                const isCover =
-                                  (ds.coverImagePath as string | undefined) === img.storage_path
-                                  || ds.coverImageUrl === url
-                                return (
-                                  <button key={img.id}
-                                    onClick={() => updateGallerySettings({
-                                      // Path is the new canonical value; URL
-                                      // is dual-written for backward compat
-                                      // until the viewer migrates (Phase 6).
-                                      coverImagePath: img.storage_path,
-                                      coverImageUrl: url,
-                                    })}
-                                    aria-label={isCover ? 'תמונת שער נוכחית' : 'הגדר כתמונת שער'}
-                                    style={{
-                                      padding: 0, border: 'none', background: 'transparent',
-                                      aspectRatio: '4 / 3', overflow: 'hidden',
-                                      cursor: 'pointer',
-                                      outline: isCover ? `2px solid ${textPrimary}` : 'none',
-                                      outlineOffset: isCover ? -2 : 0,
-                                      opacity: isCover ? 1 : 0.92,
-                                      transition: 'outline-offset .15s, opacity .15s',
-                                    }}>
-                                    <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path}
-                                      alt="" loading="lazy"
-                                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                                  </button>
-                                )
-                              })}
-                            </div>
+                            )}
                           </div>
-                        )}
+                          )
+                        })()}
 
                         <label style={{ display: 'block' }}>
                           <span style={{ ...labelStyle }}>כותרת הגלריה</span>
