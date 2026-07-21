@@ -51,7 +51,7 @@
   .hero__bg { animation: none; transform: scale(1.08) !important; }
   .hero__content { animation: none; }
   /* Cover backdrop: freeze the cinematic zoom, keep the static framing. */
-  .cover-backdrop__img { animation: none !important; transform: scale(1.12) !important; }
+  .cover-backdrop__img { animation: none !important; transform: scale(1.08) !important; }
   .loader { animation: none; border-top-color: rgba(var(--accent), .9); }
   .wc-col { animation: none !important; }
   .story-circle__ring { transition: none; }
@@ -171,18 +171,22 @@ input, button, textarea, select {
   object-fit: cover;
   /* scale hides the soft transparent edge the blur creates; the zoom animation
      drives the transform, so the base scale lives in the keyframes too. */
-  transform: scale(1.12);
-  filter: blur(18px) brightness(0.9) saturate(1);
+  transform: scale(1.08);
+  /* Softens + obscures faces before unlock, but not so much it looks like fog.
+     The source is already a small low-res render (privacy), so a lighter blur
+     is enough. */
+  filter: blur(10px) brightness(0.92) saturate(1.03);
   opacity: 0;
   transition: opacity 1.1s ease;
-  animation: pw-cover-zoom 26s ease-in-out infinite alternate;
+  /* Gentle, visible Ken Burns drift (scale + slow pan). */
+  animation: pw-cover-zoom 18s ease-in-out infinite alternate;
 }
 
 .cover-backdrop--ready .cover-backdrop__img { opacity: 1; }
 
 @keyframes pw-cover-zoom {
-  from { transform: scale(1.10); }
-  to   { transform: scale(1.20); }
+  from { transform: scale(1.05) translate3d(0, 0, 0); }
+  to   { transform: scale(1.16) translate3d(-1.5%, -1.5%, 0); }
 }
 
 /* Dark overlay + soft vignette + gradient behind the central content. Tuned so

@@ -516,9 +516,12 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
         </div>
       )}
 
-      {/* Welcome message — animated (shared component, reused on the private
-          face-search results screen so both look identical) */}
-      <OpeningText message={welcomeMessage} animation={textAnimation} speed={animationSpeed} animate={visible} marginTop={24} />
+      {/* Opening text — animated (shared component, reused on the private
+          face-search results screen so both look identical). Falls back to the
+          gallery description when no dedicated welcome message is set, so the
+          photographer's opening line still animates + reads well instead of
+          rendering as faint static text. */}
+      <OpeningText message={welcomeMessage || galleryDescription} animation={textAnimation} speed={animationSpeed} animate={visible} marginTop={24} />
 
       {/* Event meta */}
       {(eventDate || eventLocation) && (
@@ -535,10 +538,11 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
         </div>
       )}
 
-      {galleryDescription && (
+      {/* Secondary description — only when it isn't already the animated opening
+          line above (i.e. a dedicated welcome message exists). */}
+      {galleryDescription && welcomeMessage && (
         <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .85s both' : 'none' }}>
-          {/* TODO: a11y — gallery description at rgba(.22) is ~1.6:1 contrast. Needs design decision: bump opacity to at least .65 for AA compliance, or confirm this text is purely decorative and not load-bearing. */}
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,.22)', margin: '8px auto 0', maxWidth: 420 }}>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,.5)', margin: '8px auto 0', maxWidth: 420, textShadow: '0 1px 8px rgba(0,0,0,.5)' }}>
             {galleryDescription}
           </p>
         </div>
@@ -566,8 +570,8 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
       <div style={{
         display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', marginTop: 32,
         animation: visible ? `wcFadeUp .9s cubic-bezier(.16,1,.3,1) ${
-          welcomeMessage
-            ? (() => { const wc = welcomeMessage.split(/\s+/).filter(Boolean).length; return 2.2 + wc * Math.min(0.12, 2 / wc) * 0.6 })()
+          (welcomeMessage || galleryDescription)
+            ? (() => { const t = (welcomeMessage || galleryDescription) as string; const wc = t.split(/\s+/).filter(Boolean).length || 1; return 2.2 + wc * Math.min(0.12, 2 / wc) * 0.6 })()
             : 1
         }s both` : 'none',
       }}>
