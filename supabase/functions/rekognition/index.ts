@@ -10,7 +10,7 @@ import {
   SearchFacesByImageCommand,
 } from 'npm:@aws-sdk/client-rekognition@3'
 
-// ─── Environment ────────────────────────────────────────────────────────────
+// --- Environment ------------------------------------------------------------
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -30,7 +30,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-// ─── Tuning ─────────────────────────────────────────────────────────────────
+// --- Tuning -----------------------------------------------------------------
 
 // Rate limit is scoped per (gallery, ip): one IP-share-on-event-WiFi can
 // search at full quota in each gallery they visit, instead of having a
@@ -38,7 +38,7 @@ const corsHeaders = {
 const SEARCH_RATE_LIMIT_PER_HOUR = 500
 const SEARCH_RATE_WINDOW_MS = 60 * 60 * 1000
 const SEARCH_MAX_SELFIE_BYTES = 5 * 1024 * 1024
-// How long a cached selfie→matches result is reusable. Long enough to
+// How long a cached selfie->matches result is reusable. Long enough to
 // cover a guest reloading and re-searching during the event, short enough
 // that newly-indexed photos surface within the hour.
 const SEARCH_CACHE_TTL_MS = 60 * 60 * 1000
@@ -48,14 +48,14 @@ const SEARCH_CACHE_TTL_MS = 60 * 60 * 1000
  *  below the AWS default. */
 const SEARCH_FACE_MATCH_THRESHOLD = 70
 /** Max matches returned from the collection per selfie search.
- *  Passed to Rekognition as MaxFaces — default is 1, which is WAY too low. */
+ *  Passed to Rekognition as MaxFaces - default is 1, which is WAY too low. */
 const SEARCH_MAX_RESULTS = 100
 /** Max faces indexed per photo. Event/crowd photos can legitimately contain
  *  40+ people; we want everyone to find themselves. Rekognition bills per
  *  image regardless of MaxFaces, so raising this is cost-neutral. */
 const INDEX_MAX_FACES_PER_IMAGE = 100
 /** Concurrent IndexFaces calls from a single edge-function invocation. */
-const INDEX_CONCURRENCY = 6
+const INDEX_CONCURRENCY = 12
 /** Max times we'll retry indexing a single image before giving up. Transient
  *  AWS throttles or storage hiccups deserve a retry; persistent failures
  *  (corrupt file, missing storage object, unsupported format) shouldn't keep
@@ -69,11 +69,15 @@ const INDEXING_LOCK_STALENESS_SEC = 10 * 60
  *  until BATCH_TIME_BUDGET_MS elapses, then chains to the next run via
  *  selfInvokeBatch. Keeps every invocation well under the Edge Function
  *  wall-clock limit so large galleries (1,000+ heavy images) finish instead of
- *  stalling part-way — the root cause of the 113/1,165 stall. */
-const INDEX_BATCH_MAX = 400
-const BATCH_TIME_BUDGET_MS = 40_000
+ *  stalling part-way - the root cause of the 113/1,165 stall. */
+const INDEX_BATCH_MAX = 300
+// A single invocation keeps looping through batches until the gallery is done
+// or this budget elapses, then chains one more invocation. Large so each
+// invocation does as much as the platform allows before the (best-effort)
+// hand-off; a durable cron/external kick is the real reliability net.
+const SELF_BUDGET_MS = 240_000
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// --- Helpers ----------------------------------------------------------------
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -108,7 +112,7 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
 }
 
 // Download image bytes via the service-role Supabase client. Bypasses RLS and
-// works regardless of bucket privacy — keeps the indexer working when the
+// works regardless of bucket privacy - keeps the indexer working when the
 // gallery-images bucket flips private (Phase 4.5).
 async function downloadImageBytes(
   sb: SupabaseClient,
@@ -158,7 +162,7 @@ async function loadOwnedGallery(
   return gallery
 }
 
-// ─── Per-image indexing (internal — not exposed as an action anymore) ───────
+// --- Per-image indexing (internal - not exposed as an action anymore) -------
 
 /** Atomically stamp face_indexed_at on an image only if it's still null,
  *  and increment the gallery counter exactly when that transition happens.
@@ -253,7 +257,7 @@ async function indexOneImage(
         }).eq('id', image.id)
       }
     } catch {
-      /* swallow — the next pass will re-try if this DB write fails */
+      /* swallow - the next pass will re-try if this DB write fails */
     }
     return { indexed: false, faceCount: 0, error: msg }
   }
@@ -277,14 +281,14 @@ async function selfInvokeBatch(galleryId: string): Promise<void> {
     })
   } catch (_err) {
     // If the chain link fails to send, the 10-min lock goes stale and a later
-    // publish/upload resumes from where we left off — no data is lost.
+    // publish/upload resumes from where we left off - no data is lost.
   }
 }
 
 /** Index ONE bounded batch of a gallery's unindexed images, then either mark the
  *  gallery done or self-invoke for the next batch. Bounded by BOTH a row cap
  *  (also avoids PostgREST's 1000-row select cap) and a wall-clock budget, so a
- *  single invocation never exceeds the Edge Function time limit — the reason a
+ *  single invocation never exceeds the Edge Function time limit - the reason a
  *  large gallery (1,000+ heavy images) previously stalled part-way. Runs inside
  *  EdgeRuntime.waitUntil() so it keeps going after the HTTP response is sent. */
 async function runBatch(
@@ -293,62 +297,62 @@ async function runBatch(
   collectionId: string,
 ): Promise<void> {
   const startedAt = Date.now()
+  const withinBudget = () => (Date.now() - startedAt) < SELF_BUDGET_MS
 
-  // Refresh the heartbeat so a concurrent trigger won't steal the lock mid-chain
-  // (try_claim_face_indexing treats a >10-min-old face_indexed_at as stale).
-  await sb.from('galleries')
-    .update({ face_indexed_at: new Date().toISOString() })
-    .eq('id', galleryId)
-    .eq('face_index_status', 'indexing')
-
-  const { data: imgs } = await sb
-    .from('images')
-    .select('id, storage_path:web_preview_path, face_indexed_at, face_index_attempts')
-    .eq('gallery_id', galleryId)
-    .is('face_indexed_at', null)
-    .order('sort_order', { ascending: true })
-    .limit(INDEX_BATCH_MAX)
-
-  const all = imgs ?? []
-
-  // Only pre-skip when there's literally no path on the row. The actual fetch in
-  // indexOneImage is the source of truth for "is this fetchable".
-  const noPath = all.filter(i => !i.storage_path)
-  for (const img of noPath) {
-    await stampImageIndexed(sb, galleryId, img.id, 0, 'Web preview path missing')
-  }
-
-  const pending = all.filter(i => i.storage_path)
-  if (pending.length === 0) {
+  // Keep pulling pages of unindexed images and processing them until the whole
+  // gallery is done or this invocation's budget elapses. Doing many pages per
+  // invocation (rather than one) minimizes how often we depend on the
+  // best-effort self-invoke hand-off, which is the fragile link.
+  while (withinBudget()) {
+    // Refresh the heartbeat each page so a concurrent trigger won't steal the
+    // lock and so an external sweeper can tell we are alive.
     await sb.from('galleries')
-      .update({ face_index_status: 'done', face_indexed_at: new Date().toISOString() })
+      .update({ face_indexed_at: new Date().toISOString() })
       .eq('id', galleryId)
       .eq('face_index_status', 'indexing')
-    return
-  }
 
-  // Process with bounded concurrency until we hit the batch's time budget.
-  let cursor = 0
-  const running = new Set<Promise<void>>()
-  const withinBudget = () => (Date.now() - startedAt) < BATCH_TIME_BUDGET_MS
+    const { data: imgs } = await sb
+      .from('images')
+      .select('id, storage_path:web_preview_path, face_indexed_at, face_index_attempts')
+      .eq('gallery_id', galleryId)
+      .is('face_indexed_at', null)
+      .order('sort_order', { ascending: true })
+      .limit(INDEX_BATCH_MAX)
 
-  const processOne = async (image: typeof pending[number]) => {
-    await indexOneImage(sb, collectionId, galleryId, image)
-  }
+    const all = imgs ?? []
 
-  while (cursor < pending.length && withinBudget()) {
-    while (cursor < pending.length && running.size < INDEX_CONCURRENCY && withinBudget()) {
-      const p = processOne(pending[cursor++]).then(() => { running.delete(p) })
-      running.add(p)
+    const noPath = all.filter(i => !i.storage_path)
+    for (const img of noPath) {
+      await stampImageIndexed(sb, galleryId, img.id, 0, 'Web preview path missing')
     }
-    if (running.size > 0) await Promise.race(running)
-  }
-  // Drain any in-flight work started before the budget elapsed.
-  if (running.size > 0) await Promise.allSettled(running)
 
-  // More to do? Chain to the next batch. Otherwise flip to done. Note that
-  // permanently-bad images get stamped (face_indexed_at set) after
-  // MAX_INDEX_ATTEMPTS, so `remaining` is strictly monotonic — no infinite loop.
+    const pending = all.filter(i => i.storage_path)
+    if (pending.length === 0) {
+      await sb.from('galleries')
+        .update({ face_index_status: 'done', face_indexed_at: new Date().toISOString() })
+        .eq('id', galleryId)
+        .eq('face_index_status', 'indexing')
+      return
+    }
+
+    let cursor = 0
+    const running = new Set<Promise<void>>()
+    const processOne = async (image: typeof pending[number]) => {
+      await indexOneImage(sb, collectionId, galleryId, image)
+    }
+    while (cursor < pending.length && withinBudget()) {
+      while (cursor < pending.length && running.size < INDEX_CONCURRENCY && withinBudget()) {
+        const p = processOne(pending[cursor++]).then(() => { running.delete(p) })
+        running.add(p)
+      }
+      if (running.size > 0) await Promise.race(running)
+    }
+    if (running.size > 0) await Promise.allSettled(running)
+  }
+
+  // Budget spent with work still remaining -> best-effort hand-off to a fresh
+  // invocation. Permanently-bad images get stamped after MAX_INDEX_ATTEMPTS, so
+  // remaining is strictly monotonic across invocations (no infinite loop).
   const { count: remaining } = await sb
     .from('images')
     .select('id', { count: 'exact', head: true })
@@ -365,7 +369,7 @@ async function runBatch(
   }
 }
 
-// ─── Actions ────────────────────────────────────────────────────────────────
+// --- Actions ----------------------------------------------------------------
 
 async function actionPing(): Promise<Response> {
   const result = await rekognition.send(new ListCollectionsCommand({}))
@@ -386,7 +390,7 @@ async function actionIndexGallery(req: Request, body: { galleryId?: string }): P
   await sb.rpc('recompute_face_indexed_count', { p_gallery_id: gallery.id })
 
   // Count unindexed images before anything else. If there's nothing to do,
-  // short-circuit — avoids a briefly-flickering 'indexing' status and skips
+  // short-circuit - avoids a briefly-flickering 'indexing' status and skips
   // an unnecessary Rekognition CreateCollection + background worker.
   const { count: unindexedCount } = await sb
     .from('images')
@@ -441,7 +445,7 @@ async function actionIndexGallery(req: Request, body: { galleryId?: string }): P
   // until the whole gallery is indexed, so a large gallery no longer depends on
   // a single long-running invocation. waitUntil keeps the worker alive after the
   // HTTP response returns.
-  // @ts-ignore — EdgeRuntime is a global on Supabase Edge Runtime
+  // @ts-ignore - EdgeRuntime is a global on Supabase Edge Runtime
   EdgeRuntime.waitUntil(
     runBatch(sb, gallery.id, collectionId).catch(async (err) => {
       // A crashed batch leaves status='indexing' with a heartbeat that goes
@@ -477,7 +481,7 @@ async function actionIndexBatch(req: Request, body: { galleryId?: string }): Pro
     return json({ ok: true, done: true, skipped: true })
   }
   const collectionId = gallery.rekognition_collection_id ?? gallery.id
-  // @ts-ignore — EdgeRuntime is a global on Supabase Edge Runtime
+  // @ts-ignore - EdgeRuntime is a global on Supabase Edge Runtime
   EdgeRuntime.waitUntil(
     runBatch(sb, gallery.id, collectionId).catch(async (err) => {
       const msg = err instanceof Error ? err.message : String(err)
@@ -487,6 +491,34 @@ async function actionIndexBatch(req: Request, body: { galleryId?: string }): Pro
     }),
   )
   return json({ ok: true, continued: true })
+}
+
+// Durable reliability net: a stalled-indexing sweeper (pg_cron) calls this every
+// minute. It is SAFE to expose with only verify_jwt (anon) auth: it does no
+// ownership check but ALSO returns nothing sensitive and does nothing except
+// resume a gallery that is genuinely stuck in 'indexing' with a stale heartbeat.
+// The fresh-heartbeat guard prevents piling concurrent runners on a healthy run.
+async function actionIndexKick(body: { galleryId?: string }): Promise<Response> {
+  if (!body.galleryId) throw new Error('galleryId required')
+  const sb = serviceClient()
+  const { data: g } = await sb
+    .from('galleries')
+    .select('id, rekognition_collection_id, face_index_status, face_indexed_at')
+    .eq('id', body.galleryId)
+    .maybeSingle()
+  if (!g) return json({ ok: true, skipped: 'not_found' })
+  if (g.face_index_status !== 'indexing') return json({ ok: true, skipped: 'not_indexing' })
+  const ageMs = g.face_indexed_at ? Date.now() - new Date(g.face_indexed_at).getTime() : Infinity
+  if (ageMs < 75_000) return json({ ok: true, skipped: 'fresh' })
+  const collectionId = g.rekognition_collection_id ?? g.id
+  // @ts-ignore - EdgeRuntime is a global on Supabase Edge Runtime
+  EdgeRuntime.waitUntil(
+    runBatch(sb, g.id, collectionId).catch(async (err) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      await sb.from('galleries').update({ face_index_error: msg.slice(0, 500) }).eq('id', g.id)
+    }),
+  )
+  return json({ ok: true, kicked: true })
 }
 
 async function actionDeleteCollection(req: Request, body: { galleryId?: string }): Promise<Response> {
@@ -573,7 +605,7 @@ async function actionSearch(req: Request): Promise<Response> {
   if (!gateOk) {
     return json({ error: 'unauthorized' }, 401)
   }
-  // Allow partial-search while indexing is still running — as long as at
+  // Allow partial-search while indexing is still running - as long as at
   // least one image has been indexed, searching against the collection is
   // meaningful and matches what the gallery viewer advertises. Without this
   // the viewer's "selfie search" button shows up but every search 404s.
@@ -607,7 +639,7 @@ async function actionSearch(req: Request): Promise<Response> {
     matches = (cached.matches as Array<{ imageId: string; similarity: number }>) ?? []
     imageIds = (cached.image_ids as string[]) ?? matches.map(m => m.imageId)
   } else {
-    // Cache miss → enforce rate limit (per gallery + per IP), then call AWS.
+    // Cache miss -> enforce rate limit (per gallery + per IP), then call AWS.
     const since = new Date(Date.now() - SEARCH_RATE_WINDOW_MS).toISOString()
     const { count: recent } = await sb
       .from('rekognition_search_log')
@@ -663,7 +695,7 @@ async function actionSearch(req: Request): Promise<Response> {
 
   // Hydrate matched image rows server-side. In private galleries, anon RLS
   // blocks the public images SELECT, so the client cannot fetch these on its
-  // own — we have to return them here. Service-role bypasses RLS.
+  // own - we have to return them here. Service-role bypasses RLS.
   let images: Array<Record<string, unknown>> = []
   if (imageIds.length > 0) {
     const { data: rows } = await sb
@@ -676,7 +708,7 @@ async function actionSearch(req: Request): Promise<Response> {
   return json({ matches, images })
 }
 
-// ─── Dispatcher ─────────────────────────────────────────────────────────────
+// --- Dispatcher -------------------------------------------------------------
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -694,6 +726,7 @@ serve(async (req) => {
       case 'ping':               return await actionPing()
       case 'index_gallery':      return await actionIndexGallery(req, body)
       case 'index_batch':        return await actionIndexBatch(req, body)
+      case 'index_kick':         return await actionIndexKick(body)
       case 'delete_collection':  return await actionDeleteCollection(req, body)
       case 'delete_image_faces': return await actionDeleteImageFaces(req, body)
       default:
