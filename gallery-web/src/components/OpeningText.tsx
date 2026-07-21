@@ -67,11 +67,13 @@ export function OpeningText({
       }}>
         <p style={{
           fontSize: 'clamp(15px, 2vw, 20px)',
-          color: 'rgba(255,255,255,.7)',
+          color: 'rgba(255,255,255,.86)',
           margin: 0, fontWeight: 400,
           lineHeight: 1.7,
           fontStyle: 'italic',
           letterSpacing: '0.01em',
+          // Keep it readable over a light/less-blurred cover.
+          textShadow: '0 1px 14px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.4)',
         }}>
           {tokens.map((token, ti) => {
             if (token.isBreak) return <br key={`br-${ti}`} />
