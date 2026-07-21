@@ -23,6 +23,7 @@ import {
   type GalleryMeta,
 } from './lib/galleryClient'
 import { logDownload, logBatchDownload } from './lib/activityLog'
+import { downloadFileName, downloadCacheKey, pickDownloadPath, type DownloadQuality } from './lib/mobileViewer'
 import { startGalleryCheckout, GALLERY_UNLOCK_PRICE_ILS } from './lib/tokenClient'
 import { coverIsEnabled, gateCoverBackgroundUrl } from './lib/coverImage'
 
@@ -958,6 +959,21 @@ export function App() {
   const [showFaceSearch, setShowFaceSearch] = useState(false)
   const [faceSelfieUrl, setFaceSelfieUrl] = useState<string | null>(null)
   const [savingPhoto, setSavingPhoto] = useState(false)
+  // Brief "נשמר / Saved" confirmation after a single-image download completes.
+  const [photoSaved, setPhotoSaved] = useState(false)
+  // Warmed download Files, keyed by downloadCacheKey(imageId, quality). The
+  // viewer prefetches the active image's downloadable File so the tap can call
+  // navigator.share() SYNCHRONOUSLY on iOS (preserving the user gesture) and
+  // the save completes on the first tap. inflight de-dupes concurrent warms.
+  const downloadFileCache = useRef<Map<string, { file: File }>>(new Map())
+  const downloadPrefetchInflight = useRef<Set<string>>(new Set())
+  // Abort handles for in-flight prefetches so superseded warms (e.g. when the
+  // guest swipes past an image before its blob lands) can be cancelled instead
+  // of piling up duplicate background downloads.
+  const downloadPrefetchAborts = useRef<Map<string, AbortController>>(new Map())
+  // Cap on cached download blobs. Bounds memory when a guest browses a large
+  // set at HD (each File can be several MB). LRU-ish: oldest inserted evicted.
+  const MAX_DOWNLOAD_CACHE = 8
   // Brief auto-dismissing toast for the "HD original still uploading,
   // saved web copy instead" path. Distinct from dlProgress because that
   // overlay is for in-flight batch downloads with a progress bar.
@@ -1575,6 +1591,40 @@ export function App() {
   const effectiveResolvedCoverUrl = coverEnabled ? resolvedCoverUrl : null
   const effectiveCoverUrl = coverEnabled ? coverUrl : null
 
+  // Warm the downloadable File for the image the guest is viewing (and the
+  // likely-next one, web quality only) so the one-tap share path is armed
+  // before they tap. MUST live here, above every early return, to satisfy the
+  // Rules of Hooks. The gallery-static values it reads (downloadsEnabled,
+  // downloadQuality, prefetchDownloadFile) are declared lower in the component
+  // but are all initialized by the time this effect's callback runs. Deps are
+  // only the state that changes which image is active. On close it aborts
+  // in-flight warms and drops cached blobs to release memory.
+  useEffect(() => {
+    if (viewerIndex === null) {
+      downloadPrefetchAborts.current.forEach(c => c.abort())
+      downloadPrefetchAborts.current.clear()
+      downloadPrefetchInflight.current.clear()
+      downloadFileCache.current.clear()
+      return
+    }
+    if (!downloadsEnabled) return
+    const list = viewerList ?? images
+    const cur = list[viewerIndex]
+    const quality: DownloadQuality = downloadQuality === 'original' ? 'original' : 'web'
+    const nxt = list.length > 1 ? list[(viewerIndex + 1) % list.length] : undefined
+    // Cancel warms for images no longer current/next before starting new ones,
+    // so a fast swipe cannot stack duplicate background downloads.
+    const wanted = new Set<string>()
+    if (cur) wanted.add(downloadCacheKey(cur.id, quality))
+    if (nxt && quality === 'web') wanted.add(downloadCacheKey(nxt.id, 'web'))
+    downloadPrefetchAborts.current.forEach((c, key) => {
+      if (!wanted.has(key)) { c.abort(); downloadPrefetchAborts.current.delete(key) }
+    })
+    if (cur) void prefetchDownloadFile(cur)
+    if (nxt && nxt.id !== cur?.id && quality === 'web') void prefetchDownloadFile(nxt)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewerIndex, viewerList, images])
+
   if (error) {
     // Map internal English error keys to a localized, branded fallback. The
     // raw "Gallery not found" string was leaking to Hebrew clients hitting a
@@ -2082,65 +2132,145 @@ export function App() {
     return { url: fallbackUrl, downgraded: true }
   }
 
-  async function handleImageDownload(img: GalleryImage) {
-    // Re-entry guard: ignore taps while a save is already in flight. Without
-    // this, rapid taps before the slow HEAD/sign/fetch chain resolves spawn
-    // parallel chains that fight over the share sheet.
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+
+  /** Brief "נשמר / Saved" confirmation, auto-dismissed. */
+  function flashSaved() {
+    setPhotoSaved(true)
+    setTimeout(() => setPhotoSaved(false), 1600)
+  }
+
+  const currentQuality = (): DownloadQuality => (downloadQuality === 'original' ? 'original' : 'web')
+
+  /**
+   * Warm the downloadable File for one image into downloadFileCache so a later
+   * tap can share it synchronously. Best-effort: any failure just means the tap
+   * falls back to the async path. De-duped via downloadPrefetchInflight and
+   * abortable via downloadPrefetchAborts so a fast swipe cancels stale warms.
+   * The cached File carries the blob bytes, so it stays valid even after the
+   * signed URL that produced it expires — we never re-read the URL.
+   */
+  async function prefetchDownloadFile(img: GalleryImage) {
+    if (!img?.id) return
+    const quality = currentQuality()
+    const key = downloadCacheKey(img.id, quality)
+    if (downloadFileCache.current.has(key) || downloadPrefetchInflight.current.has(key)) return
+    const controller = new AbortController()
+    downloadPrefetchInflight.current.add(key)
+    downloadPrefetchAborts.current.set(key, controller)
+    try {
+      const { url } = await resolveDownloadUrl(img)
+      const res = await fetch(url, { signal: controller.signal })
+      if (!res.ok) return
+      const blob = await res.blob()
+      if (controller.signal.aborted) return
+      const file = new File([blob], downloadFileName(img.filename), { type: 'image/jpeg' })
+      downloadFileCache.current.set(key, { file })
+      // Evict oldest entries beyond the cap. Map preserves insertion order, so
+      // the first key is the least-recently-added — drop it. Dropped Files are
+      // plain blobs (no object URLs), so GC reclaims them; nothing to revoke.
+      while (downloadFileCache.current.size > MAX_DOWNLOAD_CACHE) {
+        const oldest = downloadFileCache.current.keys().next().value
+        if (oldest === undefined) break
+        downloadFileCache.current.delete(oldest)
+      }
+    } catch {
+      /* prefetch is best-effort (incl. AbortError) — the tap fetches on demand */
+    } finally {
+      downloadPrefetchInflight.current.delete(key)
+      downloadPrefetchAborts.current.delete(key)
+    }
+  }
+
+  /**
+   * Single-image download. On iOS Safari the ONLY reliable one-tap path is to
+   * call navigator.share() synchronously inside the tap — see pickDownloadPath.
+   * When the viewer has prefetched the File we take that synchronous path; the
+   * gesture is never spent on an await, so the save completes on the first tap.
+   * Otherwise we fall back to the async fetch→share/download path.
+   */
+  function handleImageDownload(img: GalleryImage) {
     if (savingPhoto) return
-    // Show the "saving" overlay immediately so the click has feedback BEFORE
-    // the HEAD/sign/fetch chain runs. Without this, users on either platform
-    // see no UI for ~1s on a cold click and keep clicking.
+    const quality = currentQuality()
+    const cached = isMobile ? downloadFileCache.current.get(downloadCacheKey(img.id, quality)) : undefined
+    const canShareFiles = !!cached && !!navigator.share && !!navigator.canShare?.({ files: [cached.file] })
+
+    if (pickDownloadPath({ isMobile, canShareFiles, hasPrefetchedFile: !!cached }) === 'share-sync' && cached) {
+      // SYNCHRONOUS share — no await before this line. This is the fix for the
+      // two-tap bug: the share sheet opens from the original tap.
+      setSavingPhoto(true)
+      navigator.share({ files: [cached.file], title: galleryTitle })
+        .then(() => {
+          flashSaved()
+          if (gallery) void logDownload(gallery.id, img.id, quality, 'single')
+        })
+        .catch((err: unknown) => {
+          // AbortError = the guest dismissed the share sheet: not a failure.
+          if ((err as { name?: string } | null)?.name === 'AbortError') return
+          showHdNotice(txt.saveFailed ?? 'Save failed — tap Save to try again.')
+        })
+        .finally(() => setSavingPhoto(false))
+      return
+    }
+    void handleImageDownloadAsync(img, quality)
+  }
+
+  /** Async fallback: desktop, or a mobile tap before the File warmed. */
+  async function handleImageDownloadAsync(img: GalleryImage, quality: DownloadQuality) {
+    if (savingPhoto) return
+    // Immediate feedback before the sign/fetch chain runs.
     setSavingPhoto(true)
     try {
-      const { url, downgraded } = await resolveDownloadUrl(img)
-      if (downgraded) {
-        showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+      const cached = downloadFileCache.current.get(downloadCacheKey(img.id, quality))
+      if (cached && isMobile) {
+        await shareOrSaveFile(cached.file)
+      } else {
+        const { url, downgraded } = await resolveDownloadUrl(img)
+        if (downgraded) {
+          showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+        }
+        await handleDownload(url, img.filename)
       }
-      await handleDownload(url, img.filename)
-      if (gallery) {
-        const wantsHd = downloadQuality === 'original'
-        void logDownload(gallery.id, img.id, wantsHd ? 'original' : 'web', 'single')
+      flashSaved()
+      if (gallery) void logDownload(gallery.id, img.id, quality, 'single')
+    } catch (err) {
+      // Share-sheet dismissal is not a failure; anything else gets a retry hint.
+      if ((err as { name?: string } | null)?.name !== 'AbortError') {
+        showHdNotice(txt.saveFailed ?? 'Save failed — tap Save to try again.')
       }
     } finally {
       setSavingPhoto(false)
     }
   }
 
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-
-  async function handleDownload(url: string, filename: string) {
-    if (isMobile) {
-      try {
-        const res = await fetch(url)
-        const blob = await res.blob()
-        const cleanName = filename.replace(/\.[^.]+$/, '') + '.jpg'
-        const file = new File([blob], cleanName, { type: 'image/jpeg' })
-        if (navigator.share && navigator.canShare?.({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: galleryTitle,
-          })
-        } else {
-          // Fallback: direct download
-          const a = document.createElement('a')
-          a.href = URL.createObjectURL(blob)
-          a.download = cleanName
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
-        }
-      } catch { /* user cancelled share sheet */ }
+  /** Share a ready File (mobile) or fall back to an anchor download. Lets
+   *  navigator.share reject (incl. AbortError) so callers can react. */
+  async function shareOrSaveFile(file: File) {
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: galleryTitle })
       return
     }
+    const objectUrl = URL.createObjectURL(file)
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = file.name
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 4000)
+  }
 
-    // Desktop: fetch blob → trigger download
+  async function handleDownload(url: string, filename: string) {
     const res = await fetch(url)
     const blob = await res.blob()
-
-    // Desktop / fallback: regular download. The anchor MUST be in the DOM
-    // for Safari/Firefox to honor the click, and the blob URL must outlive
-    // the click event for the download to start — revoke on a setTimeout
-    // instead of synchronously.
+    if (isMobile) {
+      const file = new File([blob], downloadFileName(filename), { type: 'image/jpeg' })
+      await shareOrSaveFile(file)
+      return
+    }
+    // Desktop: anchor download with the original filename. The anchor MUST be
+    // in the DOM for Safari/Firefox to honor the click, and the blob URL must
+    // outlive the click — revoke on a timeout, not synchronously.
     const objectUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = objectUrl
@@ -2906,6 +3036,23 @@ export function App() {
         }}>
           <div className="loader" style={{ width: 20, height: 20 }} />
           <span style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{txt.saving}</span>
+        </div>
+      )}
+
+      {/* ── Saved confirmation (brief) ── */}
+      {photoSaved && !savingPhoto && (
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          zIndex: 9999, padding: '20px 32px', borderRadius: 16,
+          background: 'rgba(0,0,0,.85)', backdropFilter: 'blur(20px)',
+          display: 'flex', alignItems: 'center', gap: 12,
+          boxShadow: '0 8px 40px rgba(0,0,0,.5)',
+          animation: 'fadeIn .2s ease',
+        }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          <span style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{txt.saved}</span>
         </div>
       )}
 
