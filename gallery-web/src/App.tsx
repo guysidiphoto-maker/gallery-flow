@@ -23,7 +23,7 @@ import {
   type GalleryMeta,
 } from './lib/galleryClient'
 import { logDownload, logBatchDownload } from './lib/activityLog'
-import { downloadFileName, downloadCacheKey, pickDownloadPath, type DownloadQuality } from './lib/mobileViewer'
+import { downloadFileName, downloadCacheKey, pickDownloadPath, shouldWarmDownload, classifyDownloadError, keysOverCap, type DownloadQuality } from './lib/mobileViewer'
 import { startGalleryCheckout, GALLERY_UNLOCK_PRICE_ILS } from './lib/tokenClient'
 import { coverIsEnabled, gateCoverBackgroundUrl } from './lib/coverImage'
 
@@ -131,7 +131,7 @@ function useColumnCount(layoutMode: string): number {
   return cols
 }
 
-function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide, watermark }: {
+function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, onWarmDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide, watermark }: {
   images: GalleryImage[]
   /** Storage bucket the thumbnails live in. The component picks the path
    *  per image (thumbnail_path with web fallback) and routes through
@@ -142,6 +142,11 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
   cornerStyle: string
   onImageClick: (index: number) => void
   onDownload?: (img: GalleryImage) => void
+  /** Warm/release the downloadable File for a tile as it enters/leaves the
+   *  viewport, so a single tap on the tile's download icon opens the iOS share
+   *  sheet without first opening the image. Called with (img, true) on enter
+   *  and (img, false) on exit. */
+  onWarmDownload?: (img: GalleryImage, warm: boolean) => void
   selectMode?: boolean
   selectedIds?: Set<string>
   onToggleSelect?: (id: string) => void
@@ -152,6 +157,44 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
 }) {
   const imgRefs = useRef<Map<string, HTMLImageElement>>(new Map())
   const cols = useColumnCount(layoutMode)
+
+  // Download-warm viewport observer. When a tile scrolls into view we warm its
+  // downloadable File (mobile only, gated in the parent) so a single tap on the
+  // tile's download icon opens the iOS share sheet immediately; when it scrolls
+  // out we release/abort. Bounded to on-screen tiles; the parent caps memory.
+  const warmObserverRef = useRef<IntersectionObserver | null>(null)
+  const tileImgByEl = useRef<Map<Element, GalleryImage>>(new Map())
+  const tileElById = useRef<Map<string, Element>>(new Map())
+  useEffect(() => {
+    if (!onWarmDownload) return
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const img = tileImgByEl.current.get(e.target)
+          if (img) onWarmDownload(img, e.isIntersecting)
+        }
+      },
+      { rootMargin: '100px 0px' },
+    )
+    warmObserverRef.current = obs
+    tileImgByEl.current.forEach((_img, el) => obs.observe(el))
+    return () => { obs.disconnect(); warmObserverRef.current = null }
+  }, [onWarmDownload])
+  // Ref callback per tile: (un)register the element with the observer. Handles
+  // remount/unmount so obsolete elements are never left observed.
+  const registerTile = useCallback((img: GalleryImage) => (el: HTMLDivElement | null) => {
+    const prev = tileElById.current.get(img.id)
+    if (prev && prev !== el) {
+      warmObserverRef.current?.unobserve(prev)
+      tileImgByEl.current.delete(prev)
+      tileElById.current.delete(img.id)
+    }
+    if (el) {
+      tileElById.current.set(img.id, el)
+      tileImgByEl.current.set(el, img)
+      warmObserverRef.current?.observe(el)
+    }
+  }, [])
 
   // Measure the container so thumbnails are fetched at the exact column width.
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -251,6 +294,7 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
             return (
               <div
                 key={img.id}
+                ref={registerTile(img)}
                 className="grid-item"
                 style={{ position: 'relative', borderRadius: rounded ? 8 : 0, overflow: 'hidden' }}
               >
@@ -344,6 +388,10 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
                 {!selectMode && onDownload && (
                   <button
                     className="grid-item__dl"
+                    // Booster: the instant the finger touches the icon, warm the
+                    // File (if not already). Combined with the viewport warm this
+                    // makes the very first tap open the share sheet.
+                    onPointerDown={() => onWarmDownload?.(img, true)}
                     onClick={e => { e.stopPropagation(); onDownload(img) }}
                     style={{
                       position: 'absolute', bottom: 10, insetInlineEnd: 10,
@@ -973,7 +1021,10 @@ export function App() {
   const downloadPrefetchAborts = useRef<Map<string, AbortController>>(new Map())
   // Cap on cached download blobs. Bounds memory when a guest browses a large
   // set at HD (each File can be several MB). LRU-ish: oldest inserted evicted.
-  const MAX_DOWNLOAD_CACHE = 8
+  // Sized to comfortably cover a phone viewport's worth of grid tiles plus the
+  // viewer's current/next, so warmed tiles are still cached by the time they
+  // are tapped, while memory stays bounded.
+  const MAX_DOWNLOAD_CACHE = 12
   // Brief auto-dismissing toast for the "HD original still uploading,
   // saved web copy instead" path. Distinct from dlProgress because that
   // overlay is for in-flight batch downloads with a progress bar.
@@ -2142,13 +2193,24 @@ export function App() {
 
   const currentQuality = (): DownloadQuality => (downloadQuality === 'original' ? 'original' : 'web')
 
+  /** Store a warmed File and evict the oldest entries beyond the cap. Map
+   *  preserves insertion order, so the first key is the least-recently-added.
+   *  Dropped Files are plain blobs (no object URLs), so GC reclaims them. */
+  function cacheDownloadFile(key: string, file: File) {
+    downloadFileCache.current.set(key, { file })
+    for (const stale of keysOverCap([...downloadFileCache.current.keys()], MAX_DOWNLOAD_CACHE)) {
+      downloadFileCache.current.delete(stale)
+    }
+  }
+
   /**
    * Warm the downloadable File for one image into downloadFileCache so a later
-   * tap can share it synchronously. Best-effort: any failure just means the tap
-   * falls back to the async path. De-duped via downloadPrefetchInflight and
-   * abortable via downloadPrefetchAborts so a fast swipe cancels stale warms.
-   * The cached File carries the blob bytes, so it stays valid even after the
-   * signed URL that produced it expires — we never re-read the URL.
+   * tap — from the fullscreen viewer OR a grid thumbnail — can share it
+   * synchronously. Best-effort: any failure just means the tap falls back to
+   * the async path. De-duped via downloadPrefetchInflight and abortable via
+   * downloadPrefetchAborts so a fast swipe or scroll cancels stale warms. The
+   * cached File carries the blob bytes, so it stays valid even after the signed
+   * URL that produced it expires — we never re-read the URL.
    */
   async function prefetchDownloadFile(img: GalleryImage) {
     if (!img?.id) return
@@ -2164,22 +2226,37 @@ export function App() {
       if (!res.ok) return
       const blob = await res.blob()
       if (controller.signal.aborted) return
-      const file = new File([blob], downloadFileName(img.filename), { type: 'image/jpeg' })
-      downloadFileCache.current.set(key, { file })
-      // Evict oldest entries beyond the cap. Map preserves insertion order, so
-      // the first key is the least-recently-added — drop it. Dropped Files are
-      // plain blobs (no object URLs), so GC reclaims them; nothing to revoke.
-      while (downloadFileCache.current.size > MAX_DOWNLOAD_CACHE) {
-        const oldest = downloadFileCache.current.keys().next().value
-        if (oldest === undefined) break
-        downloadFileCache.current.delete(oldest)
-      }
+      cacheDownloadFile(key, new File([blob], downloadFileName(img.filename), { type: 'image/jpeg' }))
     } catch {
       /* prefetch is best-effort (incl. AbortError) — the tap fetches on demand */
     } finally {
       downloadPrefetchInflight.current.delete(key)
       downloadPrefetchAborts.current.delete(key)
     }
+  }
+
+  /** Abort an in-flight warm for an image (used when a grid tile scrolls out
+   *  of view) so obsolete downloads do not pile up. A completed cache entry is
+   *  left in place — it is cheap to keep and makes a later tap instant. */
+  function cancelDownloadPrefetch(img: GalleryImage) {
+    if (!img?.id) return
+    const key = downloadCacheKey(img.id, currentQuality())
+    const controller = downloadPrefetchAborts.current.get(key)
+    if (controller) { controller.abort(); downloadPrefetchAborts.current.delete(key) }
+    downloadPrefetchInflight.current.delete(key)
+  }
+
+  /**
+   * Warm/release the download File for a grid tile as it enters/leaves the
+   * viewport. Bounded: mobile-only (desktop downloads need no prefetch), only
+   * the tiles actually on screen, capped by MAX_DOWNLOAD_CACHE, and aborted on
+   * scroll-away. This is what makes a single tap on a thumbnail's download icon
+   * open the iOS share sheet without first opening the image.
+   */
+  function warmTileDownload(img: GalleryImage, warm: boolean) {
+    if (!shouldWarmDownload({ isMobile, downloadsEnabled })) return
+    if (warm) void prefetchDownloadFile(img)
+    else cancelDownloadPrefetch(img)
   }
 
   /**
@@ -2215,15 +2292,32 @@ export function App() {
     void handleImageDownloadAsync(img, quality)
   }
 
-  /** Async fallback: desktop, or a mobile tap before the File warmed. */
+  /** Async fallback: desktop, or a mobile tap before the File warmed. On mobile
+   *  the fetched File is cached, so if this tap loses the gesture (iOS) the very
+   *  next tap shares instantly — and preparation timing never shows a failure. */
   async function handleImageDownloadAsync(img: GalleryImage, quality: DownloadQuality) {
     if (savingPhoto) return
     // Immediate feedback before the sign/fetch chain runs.
     setSavingPhoto(true)
     try {
-      const cached = downloadFileCache.current.get(downloadCacheKey(img.id, quality))
-      if (cached && isMobile) {
-        await shareOrSaveFile(cached.file)
+      const key = downloadCacheKey(img.id, quality)
+      const cached = downloadFileCache.current.get(key)
+      if (isMobile) {
+        // Reuse a warmed File if present; otherwise fetch once and cache it so a
+        // retry is instant and consistent with the viewer path.
+        let file = cached?.file
+        if (!file) {
+          const { url, downgraded } = await resolveDownloadUrl(img)
+          if (downgraded) {
+            showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+          }
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(`download_http_${res.status}`)
+          const blob = await res.blob()
+          file = new File([blob], downloadFileName(img.filename), { type: 'image/jpeg' })
+          cacheDownloadFile(key, file)
+        }
+        await shareOrSaveFile(file)
       } else {
         const { url, downgraded } = await resolveDownloadUrl(img)
         if (downgraded) {
@@ -2234,8 +2328,10 @@ export function App() {
       flashSaved()
       if (gallery) void logDownload(gallery.id, img.id, quality, 'single')
     } catch (err) {
-      // Share-sheet dismissal is not a failure; anything else gets a retry hint.
-      if ((err as { name?: string } | null)?.name !== 'AbortError') {
+      // Only a REAL failure gets a retry message. A dismissed share sheet
+      // (AbortError) or an iOS gesture-timing rejection (NotAllowedError, which
+      // just warmed the cache for the next tap) stays silent.
+      if (classifyDownloadError(err) === 'failure') {
         showHdNotice(txt.saveFailed ?? 'Save failed — tap Save to try again.')
       }
     } finally {
@@ -2873,6 +2969,7 @@ export function App() {
                 setViewerIndex(idx)
               }}
               onDownload={downloadsEnabled ? handleImageDownload : undefined}
+              onWarmDownload={warmTileDownload}
               selectMode={selectMode}
               selectedIds={selectedIds}
               onToggleSelect={(id) => setSelectedIds(prev => {
@@ -2927,6 +3024,7 @@ export function App() {
                 setViewerIndex(idx)
               }}
               onDownload={downloadsEnabled ? handleImageDownload : undefined}
+              onWarmDownload={warmTileDownload}
               selectMode={selectMode}
               selectedIds={selectedIds}
               onToggleSelect={(id) => setSelectedIds(prev => {
