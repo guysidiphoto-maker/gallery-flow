@@ -379,7 +379,22 @@ async function handleVerifyCode(
     .maybeSingle()
   const hash = (cli as { access_code_hash?: string | null } | null)?.access_code_hash ?? null
   if (cli && hash === null) {
-    res.status(200).json({ ok: true, fallback_to_legacy: true }); return
+    // Fail-closed (Client Portal V2): only offer the legacy plaintext PIN path
+    // when a real legacy code is ACTUALLY configured on a live gallery. A client
+    // with neither a hashed code nor a non-empty `clientCode` must be denied —
+    // never invite a fallback compare against an empty/absent code.
+    const { data: coded } = await supabase
+      .from('galleries')
+      .select('id')
+      .eq('client_id', clientId)
+      .eq('status', 'live')
+      .not('delivery_settings->>clientCode', 'is', null)
+      .neq('delivery_settings->>clientCode', '')
+      .limit(1)
+    if (coded && coded.length > 0) {
+      res.status(200).json({ ok: true, fallback_to_legacy: true }); return
+    }
+    res.status(401).json({ ok: false, error: 'access_not_configured' }); return
   }
 
   res.status(401).json({ ok: false, error: 'invalid_code' })

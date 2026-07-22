@@ -511,6 +511,44 @@ export function ClientDashboard() {
     )
   }
 
+  // ── Fail-closed guard (Client Portal V2) ─────────────────────────────────
+  // SECURITY: a legacy client with NO configured access code previously
+  // rendered the portal OPEN here — the coded gate above only triggers when
+  // `clientCode` is truthy, so an empty/absent clientCode silently bypassed
+  // authentication (audit finding). Reaching this point means loading+error are
+  // already handled and the user is NOT authenticated. Missing access
+  // configuration must fail CLOSED, not open. Coded clients (gate above) and
+  // authenticated sessions are unaffected. New clients use authenticated
+  // `client_memberships` access instead of a PIN.
+  if (!authenticated && !clientCode) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: bg, color: textPrimary,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'inherit', direction: 'rtl',
+      }}>
+        <div style={{
+          textAlign: 'center', maxWidth: 440, padding: '48px 40px',
+          background: '#fff', border: `1px solid ${border}`,
+        }}>
+          <div style={{
+            fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+            color: textMuted, textTransform: 'uppercase', marginBottom: 18,
+          }}>Client Dashboard</div>
+          <h2 style={{
+            fontSize: 26, fontWeight: 500, margin: '0 0 12px',
+            letterSpacing: '-0.02em', color: textPrimary, lineHeight: 1.15,
+          }}>הגישה מוגבלת</h2>
+          <p style={{
+            fontSize: 14, color: textSecondary, margin: '0 0 8px', lineHeight: 1.55,
+          }}>
+            אזור הלקוח דורש חשבון גישה. פנו לצלם כדי לקבל הזמנה.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   const first = galleries[0]
   const deliverySettings = (first.delivery_settings || {}) as Record<string, unknown>
   const studioName = readStr(deliverySettings, 'studioName')
