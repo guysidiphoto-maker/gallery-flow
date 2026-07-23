@@ -10,7 +10,7 @@
 
 import type { VercelRequest } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { requireAuthedUser, type GateFailure } from './ownerAuth.js'
+import { requireAuthedUser, requireBusinessOwnerOfClient, type GateFailure, type OwnerOk } from './ownerAuth.js'
 
 export const PRODUCTION_SUITE = 'production_suite' as const
 
@@ -81,4 +81,25 @@ export async function requireResolvedEntitlement(
   const entitled = await resolveEntitlement(supabase, businessId, capability)
   if (!entitled) return { ok: false, status: 403, code: 'entitlement_required' }
   return { ok: true, userId: authed.userId, businessId, capability }
+}
+
+/**
+ * Drop-in replacement for `requireBusinessOwnerOfClient` on Production-only
+ * endpoints (generate-feed/campaign/plan-event/score-images). Verifies JWT +
+ * business ownership of the client AND that the business holds `capability`
+ * (default `production_suite`). Returns the SAME `OwnerOk` shape so call sites
+ * that read `gate.businessId` / `gate.userId` are unchanged. Adds a 403
+ * `entitlement_required` when the business is not entitled (default deny).
+ */
+export async function requireProductionOwnerOfClient(
+  req: VercelRequest,
+  supabase: SupabaseClient,
+  clientId: string,
+  capability: string = PRODUCTION_SUITE,
+): Promise<OwnerOk | GateFailure> {
+  const owner = await requireBusinessOwnerOfClient(req, supabase, clientId)
+  if (!owner.ok) return owner
+  const entitled = await resolveEntitlement(supabase, owner.businessId, capability)
+  if (!entitled) return { ok: false, status: 403, code: 'entitlement_required' }
+  return owner
 }

@@ -19,7 +19,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
-import { requireBusinessOwnerOfClient } from '../server/ownerAuth.js'
+import { requireProductionOwnerOfClient } from '../server/entitlements.js'
 
 export const maxDuration = 60
 
@@ -206,7 +206,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   const requestedCount = Math.max(1, Math.min(3, Number(body.count ?? 2)))
 
   // Blocker 2 gate: authenticated owner of this client only, before any AI call.
-  const gate = await requireBusinessOwnerOfClient(req, supabase, clientId)
+  const gate = await requireProductionOwnerOfClient(req, supabase, clientId)
   if (!gate.ok) return res.status(gate.status).json({ ok: false, error: gate.code })
 
   // Fetch client + business + gallery (verify ownership).
