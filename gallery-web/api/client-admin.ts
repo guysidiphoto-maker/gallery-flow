@@ -286,4 +286,4 @@ async function createInvite(
   return { link: acceptLink(req, token), email }
 }
 
-export default withSentry(handler)
+export default withSentry('client-admin', handler)

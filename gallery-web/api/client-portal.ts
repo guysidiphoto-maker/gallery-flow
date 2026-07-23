@@ -131,4 +131,4 @@ async function lookupInvitation(rawToken: string): Promise<InvitationRow | null>
   return (data as InvitationRow) ?? null
 }
 
-export default withSentry(handler)
+export default withSentry('client-portal', handler)
