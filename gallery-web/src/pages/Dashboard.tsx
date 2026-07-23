@@ -36,6 +36,7 @@ import {
   formatStoryDuration,
 } from '../lib/storyRender'
 import { applyBrandKitToGalleryDefaults, getBrandKit } from '../lib/brandKit'
+import { ClientsManager } from './ClientsManager'
 
 // Mirrors the postgres enum gallery_status (migration 063).
 type GalleryStatus = 'draft' | 'live' | 'archived'
@@ -236,6 +237,10 @@ export function Dashboard() {
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [businessId, setBusinessId] = useState<string | null>(null)
   const [businessSlug, setBusinessSlug] = useState<string | null>(null)
+  // Client Portal V2: in-page view switch between the galleries workspace and
+  // the owner-side Clients Manager. Same shell/sidebar, no new route — the
+  // "לקוחות" nav item toggles this instead of navigating by URL.
+  const [activeView, setActiveView] = useState<'galleries' | 'clients'>('galleries')
   const [tokenBalance, setTokenBalance] = useState<number>(0)
   const [showBuyTokens, setShowBuyTokens] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -2525,14 +2530,21 @@ export function Dashboard() {
         </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
           {[
-            { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true, disabled: false, href: undefined as string | undefined },
-            { icon: 'palette' as IconName, label: 'Brand Kit',  active: false, disabled: false, href: '/brand-kit' as string | undefined },
-            { icon: 'clients' as IconName,  label: 'לקוחות',      active: false, disabled: true, href: undefined as string | undefined },
+            { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: activeView === 'galleries', disabled: false, href: undefined as string | undefined, view: 'galleries' as 'galleries' | 'clients' | undefined },
+            { icon: 'palette' as IconName, label: 'Brand Kit',  active: false, disabled: false, href: '/brand-kit' as string | undefined, view: undefined as 'galleries' | 'clients' | undefined },
+            { icon: 'clients' as IconName,  label: 'לקוחות',      active: activeView === 'clients', disabled: false, href: undefined as string | undefined, view: 'clients' as 'galleries' | 'clients' | undefined },
           ].map(item => (
             <button
               key={item.label}
               onClick={() => {
-                if (item.disabled || !item.href) return
+                if (item.disabled) return
+                if (item.view) {
+                  // In-page view switch — same Dashboard shell, no navigation.
+                  setActiveView(item.view)
+                  setSidebarOpen(false)
+                  return
+                }
+                if (!item.href) return
                 window.location.pathname = item.href
               }}
               style={{
@@ -2675,6 +2687,13 @@ export function Dashboard() {
 
       {/* ======= Main content ======= */}
       <main style={{ maxWidth: 1180, margin: '0 auto', padding: '56px 40px 96px' }}>
+
+        {/* Client Portal V2 — owner-side Clients Manager. Rendered in place of
+            the galleries workspace when the "לקוחות" nav item is active. Same
+            shell, no route change. */}
+        {activeView === 'clients' ? (
+          <ClientsManager businessSlug={businessSlug} businessId={businessId} />
+        ) : (<>
 
         {/* Page heading + CTA — Pic-Time editorial rhythm: tracked uppercase
             eyebrow, semi-bold display title, outlined-black CTA on cream that
@@ -6263,6 +6282,7 @@ export function Dashboard() {
             </div>
           </div>
         )}
+        </>)}
       </main>
 
       {/* ======= Create gallery modal ======= */}
