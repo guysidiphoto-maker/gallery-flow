@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, lazy, Suspense, type CSSProperties } from 'react'
+import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react'
 import { supabase, storageUrl } from '../supabase'
 import { signedStorageUrl } from '../lib/signedStorage'
 import { SignedImg } from '../components/SignedImg'
@@ -13,7 +13,13 @@ const PortfolioEditor  = lazy(() => import('../components/PortfolioEditor').then
 const FeedStudio       = lazy(() => import('../components/FeedStudio').then(m => ({ default: m.FeedStudio })))
 const CreativeEngineDialog = lazy(() => import('../components/CreativeEngineDialog').then(m => ({ default: m.CreativeEngineDialog })))
 import { loadPortfolioSettings } from '../components/portfolioSettings'
-import { Icon, type IconName } from '../components/Icon'
+import { Icon } from '../components/Icon'
+import { usePortalLocale } from '../lib/portalLocale'
+import { PortalShell } from '../components/portal/PortalShell'
+import { type NavItem } from '../components/portal/PortalNav'
+import { OverviewScreen } from '../components/portal/OverviewScreen'
+import { GalleryGrid } from '../components/portal/GalleryGrid'
+import { type GalleryCardData } from '../components/portal/GalleryCard'
 const ClientHome = lazy(() => import('../components/ClientHome').then(m => ({ default: m.ClientHome })))
 
 // PR1 — "Social OS" simplified navigation (Dashboard / Social Studio / Library).
@@ -21,9 +27,6 @@ const ClientHome = lazy(() => import('../components/ClientHome').then(m => ({ de
 // flag is off, the client dashboard renders exactly as before. Enable per-env
 // (e.g. Vercel preview) with VITE_FEATURE_NEW_IA=true.
 const SOCIAL_OS = import.meta.env.VITE_FEATURE_NEW_IA === 'true'
-// Default posting cadence for a production-company retainer (drives the
-// "content remaining" math on the Dashboard).
-const CADENCE_PER_WEEK = 3
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -66,19 +69,17 @@ function isPortalBootstrap(v: unknown): v is PortalBootstrap {
 // resolves to false → these are hidden.
 const PRODUCTION_TABS = ['feed-studio', 'content', 'calendar', 'tender', 'stories'] as const
 
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
-
 // ─── Editorial design tokens (Pic-Time aesthetic) ─────────────────────────
 // Same palette + spacing system used throughout Dashboard.tsx so the
 // public client view feels like the same product as the photographer admin.
+// Retained for the Production module content blocks (Content Studio, Stories)
+// that keep their original presentation.
 const bg          = '#F2EFE9' // cream canvas
 const bgSubtle    = '#FAF9F5' // section panels
-const card        = '#FBFBF9' // raised surfaces
 const border      = '#D0D0D0' // hairline 1px
 const textPrimary = '#141413' // charcoal
 const textSecondary = '#333333'
 const textMuted   = '#767470'  // WCAG-AA accessible muted on cream
-const statusLive  = '#7B8F6E' // sage status dot
 
 function readStr(obj: Record<string, unknown> | null, key: string): string {
   if (!obj) return ''; const v = obj[key]; return typeof v === 'string' ? v : ''
@@ -292,11 +293,19 @@ export function ClientDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'home' | 'feed-studio' | 'content' | 'calendar' | 'galleries' | 'stories' | 'page' | 'tender'>(SOCIAL_OS ? 'home' : 'feed-studio')
-  // PR1: open/close state for the "More" (frozen/legacy) menu in the Social OS nav.
-  const [moreOpen, setMoreOpen] = useState(false)
-  // Account menu (authenticated members only).
-  const [accountOpen, setAccountOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+
+  // ── Client Portal V2 presentation state ──────────────────────────────────
+  // Locale (he default / en) drives the entire interface — never mixed. Called
+  // here with the other hooks so the value is available to the loading/gate
+  // screens below (hooks must precede the early returns).
+  const loc = usePortalLocale()
+  // Presentation-only Overview flag for NON-ENTITLED clients. Their `tab` is
+  // pinned to a gated-safe value ('galleries') by the preserved redirect guard,
+  // so `home` (a Production tab) cannot back a non-entitled Overview. This flag
+  // toggles between MY Overview screen and the Galleries screen WITHOUT touching
+  // `tab` or the entitlement guard. Entitled clients ignore it (they use `tab`).
+  const [nonEntitledOverview, setNonEntitledOverview] = useState(true)
 
   // Production-tab safety: the non-SOCIAL_OS default tab is 'feed-studio' (a
   // Production tab). Once we know the entitlement, if Production is disabled and
@@ -324,10 +333,6 @@ export function ClientDashboard() {
   })
   const [playingStory, setPlayingStory] = useState<string | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
-  // Filter & sort for galleries tab
-  const [galleryFilter, setGalleryFilter] = useState('')
-  const [gallerySortBy, setGallerySortBy] = useState<'date' | 'name' | 'top-picks'>('date')
-  const [galleryViewMode, setGalleryViewMode] = useState<'grid' | 'masonry' | 'list'>('grid')
   const [creativeGallery, setCreativeGallery] = useState<{ id: string; name: string; topPicksCount: number } | null>(null)
   const reveal = useReveal()
 
@@ -431,10 +436,10 @@ export function ClientDashboard() {
   // before bootstrap confirms their membership. Only gate on this while the user
   // is NOT already cached as authenticated via the legacy path.
   if (!bootstrapChecked && !authenticated) return (
-    <div style={{
+    <div dir={loc.dir} style={{
       minHeight: '100vh', background: bg,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'inherit', direction: 'rtl',
+      fontFamily: 'inherit',
     }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{
@@ -446,16 +451,16 @@ export function ClientDashboard() {
         <p style={{
           fontSize: 11, color: textMuted, fontWeight: 500,
           letterSpacing: '0.18em', textTransform: 'uppercase',
-        }}>Loading</p>
+        }}>{loc.t('loading')}</p>
       </div>
     </div>
   )
 
   if (loading) return (
-    <div style={{
+    <div dir={loc.dir} style={{
       minHeight: '100vh', background: bg,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'inherit', direction: 'rtl',
+      fontFamily: 'inherit',
     }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{
@@ -467,15 +472,15 @@ export function ClientDashboard() {
         <p style={{
           fontSize: 11, color: textMuted, fontWeight: 500,
           letterSpacing: '0.18em', textTransform: 'uppercase',
-        }}>Loading</p>
+        }}>{loc.t('loading')}</p>
       </div>
     </div>
   )
   if (error) return (
-    <div style={{
+    <div dir={loc.dir} style={{
       minHeight: '100vh', background: bg,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'inherit', direction: 'rtl',
+      fontFamily: 'inherit',
     }}>
       <div style={{
         textAlign: 'center', padding: '40px 36px',
@@ -485,7 +490,7 @@ export function ClientDashboard() {
         <div style={{
           fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
           color: textMuted, textTransform: 'uppercase', marginBottom: 14,
-        }}>Error</div>
+        }}>{loc.t('error.title')}</div>
         <p style={{ fontSize: 15, color: textPrimary, margin: 0, lineHeight: 1.5 }}>{error}</p>
       </div>
     </div>
@@ -546,10 +551,10 @@ export function ClientDashboard() {
   // their server-verified membership is the authorization.
   if (!authenticated && !memberAuthorized && clientCode) {
     return (
-      <div style={{
+      <div dir="rtl" style={{
         minHeight: '100vh', background: bg, color: textPrimary,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'inherit', direction: 'rtl',
+        fontFamily: 'inherit',
       }}>
         <div style={{
           textAlign: 'center', maxWidth: 440, padding: '48px 40px',
@@ -643,10 +648,10 @@ export function ClientDashboard() {
   // fails closed (memberAuthorized === false).
   if (!authenticated && !memberAuthorized && !clientCode) {
     return (
-      <div style={{
+      <div dir={loc.dir} style={{
         minHeight: '100vh', background: bg, color: textPrimary,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'inherit', direction: 'rtl',
+        fontFamily: 'inherit',
       }}>
         <div style={{
           textAlign: 'center', maxWidth: 440, padding: '48px 40px',
@@ -655,15 +660,15 @@ export function ClientDashboard() {
           <div style={{
             fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
             color: textMuted, textTransform: 'uppercase', marginBottom: 18,
-          }}>Client Dashboard</div>
+          }}>{loc.t('portal.badge')}</div>
           <h2 style={{
             fontSize: 26, fontWeight: 500, margin: '0 0 12px',
             letterSpacing: '-0.02em', color: textPrimary, lineHeight: 1.15,
-          }}>הגישה מוגבלת</h2>
+          }}>{loc.t('gate.restricted.title')}</h2>
           <p style={{
             fontSize: 14, color: textSecondary, margin: '0 0 8px', lineHeight: 1.55,
           }}>
-            אזור הלקוח דורש חשבון גישה. פנו לצלם כדי לקבל הזמנה.
+            {loc.t('gate.restricted.body')}
           </p>
         </div>
       </div>
@@ -708,226 +713,89 @@ export function ClientDashboard() {
     window.location.href = '/client-login'
   }
 
-  // Production/social suite tabs are gated on the membership entitlement
-  // (`productionEnabled`). When disabled they are removed from the nav entirely;
-  // a defensive content guard below also refuses to render the module if `tab`
-  // somehow points at one. Non-Production sections (galleries, stories, home,
-  // page) always remain available.
-  const tabs: Array<{ id: typeof tab; label: string; icon: IconName }> = [
-    // Feed Studio is the new flagship — appears first so it's the photographer's
-    // first move when demoing piXflow's AI Visual OS to a paying client.
-    ...(productionEnabled ? [
-      { id: 'feed-studio' as const, label: '✨ Feed Studio', icon: 'gallery' as IconName },
-      { id: 'content' as const, label: 'Content Studio', icon: 'gallery' as IconName },
-      { id: 'calendar' as const, label: 'Content Calendar', icon: 'calendar' as IconName },
-    ] : []),
-    { id: 'galleries', label: 'Galleries', icon: 'sections' },
-    ...(hasStories && productionEnabled ? [{ id: 'stories' as const, label: 'Stories', icon: 'stories' as IconName }] : []),
-    { id: 'page', label: 'My Page', icon: 'palette' },
-    ...(productionEnabled ? [{ id: 'tender' as const, label: 'חיפוש למכרז', icon: 'search' as IconName }] : []),
-  ]
+  // ── Client Portal V2 navigation model ────────────────────────────────────
+  // The information architecture is driven ENTIRELY by `productionEnabled`.
+  //
+  //   Non-entitled client: Overview · Galleries        (Account lives in shell)
+  //   Entitled client:     Overview · Galleries · Content Library ·
+  //                        Social Studio · Content Calendar · My Page
+  //
+  // Production areas map onto the EXISTING gated `tab` content blocks — nothing
+  // is rebuilt. Production nav items are appended ONLY when `productionEnabled`,
+  // so a non-entitled client can NEVER see a Production entry point. The
+  // preserved redirect guard keeps `tab` on a safe value for non-entitled
+  // clients; their Overview↔Galleries switch is presentation-only
+  // (`nonEntitledOverview`) and never touches `tab`.
 
-  // ── PR1 Social OS navigation model ──────────────────────────────────────
-  // Three primary areas map onto the existing `tab` content blocks (nothing is
-  // rebuilt): Dashboard → 'home', Social Studio → the social trio
-  // (feed-studio/content/calendar), Library → 'galleries'. Everything else
-  // (Stories, My Page, Tender) is frozen under "More" — code + routes intact.
-  const SOCIAL_TABS = ['feed-studio', 'content', 'calendar']
-  const primaryArea: 'dashboard' | 'social' | 'library' | 'more' =
-    tab === 'home' ? 'dashboard'
-      : SOCIAL_TABS.includes(tab) ? 'social'
-        : tab === 'galleries' ? 'library'
-          : 'more'
-  const moreItems: Array<{ id: typeof tab; label: string }> = [
-    ...(hasStories && productionEnabled ? [{ id: 'stories' as const, label: 'Stories' }] : []),
-    { id: 'page' as const, label: 'My Page' },
-    // 'tender' is a Production module — only when entitled.
-    ...(productionEnabled ? [{ id: 'tender' as const, label: 'חיפוש למכרז' }] : []),
-  ]
-  const socialSubTabs: Array<{ id: typeof tab; label: string }> = [
-    { id: 'feed-studio', label: 'Feed' },
-    { id: 'content', label: 'Compose' },
-    { id: 'calendar', label: 'Calendar' },
-  ]
-  // Shared nav-button style (matches the legacy tab buttons exactly).
-  const navBtnStyle = (active: boolean, divider: boolean): CSSProperties => ({
-    padding: '8px 14px', border: 'none', cursor: 'pointer',
-    borderInlineStart: divider ? `1px solid ${border}` : 'none',
-    background: active ? textPrimary : 'transparent',
-    color: active ? '#fff' : textPrimary,
-    fontFamily: 'inherit', fontSize: 10, fontWeight: 500,
-    letterSpacing: '0.18em', textTransform: 'uppercase',
-    display: 'inline-flex', alignItems: 'center', gap: 6,
-    transition: 'background .15s, color .15s', whiteSpace: 'nowrap',
-  })
+  // Gallery data adapted for the new card components. Covers may be absent (the
+  // common case in the test env) — GalleryCard/CoverFallback handle that.
+  const galleryCards: GalleryCardData[] = galleries.map(g => ({
+    id: g.id,
+    name: g.name,
+    coverUrl: covers.get(g.id) ?? null,
+    imageCount: g.image_count,
+    publishedIso: g.published_at,
+  }))
+
+  // Which nav item is visually active.
+  const activeNavId: string = productionEnabled
+    ? (tab === 'home' ? 'overview'
+      : tab === 'galleries' ? 'galleries'
+      : tab === 'content' ? 'library'
+      : (tab === 'feed-studio' || tab === 'calendar') ? (tab === 'calendar' ? 'calendar' : 'social')
+      : tab === 'page' ? 'mypage'
+      : 'overview')
+    : (nonEntitledOverview ? 'overview' : 'galleries')
+
+  // Selecting a non-entitled area is presentation-only; `tab` stays put.
+  const goOverview = () => { if (productionEnabled) setTab('home'); else setNonEntitledOverview(true) }
+  const goGalleries = () => { setNonEntitledOverview(false); setTab('galleries') }
+
+  const navItems: NavItem[] = productionEnabled
+    ? [
+        { id: 'overview',  label: loc.t('nav.overview'),        icon: 'activity', onSelect: () => setTab('home') },
+        { id: 'galleries', label: loc.t('nav.galleries'),       icon: 'sections', onSelect: () => setTab('galleries') },
+        { id: 'library',   label: loc.t('nav.contentLibrary'),  icon: 'gallery',  onSelect: () => setTab('content') },
+        { id: 'social',    label: loc.t('nav.socialStudio'),    icon: 'stories',  onSelect: () => setTab('feed-studio') },
+        { id: 'calendar',  label: loc.t('nav.calendar'),        icon: 'calendar', onSelect: () => setTab('calendar') },
+        { id: 'mypage',    label: loc.t('nav.myPage'),          icon: 'palette',  onSelect: () => setTab('page') },
+      ]
+    : [
+        { id: 'overview',  label: loc.t('nav.overview'),  icon: 'activity', onSelect: goOverview },
+        { id: 'galleries', label: loc.t('nav.galleries'), icon: 'sections', onSelect: goGalleries },
+      ]
+
+  // For a non-entitled client, whether to render MY Overview screen instead of
+  // the Galleries screen. Entitled clients route through `tab` as before.
+  const showNonEntitledOverview = !productionEnabled && nonEntitledOverview
 
   return (
-    <div style={{
-      minHeight: '100vh', background: bg, color: textPrimary,
-      fontFamily: 'inherit', direction: 'rtl',
-    }}>
+    <PortalShell
+      loc={loc}
+      studioName={studioName}
+      clientTitle={displayTitle}
+      navItems={navItems}
+      activeNavId={activeNavId}
+      showAccount={memberAuthorized}
+      email={memberEmail}
+      clientName={activeMembership?.client_name ?? clientName}
+      signingOut={signingOut}
+      onSignOut={() => { void handleSignOut() }}
+    >
+    <div dir={loc.dir}>
 
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header style={{
-        borderBottom: `1px solid ${border}`,
-        padding: '0 24px',
-        background: bg,
-        position: 'sticky', top: 0, zIndex: 100,
-      }}>
-        <div style={{
-          maxWidth: 1200, margin: '0 auto',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          height: 72, gap: 24, flexWrap: 'wrap',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-            {studioName && (
-              <div style={{
-                fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-                color: textMuted, textTransform: 'uppercase',
-              }}>
-                {studioName}
-              </div>
-            )}
-            <h1 style={{
-              fontSize: 18, fontWeight: 500, margin: 0,
-              letterSpacing: '-0.015em', color: textPrimary,
-            }}>{displayTitle}</h1>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%',
-              background: statusLive, display: 'inline-block',
-            }} />
-          </div>
-          {/* ── Tab Navigation — tracked uppercase, hairline-divided ── */}
-          {SOCIAL_OS ? (
-            /* PR1 Social OS nav: 3 primary areas + a "More" menu for frozen/
-               legacy areas (Stories, My Page, Tender). Same visual language. */
-            <nav aria-label="Primary" style={{ display: 'flex', gap: 4, border: `1px solid ${border}`, background: '#fff', position: 'relative' }}>
-              {([
-                // Dashboard = the content-engine overview (Production) → only when entitled.
-                ...(productionEnabled ? [{ area: 'dashboard', label: 'Dashboard', icon: 'activity' as IconName, go: () => setTab('home') }] : []),
-                // Social Studio is the Production suite → only when entitled.
-                ...(productionEnabled ? [{ area: 'social', label: 'Social Studio', icon: 'gallery' as IconName, go: () => setTab('feed-studio') }] : []),
-                { area: 'library', label: 'Library', icon: 'sections' as IconName, go: () => setTab('galleries') },
-              ] as const).map((p, i) => (
-                <button key={p.area} onClick={p.go} style={navBtnStyle(primaryArea === p.area, i > 0)}>
-                  <Icon name={p.icon} size={12} strokeWidth={1.6} />
-                  {p.label}
-                </button>
-              ))}
-              {/* More — frozen/legacy areas kept reachable (not deleted) */}
-              <button aria-label="More" onClick={() => setMoreOpen(o => !o)} style={navBtnStyle(primaryArea === 'more', true)}>
-                <Icon name="menu" size={12} strokeWidth={1.6} />
-                More
-              </button>
-              {moreOpen && (
-                <div role="menu" style={{ position: 'absolute', top: '100%', insetInlineEnd: 0, marginTop: 4, background: '#fff', border: `1px solid ${border}`, minWidth: 180, zIndex: 200, boxShadow: '0 8px 24px rgba(0,0,0,.08)' }}>
-                  {moreItems.map(m => (
-                    <button
-                      key={m.id}
-                      role="menuitem"
-                      onClick={() => { setTab(m.id); setMoreOpen(false) }}
-                      style={{ display: 'block', width: '100%', textAlign: 'start', padding: '10px 14px', border: 'none', borderBottom: `1px solid ${border}`, background: tab === m.id ? textPrimary : 'transparent', color: tab === m.id ? '#fff' : textPrimary, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </nav>
-          ) : (
-            <nav style={{
-              display: 'flex', gap: 4,
-              border: `1px solid ${border}`,
-              background: '#fff',
-            }}>
-              {tabs.map((t, i) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTab(t.id)}
-                  style={{
-                    padding: '8px 14px', border: 'none', cursor: 'pointer',
-                    borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
-                    background: tab === t.id ? textPrimary : 'transparent',
-                    color: tab === t.id ? '#fff' : textPrimary,
-                    fontFamily: 'inherit',
-                    fontSize: 10, fontWeight: 500,
-                    letterSpacing: '0.18em', textTransform: 'uppercase',
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    transition: 'background .15s, color .15s',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <Icon name={t.icon} size={12} strokeWidth={1.6} />
-                  {t.label}
-                </button>
-              ))}
-            </nav>
-          )}
-
-          {/* ── Account (authenticated members only) ──────────────────── */}
-          {memberAuthorized && (
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => setAccountOpen(o => !o)}
-                aria-haspopup="menu"
-                aria-expanded={accountOpen}
-                style={{
-                  padding: '8px 14px', border: `1px solid ${border}`, cursor: 'pointer',
-                  background: accountOpen ? textPrimary : '#fff',
-                  color: accountOpen ? '#fff' : textPrimary,
-                  fontFamily: 'inherit', fontSize: 10, fontWeight: 500,
-                  letterSpacing: '0.18em', textTransform: 'uppercase',
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  transition: 'background .15s, color .15s', whiteSpace: 'nowrap',
-                }}
-              >
-                <Icon name="menu" size={12} strokeWidth={1.6} />
-                חשבון
-              </button>
-              {accountOpen && (
-                <div role="menu" style={{
-                  position: 'absolute', top: '100%', insetInlineEnd: 0, marginTop: 4,
-                  background: '#fff', border: `1px solid ${border}`, minWidth: 220,
-                  zIndex: 200, boxShadow: '0 8px 24px rgba(0,0,0,.08)',
-                }}>
-                  <div style={{ padding: '12px 14px', borderBottom: `1px solid ${border}` }}>
-                    <div style={{
-                      fontSize: 10, fontWeight: 500, letterSpacing: '0.18em',
-                      color: textMuted, textTransform: 'uppercase', marginBottom: 4,
-                    }}>מחובר.ת כ</div>
-                    <div dir="ltr" style={{
-                      fontSize: 13, color: textPrimary, textAlign: 'left',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>{memberEmail ?? '—'}</div>
-                    {activeMembership && (
-                      <div style={{ fontSize: 11, color: textMuted, marginTop: 4 }}>
-                        {activeMembership.client_name}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    role="menuitem"
-                    onClick={() => { void handleSignOut() }}
-                    disabled={signingOut}
-                    style={{
-                      display: 'block', width: '100%', textAlign: 'start',
-                      padding: '12px 14px', border: 'none', background: 'transparent',
-                      color: textPrimary, cursor: signingOut ? 'not-allowed' : 'pointer',
-                      fontFamily: 'inherit', fontSize: 10, fontWeight: 500,
-                      letterSpacing: '0.18em', textTransform: 'uppercase',
-                      opacity: signingOut ? 0.6 : 1,
-                    }}
-                  >
-                    {signingOut ? 'מתנתק…' : 'התנתקות'}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </header>
-
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 24px 96px' }}>
+        {/* ── Overview (non-entitled clients) ──────────────────────────────
+            Presentation-only Overview backed by `nonEntitledOverview`. Never a
+            Production surface — a simple, honest welcome + galleries. */}
+        {showNonEntitledOverview && (
+          <OverviewScreen
+            loc={loc}
+            clientName={activeMembership?.client_name || clientName}
+            galleries={galleryCards}
+            hrefFor={galleryUrl}
+            onViewAll={goGalleries}
+          />
+        )}
 
         {/* ── Production module unavailable (defensive) ────────────────────
             If a Production tab is somehow active without the entitlement (e.g.
@@ -935,7 +803,7 @@ export function ClientDashboard() {
             value), render a safe notice instead of the Production module. The
             module content blocks are ALSO individually gated on
             `productionEnabled`, so they never mount here. */}
-        {bootstrapChecked && !productionEnabled && (PRODUCTION_TABS as readonly string[]).includes(tab) && (
+        {bootstrapChecked && !productionEnabled && !showNonEntitledOverview && (PRODUCTION_TABS as readonly string[]).includes(tab) && (
           <div style={{
             padding: '48px 40px', textAlign: 'center',
             background: '#fff', border: `1px solid ${border}`, maxWidth: 480, margin: '0 auto',
@@ -943,43 +811,30 @@ export function ClientDashboard() {
             <div style={{
               fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
               color: textMuted, textTransform: 'uppercase', marginBottom: 14,
-            }}>Not Available</div>
+            }}>{loc.t('gate.notAvailable.badge')}</div>
             <p style={{ fontSize: 15, color: textPrimary, margin: '0 0 6px', lineHeight: 1.5 }}>
-              המודול הזה אינו זמין בחשבון שלך
+              {loc.t('gate.notAvailable.title')}
             </p>
             <p style={{ fontSize: 13, color: textSecondary, margin: 0, lineHeight: 1.5 }}>
-              פנו לצלם כדי להפעיל את חבילת התוכן.
+              {loc.t('gate.notAvailable.body')}
             </p>
           </div>
         )}
 
-        {/* ── PR1 Dashboard (Social OS home) — content-engine overview ────
-            Production-gated: only entitled businesses see the content engine. */}
-        {SOCIAL_OS && tab === 'home' && productionEnabled && (
-          <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>Loading…</div>}>
+        {/* ── Overview (entitled clients) — personalized content-engine home ──
+            Production-gated: only entitled businesses see this surface. */}
+        {tab === 'home' && productionEnabled && (
+          <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>{loc.t('loading')}…</div>}>
             <ClientHome
+              loc={loc}
+              clientName={activeMembership?.client_name || clientName}
               galleries={galleries}
               covers={covers}
-              topPicksCount={topPicks.length}
-              storiesCount={Array.from(stories.values()).flat().length}
-              cadencePerWeek={CADENCE_PER_WEEK}
-              onGoSocial={() => setTab(productionEnabled ? 'feed-studio' : 'galleries')}
+              galleryHref={galleryUrl}
+              onGoSocial={() => setTab('feed-studio')}
               onGoLibrary={() => setTab('galleries')}
-              palette={{ textPrimary, textMuted, border, statusLive }}
             />
           </Suspense>
-        )}
-
-        {/* ── PR1 Social Studio sub-nav — unifies Feed / Compose / Calendar
-            (the legacy social trio) under one area. Just switches `tab`. ── */}
-        {SOCIAL_OS && productionEnabled && primaryArea === 'social' && (
-          <div style={{ display: 'flex', gap: 4, marginBottom: 28, border: `1px solid ${border}`, width: 'fit-content', background: '#fff' }}>
-            {socialSubTabs.map((s, i) => (
-              <button key={s.id} onClick={() => setTab(s.id)} style={navBtnStyle(tab === s.id, i > 0)}>
-                {s.label}
-              </button>
-            ))}
-          </div>
         )}
 
         {/* ── Feed Studio Tab — the AI Visual OS surface (Production) ──── */}
@@ -1280,227 +1135,12 @@ export function ClientDashboard() {
         )}
 
         {/* ── Galleries Tab ───────────────────────────────────────────── */}
-        {tab === 'galleries' && (
-          <div>
-            {/* Filter & Sort Toolbar — hairline panels, no glass blur */}
-            <div style={{
-              display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap', alignItems: 'center',
-            }}>
-              {/* Search */}
-              <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: 360 }}>
-                <span style={{
-                  position: 'absolute', insetInlineStart: 14, top: '50%',
-                  transform: 'translateY(-50%)', pointerEvents: 'none',
-                  color: textMuted, display: 'flex',
-                }}>
-                  <Icon name="search" size={13} strokeWidth={1.85} />
-                </span>
-                <input
-                  value={galleryFilter} onChange={e => setGalleryFilter(e.target.value)}
-                  placeholder="חפש גלריה…"
-                  style={{
-                    width: '100%', padding: '10px 14px 10px 38px',
-                    background: '#fff', border: `1px solid ${border}`, borderRadius: 2,
-                    color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
-                    transition: 'border-color .15s',
-                  }}
-                  onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
-                  onBlur={e => { e.currentTarget.style.borderColor = border }}
-                />
-              </div>
-
-              {/* Sort */}
-              <div style={{ display: 'flex', border: `1px solid ${border}`, background: '#fff' }}>
-                {([
-                  { id: 'date' as const, label: 'תאריך' },
-                  { id: 'name' as const, label: 'שם' },
-                  { id: 'top-picks' as const, label: 'מועדפים' },
-                ] as const).map((s, i) => (
-                  <button key={s.id} onClick={() => setGallerySortBy(s.id)} style={{
-                    padding: '8px 14px', border: 'none', cursor: 'pointer',
-                    borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
-                    background: gallerySortBy === s.id ? textPrimary : 'transparent',
-                    color: gallerySortBy === s.id ? '#fff' : textPrimary,
-                    fontSize: 10, fontWeight: 500, fontFamily: 'inherit',
-                    letterSpacing: '0.18em', textTransform: 'uppercase',
-                    transition: 'background .15s, color .15s',
-                  }}>{s.label}</button>
-                ))}
-              </div>
-
-              {/* View mode */}
-              <div style={{ display: 'flex', border: `1px solid ${border}`, background: '#fff' }}>
-                {([
-                  { id: 'grid' as const,    name: 'gallery'  as IconName, label: 'תצוגת רשת' },
-                  { id: 'masonry' as const, name: 'sections' as IconName, label: 'תצוגת אבן' },
-                  { id: 'list' as const,    name: 'menu'     as IconName, label: 'תצוגת רשימה' },
-                ] as const).map((v, i) => (
-                  <button key={v.id} onClick={() => setGalleryViewMode(v.id)} aria-label={v.label} aria-pressed={galleryViewMode === v.id} style={{
-                    padding: '8px 10px', border: 'none', cursor: 'pointer',
-                    borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
-                    background: galleryViewMode === v.id ? textPrimary : 'transparent',
-                    color: galleryViewMode === v.id ? '#fff' : textPrimary,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    transition: 'background .15s, color .15s',
-                  }}>
-                    <Icon name={v.name} size={13} strokeWidth={1.85} />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Keyboard shortcut hint — quiet meta line */}
-            <p style={{
-              fontSize: 11, color: textMuted, marginBottom: 24,
-              letterSpacing: '0.04em',
-            }}>
-              לחצו <kbd style={{
-                padding: '2px 6px', background: '#fff', border: `1px solid ${border}`,
-                fontSize: 10, fontFamily: 'monospace', color: textPrimary,
-              }}>T</kbd> על תמונה כדי לסמן כמועדף
-            </p>
-
-            {galleries
-              .filter(g => !galleryFilter || g.name.toLowerCase().includes(galleryFilter.toLowerCase()) || (g.client_name || '').toLowerCase().includes(galleryFilter.toLowerCase()))
-              .sort((a, b) => {
-                if (gallerySortBy === 'name') return a.name.localeCompare(b.name)
-                if (gallerySortBy === 'top-picks') {
-                  const aTops = allImages.filter(img => img.gallery_id === a.id && img.is_top_pick).length
-                  const bTops = allImages.filter(img => img.gallery_id === b.id && img.is_top_pick).length
-                  return bTops - aTops
-                }
-                return (b.published_at || '').localeCompare(a.published_at || '')
-              })
-              .map(g => {
-              const galleryImages = allImages.filter(img => img.gallery_id === g.id)
-              const d = g.published_at ? new Date(g.published_at) : null
-              return (
-                <div key={g.id} ref={reveal} style={{
-                  marginBottom: 32, padding: 28,
-                  background: '#fff', border: `1px solid ${border}`,
-                }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-                    marginBottom: 22, gap: 12, flexWrap: 'wrap',
-                  }}>
-                    <div>
-                      <div style={{
-                        fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-                        color: textMuted, textTransform: 'uppercase', marginBottom: 8,
-                        display: 'flex', alignItems: 'center', gap: 8,
-                      }}>
-                        <span style={{
-                          width: 6, height: 6, borderRadius: '50%', background: statusLive,
-                        }} />
-                        Published
-                        {d && (
-                          <>
-                            <span style={{ color: border, marginInline: 2 }}>·</span>
-                            <span>{MONTHS[d.getMonth()]} {d.getFullYear()}</span>
-                          </>
-                        )}
-                      </div>
-                      <h3 style={{
-                        fontSize: 22, fontWeight: 500, margin: '0 0 6px',
-                        letterSpacing: '-0.015em', color: textPrimary,
-                      }}>{g.name}</h3>
-                      <p style={{ fontSize: 13, color: textSecondary, margin: 0 }}>
-                        {g.image_count.toLocaleString('he-IL')} תמונות
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      {/* Creative Engine is a Production module → entitled only. */}
-                      {productionEnabled && (
-                      <button
-                        onClick={() => setCreativeGallery({ id: g.id, name: g.name, topPicksCount: galleryImages.filter(i => i.is_top_pick).length })}
-                        style={{
-                          padding: '11px 22px', borderRadius: 2,
-                          background: '#0a0a0f', border: '1px solid #0a0a0f',
-                          color: '#D4FF00',
-                          fontSize: 11, fontWeight: 700,
-                          letterSpacing: '0.18em', textTransform: 'uppercase',
-                          fontFamily: 'inherit', cursor: 'pointer',
-                          display: 'inline-flex', alignItems: 'center', gap: 8,
-                          transition: 'background .15s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = '#1a1a25' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = '#0a0a0f' }}
-                      >
-                        🎨 מנוע יצירה
-                      </button>
-                      )}
-                      <a href={galleryUrl(g.id)} style={{
-                        padding: '11px 22px', borderRadius: 2,
-                        background: 'transparent', border: `1px solid ${textPrimary}`,
-                        color: textPrimary,
-                        fontSize: 11, fontWeight: 500,
-                        letterSpacing: '0.18em', textTransform: 'uppercase',
-                        textDecoration: 'none', fontFamily: 'inherit',
-                        display: 'inline-flex', alignItems: 'center', gap: 8,
-                        transition: 'background .15s, color .15s',
-                      }}
-                        onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => { e.currentTarget.style.background = textPrimary; e.currentTarget.style.color = '#fff' }}
-                        onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = textPrimary }}
-                      >
-                        View Gallery
-                        <Icon name="arrow-out" size={12} strokeWidth={1.85} />
-                      </a>
-                    </div>
-                  </div>
-                  <div style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 4,
-                  }}>
-                    {galleryImages.map(img => {
-                      const selected = selectedPicks.has(img.id)
-                      return (
-                        <div
-                          key={img.id}
-                          onClick={() => togglePick(img.id)}
-                          style={{
-                            aspectRatio: '1', overflow: 'hidden', position: 'relative',
-                            cursor: 'pointer', background: bgSubtle,
-                            outline: selected ? `2px solid ${textPrimary}` : 'none',
-                            outlineOffset: selected ? -2 : 0,
-                          }}
-                        >
-                          <SignedImg
-                            bucket="gallery-images"
-                            path={img.thumbnail_path || img.storage_path}
-                            alt="" loading="lazy"
-                            style={{
-                              width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                              opacity: selected ? 1 : 0.55,
-                              transition: 'opacity .15s',
-                            }}
-                          />
-                          {selected && (
-                            <div style={{
-                              position: 'absolute', top: 6, insetInlineEnd: 6,
-                              width: 20, height: 20, borderRadius: '50%',
-                              background: textPrimary, color: '#fff',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}>
-                              <Icon name="check" size={11} strokeWidth={3} />
-                            </div>
-                          )}
-                          {img.is_top_pick && !selected && (
-                            <div style={{
-                              position: 'absolute', top: 6, insetInlineStart: 6,
-                              width: 20, height: 20, borderRadius: '50%',
-                              background: 'rgba(255,255,255,.9)', color: textPrimary,
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}>
-                              <Icon name="star" size={10} strokeWidth={1.85} />
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+        {tab === 'galleries' && !showNonEntitledOverview && (
+          <GalleryGrid
+            loc={loc}
+            items={galleryCards}
+            hrefFor={galleryUrl}
+          />
         )}
 
         {/* ── Stories Tab ──────────────────────────────────────────────── */}
@@ -1621,21 +1261,6 @@ export function ClientDashboard() {
             />
           </Suspense>
         )}
-      </div>
-
-      {/* Footer — small, monochrome */}
-      <footer style={{
-        borderTop: `1px solid ${border}`, padding: '24px 24px',
-        textAlign: 'center', background: bg,
-      }}>
-        <div style={{
-          fontSize: 10, color: textMuted, fontWeight: 500,
-          letterSpacing: '0.18em', textTransform: 'uppercase',
-        }}>
-          Powered by Pixflow
-        </div>
-      </footer>
-
       {/* Story player */}
       {playingStory && <StoryPlayer url={playingStory} onClose={() => setPlayingStory(null)} />}
 
@@ -1653,5 +1278,6 @@ export function ClientDashboard() {
         </Suspense>
       )}
     </div>
+    </PortalShell>
   )
 }
