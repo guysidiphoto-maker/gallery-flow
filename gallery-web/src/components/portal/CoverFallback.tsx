@@ -5,7 +5,7 @@
 // <img>. We derive a deterministic soft gradient + an initials monogram from
 // the gallery name so each gallery gets a stable, distinct, tasteful cover.
 
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { tokens } from './tokens'
 
 // A curated set of calm, low-saturation duotone gradients that sit well on the
@@ -72,7 +72,7 @@ export function CoverFallback({ name, aspectRatio = '3 / 2', rounded = false }: 
       <span
         style={{
           fontFamily: 'Georgia, "Frank Ruhl Libre", serif',
-          fontSize: 'clamp(28px, 12cqmin, 64px)',
+          fontSize: 'clamp(30px, 5vw, 56px)',
           fontWeight: 500,
           color: tokens.textPrimary,
           opacity: 0.34,
@@ -91,6 +91,30 @@ export function CoverFallback({ name, aspectRatio = '3 / 2', rounded = false }: 
           borderRadius: rounded ? 3 : 0,
           pointerEvents: 'none',
         }}
+      />
+    </div>
+  )
+}
+
+// PortalCover — renders a real cover image when one exists, and degrades to the
+// designed CoverFallback on a missing URL OR a failed load (a broken <img> must
+// never appear). Shared by the Overview + gallery cards.
+export function PortalCover({ coverUrl, name, aspectRatio = '3 / 2', rounded = false }: {
+  coverUrl: string | null
+  name: string
+  aspectRatio?: string
+  rounded?: boolean
+}) {
+  const [failed, setFailed] = useState(false)
+  if (!coverUrl || failed) return <CoverFallback name={name} aspectRatio={aspectRatio} rounded={rounded} />
+  return (
+    <div style={{ aspectRatio, width: '100%', height: '100%', overflow: 'hidden', background: tokens.bgSubtle, borderRadius: rounded ? 4 : 0 }}>
+      <img
+        src={coverUrl}
+        alt=""
+        loading="lazy"
+        onError={() => setFailed(true)}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
       />
     </div>
   )

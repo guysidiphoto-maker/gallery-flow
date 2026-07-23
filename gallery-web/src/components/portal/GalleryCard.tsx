@@ -59,7 +59,7 @@ export function GalleryCard({ data, href, statusLabel, dateLabel, countLabel, op
       style={cardStyle}
     >
       {/* Cover */}
-      <div style={{ position: 'relative', containerType: 'size' } as CSSProperties}>
+      <div style={{ position: 'relative' }}>
         {showRealCover ? (
           <div style={{ aspectRatio: '3 / 2', overflow: 'hidden', background: tokens.bgSubtle }}>
             <img

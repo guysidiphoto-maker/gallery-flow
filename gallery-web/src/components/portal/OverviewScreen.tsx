@@ -9,7 +9,7 @@
 import { Icon } from '../Icon'
 import type { PortalLocale } from '../../lib/portalLocale'
 import { tokens, eyebrow, serifDisplay } from './tokens'
-import { CoverFallback } from './CoverFallback'
+import { PortalCover } from './CoverFallback'
 import { GalleryCard, type GalleryCardData } from './GalleryCard'
 import { EmptyState } from './EmptyState'
 
@@ -71,18 +71,7 @@ export function OverviewScreen({ loc, clientName, galleries, hrefFor, onViewAll 
               }}
             >
               <div style={{ minHeight: 220 }}>
-                {latest.coverUrl ? (
-                  <div style={{ aspectRatio: '16 / 10', height: '100%', overflow: 'hidden', background: tokens.bgSubtle }}>
-                    <img
-                      src={latest.coverUrl}
-                      alt=""
-                      loading="lazy"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    />
-                  </div>
-                ) : (
-                  <CoverFallback name={latest.name} aspectRatio="16 / 10" />
-                )}
+                <PortalCover coverUrl={latest.coverUrl} name={latest.name} aspectRatio="16 / 10" />
               </div>
               <div style={{ padding: 'clamp(20px, 3vw, 32px)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: tokens.textSecondary }}>
