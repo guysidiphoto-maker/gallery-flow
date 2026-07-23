@@ -57,6 +57,13 @@ const PortfolioPage = lazy(() =>
 const ClientDashboard = lazy(() =>
   import('./pages/ClientDashboard').then(m => ({ default: m.ClientDashboard })),
 )
+// Client Portal V2 — authenticated invitation acceptance + login.
+const ClientInviteAccept = lazy(() =>
+  import('./pages/ClientInviteAccept').then(m => ({ default: m.ClientInviteAccept })),
+)
+const ClientLogin = lazy(() =>
+  import('./pages/ClientLogin').then(m => ({ default: m.ClientLogin })),
+)
 const Dashboard = lazy(() =>
   import('./pages/Dashboard').then(m => ({ default: m.Dashboard })),
 )
@@ -280,6 +287,10 @@ function Router() {
   if (path === '/studio-settings') return <StudioSettings />
   if (path === '/brand-kit') return <BrandKit />
   if (path === '/admin' || path === '/admin/') return <AdminPage />
+  // Client Portal V2 — single-segment auth routes. Placed before the
+  // multi-segment gallery/client catch-alls below so they resolve first.
+  if (path === '/client-invite/accept' || path === '/client-invite/accept/') return <ClientInviteAccept />
+  if (path === '/client-login' || path === '/client-login/') return <ClientLogin />
   if (path === '/terms') return <TermsPage />
   if (path === '/privacy') return <PrivacyPage />
   // Questionnaire

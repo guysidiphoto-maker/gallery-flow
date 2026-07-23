@@ -37,6 +37,35 @@ interface ImageRow {
 }
 interface StoryRow { id: string; gallery_id: string; style: string; storage_path: string }
 
+// ─── Client Portal V2 — authenticated bootstrap contract ────────────────────
+// Self-scoped RPC: resolves auth.uid() → active memberships + published
+// galleries. Takes NO arguments; disabled/revoked members get empty arrays.
+interface PortalMembership {
+  membership_id: string
+  client_id: string
+  business_id: string
+  client_name: string
+  client_slug: string | null
+  role: string
+  production_suite: boolean
+}
+interface PortalBootstrap {
+  authenticated: boolean
+  memberships: PortalMembership[]
+  galleries: Array<Record<string, unknown>>
+}
+function isPortalBootstrap(v: unknown): v is PortalBootstrap {
+  if (typeof v !== 'object' || v === null) return false
+  const o = v as Record<string, unknown>
+  return typeof o.authenticated === 'boolean'
+    && Array.isArray(o.memberships) && Array.isArray(o.galleries)
+}
+
+// The Production / social suite tabs. Shown only when the active membership's
+// `production_suite === true`. The legacy PIN path has no membership, so it
+// resolves to false → these are hidden.
+const PRODUCTION_TABS = ['feed-studio', 'content', 'calendar', 'tender'] as const
+
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 // ─── Editorial design tokens (Pic-Time aesthetic) ─────────────────────────
@@ -183,6 +212,50 @@ export function ClientDashboard() {
   const [authenticated, setAuthenticated] = useState(() => {
     return sessionStorage.getItem(`client-dash-${clientId}`) === 'true'
   })
+
+  // ── Client Portal V2 authenticated path ──────────────────────────────────
+  // When a Supabase session exists AND client_portal_bootstrap returns an
+  // ACTIVE membership for the resolved clientId, that membership is the
+  // authorization + entitlement source — it REPLACES the legacy PIN/route-trust
+  // gate. `memberAuthorized` short-circuits the PIN gates below; the active
+  // membership drives Production-tab gating. Un-upgraded clients (no membership)
+  // fall through to the legacy PIN gate, which is already fail-closed.
+  const [bootstrap, setBootstrap] = useState<PortalBootstrap | null>(null)
+  const [bootstrapChecked, setBootstrapChecked] = useState(false)
+  const [memberEmail, setMemberEmail] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (cancelled) return
+        if (!session) { setBootstrap(null); setBootstrapChecked(true); return }
+        setMemberEmail(session.user.email ?? null)
+        const { data, error: e } = await supabase.rpc('client_portal_bootstrap')
+        if (cancelled) return
+        setBootstrap(!e && isPortalBootstrap(data) ? data : null)
+      } catch {
+        if (!cancelled) setBootstrap(null)
+      } finally {
+        if (!cancelled) setBootstrapChecked(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // Active membership for the CURRENTLY-resolved clientId (server-verified —
+  // bootstrap is self-scoped via auth.uid(), never trusts the route param).
+  const activeMembership =
+    clientId && bootstrap?.authenticated
+      ? bootstrap.memberships.find(m => m.client_id === clientId) ?? null
+      : null
+  // An authenticated member with an active membership for THIS client. This is
+  // the only condition that bypasses the legacy PIN gate.
+  const memberAuthorized = activeMembership !== null
+  // Production/social suite entitlement. Default deny: only true when the active
+  // membership explicitly carries production_suite. Legacy PIN path → false.
+  const productionEnabled = activeMembership?.production_suite === true
+
   const [codeInput, setCodeInput] = useState('')
   const [codeError, setCodeError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -221,6 +294,20 @@ export function ClientDashboard() {
   const [tab, setTab] = useState<'home' | 'feed-studio' | 'content' | 'calendar' | 'galleries' | 'stories' | 'page' | 'tender'>(SOCIAL_OS ? 'home' : 'feed-studio')
   // PR1: open/close state for the "More" (frozen/legacy) menu in the Social OS nav.
   const [moreOpen, setMoreOpen] = useState(false)
+  // Account menu (authenticated members only).
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+
+  // Production-tab safety: the non-SOCIAL_OS default tab is 'feed-studio' (a
+  // Production tab). Once we know the entitlement, if Production is disabled and
+  // the active tab is a Production module, redirect to a safe section so the
+  // module never renders. Runs whenever entitlement or tab changes.
+  useEffect(() => {
+    if (!bootstrapChecked) return
+    if (!productionEnabled && (PRODUCTION_TABS as readonly string[]).includes(tab)) {
+      setTab('galleries')
+    }
+  }, [bootstrapChecked, productionEnabled, tab])
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(() => {
     // Hydrate from sessionStorage so the user's selection survives refresh
     // within the same browser session. Real persistence (a
@@ -338,6 +425,31 @@ export function ClientDashboard() {
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
+  // Hold the render until the authenticated bootstrap check resolves — without
+  // this, a valid member would briefly see the PIN/"access restricted" gate
+  // before bootstrap confirms their membership. Only gate on this while the user
+  // is NOT already cached as authenticated via the legacy path.
+  if (!bootstrapChecked && !authenticated) return (
+    <div style={{
+      minHeight: '100vh', background: bg,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: 'inherit', direction: 'rtl',
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{
+          width: 36, height: 36, border: `2px solid ${border}`,
+          borderTopColor: textPrimary, borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite', margin: '0 auto 16px',
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <p style={{
+          fontSize: 11, color: textMuted, fontWeight: 500,
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+        }}>Loading</p>
+      </div>
+    </div>
+  )
+
   if (loading) return (
     <div style={{
       minHeight: '100vh', background: bg,
@@ -429,7 +541,9 @@ export function ClientDashboard() {
   }
 
   // ── Code gate ──────────────────────────────────────────────────────────
-  if (!authenticated && clientCode) {
+  // Authenticated members with an active membership skip the PIN entirely —
+  // their server-verified membership is the authorization.
+  if (!authenticated && !memberAuthorized && clientCode) {
     return (
       <div style={{
         minHeight: '100vh', background: bg, color: textPrimary,
@@ -520,7 +634,13 @@ export function ClientDashboard() {
   // configuration must fail CLOSED, not open. Coded clients (gate above) and
   // authenticated sessions are unaffected. New clients use authenticated
   // `client_memberships` access instead of a PIN.
-  if (!authenticated && !clientCode) {
+  //
+  // Client Portal V2: an authenticated member with an active membership for this
+  // client (memberAuthorized) is allowed through here — the legacy fail-closed
+  // block only applies to un-upgraded clients with neither a PIN nor a
+  // membership. A logged-in user without a membership for THIS client still
+  // fails closed (memberAuthorized === false).
+  if (!authenticated && !memberAuthorized && !clientCode) {
     return (
       <div style={{
         minHeight: '100vh', background: bg, color: textPrimary,
@@ -571,16 +691,39 @@ export function ClientDashboard() {
 
   const selectedImages = allImages.filter(img => selectedPicks.has(img.id))
 
+  // Log out an authenticated member. Clears any legacy session cache too so a
+  // stale PIN flag can't re-open the dashboard, then routes to the login page.
+  const handleSignOut = async () => {
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await supabase.auth.signOut()
+    } catch { /* fall through to redirect regardless */ }
+    try {
+      sessionStorage.removeItem(`client-dash-${clientId}`)
+      sessionStorage.removeItem(`client-token-${clientId}`)
+      sessionStorage.removeItem(`client-token-expires-${clientId}`)
+    } catch { /* ignore */ }
+    window.location.href = '/client-login'
+  }
+
+  // Production/social suite tabs are gated on the membership entitlement
+  // (`productionEnabled`). When disabled they are removed from the nav entirely;
+  // a defensive content guard below also refuses to render the module if `tab`
+  // somehow points at one. Non-Production sections (galleries, stories, home,
+  // page) always remain available.
   const tabs: Array<{ id: typeof tab; label: string; icon: IconName }> = [
     // Feed Studio is the new flagship — appears first so it's the photographer's
     // first move when demoing piXflow's AI Visual OS to a paying client.
-    { id: 'feed-studio', label: '✨ Feed Studio', icon: 'gallery' },
-    { id: 'content', label: 'Content Studio', icon: 'gallery' },
-    { id: 'calendar', label: 'Content Calendar', icon: 'calendar' },
+    ...(productionEnabled ? [
+      { id: 'feed-studio' as const, label: '✨ Feed Studio', icon: 'gallery' as IconName },
+      { id: 'content' as const, label: 'Content Studio', icon: 'gallery' as IconName },
+      { id: 'calendar' as const, label: 'Content Calendar', icon: 'calendar' as IconName },
+    ] : []),
     { id: 'galleries', label: 'Galleries', icon: 'sections' },
     ...(hasStories ? [{ id: 'stories' as const, label: 'Stories', icon: 'stories' as IconName }] : []),
     { id: 'page', label: 'My Page', icon: 'palette' },
-    { id: 'tender', label: 'חיפוש למכרז', icon: 'search' },
+    ...(productionEnabled ? [{ id: 'tender' as const, label: 'חיפוש למכרז', icon: 'search' as IconName }] : []),
   ]
 
   // ── PR1 Social OS navigation model ──────────────────────────────────────
@@ -597,7 +740,8 @@ export function ClientDashboard() {
   const moreItems: Array<{ id: typeof tab; label: string }> = [
     ...(hasStories ? [{ id: 'stories' as const, label: 'Stories' }] : []),
     { id: 'page' as const, label: 'My Page' },
-    { id: 'tender' as const, label: 'חיפוש למכרז' },
+    // 'tender' is a Production module — only when entitled.
+    ...(productionEnabled ? [{ id: 'tender' as const, label: 'חיפוש למכרז' }] : []),
   ]
   const socialSubTabs: Array<{ id: typeof tab; label: string }> = [
     { id: 'feed-studio', label: 'Feed' },
@@ -659,7 +803,8 @@ export function ClientDashboard() {
             <nav aria-label="Primary" style={{ display: 'flex', gap: 4, border: `1px solid ${border}`, background: '#fff', position: 'relative' }}>
               {([
                 { area: 'dashboard', label: 'Dashboard', icon: 'activity' as IconName, go: () => setTab('home') },
-                { area: 'social', label: 'Social Studio', icon: 'gallery' as IconName, go: () => setTab('feed-studio') },
+                // Social Studio is the Production suite → only when entitled.
+                ...(productionEnabled ? [{ area: 'social', label: 'Social Studio', icon: 'gallery' as IconName, go: () => setTab('feed-studio') }] : []),
                 { area: 'library', label: 'Library', icon: 'sections' as IconName, go: () => setTab('galleries') },
               ] as const).map((p, i) => (
                 <button key={p.area} onClick={p.go} style={navBtnStyle(primaryArea === p.area, i > 0)}>
@@ -716,10 +861,95 @@ export function ClientDashboard() {
               ))}
             </nav>
           )}
+
+          {/* ── Account (authenticated members only) ──────────────────── */}
+          {memberAuthorized && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setAccountOpen(o => !o)}
+                aria-haspopup="menu"
+                aria-expanded={accountOpen}
+                style={{
+                  padding: '8px 14px', border: `1px solid ${border}`, cursor: 'pointer',
+                  background: accountOpen ? textPrimary : '#fff',
+                  color: accountOpen ? '#fff' : textPrimary,
+                  fontFamily: 'inherit', fontSize: 10, fontWeight: 500,
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  transition: 'background .15s, color .15s', whiteSpace: 'nowrap',
+                }}
+              >
+                <Icon name="menu" size={12} strokeWidth={1.6} />
+                חשבון
+              </button>
+              {accountOpen && (
+                <div role="menu" style={{
+                  position: 'absolute', top: '100%', insetInlineEnd: 0, marginTop: 4,
+                  background: '#fff', border: `1px solid ${border}`, minWidth: 220,
+                  zIndex: 200, boxShadow: '0 8px 24px rgba(0,0,0,.08)',
+                }}>
+                  <div style={{ padding: '12px 14px', borderBottom: `1px solid ${border}` }}>
+                    <div style={{
+                      fontSize: 10, fontWeight: 500, letterSpacing: '0.18em',
+                      color: textMuted, textTransform: 'uppercase', marginBottom: 4,
+                    }}>מחובר.ת כ</div>
+                    <div dir="ltr" style={{
+                      fontSize: 13, color: textPrimary, textAlign: 'left',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{memberEmail ?? '—'}</div>
+                    {activeMembership && (
+                      <div style={{ fontSize: 11, color: textMuted, marginTop: 4 }}>
+                        {activeMembership.client_name}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    role="menuitem"
+                    onClick={() => { void handleSignOut() }}
+                    disabled={signingOut}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'start',
+                      padding: '12px 14px', border: 'none', background: 'transparent',
+                      color: textPrimary, cursor: signingOut ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit', fontSize: 10, fontWeight: 500,
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                      opacity: signingOut ? 0.6 : 1,
+                    }}
+                  >
+                    {signingOut ? 'מתנתק…' : 'התנתקות'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 24px 96px' }}>
+
+        {/* ── Production module unavailable (defensive) ────────────────────
+            If a Production tab is somehow active without the entitlement (e.g.
+            a transient state before the redirect effect fires, or a tampered
+            value), render a safe notice instead of the Production module. The
+            module content blocks are ALSO individually gated on
+            `productionEnabled`, so they never mount here. */}
+        {!productionEnabled && (PRODUCTION_TABS as readonly string[]).includes(tab) && (
+          <div style={{
+            padding: '48px 40px', textAlign: 'center',
+            background: '#fff', border: `1px solid ${border}`, maxWidth: 480, margin: '0 auto',
+          }}>
+            <div style={{
+              fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+              color: textMuted, textTransform: 'uppercase', marginBottom: 14,
+            }}>Not Available</div>
+            <p style={{ fontSize: 15, color: textPrimary, margin: '0 0 6px', lineHeight: 1.5 }}>
+              המודול הזה אינו זמין בחשבון שלך
+            </p>
+            <p style={{ fontSize: 13, color: textSecondary, margin: 0, lineHeight: 1.5 }}>
+              פנו לצלם כדי להפעיל את חבילת התוכן.
+            </p>
+          </div>
+        )}
 
         {/* ── PR1 Dashboard (Social OS home) — content-engine overview ──── */}
         {SOCIAL_OS && tab === 'home' && (
@@ -730,7 +960,7 @@ export function ClientDashboard() {
               topPicksCount={topPicks.length}
               storiesCount={Array.from(stories.values()).flat().length}
               cadencePerWeek={CADENCE_PER_WEEK}
-              onGoSocial={() => setTab('feed-studio')}
+              onGoSocial={() => setTab(productionEnabled ? 'feed-studio' : 'galleries')}
               onGoLibrary={() => setTab('galleries')}
               palette={{ textPrimary, textMuted, border, statusLive }}
             />
@@ -739,7 +969,7 @@ export function ClientDashboard() {
 
         {/* ── PR1 Social Studio sub-nav — unifies Feed / Compose / Calendar
             (the legacy social trio) under one area. Just switches `tab`. ── */}
-        {SOCIAL_OS && primaryArea === 'social' && (
+        {SOCIAL_OS && productionEnabled && primaryArea === 'social' && (
           <div style={{ display: 'flex', gap: 4, marginBottom: 28, border: `1px solid ${border}`, width: 'fit-content', background: '#fff' }}>
             {socialSubTabs.map((s, i) => (
               <button key={s.id} onClick={() => setTab(s.id)} style={navBtnStyle(tab === s.id, i > 0)}>
@@ -749,8 +979,8 @@ export function ClientDashboard() {
           </div>
         )}
 
-        {/* ── Feed Studio Tab — the AI Visual OS surface ──────────────── */}
-        {tab === 'feed-studio' && (
+        {/* ── Feed Studio Tab — the AI Visual OS surface (Production) ──── */}
+        {tab === 'feed-studio' && productionEnabled && (
           <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>Loading Feed Studio…</div>}>
             <FeedStudio
               clientId={clientId}
@@ -760,8 +990,8 @@ export function ClientDashboard() {
           </Suspense>
         )}
 
-        {/* ── Content Studio Tab ──────────────────────────────────────── */}
-        {tab === 'content' && (
+        {/* ── Content Studio Tab (Production) ─────────────────────────── */}
+        {tab === 'content' && productionEnabled && (
           <div>
             {/* Stats bar — single hairline-bordered grid row */}
             <div ref={reveal} style={{
@@ -1033,8 +1263,8 @@ export function ClientDashboard() {
           </div>
         )}
 
-        {/* ── Content Calendar Tab ─────────────────────────────────── */}
-        {tab === 'calendar' && (
+        {/* ── Content Calendar Tab (Production) ────────────────────── */}
+        {tab === 'calendar' && productionEnabled && (
           <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
             <SocialManager
               galleries={galleries}
@@ -1374,7 +1604,8 @@ export function ClientDashboard() {
           </Suspense>
         )}
 
-        {tab === 'tender' && (
+        {/* ── Tender Tab (Production) ─────────────────────────────────── */}
+        {tab === 'tender' && productionEnabled && (
           <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
             <TenderBuilder
               galleries={galleries}
