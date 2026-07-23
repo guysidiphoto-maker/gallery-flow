@@ -64,7 +64,7 @@ function isPortalBootstrap(v: unknown): v is PortalBootstrap {
 // The Production / social suite tabs. Shown only when the active membership's
 // `production_suite === true`. The legacy PIN path has no membership, so it
 // resolves to false → these are hidden.
-const PRODUCTION_TABS = ['feed-studio', 'content', 'calendar', 'tender'] as const
+const PRODUCTION_TABS = ['feed-studio', 'content', 'calendar', 'tender', 'stories'] as const
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
@@ -304,7 +304,8 @@ export function ClientDashboard() {
   // module never renders. Runs whenever entitlement or tab changes.
   useEffect(() => {
     if (!bootstrapChecked) return
-    if (!productionEnabled && (PRODUCTION_TABS as readonly string[]).includes(tab)) {
+    // 'home' is the content-engine (Production) dashboard; treat it as gated too.
+    if (!productionEnabled && ((PRODUCTION_TABS as readonly string[]).includes(tab) || tab === 'home')) {
       setTab('galleries')
     }
   }, [bootstrapChecked, productionEnabled, tab])
@@ -721,7 +722,7 @@ export function ClientDashboard() {
       { id: 'calendar' as const, label: 'Content Calendar', icon: 'calendar' as IconName },
     ] : []),
     { id: 'galleries', label: 'Galleries', icon: 'sections' },
-    ...(hasStories ? [{ id: 'stories' as const, label: 'Stories', icon: 'stories' as IconName }] : []),
+    ...(hasStories && productionEnabled ? [{ id: 'stories' as const, label: 'Stories', icon: 'stories' as IconName }] : []),
     { id: 'page', label: 'My Page', icon: 'palette' },
     ...(productionEnabled ? [{ id: 'tender' as const, label: 'חיפוש למכרז', icon: 'search' as IconName }] : []),
   ]
@@ -738,7 +739,7 @@ export function ClientDashboard() {
         : tab === 'galleries' ? 'library'
           : 'more'
   const moreItems: Array<{ id: typeof tab; label: string }> = [
-    ...(hasStories ? [{ id: 'stories' as const, label: 'Stories' }] : []),
+    ...(hasStories && productionEnabled ? [{ id: 'stories' as const, label: 'Stories' }] : []),
     { id: 'page' as const, label: 'My Page' },
     // 'tender' is a Production module — only when entitled.
     ...(productionEnabled ? [{ id: 'tender' as const, label: 'חיפוש למכרז' }] : []),
@@ -802,7 +803,8 @@ export function ClientDashboard() {
                legacy areas (Stories, My Page, Tender). Same visual language. */
             <nav aria-label="Primary" style={{ display: 'flex', gap: 4, border: `1px solid ${border}`, background: '#fff', position: 'relative' }}>
               {([
-                { area: 'dashboard', label: 'Dashboard', icon: 'activity' as IconName, go: () => setTab('home') },
+                // Dashboard = the content-engine overview (Production) → only when entitled.
+                ...(productionEnabled ? [{ area: 'dashboard', label: 'Dashboard', icon: 'activity' as IconName, go: () => setTab('home') }] : []),
                 // Social Studio is the Production suite → only when entitled.
                 ...(productionEnabled ? [{ area: 'social', label: 'Social Studio', icon: 'gallery' as IconName, go: () => setTab('feed-studio') }] : []),
                 { area: 'library', label: 'Library', icon: 'sections' as IconName, go: () => setTab('galleries') },
@@ -933,7 +935,7 @@ export function ClientDashboard() {
             value), render a safe notice instead of the Production module. The
             module content blocks are ALSO individually gated on
             `productionEnabled`, so they never mount here. */}
-        {!productionEnabled && (PRODUCTION_TABS as readonly string[]).includes(tab) && (
+        {bootstrapChecked && !productionEnabled && (PRODUCTION_TABS as readonly string[]).includes(tab) && (
           <div style={{
             padding: '48px 40px', textAlign: 'center',
             background: '#fff', border: `1px solid ${border}`, maxWidth: 480, margin: '0 auto',
@@ -951,8 +953,9 @@ export function ClientDashboard() {
           </div>
         )}
 
-        {/* ── PR1 Dashboard (Social OS home) — content-engine overview ──── */}
-        {SOCIAL_OS && tab === 'home' && (
+        {/* ── PR1 Dashboard (Social OS home) — content-engine overview ────
+            Production-gated: only entitled businesses see the content engine. */}
+        {SOCIAL_OS && tab === 'home' && productionEnabled && (
           <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>Loading…</div>}>
             <ClientHome
               galleries={galleries}
@@ -1406,6 +1409,8 @@ export function ClientDashboard() {
                       </p>
                     </div>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      {/* Creative Engine is a Production module → entitled only. */}
+                      {productionEnabled && (
                       <button
                         onClick={() => setCreativeGallery({ id: g.id, name: g.name, topPicksCount: galleryImages.filter(i => i.is_top_pick).length })}
                         style={{
@@ -1423,6 +1428,7 @@ export function ClientDashboard() {
                       >
                         🎨 מנוע יצירה
                       </button>
+                      )}
                       <a href={galleryUrl(g.id)} style={{
                         padding: '11px 22px', borderRadius: 2,
                         background: 'transparent', border: `1px solid ${textPrimary}`,
