@@ -180,15 +180,16 @@ export function ClientDashboard() {
   useEffect(() => {
     let cancelled = false
     if (clientId) {
-      // Legacy UUID URL — canonicalize to short form in the URL bar.
+      // Legacy UUID URL — canonicalize to short form in the URL bar. Resolves
+      // slugs through the membership-gated SECURITY DEFINER resolver: the
+      // owner-scoped `businesses`/`clients` tables are unreadable under the
+      // member session, and this never leaks slugs to a non-member.
       ;(async () => {
-        const { data: c } = await supabase
-          .from('clients').select('slug, business_id').eq('id', clientId).maybeSingle()
-        if (cancelled || !c?.slug) return
-        const { data: b } = await supabase
-          .from('businesses').select('slug').eq('id', c.business_id).maybeSingle()
-        if (cancelled || !b?.slug) return
-        const newUrl = `/${b.slug}/c/${c.slug}`
+        const { data, error: e } = await supabase.rpc('resolve_client_portal_by_id', { p_client_id: clientId })
+        if (cancelled || e) return
+        const row = Array.isArray(data) ? data[0] : null
+        if (!row?.business_slug || !row?.client_slug) return
+        const newUrl = `/${row.business_slug}/c/${row.client_slug}`
         if (window.location.pathname !== newUrl) {
           window.history.replaceState(null, '', newUrl + window.location.search + window.location.hash)
         }
@@ -197,16 +198,18 @@ export function ClientDashboard() {
     }
     if (!parsedUrl.slug || !parsedUrl.clientSlug) return
     ;(async () => {
-      const { data: biz } = await supabase
-        .from('businesses').select('id').eq('slug', parsedUrl.slug).maybeSingle()
+      // Short-URL resolution via the membership-gated SECURITY DEFINER resolver.
+      // Returns a row ONLY when the current member actively belongs to the
+      // resolved client — a non-member (or unknown slugs) gets no rows, so the
+      // caller learns nothing about businesses/clients they don't belong to.
+      const { data, error: e } = await supabase.rpc('resolve_client_portal', {
+        p_business_slug: parsedUrl.slug,
+        p_client_slug: parsedUrl.clientSlug,
+      })
       if (cancelled) return
-      if (!biz) { setResolveErr('Business not found'); return }
-      const { data: c } = await supabase
-        .from('clients').select('id')
-        .eq('business_id', biz.id).eq('slug', parsedUrl.clientSlug).maybeSingle()
-      if (cancelled) return
-      if (!c) { setResolveErr('Client not found'); return }
-      setClientId(c.id)
+      const row = !e && Array.isArray(data) ? data[0] : null
+      if (!row?.client_id) { setResolveErr('Business not found'); return }
+      setClientId(row.client_id)
     })()
     return () => { cancelled = true }
   }, [parsedUrl.slug, parsedUrl.clientSlug, clientId])
