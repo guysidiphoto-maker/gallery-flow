@@ -206,7 +206,8 @@ async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
         })
         const { data: created, error: insErr } = await supabase.from('import_collections')
           .insert(inserts).select('id, source_name, source_url, matched_client_id, client_match_status, status, stats')
-        if (insErr) return void bad(res, 500, 'dry_run_failed', { detail: insErr.message?.slice(0, 200) })
+        // Log the raw DB error server-side only; never leak it to the browser.
+        if (insErr) { console.error('[import-center] dry_run insert failed', insErr); return void bad(res, 500, 'dry_run_failed') }
 
         const totals = {
           ...(job.totals ?? {}),
@@ -447,7 +448,10 @@ async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
         return void bad(res, 400, 'unknown_action')
     }
   } catch (e) {
-    return void bad(res, 500, 'internal_error', { detail: (e as Error)?.message?.slice(0, 200) })
+    // Full error goes to server logs (and Sentry via withSentry); the client
+    // gets a stable generic code with NO raw DB/exception text.
+    console.error('[import-center] unhandled error', e)
+    return void bad(res, 500, 'internal_error')
   }
 }
 

@@ -81,7 +81,8 @@ async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
         const { error } = await supabase
           .from('galleries').update(v.patch)
           .eq('id', galleryId).eq('business_id', businessId)
-        if (error) return void bad(res, 500, 'update_failed', { detail: error.message?.slice(0, 200) })
+        // Log the raw DB error server-side only; never leak it to the browser.
+        if (error) { console.error('[gallery-metadata] update failed', error); return void bad(res, 500, 'update_failed') }
 
         // Audit with changed field NAMES only (values may identify people/venues).
         // 'gallery_metadata_updated' requires migration 097's extended CHECK; the
@@ -106,7 +107,10 @@ async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
         return void bad(res, 400, 'unknown_action')
     }
   } catch (e) {
-    return void bad(res, 500, 'internal_error', { detail: (e as Error)?.message?.slice(0, 200) })
+    // Full error goes to server logs (and Sentry via withSentry); the client
+    // gets a stable generic code with NO raw DB/exception text.
+    console.error('[gallery-metadata] unhandled error', e)
+    return void bad(res, 500, 'internal_error')
   }
 }
 
