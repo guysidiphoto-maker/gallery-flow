@@ -1,3 +1,8 @@
+// SUPERSEDED (2026-07-24): ClientsManager now renders
+// src/components/assignment/BulkAssignView.tsx (multi-select, bulk assign,
+// visibility indicators, preview-as-client). This single-row view is kept only
+// as a reference during the overnight sprint; the wave-2 integrator may delete
+// it once BulkAssignView is verified on Preview.
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Icon } from '../Icon'
 import { useConfirm } from '../useConfirm'

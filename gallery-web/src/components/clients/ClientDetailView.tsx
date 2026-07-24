@@ -12,6 +12,7 @@ import {
   setMembershipStatus, sendPasswordReset,
   type ClientDetail, type MemberRole, type SettableStatus,
 } from './api'
+import { computeVisibilityIndicator } from '../assignment/visibility'
 
 interface Props {
   clientId: string
@@ -25,7 +26,9 @@ const ROLE_OPTIONS: MemberRole[] = ['client_admin', 'approver', 'viewer']
 // Public client page URL. When we can resolve the owner's business slug we use
 // the branded path; otherwise the id-only fallback (both are PUBLIC pages — this
 // is a preview, NOT impersonation and NOT a client session).
-function portalUrl(businessSlug: string | null, clientId: string): string {
+// Exported: BulkAssignView (src/components/assignment) reuses the exact same
+// link logic for its per-gallery "preview as client" affordance.
+export function portalUrl(businessSlug: string | null, clientId: string): string {
   const base = businessSlug ? `/${businessSlug}/client/${clientId}` : `/client/${clientId}`
   return typeof window !== 'undefined' ? `${window.location.origin}${base}` : base
 }
@@ -48,6 +51,10 @@ export function ClientDetailView({ clientId, businessSlug, onBack, showToast }: 
 
   // Per-row busy ids so only the acted-on row spins.
   const [busyId, setBusyId] = useState<string | null>(null)
+
+  // Quick filter for the assigned-galleries section (all galleries here are
+  // assigned to THIS client, so the useful split is published vs draft).
+  const [galleryFilter, setGalleryFilter] = useState<'all' | 'live' | 'draft'>('all')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -231,26 +238,72 @@ export function ClientDetailView({ clientId, businessSlug, onBack, showToast }: 
       </Section>
 
       {/* Assigned galleries */}
-      <Section title={`גלריות משויכות (${galleries.length})`}>
+      <Section
+        title={`גלריות משויכות (${galleries.length})`}
+        action={galleries.length > 0 ? (
+          <div style={{ display: 'flex', gap: 4 }}>
+            {([['all', 'הכול'], ['live', 'פורסמו'], ['draft', 'טיוטות']] as const).map(([id, label]) => {
+              const active = galleryFilter === id
+              return (
+                <button
+                  key={id}
+                  onClick={() => setGalleryFilter(id)}
+                  style={{
+                    fontFamily: 'inherit', fontSize: 11.5, fontWeight: active ? 600 : 400,
+                    padding: '6px 12px', borderRadius: 2, cursor: 'pointer',
+                    border: `1px solid ${active ? c.textPrimary : c.border}`,
+                    background: active ? c.textPrimary : 'transparent',
+                    color: active ? '#fff' : c.textSecondary,
+                  }}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        ) : undefined}
+      >
         {galleries.length === 0 ? (
           <EmptyState icon="gallery" title="אין גלריות משויכות"
             body="שייך גלריות ללקוח זה דרך מסך «שיוך גלריות» ברשימת הלקוחות." />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', border: `1px solid ${c.border}` }}>
-            {galleries.map((g, i) => (
-              <div key={g.id} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-                padding: '14px 18px', borderTop: i > 0 ? `1px solid ${c.border}` : 'none', background: c.bgSubtle,
-              }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: c.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</div>
-                  {g.event_date && <div style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}>{formatDate(g.event_date)}</div>}
-                </div>
-                <Badge tone={g.status === 'live' ? 'live' : 'neutral'}>{GALLERY_STATUS_HE[g.status] ?? g.status}</Badge>
-              </div>
-            ))}
-          </div>
-        )}
+        ) : (() => {
+          const activeMembers = members.filter(m => m.status === 'active').length
+          const shown = galleries.filter(g =>
+            galleryFilter === 'all' ? true : galleryFilter === 'live' ? g.status === 'live' : g.status !== 'live')
+          if (shown.length === 0) {
+            return <div style={{ fontSize: 13, color: c.textMuted, padding: '8px 0' }}>אין גלריות בסינון הנוכחי.</div>
+          }
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', border: `1px solid ${c.border}` }}>
+              {shown.map((g, i) => {
+                // All galleries here are assigned to this client — the hidden
+                // indicator fires for drafts and for clients with 0 active users.
+                const hiddenReason = computeVisibilityIndicator({ client_id: clientId, status: g.status }, activeMembers)
+                return (
+                  <div key={g.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+                    padding: '14px 18px', borderTop: i > 0 ? `1px solid ${c.border}` : 'none', background: c.bgSubtle,
+                  }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: c.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</div>
+                      {g.event_date && <div style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}>{formatDate(g.event_date)}</div>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      {hiddenReason && (
+                        <span title={hiddenReason === 'not_published'
+                          ? 'הלקוח לא רואה את הגלריה: היא עדיין לא פורסמה'
+                          : 'הלקוח לא רואה את הגלריה: אין לו משתמשים פעילים'}>
+                          <Badge tone="warn" icon="shield">לא גלוי ללקוח</Badge>
+                        </span>
+                      )}
+                      <Badge tone={g.status === 'live' ? 'live' : 'neutral'}>{GALLERY_STATUS_HE[g.status] ?? g.status}</Badge>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
       </Section>
 
       {/* Client users (members) */}

@@ -217,3 +217,35 @@ export function reassignGallery(input: {
 export function unassignGallery(galleryId: string): Promise<ApiResult<{ gallery_id: string }>> {
   return post({ action: 'unassign_gallery', galleryId })
 }
+
+// ── Bulk assignment (mirrors server/clientAdmin.ts BulkAssign* shapes) ───────
+
+export const BULK_ASSIGN_MAX = 200
+
+export interface BulkAssignItemResult {
+  galleryId: string
+  ok: boolean
+  /** Moved from a different client to the target client. */
+  reassigned?: boolean
+  /** Was already assigned to the target client — idempotent no-op. */
+  unchanged?: boolean
+  error?: string
+}
+
+export interface BulkAssignSummary {
+  client_id: string
+  total: number
+  assigned: number
+  reassigned: number
+  unchanged: number
+  failed: number
+  results: BulkAssignItemResult[]
+}
+
+/** Assign up to 200 galleries to one client in a single server call. */
+export function bulkAssignGalleries(input: {
+  clientId: string
+  galleryIds: string[]
+}): Promise<ApiResult<BulkAssignSummary>> {
+  return post({ action: 'bulk_assign_galleries', ...input })
+}

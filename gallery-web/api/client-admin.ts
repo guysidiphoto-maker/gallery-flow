@@ -21,6 +21,7 @@ import {
   requireOwnerBusiness, clientBelongsToBusiness, appendAudit, withinRateLimit,
   normalizeEmail, isValidEmail, isRole, isSettableStatus,
   genInviteToken, sha256Hex, inviteExpiryISO,
+  validateBulkAssignInput, runBulkAssign,
 } from '../server/clientAdmin.js'
 
 export const maxDuration = 30
@@ -234,6 +235,23 @@ async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
           metadata: reassigned ? { previous_client_id: prev } : {},
         })
         return void res.status(200).json({ ok: true, gallery_id: galleryId, client_id: clientId, reassigned })
+      }
+
+      // ── bulk_assign_galleries ───────────────────────────────────────────
+      // Assign up to BULK_ASSIGN_MAX (200) galleries to ONE client in a single
+      // call. Per-item error isolation; idempotent (already-assigned-to-same-
+      // client succeeds as a no-op); each real transition is audited.
+      case 'bulk_assign_galleries': {
+        const v = validateBulkAssignInput(body)
+        if (!v.ok) return void bad(res, 400, v.code)
+        if (!(await clientBelongsToBusiness(supabase, v.input.clientId, businessId))) {
+          return void bad(res, 403, 'forbidden')
+        }
+        const summary = await runBulkAssign(supabase, {
+          businessId, actorUserId,
+          clientId: v.input.clientId, galleryIds: v.input.galleryIds,
+        })
+        return void res.status(200).json({ ok: true, client_id: v.input.clientId, ...summary })
       }
 
       // ── unassign_gallery ────────────────────────────────────────────────

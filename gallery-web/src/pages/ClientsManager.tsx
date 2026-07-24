@@ -16,7 +16,7 @@ import {
   type ClientOverviewRow, type InviteLink,
 } from '../components/clients/api'
 import { ClientDetailView } from '../components/clients/ClientDetailView'
-import { GalleryAssignmentView } from '../components/clients/GalleryAssignmentView'
+import BulkAssignView from '../components/assignment/BulkAssignView'
 
 interface Props {
   businessSlug: string | null
@@ -131,7 +131,11 @@ export function ClientsManager({ businessSlug }: Props) {
   if (view.kind === 'assign') {
     return (
       <>
-        <GalleryAssignmentView onBack={() => { setView({ kind: 'list' }); void load() }} showToast={showToast} />
+        <BulkAssignView
+          businessSlug={businessSlug}
+          onBack={() => { setView({ kind: 'list' }); void load() }}
+          showToast={showToast}
+        />
         <ToastContainer />
       </>
     )
