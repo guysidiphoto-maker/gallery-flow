@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto'
 
 export const CSV_MAX_BYTES = 2 * 1024 * 1024        // 2 MB of CSV text
 export const CSV_MAX_ROWS = 5000                     // data rows per CSV
-export const ZIP_ENTRY_MAX_BYTES = 40 * 1024 * 1024  // mirrors MAX_UPLOAD_BYTES
+export const ZIP_ENTRY_MAX_BYTES = 200 * 1024 * 1024  // mirrors MAX_UPLOAD_BYTES (200 MB)
 export const JOB_UNCOMPRESSED_MAX_BYTES = 10 * 1024 * 1024 * 1024 // 10 GB / job
 export const ZIP_BOMB_RATIO = 100                    // uncompressed/compressed > 100x → reject
 export const ZIP_MAX_DEPTH = 3                       // folder levels inside the ZIP
