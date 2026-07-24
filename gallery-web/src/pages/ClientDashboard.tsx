@@ -66,10 +66,14 @@ function isPortalBootstrap(v: unknown): v is PortalBootstrap {
     && Array.isArray(o.memberships) && Array.isArray(o.galleries)
 }
 
-// The Production / social suite tabs. Shown only when the active membership's
-// `production_suite === true`. The legacy PIN path has no membership, so it
-// resolves to false → these are hidden.
-const PRODUCTION_TABS = ['feed-studio', 'content', 'calendar', 'tender', 'stories'] as const
+// Social / Feed-studio tabs. These stay LOCKED behind the Social feature flag
+// (Social is a more complex feature, not ready yet) — hidden for everyone,
+// entitled members included, until the flag is turned on.
+const SOCIAL_TABS = ['feed-studio', 'content', 'calendar', 'stories'] as const
+// 'tender' is a SEPARATE Production capability for production-company clients.
+// It is gated by the `production_suite` entitlement ALONE (not the Social flag),
+// so entitled clients can use the tender library now while Social stays locked.
+// The legacy PIN path has no membership → not entitled → tender hidden.
 
 // ─── Editorial design tokens (Pic-Time aesthetic) ─────────────────────────
 // Same palette + spacing system used throughout Dashboard.tsx so the
@@ -328,13 +332,18 @@ export function ClientDashboard() {
   // module never renders. Runs whenever entitlement or tab changes.
   useEffect(() => {
     if (!bootstrapChecked) return
-    // 'home' is the content-engine (Production) dashboard; treat it as gated too.
-    // Gated on `socialAllowed` (flag AND entitlement): with the feature flag
-    // off, even entitled members are redirected out of every Production tab.
-    if (!socialAllowed && ((PRODUCTION_TABS as readonly string[]).includes(tab) || tab === 'home')) {
+    // Social/Feed tabs + 'home' (the content-engine dashboard) stay locked
+    // behind the Social flag: with the flag off, even entitled members are
+    // redirected out of them.
+    if (!socialAllowed && ((SOCIAL_TABS as readonly string[]).includes(tab) || tab === 'home')) {
+      setTab('galleries')
+    } else if (tab === 'tender' && !productionEnabled) {
+      // Tender is available to entitled production-company clients only. A
+      // non-entitled (or tampered) client on the tender tab is sent to a safe
+      // section so the module never renders.
       setTab('galleries')
     }
-  }, [bootstrapChecked, socialAllowed, tab])
+  }, [bootstrapChecked, socialAllowed, productionEnabled, tab])
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(() => {
     // Hydrate from sessionStorage so the user's selection survives refresh
     // within the same browser session. Real persistence (a
@@ -763,8 +772,9 @@ export function ClientDashboard() {
       : tab === 'page' ? 'mypage'
       : 'overview')
     : (socialLockOpen ? 'social'
-      : nonEntitledOverview ? 'overview'
+      : tab === 'tender' ? 'tender'
       : tab === 'page' ? 'mypage'
+      : nonEntitledOverview ? 'overview'
       : 'galleries')
 
   // Selecting a non-entitled area is presentation-only; `tab` stays put.
@@ -792,6 +802,12 @@ export function ClientDashboard() {
     : [
         { id: 'overview',  label: loc.t('nav.overview'),  icon: 'activity', onSelect: goOverview },
         { id: 'galleries', label: loc.t('nav.galleries'), icon: 'sections', onSelect: goGalleries },
+        ...(productionEnabled ? [{
+          id: 'tender',
+          label: loc.t('nav.tenderLibrary'),
+          icon: 'search' as const,
+          onSelect: () => { setSocialLockOpen(false); setNonEntitledOverview(false); setTab('tender') },
+        }] : []),
         ...(!SOCIAL_STUDIO_ENABLED ? [{
           id: 'social',
           label: `${loc.t('nav.socialStudio')} · ${loc.t('nav.comingSoon')}`,
@@ -854,7 +870,7 @@ export function ClientDashboard() {
             value), render a safe notice instead of the Production module. The
             module content blocks are ALSO individually gated on
             `productionEnabled`, so they never mount here. */}
-        {bootstrapChecked && !socialAllowed && !showNonEntitledOverview && !showSocialLock && (PRODUCTION_TABS as readonly string[]).includes(tab) && (
+        {bootstrapChecked && !socialAllowed && !showNonEntitledOverview && !showSocialLock && (SOCIAL_TABS as readonly string[]).includes(tab) && (
           <div style={{
             padding: '48px 40px', textAlign: 'center',
             background: '#fff', border: `1px solid ${border}`, maxWidth: 480, margin: '0 auto',
@@ -1301,8 +1317,13 @@ export function ClientDashboard() {
           </Suspense>
         )}
 
-        {/* ── Tender Tab (Production) ─────────────────────────────────── */}
-        {tab === 'tender' && socialAllowed && (
+        {/* ── Tender Library (production-company clients) ──────────────────
+            Gated by the `production_suite` entitlement ALONE (NOT the Social
+            flag), so entitled clients get the tender library now while Social
+            stays locked. TenderBuilder is self-contained (client-side filter +
+            ZIP/PDF over galleries the client can already see); it calls none of
+            the locked Social APIs. */}
+        {tab === 'tender' && productionEnabled && !showNonEntitledOverview && !showSocialLock && (
           <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
             <TenderBuilder
               galleries={galleries}

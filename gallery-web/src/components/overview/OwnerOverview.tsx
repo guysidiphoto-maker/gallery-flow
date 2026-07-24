@@ -24,7 +24,7 @@ import { useOwnerLocale } from '../../lib/ownerLocale'
 import { getProgress, saveProgress } from '../../lib/onboarding'
 
 // The set of Dashboard views OwnerOverview can send the operator to.
-export type OverviewNavTarget = 'galleries' | 'clients' | 'search' | 'tender' | 'import'
+export type OverviewNavTarget = 'galleries' | 'clients' | 'search' | 'import'
 
 export interface OwnerOverviewProps {
   businessId: string | null

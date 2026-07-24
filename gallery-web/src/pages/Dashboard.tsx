@@ -43,7 +43,6 @@ import FirstRunTour from '../components/tour/FirstRunTour'
 import RestartTourButton from '../components/tour/RestartTourButton'
 import OwnerOverview from '../components/overview/OwnerOverview'
 import GlobalSearch from '../components/search/GlobalSearch'
-import TenderSearch from '../components/tender/TenderSearch'
 import ImportCenter from '../components/importer/ImportCenter'
 import AssignClientField from '../components/assignment/AssignClientField'
 import { assignGallery } from '../components/clients/api'
@@ -256,7 +255,7 @@ export function Dashboard() {
   // Default stays 'galleries' (existing behavior + tests unchanged). Overview is
   // added as the FIRST nav item so it is discoverable without changing the
   // default landing view.
-  const [activeView, setActiveView] = useState<'overview' | 'galleries' | 'clients' | 'search' | 'tender' | 'import'>('galleries')
+  const [activeView, setActiveView] = useState<'overview' | 'galleries' | 'clients' | 'search' | 'import'>('galleries')
   // New-gallery modal: optional client to connect the gallery to on creation.
   // null = "no client yet" (a first-class value; never blocks creation/upload).
   const [newGalleryClientId, setNewGalleryClientId] = useState<string | null>(null)
@@ -2571,9 +2570,8 @@ export function Dashboard() {
             { icon: 'search' as IconName,   label: ownerT('nav.search'),    active: activeView === 'search', disabled: false, href: undefined, view: 'search', tour: 'search' },
             { icon: 'palette' as IconName,  label: 'Brand Kit',             active: false, disabled: false, href: '/brand-kit', view: undefined, tour: undefined },
             { icon: 'clients' as IconName,  label: ownerT('nav.clients'),   active: activeView === 'clients', disabled: false, href: undefined, view: 'clients', tour: 'clients' },
-            { icon: 'star' as IconName,     label: ownerT('nav.tender'),    active: activeView === 'tender', disabled: false, href: undefined, view: 'tender', tour: undefined },
             { icon: 'download' as IconName, label: ownerT('nav.import'),    active: activeView === 'import', disabled: false, href: undefined, view: 'import', tour: 'import' },
-          ] as Array<{ icon: IconName; label: string; active: boolean; disabled: boolean; href: string | undefined; view: 'overview' | 'galleries' | 'clients' | 'search' | 'tender' | 'import' | undefined; tour: string | undefined }>).map(item => (
+          ] as Array<{ icon: IconName; label: string; active: boolean; disabled: boolean; href: string | undefined; view: 'overview' | 'galleries' | 'clients' | 'search' | 'import' | undefined; tour: string | undefined }>).map(item => (
             <button
               key={item.label}
               {...(item.tour ? { 'data-tour': item.tour } : {})}
@@ -2761,8 +2759,6 @@ export function Dashboard() {
             onOpenClient={() => { setActiveView('clients') }}
             onOpenGallery={() => { setActiveView('galleries') }}
           />
-        ) : activeView === 'tender' ? (
-          <TenderSearch locale={locale} />
         ) : activeView === 'import' ? (
           <ImportCenter
             locale={locale}
