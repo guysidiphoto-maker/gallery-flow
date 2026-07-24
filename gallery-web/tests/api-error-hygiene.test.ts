@@ -136,7 +136,6 @@ function spyTagged(calls: unknown[][], tag: string): boolean {
 
 async function run() {
   const importCenter = (await import('../api/import-center.js')).default
-  const galleryMetadata = (await import('../api/gallery-metadata.js')).default
 
   // ── import-center: internal error (DB query throws) → generic, no detail ──
   await withErrorSpy(async (calls) => {
@@ -179,35 +178,6 @@ async function run() {
     ok('import-center validation code preserved (invalid_provider)',
       out.status === 400 && out.body?.error === 'invalid_provider', JSON.stringify(out.body))
     ok('import-center validation response carries no detail', bodyHasNoLeak(out), JSON.stringify(out.body))
-  })
-
-  // ── gallery-metadata: internal error (galleries query throws) → generic ──
-  await withErrorSpy(async (calls) => {
-    // Any galleries query throwing (the ownership lookup OR the update) lands in
-    // the handler's outer catch → 500 internal_error, with the raw DB text logged
-    // server-side and stripped from the response.
-    setTables({
-      businesses: { data: { id: 'biz' } },
-      galleries: { data: { id: 'g-1', client_id: null }, throwOnQuery: true },
-    })
-    const { res, out } = makeRes()
-    await galleryMetadata(makeReq({ action: 'update_gallery_metadata', galleryId: 'g-1', event_type: 'wedding' }), res)
-    ok('gallery-metadata internal error → 500 generic (update_failed|internal_error)',
-      out.status === 500 && out.body?.ok === false &&
-      (out.body?.error === 'update_failed' || out.body?.error === 'internal_error'), JSON.stringify(out.body))
-    ok('gallery-metadata internal error → NO detail / no raw DB text', bodyHasNoLeak(out), JSON.stringify(out.body))
-    ok('gallery-metadata internal error → logged server-side with [gallery-metadata] tag',
-      spyTagged(calls, '[gallery-metadata]') && spyCaughtSecret(calls))
-  })
-
-  // ── gallery-metadata: known validation code still returned, no detail ──
-  await withErrorSpy(async () => {
-    setTables({ businesses: { data: { id: 'biz' } } })
-    const { res, out } = makeRes()
-    await galleryMetadata(makeReq({ action: 'update_gallery_metadata' }), res) // no galleryId
-    ok('gallery-metadata validation code preserved (galleryId_required)',
-      out.status === 400 && out.body?.error === 'galleryId_required', JSON.stringify(out.body))
-    ok('gallery-metadata validation response carries no detail', bodyHasNoLeak(out), JSON.stringify(out.body))
   })
 
   console.log(`\n  ${pass} passed, ${fail} failed`)

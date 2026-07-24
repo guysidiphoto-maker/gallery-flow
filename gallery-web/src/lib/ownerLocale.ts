@@ -58,7 +58,6 @@ const STRINGS = {
     'nav.galleries': 'הגלריות שלי',
     'nav.clients': 'לקוחות',
     'nav.search': 'חיפוש',
-    'nav.tender': 'מאגר למכרזים',
     'nav.import': 'ייבוא',
 
     // ── Owner overview (home) ────────────────────────────────────────────
@@ -139,7 +138,6 @@ const STRINGS = {
     'nav.galleries': 'My galleries',
     'nav.clients': 'Clients',
     'nav.search': 'Search',
-    'nav.tender': 'Tender library',
     'nav.import': 'Import',
 
     // ── Owner overview (home) ────────────────────────────────────────────
