@@ -53,6 +53,57 @@ const STRINGS = {
     'lang.toggle': 'English',
     'lang.label': 'שפה',
 
+    // ── Sidebar navigation (owner) ───────────────────────────────────────
+    'nav.overview': 'סקירה',
+    'nav.galleries': 'הגלריות שלי',
+    'nav.clients': 'לקוחות',
+    'nav.search': 'חיפוש',
+    'nav.tender': 'מאגר למכרזים',
+    'nav.import': 'ייבוא',
+
+    // ── Owner overview (home) ────────────────────────────────────────────
+    'overview.title': 'הבית של הסטודיו',
+    'overview.subtitle': 'כאן רואים מה קורה בעסק ומה כדאי לעשות עכשיו: לקוחות, גלריות והצעדים הבאים.',
+    'overview.loading': 'טוען...',
+    'overview.error': 'לא הצלחנו לטעון את הנתונים.',
+    'overview.retry': 'נסו שוב',
+    'overview.empty': 'עוד אין גלריות. צרו את הראשונה כדי להתחיל לעבוד.',
+    'overview.empty.cta': 'יצירת גלריה',
+
+    'overview.checklist.title': 'צעדים ראשונים',
+    'overview.checklist.progress': 'הושלמו {done} מתוך {total}',
+    'overview.checklist.dismiss': 'הסתרה',
+
+    'overview.check.client': 'הוסיפו לקוח או ייבאו לקוחות קיימים',
+    'overview.check.client.cta': 'לקוחות',
+    'overview.check.invite': 'שלחו ללקוח הזמנה כדי שיוכל להתחבר',
+    'overview.check.invite.cta': 'שליחת הזמנה',
+    'overview.check.assign': 'חברו גלריה קיימת ללקוח',
+    'overview.check.assign.cta': 'חיבור גלריה',
+    'overview.check.newGallery': 'העלו גלריה חדשה וחברו אותה ללקוח',
+    'overview.check.newGallery.cta': 'גלריה חדשה',
+    'overview.check.preview': 'הציצו באזור האישי כמו שהלקוח רואה אותו',
+    'overview.check.preview.cta': 'תצוגה מקדימה',
+    'overview.check.verify': 'ודאו שללקוח יש גישה פעילה',
+    'overview.check.verify.cta': 'בדיקה',
+
+    'overview.status.title': 'מצב נוכחי',
+    'overview.card.activeClients': 'לקוחות פעילים',
+    'overview.card.published': 'גלריות שפורסמו',
+    'overview.card.drafts': '{n} בטיוטה',
+    'overview.card.unassigned': 'גלריות ללא לקוח',
+    'overview.card.notVisible': 'גלריות שאף לקוח לא רואה',
+    'overview.card.pendingInvites': 'הזמנות ממתינות',
+    'overview.card.totalGalleries': 'סך הגלריות',
+
+    'overview.recent.title': 'נוספו לאחרונה',
+    'overview.recent.all': 'לכל הגלריות',
+    'overview.recent.noClient': 'ללא לקוח',
+    'overview.recent.live': 'פורסמה',
+    'overview.recent.draft': 'טיוטה',
+
+    'assign.modalLabel': 'שייך ללקוח (לא חובה)',
+
     // ── First-run guided tour ────────────────────────────────────────────
     'tour.aria': 'סיור היכרות בלוח הניהול',
     'tour.stepOf': 'שלב {n} מתוך {total}',
@@ -82,6 +133,57 @@ const STRINGS = {
   en: {
     'lang.toggle': 'עברית',
     'lang.label': 'Language',
+
+    // ── Sidebar navigation (owner) ───────────────────────────────────────
+    'nav.overview': 'Overview',
+    'nav.galleries': 'My galleries',
+    'nav.clients': 'Clients',
+    'nav.search': 'Search',
+    'nav.tender': 'Tender library',
+    'nav.import': 'Import',
+
+    // ── Owner overview (home) ────────────────────────────────────────────
+    'overview.title': 'Your studio home',
+    'overview.subtitle': 'See what is happening in your business and what to do next: clients, galleries and your next steps.',
+    'overview.loading': 'Loading...',
+    'overview.error': 'We could not load your data.',
+    'overview.retry': 'Try again',
+    'overview.empty': 'No galleries yet. Create your first one to get started.',
+    'overview.empty.cta': 'Create a gallery',
+
+    'overview.checklist.title': 'First steps',
+    'overview.checklist.progress': '{done} of {total} done',
+    'overview.checklist.dismiss': 'Hide',
+
+    'overview.check.client': 'Add a client or import your existing clients',
+    'overview.check.client.cta': 'Clients',
+    'overview.check.invite': 'Invite a client so they can sign in',
+    'overview.check.invite.cta': 'Send invite',
+    'overview.check.assign': 'Connect an existing gallery to a client',
+    'overview.check.assign.cta': 'Connect gallery',
+    'overview.check.newGallery': 'Upload a new gallery and connect it to a client',
+    'overview.check.newGallery.cta': 'New gallery',
+    'overview.check.preview': 'Preview the client area the way your client sees it',
+    'overview.check.preview.cta': 'Preview',
+    'overview.check.verify': 'Confirm your client has active access',
+    'overview.check.verify.cta': 'Check',
+
+    'overview.status.title': 'Current status',
+    'overview.card.activeClients': 'Active clients',
+    'overview.card.published': 'Published galleries',
+    'overview.card.drafts': '{n} in draft',
+    'overview.card.unassigned': 'Galleries without a client',
+    'overview.card.notVisible': 'Galleries no client can see',
+    'overview.card.pendingInvites': 'Pending invitations',
+    'overview.card.totalGalleries': 'Total galleries',
+
+    'overview.recent.title': 'Recently added',
+    'overview.recent.all': 'All galleries',
+    'overview.recent.noClient': 'No client',
+    'overview.recent.live': 'Published',
+    'overview.recent.draft': 'Draft',
+
+    'assign.modalLabel': 'Assign to client (optional)',
 
     // ── First-run guided tour ────────────────────────────────────────────
     'tour.aria': 'Dashboard welcome tour',
