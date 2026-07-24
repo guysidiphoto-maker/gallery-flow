@@ -9,7 +9,7 @@ export type ImporterLocale = 'he' | 'en'
 
 const he = {
   'import.title': 'ייבוא גלריות',
-  'import.subtitle': 'העברת גלריות ולקוחות מ־Pixieset (או מכל מקור אחר) אל piXflow, צעד אחר צעד.',
+  'import.subtitle': 'העברת גלריות ולקוחות מ־Pixieset (או מכל מקור אחר) אל Pixflow, צעד אחר צעד.',
   'import.provider.pixieset': 'Pixieset',
   'import.step1.title': 'שלב 1: ייצוא מהחשבון שלך ב־Pixieset',
   'import.step1.intro': 'ל־Pixieset אין חיבור ישיר בין מערכות, ולכן הייבוא מבוסס על הקבצים שאתם מייצאים בעצמכם מהחשבון שלכם. זה התהליך המלא והבטוח:',
@@ -67,7 +67,7 @@ const he = {
   'import.step3.cta': 'הכול משויך, מעבר להרצה',
   'import.step3.needAssign': 'שייכו לפחות קובץ ZIP אחד לגלריה כדי להמשיך.',
   'import.step4.title': 'שלב 4: הרצת הייבוא',
-  'import.step4.intro': 'לכל גלריה תיווצר גלריה חדשה בסטטוס טיוטה, והתמונות יועלו דרך מנגנון ההעלאה הרגיל. אפשר להשהות ולהמשיך בכל שלב.',
+  'import.step4.intro': 'לכל גלריה תיווצר גלריה חדשה בסטטוס טיוטה, והתמונות יועלו כמו בהעלאה רגילה. אפשר להשהות ולהמשיך בכל שלב.',
   'import.step4.dupPolicy': 'טיפול בכפילויות',
   'import.step4.dup.skip': 'דילוג על תמונות זהות (מומלץ)',
   'import.step4.dup.replace': 'החלפה (יתווסף בגרסה הבאה)',
@@ -107,7 +107,7 @@ type Keys = keyof typeof he
 
 const en: Record<Keys, string> = {
   'import.title': 'Import galleries',
-  'import.subtitle': 'Move galleries and clients from Pixieset (or any other source) into piXflow, step by step.',
+  'import.subtitle': 'Move galleries and clients from Pixieset (or any other source) into Pixflow, step by step.',
   'import.provider.pixieset': 'Pixieset',
   'import.step1.title': 'Step 1: Export from your Pixieset account',
   'import.step1.intro': 'Pixieset has no system-to-system connection, so the import is based on files you export yourself from your own account. This is the full, safe process:',
@@ -183,7 +183,7 @@ const en: Record<Keys, string> = {
   'import.step4.done': 'Uploaded',
   'import.step4.dupSkipped': 'Duplicates skipped',
   'import.step4.failed': 'Failed',
-  'import.step5.title': 'Step 5: Migration report',
+  'import.step5.title': 'Step 5: Import report',
   'import.step5.intro': 'A full summary of the run. New galleries were created as drafts, ready for review and publishing.',
   'import.step5.imported': 'Uploaded',
   'import.step5.skipped': 'Skipped',

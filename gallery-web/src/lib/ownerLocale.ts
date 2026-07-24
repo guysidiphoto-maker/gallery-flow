@@ -102,7 +102,7 @@ const STRINGS = {
     'overview.recent.live': 'פורסמה',
     'overview.recent.draft': 'טיוטה',
 
-    'assign.modalLabel': 'שייך ללקוח (לא חובה)',
+    'assign.modalLabel': 'שיוך ללקוח (לא חובה)',
 
     // ── First-run guided tour ────────────────────────────────────────────
     'tour.aria': 'סיור היכרות בלוח הניהול',

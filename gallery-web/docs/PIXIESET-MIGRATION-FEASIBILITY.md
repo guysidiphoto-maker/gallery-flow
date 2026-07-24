@@ -1,12 +1,25 @@
 # Pixieset → piXflow migration: feasibility
 
-Status: prototype (overnight sprint 2026-07-24, QA-only, nothing shipped).
-Scope: what is actually possible to migrate FROM Pixieset INTO piXflow, honestly.
+Status: **SYNTHETIC PROTOTYPE** (overnight sprint 2026-07-24, QA-only, nothing
+shipped). Scope: what is actually possible to migrate FROM Pixieset INTO
+piXflow, honestly.
+
+> ⚠️ **READ THIS FIRST — the current flow is a PROTOTYPE, not a product.**
+> The importer described below runs **entirely in the browser tab** (jszip reads
+> the whole ZIP into memory; uploads are driven by the open page). It is a
+> **proof of concept for correctness and security**, validated in QA against a
+> handful of small collections. It is **NOT production-ready for real
+> migrations** — a studio with many galleries or multi-GB archives will hit hard
+> walls (see §6 "Prototype limitations"). Do not market this as "migrate your
+> whole Pixieset account." The real design that lifts these limits is a separate
+> document: **PIXIESET-IMPORT-PRODUCTION-ARCHITECTURE.md** (read it before
+> promising anyone a large migration).
 
 The one-sentence truth: **there is no one-click Pixieset import.** Pixieset has
 no public API and forbids unofficial endpoints, so the only clean path is a
 **guided manual export** by the studio owner from their own account, which the
-Import Center then turns into piXflow draft galleries.
+Import Center then turns into piXflow draft galleries. The current
+implementation of that path is a **browser-only synthetic prototype**.
 
 ---
 
@@ -81,7 +94,11 @@ None of this exists today; listed so nobody assumes it might:
 
 ---
 
-## 4. What the prototype importer supports now
+## 4. What the SYNTHETIC PROTOTYPE importer supports now
+
+Everything below is **browser-driven** and has only been exercised in QA on
+small archives. Treat it as a demonstration of the mapping/validation/state
+machine, not as a migration tool ready for a real studio's back catalogue.
 
 - Five-step wizard: explain → CSV dry-run + mapping → ZIP mapping → run →
   report. RTL/LTR, he+en, empty/loading/error states per step.
@@ -128,13 +145,54 @@ proven by `tests/import-center.test.ts`):
 
 ---
 
-## 6. Known limitations
+## 6. Prototype limitations (why this is NOT production-ready)
+
+These are **structural** limits of the browser-only design, not bugs. They
+cannot be tuned away; removing them requires the server/worker architecture in
+`PIXIESET-IMPORT-PRODUCTION-ARCHITECTURE.md`.
+
+- **The browser tab must stay open for the ENTIRE run.** The whole engine
+  (`importApi.runCollection`) executes in the page: extract → hash → dedupe →
+  upload → checkpoint. Close the tab, sleep the laptop, or lose Wi-Fi and the
+  run stops. A migration of hundreds of galleries could mean the photographer
+  babysitting a tab for hours. This is the single biggest reason it is a
+  prototype.
+- **Whole-ZIP-in-memory (jszip is NOT streaming).** `JSZip.loadAsync(file)`
+  materializes the entire archive in RAM before any entry is read. Practical
+  cap is **~2GB** (`ZIP_FILE_MAX_BYTES`), enforced with an honest error. A
+  full-resolution wedding collection can exceed that; the owner must pre-split
+  in Pixieset. There is no chunked/streaming inflate of the archive itself
+  (only the post-extract upload is chunked, 8 files at a time).
+- **No cross-device continuation.** The run is owned by the tab, not the server.
+  You cannot start on a laptop and finish on a desktop, or hand the job to a
+  colleague. Job STATE lives in `import_jobs`, but the WORK (unzip + upload)
+  does not — nothing server-side can pick it up.
+- **Progress survives a refresh only at checkpoint granularity.** Per-collection
+  and per-chunk checkpoints (`import_files` + `import_jobs.checkpoint`) let a
+  reload resume at the last completed chunk — but the in-flight chunk and the
+  in-memory unzipped archive are lost, and the owner must re-select the same
+  ZIP file (the browser can't re-read a `File` after reload).
+- **Single-threaded, single-tab.** One page, bounded concurrency (~4–8 uploads
+  in flight); no parallelism across galleries, no worker pool, no CPU offload.
+  Canvas/hash work competes with the UI thread.
+- **No server-side processing.** piXflow never touches the archive: there is no
+  server unzip, no worker, no queue that owns the migration. `/api/import-center`
+  only records bookkeeping and drives the job state machine; every heavy byte
+  moves through the open browser.
+
+## 6b. Other known limitations (content/format, independent of the above)
 
 - **Videos** are out of scope (Pixieset one-at-a-time, capped, possibly
   transcoded); handle manually.
-- **jszip is not a streaming unzipper** — it holds the whole archive in memory,
-  so ZIPs are capped at ~2GB with an honest error. Very large collections must
-  be split in Pixieset (they usually are already).
+- **40MB per-file cap + JPG/PNG/WebP only.** `MAX_UPLOAD_BYTES` /
+  `ZIP_ENTRY_MAX_BYTES` reject anything over 40MB, and the pipeline rejects
+  HEIC and all RAW/TIFF. Pixieset "Original" downloads can legitimately be
+  larger than 40MB and can be RAW/TIFF — those photos will be **silently
+  rejected** by this importer. See the "File size + format reality check"
+  section of `PIXIESET-IMPORT-PRODUCTION-ARCHITECTURE.md` for the exact
+  constants, the recommended new limit, and the RAW/TIFF gap. This is a
+  **truthfulness issue**: "migrate your originals" is only true for
+  ≤40MB JPEG/PNG/WebP originals today.
 - **Multi-part ZIPs** ("Name-1.zip", "Name-2.zip") are auto-matched to the same
   collection by normalized stem, but the owner uploads each part; there is no
   cross-part manifest from Pixieset to verify completeness.
@@ -143,8 +201,9 @@ proven by `tests/import-center.test.ts`):
 - **EXIF survival in resized downloads is unknown.** Originals preserve
   everything; resized downloads may strip metadata. Prefer Original resolution.
 - **Quota/token balance** is enforced during the actual uploads (inside the
-  existing pipeline), not pre-flighted on this surface; the estimate shown is
-  the client-computed ZIP total.
+  existing pipeline via `record_image_upload`, which raises `insufficient_tokens`
+  and has no byte-size cap of its own), not pre-flighted on this surface; the
+  estimate shown is the client-computed ZIP total.
 
 ---
 
