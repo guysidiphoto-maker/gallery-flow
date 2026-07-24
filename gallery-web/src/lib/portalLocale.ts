@@ -90,6 +90,10 @@ const STRINGS = {
     'gate.notAvailable.badge': 'לא זמין',
     'gate.notAvailable.title': 'המודול הזה אינו זמין בחשבון שלך',
     'gate.notAvailable.body': 'פנו לצלם כדי להפעיל את חבילת התוכן.',
+    'nav.comingSoon': 'בקרוב',
+    'socialLock.title': 'סטודיו לרשתות בדרך אליכם',
+    'socialLock.body': 'אנחנו בונים כאן חוויית תוכן חדשה לרשתות החברתיות. נעדכן ברגע שהיא מוכנה.',
+    'socialLock.cta': 'בינתיים, הגלריות שלכם מחכות',
   },
   en: {
     'portal.badge': 'Client Portal',
@@ -140,6 +144,10 @@ const STRINGS = {
     'gate.notAvailable.badge': 'Not available',
     'gate.notAvailable.title': 'This module is not available on your account',
     'gate.notAvailable.body': 'Contact your photographer to enable the content suite.',
+    'nav.comingSoon': 'Coming soon',
+    'socialLock.title': 'Social Studio is on its way',
+    'socialLock.body': 'We are building a new social content experience here. We will let you know the moment it is ready.',
+    'socialLock.cta': 'In the meantime, your galleries are waiting',
   },
 } as const
 

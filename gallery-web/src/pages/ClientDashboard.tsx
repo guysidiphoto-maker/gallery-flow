@@ -15,6 +15,8 @@ const CreativeEngineDialog = lazy(() => import('../components/CreativeEngineDial
 import { loadPortfolioSettings } from '../components/portfolioSettings'
 import { Icon } from '../components/Icon'
 import { usePortalLocale } from '../lib/portalLocale'
+import { SOCIAL_STUDIO_ENABLED } from '../lib/features'
+import SocialComingSoon from '../components/social-lock/SocialComingSoon'
 import { PortalShell } from '../components/portal/PortalShell'
 import { type NavItem } from '../components/portal/PortalNav'
 import { OverviewScreen } from '../components/portal/OverviewScreen'
@@ -256,6 +258,11 @@ export function ClientDashboard() {
   // Production/social suite entitlement. Default deny: only true when the active
   // membership explicitly carries production_suite. Legacy PIN path → false.
   const productionEnabled = activeMembership?.production_suite === true
+  // Feature availability (contract C1): the Social/Production studio renders
+  // ONLY when the global feature flag AND the entitlement are both true. The
+  // flag is off in every environment today, so this is false for everyone —
+  // entitled members included. Entitlement architecture stays intact above.
+  const socialAllowed = SOCIAL_STUDIO_ENABLED && productionEnabled
 
   const [codeInput, setCodeInput] = useState('')
   const [codeError, setCodeError] = useState<string | null>(null)
@@ -306,6 +313,11 @@ export function ClientDashboard() {
   // toggles between MY Overview screen and the Galleries screen WITHOUT touching
   // `tab` or the entitlement guard. Entitled clients ignore it (they use `tab`).
   const [nonEntitledOverview, setNonEntitledOverview] = useState(true)
+  // Presentation state for the LOCKED Social Studio nav item (feature flag
+  // off). Selecting it shows the Coming-soon panel — never the studio. Like
+  // `nonEntitledOverview` it NEVER touches `tab`, so the redirect guard keeps
+  // `tab` pinned to a safe value the whole time.
+  const [socialLockOpen, setSocialLockOpen] = useState(false)
 
   // Production-tab safety: the non-SOCIAL_OS default tab is 'feed-studio' (a
   // Production tab). Once we know the entitlement, if Production is disabled and
@@ -314,10 +326,12 @@ export function ClientDashboard() {
   useEffect(() => {
     if (!bootstrapChecked) return
     // 'home' is the content-engine (Production) dashboard; treat it as gated too.
-    if (!productionEnabled && ((PRODUCTION_TABS as readonly string[]).includes(tab) || tab === 'home')) {
+    // Gated on `socialAllowed` (flag AND entitlement): with the feature flag
+    // off, even entitled members are redirected out of every Production tab.
+    if (!socialAllowed && ((PRODUCTION_TABS as readonly string[]).includes(tab) || tab === 'home')) {
       setTab('galleries')
     }
-  }, [bootstrapChecked, productionEnabled, tab])
+  }, [bootstrapChecked, socialAllowed, tab])
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(() => {
     // Hydrate from sessionStorage so the user's selection survives refresh
     // within the same browser session. Real persistence (a
@@ -738,20 +752,32 @@ export function ClientDashboard() {
   }))
 
   // Which nav item is visually active.
-  const activeNavId: string = productionEnabled
+  const activeNavId: string = socialAllowed
     ? (tab === 'home' ? 'overview'
       : tab === 'galleries' ? 'galleries'
       : tab === 'content' ? 'library'
       : (tab === 'feed-studio' || tab === 'calendar') ? (tab === 'calendar' ? 'calendar' : 'social')
       : tab === 'page' ? 'mypage'
       : 'overview')
-    : (nonEntitledOverview ? 'overview' : 'galleries')
+    : (socialLockOpen ? 'social'
+      : nonEntitledOverview ? 'overview'
+      : tab === 'page' ? 'mypage'
+      : 'galleries')
 
   // Selecting a non-entitled area is presentation-only; `tab` stays put.
-  const goOverview = () => { if (productionEnabled) setTab('home'); else setNonEntitledOverview(true) }
-  const goGalleries = () => { setNonEntitledOverview(false); setTab('galleries') }
+  const goOverview = () => {
+    if (socialAllowed) { setTab('home'); return }
+    setSocialLockOpen(false); setNonEntitledOverview(true)
+  }
+  const goGalleries = () => { setSocialLockOpen(false); setNonEntitledOverview(false); setTab('galleries') }
 
-  const navItems: NavItem[] = productionEnabled
+  // Contract C1 navigation:
+  //   flag ON + entitled  → full Production nav (prior behavior).
+  //   flag OFF (everyone) → Overview · Galleries · Social Studio (LOCKED,
+  //                         "Coming soon", opens a panel, never the studio)
+  //                         · My Page only for entitled members (not Social).
+  //   flag ON + not entitled → Overview · Galleries (prior behavior).
+  const navItems: NavItem[] = socialAllowed
     ? [
         { id: 'overview',  label: loc.t('nav.overview'),        icon: 'activity', onSelect: () => setTab('home') },
         { id: 'galleries', label: loc.t('nav.galleries'),       icon: 'sections', onSelect: () => setTab('galleries') },
@@ -763,11 +789,26 @@ export function ClientDashboard() {
     : [
         { id: 'overview',  label: loc.t('nav.overview'),  icon: 'activity', onSelect: goOverview },
         { id: 'galleries', label: loc.t('nav.galleries'), icon: 'sections', onSelect: goGalleries },
+        ...(!SOCIAL_STUDIO_ENABLED ? [{
+          id: 'social',
+          label: `${loc.t('nav.socialStudio')} · ${loc.t('nav.comingSoon')}`,
+          icon: 'stories' as const,
+          onSelect: () => { setNonEntitledOverview(false); setSocialLockOpen(true) },
+        }] : []),
+        ...(productionEnabled ? [{
+          id: 'mypage',
+          label: loc.t('nav.myPage'),
+          icon: 'palette' as const,
+          onSelect: () => { setSocialLockOpen(false); setNonEntitledOverview(false); setTab('page') },
+        }] : []),
       ]
 
-  // For a non-entitled client, whether to render MY Overview screen instead of
-  // the Galleries screen. Entitled clients route through `tab` as before.
-  const showNonEntitledOverview = !productionEnabled && nonEntitledOverview
+  // Whether to render the presentation-only Overview screen instead of the
+  // Galleries screen. Applies to every client while `socialAllowed` is false
+  // (today: everyone). The Coming-soon panel takes over the content area when
+  // the locked Social item is selected.
+  const showNonEntitledOverview = !socialAllowed && nonEntitledOverview && !socialLockOpen
+  const showSocialLock = !socialAllowed && socialLockOpen
 
   return (
     <PortalShell
@@ -797,13 +838,20 @@ export function ClientDashboard() {
           />
         )}
 
+        {/* ── Social Studio locked (feature flag off, contract C1) ─────────
+            An elegant Coming-soon panel. Presentation-only: `tab` stays on a
+            safe value, no studio module mounts, no Instagram flow reachable. */}
+        {showSocialLock && (
+          <SocialComingSoon loc={loc} onGoGalleries={goGalleries} />
+        )}
+
         {/* ── Production module unavailable (defensive) ────────────────────
             If a Production tab is somehow active without the entitlement (e.g.
             a transient state before the redirect effect fires, or a tampered
             value), render a safe notice instead of the Production module. The
             module content blocks are ALSO individually gated on
             `productionEnabled`, so they never mount here. */}
-        {bootstrapChecked && !productionEnabled && !showNonEntitledOverview && (PRODUCTION_TABS as readonly string[]).includes(tab) && (
+        {bootstrapChecked && !socialAllowed && !showNonEntitledOverview && !showSocialLock && (PRODUCTION_TABS as readonly string[]).includes(tab) && (
           <div style={{
             padding: '48px 40px', textAlign: 'center',
             background: '#fff', border: `1px solid ${border}`, maxWidth: 480, margin: '0 auto',
@@ -823,7 +871,7 @@ export function ClientDashboard() {
 
         {/* ── Overview (entitled clients) — personalized content-engine home ──
             Production-gated: only entitled businesses see this surface. */}
-        {tab === 'home' && productionEnabled && (
+        {tab === 'home' && socialAllowed && (
           <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>{loc.t('loading')}…</div>}>
             <ClientHome
               loc={loc}
@@ -838,7 +886,7 @@ export function ClientDashboard() {
         )}
 
         {/* ── Feed Studio Tab — the AI Visual OS surface (Production) ──── */}
-        {tab === 'feed-studio' && productionEnabled && (
+        {tab === 'feed-studio' && socialAllowed && (
           <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>Loading Feed Studio…</div>}>
             <FeedStudio
               clientId={clientId}
@@ -849,7 +897,7 @@ export function ClientDashboard() {
         )}
 
         {/* ── Content Studio Tab (Production) ─────────────────────────── */}
-        {tab === 'content' && productionEnabled && (
+        {tab === 'content' && socialAllowed && (
           <div>
             {/* Stats bar — single hairline-bordered grid row */}
             <div ref={reveal} style={{
@@ -1122,7 +1170,7 @@ export function ClientDashboard() {
         )}
 
         {/* ── Content Calendar Tab (Production) ────────────────────── */}
-        {tab === 'calendar' && productionEnabled && (
+        {tab === 'calendar' && socialAllowed && (
           <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
             <SocialManager
               galleries={galleries}
@@ -1135,7 +1183,7 @@ export function ClientDashboard() {
         )}
 
         {/* ── Galleries Tab ───────────────────────────────────────────── */}
-        {tab === 'galleries' && !showNonEntitledOverview && (
+        {tab === 'galleries' && !showNonEntitledOverview && !showSocialLock && (
           <GalleryGrid
             loc={loc}
             items={galleryCards}
@@ -1144,7 +1192,7 @@ export function ClientDashboard() {
         )}
 
         {/* ── Stories Tab ──────────────────────────────────────────────── */}
-        {tab === 'stories' && hasStories && (
+        {tab === 'stories' && hasStories && socialAllowed && (
           <div>
             <div ref={reveal} style={{ marginBottom: 32 }}>
               <div style={{
@@ -1251,7 +1299,7 @@ export function ClientDashboard() {
         )}
 
         {/* ── Tender Tab (Production) ─────────────────────────────────── */}
-        {tab === 'tender' && productionEnabled && (
+        {tab === 'tender' && socialAllowed && (
           <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
             <TenderBuilder
               galleries={galleries}

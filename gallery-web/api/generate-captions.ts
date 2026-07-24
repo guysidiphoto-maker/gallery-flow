@@ -2,7 +2,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
-import { requireAuthedUser } from '../server/ownerAuth.js'
+import { requireProductionOwnerOfClient } from '../server/entitlements.js'
+import { requireSocialStudio } from '../server/features.js'
 
 // Service-role client, used ONLY to validate the caller's JWT via GoTrue.
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
@@ -34,6 +35,10 @@ Respond with valid JSON only:
 { "captions": ["caption1", "caption2", ...] }`
 
 async function handler(req: VercelRequest, res: VercelResponse) {
+  // Feature availability gate (contract C1) — FIRST, before origin/auth/
+  // entitlement resolution. Social studio is OFF by default for everyone.
+  if (!requireSocialStudio(res)) return
+
   // Origin/Referer allowlist gate (mirrors generate-feed.ts / generate-campaign.ts /
   // plan-event.ts / score-images.ts). Without it this is an open Claude proxy.
   const ALLOWED_ORIGINS = new Set([
@@ -59,14 +64,25 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  // Blocker 2 gate: require a valid authenticated session before any paid
-  // Anthropic call. This endpoint takes only free-text (no tenant resource), so
-  // a logged-in user is sufficient — Origin alone is spoofable and not enough.
+  // Entitlement gate (overnight 2026-07-24): this endpoint previously required
+  // only a valid session (requireAuthedUser) — the audit flagged the missing
+  // production_suite check. The payload historically carried no tenant
+  // resource, so we now REQUIRE a clientId and run the same
+  // requireProductionOwnerOfClient gate as the sibling Social endpoints
+  // (generate-feed / generate-campaign / plan-event / score-images): valid JWT
+  // + the user owns the client's business + the business holds
+  // production_suite. NOTE for re-enable: the two call sites in
+  // SocialManager.tsx must add `clientId` to the request body (documented in
+  // src/components/social-lock/INTEGRATION.md).
   if (!authClient) return res.status(500).json({ error: 'auth_not_configured' })
-  const gate = await requireAuthedUser(req, authClient)
-  if (!gate.ok) return res.status(gate.status).json({ error: gate.code })
 
   const { photos, language = 'he', tone = 'professional' } = req.body || {}
+  const clientId = String((req.body || {}).clientId ?? '').trim()
+  if (!clientId) return res.status(400).json({ error: 'clientId_required' })
+
+  const gate = await requireProductionOwnerOfClient(req, authClient, clientId)
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.code })
+
   if (!photos || !Array.isArray(photos) || photos.length === 0) {
     return res.status(400).json({ error: 'Missing photos array' })
   }

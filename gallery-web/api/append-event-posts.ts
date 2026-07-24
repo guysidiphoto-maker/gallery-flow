@@ -24,6 +24,7 @@
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
+import { requireSocialStudio } from '../server/features.js'
 
 export const maxDuration = 60
 
@@ -1033,19 +1034,37 @@ async function handlePublicGallerySession(
 
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
+// The Social (feed-plan) actions of this mixed dispatcher. The other actions
+// (verify_code, redeem_token, signed_url, public_gallery_session) power the
+// legacy PIN login and CORE gallery viewing, and must keep working when the
+// Social studio is disabled — gating the whole endpoint would break image
+// signing and public gallery sessions everywhere.
+const SOCIAL_ACTIONS = new Set([
+  'append_event_posts',
+  'choose_variant',
+  'unchoose_variant',
+  'save_post_edit',
+])
+
 async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'method_not_allowed' })
   }
+
+  const body = (req.body || {}) as ActionBody
+  const action = (body as { action?: string }).action
+
+  // Feature availability gate (contract C1) — for Social actions, FIRST,
+  // before origin/config/ownership resolution. Missing action defaults to
+  // 'append_event_posts' (Social), so it is gated too.
+  if (SOCIAL_ACTIONS.has(action || 'append_event_posts') && !requireSocialStudio(res)) return
+
   if (!isAllowedOrigin(req.headers.origin)) {
     return res.status(403).json({ ok: false, error: 'origin_not_allowed' })
   }
   if (!supabase) {
     return res.status(500).json({ ok: false, error: 'supabase_not_configured' })
   }
-
-  const body = (req.body || {}) as ActionBody
-  const action = (body as { action?: string }).action
 
   if (action === 'append_event_posts' || !action) {
     await handleAppendEventPosts(body as AppendBody, req, res); return

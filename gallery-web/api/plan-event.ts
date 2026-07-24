@@ -20,6 +20,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
 import { requireProductionOwnerOfClient } from '../server/entitlements.js'
+import { requireSocialStudio } from '../server/features.js'
 
 export const maxDuration = 60
 
@@ -176,6 +177,9 @@ Suggest 1–3 posts for the new event. Output strict JSON only.`
 }
 
 async function handler(req: VercelRequest, res: VercelResponse) {
+  // Feature availability gate (contract C1) — FIRST, before origin/auth/
+  // entitlement resolution. Social studio is OFF by default for everyone.
+  if (!requireSocialStudio(res)) return
   const t0 = Date.now()
   const ALLOWED_ORIGINS = new Set([
     'https://pixflow-ai.com',
