@@ -25,6 +25,7 @@ import {
 import { logDownload, logBatchDownload } from './lib/activityLog'
 import { downloadFileName, downloadCacheKey, pickDownloadPath, shouldWarmDownload, classifyDownloadError, keysOverCap, type DownloadQuality } from './lib/mobileViewer'
 import { coverIsEnabled, gateCoverBackgroundUrl } from './lib/coverImage'
+import { resolveGridLayout, gapForSpacing } from './lib/galleryLayout'
 
 // Both surfaces only mount once a guest opts in (face search button / story
 // circle). Lazy-loading keeps their JS (camera pipeline + autoplay video
@@ -232,7 +233,7 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
   }, [visibleCount, images.length])
   const visibleImages = useMemo(() => images.slice(0, visibleCount), [images, visibleCount])
 
-  const gap = imageSpacing === 'none' ? 0 : imageSpacing === 'medium' ? 10 : 4
+  const gap = gapForSpacing(imageSpacing)
   const rounded = cornerStyle === 'rounded'
   // Exact display width of one column → the precise size to fetch (× DPR).
   const colWidth = containerWidth > 0 ? (containerWidth - gap * (cols - 1)) / cols : 0
@@ -1730,17 +1731,11 @@ export function App() {
   const isFeedSetting    = feedLayout === 'feed'
   const isMobileDevice   = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   const isFeedMode       = isFeedSetting && isMobileDevice
-  // Layout — read the legacy layoutMode/imageSpacing/cornerStyle keys, then
-  // honor the newer Design tab keys (thumbnailSize / gridSpacing) on top so
-  // photographer choices in the Design tab actually reach the public viewer.
-  // Backward compat: alma + lsports galleries don't have the new keys, so
-  // their existing layoutMode/imageSpacing values keep working unchanged.
-  const thumbnailSize    = ((raw as Record<string, unknown>).thumbnailSize as string) || null
-  const gridSpacing      = ((raw as Record<string, unknown>).gridSpacing as string) || null
-  const layoutModeFromThumb = thumbnailSize === 'large' ? '2-col' : (thumbnailSize === 'regular' ? '3-col' : null)
-  const spacingFromGap   = gridSpacing === 'large' ? 'medium' : (gridSpacing === 'regular' ? 'small' : null)
-  const layoutMode       = isFeedMode ? '1-col' : (layoutModeFromThumb ?? s(raw, 'layoutMode', '2-col'))
-  const imageSpacing     = isFeedMode ? 'none' : (spacingFromGap ?? s(raw, 'imageSpacing', 'small'))
+  // Layout — resolved through the single shared resolver so the editor preview,
+  // Preview route, and Live viewer can never disagree. Design tab keys
+  // (thumbnailSize / gridSpacing) win; legacy layoutMode / imageSpacing are the
+  // backward-compatible fallback so pre-Design-tab galleries look unchanged.
+  const { layoutMode, imageSpacing } = resolveGridLayout(raw as Record<string, unknown>, isFeedMode)
   const cornerStyle      = isFeedMode ? 'sharp' : s(raw, 'cornerStyle', 'sharp')
   // Typography — fonts the photographer picked in Design > Typography.
   // Falls through to the dashboard's base stack if unset.

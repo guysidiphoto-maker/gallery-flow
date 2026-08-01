@@ -716,6 +716,15 @@ input, button, textarea, select {
   margin-bottom: 10px;
 }
 
+/* Spacing: wide (Design → Grid spacing = "מורווח") */
+.grid.grid--spacing-wide {
+  column-gap: 22px;
+  padding: 0 22px;
+}
+.grid.grid--spacing-wide .grid__img {
+  margin-bottom: 22px;
+}
+
 /* Corner style: rounded */
 .grid.grid--corners-rounded .grid__img {
   border-radius: 8px;

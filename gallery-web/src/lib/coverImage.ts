@@ -76,10 +76,10 @@ export function coverIsEnabled(
  * laid out as `{business-slug}/{galleryId}/originals|thumbnails|web/...`, so a
  * photo that belongs to this gallery always carries the gallery id as a path
  * segment. A cover path missing that segment points at another gallery (or
- * another business) and must be rejected. Mirrors the server-side cover-path
- * check added to update_gallery_settings in the delivery-settings allowlist
- * migration — kept here as defense in depth so the UI never offers, and the
- * server never stores, a cross-gallery cover.
+ * another business) and must be rejected. The update_gallery_settings RPC is
+ * already owner-checked, so a cover from another BUSINESS is impossible; this
+ * guard additionally blocks a cross-GALLERY path within the same business and
+ * keeps the UI from ever offering one.
  */
 export function coverPathBelongsToGallery(
   path: string | null | undefined,

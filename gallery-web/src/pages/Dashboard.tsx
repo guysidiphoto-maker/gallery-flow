@@ -462,7 +462,7 @@ export function Dashboard() {
   // the right pane. Cover holds the welcome screen + cover image picker;
   // Typography/Color/Grid/Nav write to delivery_settings JSONB so they
   // ship without a schema migration.
-  const [designSubTab, setDesignSubTab] = useState<'cover' | 'type' | 'color' | 'grid' | 'nav'>('cover')
+  const [designSubTab, setDesignSubTab] = useState<'cover' | 'type' | 'color' | 'grid'>('cover')
   const [uploading, setUploading] = useState(false)
   const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -2028,8 +2028,9 @@ export function Dashboard() {
   // gallery being edited (gallery_get_images only returns this owner's gallery
   // images), so an image from another gallery or business can never be routed
   // here. The write itself goes through update_gallery_settings, which is
-  // SECURITY DEFINER + owner-checked, and (delivery-settings allowlist
-  // migration) rejects a gallery_asset cover path not under this gallery's id.
+  // SECURITY DEFINER + owner-checked, so a cover from another business is
+  // impossible; the coverPathBelongsToGallery guard below adds a cross-gallery
+  // path check as defense in depth.
   async function selectGalleryCover(img: GalleryImage): Promise<boolean> {
     if (!editingGallery) return false
     if (!galleryImages.some(i => i.id === img.id)) {
@@ -5663,7 +5664,6 @@ export function Dashboard() {
                         { id: 'type'  as const, label: 'Typography' },
                         { id: 'color' as const, label: 'Color' },
                         { id: 'grid'  as const, label: 'Grid' },
-                        { id: 'nav'   as const, label: 'Navigation' },
                       ]).map(t => {
                         const active = designSubTab === t.id
                         return (
@@ -6081,16 +6081,9 @@ export function Dashboard() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
                         {([
                           {
-                            key: 'gridDirection', defaultV: 'vertical',
-                            eyebrow: 'כיוון תמונות',
-                            opts: [
-                              { id: 'vertical',   label: 'אנכי' },
-                              { id: 'horizontal', label: 'אופקי' },
-                            ],
-                          },
-                          {
                             key: 'thumbnailSize', defaultV: 'regular',
-                            eyebrow: 'גודל תמונה ממוזערת',
+                            eyebrow: 'גודל תמונות',
+                            hint: 'רגיל = 4 עמודות · גדול = 3 עמודות רחבות (בדסקטופ)',
                             opts: [
                               { id: 'regular', label: 'רגיל' },
                               { id: 'large',   label: 'גדול' },
@@ -6098,7 +6091,8 @@ export function Dashboard() {
                           },
                           {
                             key: 'gridSpacing', defaultV: 'regular',
-                            eyebrow: 'מרווח גריד',
+                            eyebrow: 'מרווח בין תמונות',
+                            hint: 'רגיל = צמוד · מורווח = רווח נדיב',
                             opts: [
                               { id: 'regular', label: 'רגיל' },
                               { id: 'large',   label: 'מורווח' },
@@ -6107,6 +6101,7 @@ export function Dashboard() {
                         ] as const).map(g => (
                           <div key={g.key}>
                             <div style={{ ...labelStyle }}>{g.eyebrow}</div>
+                            <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4, margin: '0 0 8px' }}>{g.hint}</div>
                             <div style={{ display: 'flex', gap: 8 }}>
                               {g.opts.map(o => {
                                 const active = ((ds[g.key] as string) || g.defaultV) === o.id
@@ -6128,30 +6123,10 @@ export function Dashboard() {
                       </div>
                     )}
 
-                    {/* ── Navigation — top vs side ── */}
-                    {designSubTab === 'nav' && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-                        <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.5 }}>
-                          איך הניווט מופיע בגלריה הציבורית.
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                          {([
-                            { id: 'top',  label: 'ניווט עליון', desc: 'שורה אופקית בראש הגלריה' },
-                            { id: 'side', label: 'ניווט צדדי', desc: 'סרגל קבוע בצד המסך' },
-                          ] as const).map(n => {
-                            const active = ((ds.navStyle as string) || 'top') === n.id
-                            return (
-                              <button key={n.id} onClick={() => updateGallerySetting('navStyle', n.id)}
-                                style={tileStyle(active)}>
-                                <Icon name={n.id === 'top' ? 'menu' : 'sections'} size={22} strokeWidth={active ? 1.85 : 1.4} />
-                                <div style={{ fontSize: 13, fontWeight: active ? 600 : 500, color: textPrimary }}>{n.label}</div>
-                                <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4, textAlign: 'center' }}>{n.desc}</div>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
+                    {/* The Navigation sub-tab (navStyle top/side) was removed: the
+                        public viewer never read navStyle, so it was a control with
+                        no visible effect. It can return once a real side-nav layout
+                        is implemented in the viewer. */}
                   </div>
                   )
                 })()}

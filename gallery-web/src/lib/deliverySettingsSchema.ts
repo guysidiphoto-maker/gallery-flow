@@ -163,7 +163,11 @@ const RULES: Record<string, FieldRule> = {
   // Layout
   layoutMode:           oneOf('פריסה', ['1-col', '2-col', '3-col'] as const),
   navStyle:             oneOf('סגנון ניווט', ['top', 'side'] as const),
-  imageSpacing:         oneOf('רווח תמונות', ['none', 'small', 'medium'] as const),
+  imageSpacing:         oneOf('רווח תמונות', ['none', 'small', 'medium', 'wide'] as const),
+  // Design → Grid spacing control. Was MISSING here (and from the server
+  // allowlist), so the value was silently rejected on save and the control did
+  // nothing. Added on both sides; maps to imageSpacing in the viewer.
+  gridSpacing:          oneOf('מרווח בין תמונות', ['regular', 'large'] as const),
   cornerStyle:          oneOf('סגנון פינות', ['sharp', 'rounded'] as const),
   feedLayout:           oneOf('פריסת פיד', ['grid', 'masonry', 'carousel'] as const),
   welcomeStyle:         oneOf('סגנון פתיחה', ['mosaic', 'cinematic', 'minimal'] as const),
