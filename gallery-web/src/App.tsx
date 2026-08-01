@@ -1533,17 +1533,24 @@ export function App() {
     [sections, visibleImages]
   )
 
-  // Surface face search whenever there's a usable index — that's any
-  // gallery in 'done', AND any gallery still 'indexing' once at least one
-  // face has been registered. Without this second clause the button stays
-  // hidden whenever the worker hasn't finished (or got stuck mid-batch),
-  // which is exactly when a guest most needs to find their photos: the
-  // photographer just uploaded and indexing is catching up. A partial
-  // index is still useful — Rekognition just searches against whatever
-  // vectors exist, and the worker keeps adding more in the background.
+  // Surface face search whenever the photographer ENABLED face recognition for
+  // this gallery — public and private galleries alike. This used to be gated
+  // purely on the transient face_index_status, so a freshly-uploaded PUBLIC
+  // gallery (status still 'pending' while the worker catches up) showed no
+  // "find my photos" button, while a PRIVATE gallery did — the reported bug.
+  // Rekognition searches against whatever vectors exist so far and the worker
+  // keeps adding more, so a partial/just-started index is still useful; only a
+  // hard 'failed' index hides the entry. Legacy galleries indexed before the
+  // face_index_enabled column existed stay covered by the status clauses.
+  const faceEnabled =
+    gallery?.face_index_enabled === true ||
+    (gallery?.delivery_settings as { faceIndexEnabled?: boolean } | null)?.faceIndexEnabled === true
   const faceSearchAvailable =
-    gallery?.face_index_status === 'done' ||
-    (gallery?.face_index_status === 'indexing' && (gallery?.face_indexed_count ?? 0) > 0)
+    !!gallery &&
+    gallery.face_index_status !== 'failed' &&
+    (faceEnabled ||
+      gallery.face_index_status === 'done' ||
+      (gallery.face_index_status === 'indexing' && (gallery.face_indexed_count ?? 0) > 0))
 
   const lang = (((gallery?.delivery_settings || {}) as Record<string, unknown>).language as Lang) || 'he'
   const txt = t(lang)
