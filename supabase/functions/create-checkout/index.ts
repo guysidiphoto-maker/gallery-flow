@@ -6,23 +6,20 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 //
 // Replaces the previous Stripe implementation. Creates a LemonSqueezy hosted
 // checkout and returns { checkoutUrl } (the field tokenClient.startCheckout
-// expects). Handles TWO purchase types:
+// expects). Handles subscription purchases only:
 //
-//   1) Subscription  — body { planId: 'pro' | 'business' | 'agency' }
+//   Subscription  — body { planId: 'pro' | 'business' | 'agency' }
 //        Requires an authenticated photographer. Embeds custom_data.business_id
 //        so the webhook (lemonsqueezy-webhook) knows whose allowance to reset.
 //
-//   2) One-time gallery unlock — body { galleryId: '<uuid>' }
-//        Works authed (photographer buys + bundles) OR public (the couple pays
-//        directly via a link on the gallery gate). business_id is resolved from
-//        the gallery server-side. Embeds custom_data { business_id, gallery_id,
-//        purpose: 'gallery_unlock' } so the webhook can mark the gallery paid.
+// The one-time "$150 gallery unlock" client-payment type was RETIRED: a bare
+// { galleryId } request is refused (410) and no session is ever created.
 //
 // Variant IDs come from env vars (set after the products are created in the
 // LemonSqueezy dashboard) — no hardcoded placeholder IDs:
 //   LEMONSQUEEZY_API_KEY, LEMONSQUEEZY_STORE_ID,
 //   LEMONSQUEEZY_VARIANT_PRO, LEMONSQUEEZY_VARIANT_BUSINESS,
-//   LEMONSQUEEZY_VARIANT_AGENCY, LEMONSQUEEZY_VARIANT_GALLERY
+//   LEMONSQUEEZY_VARIANT_AGENCY
 // ─────────────────────────────────────────────────────────────────────────────
 
 const LS_API_KEY = Deno.env.get('LEMONSQUEEZY_API_KEY')!
@@ -36,8 +33,6 @@ const PLAN_VARIANT: Record<string, string | undefined> = {
   business: Deno.env.get('LEMONSQUEEZY_VARIANT_BUSINESS'),
   agency:   Deno.env.get('LEMONSQUEEZY_VARIANT_AGENCY'),
 }
-const GALLERY_VARIANT = Deno.env.get('LEMONSQUEEZY_VARIANT_GALLERY')
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -104,28 +99,12 @@ serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     const { planId, galleryId } = await req.json().catch(() => ({}))
 
-    // ── One-time gallery unlock ───────────────────────────────────────────
-    if (galleryId) {
-      if (!GALLERY_VARIANT) throw new Error('gallery_variant_not_configured')
-
-      // Resolve the owning business from the gallery (public-safe: the couple
-      // may be unauthenticated when paying directly).
-      const { data: gallery } = await admin
-        .from('galleries')
-        .select('id, business_id')
-        .eq('id', galleryId)
-        .single()
-      if (!gallery) throw new Error('gallery_not_found')
-
-      const url = await createLsCheckout({
-        variantId: GALLERY_VARIANT,
-        custom: {
-          business_id: gallery.business_id,
-          gallery_id: gallery.id,
-          purpose: 'gallery_unlock',
-        },
-      })
-      return json({ checkoutUrl: url })
+    // ── One-time gallery unlock — RETIRED ─────────────────────────────────
+    // The "$150 gallery unlock" client-payment feature was removed. A request
+    // carrying a bare galleryId (from an old link/bookmark) is refused with a
+    // 410 and NEVER creates a checkout session. No payment is started.
+    if (galleryId && !planId) {
+      return json({ error: 'gallery_unlock_retired' }, 410)
     }
 
     // ── Subscription ──────────────────────────────────────────────────────
