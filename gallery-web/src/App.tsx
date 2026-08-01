@@ -26,6 +26,7 @@ import { logDownload, logBatchDownload } from './lib/activityLog'
 import { downloadFileName, downloadCacheKey, pickDownloadPath, shouldWarmDownload, classifyDownloadError, keysOverCap, type DownloadQuality } from './lib/mobileViewer'
 import { coverIsEnabled, gateCoverBackgroundUrl } from './lib/coverImage'
 import { resolveGridLayout, gapForSpacing } from './lib/galleryLayout'
+import { resolveGalleryBranding } from './lib/galleryBranding'
 
 // Both surfaces only mount once a guest opts in (face search button / story
 // circle). Lazy-loading keeps their JS (camera pipeline + autoplay video
@@ -1689,7 +1690,7 @@ export function App() {
     return (
       <div className="center-msg" dir={isRtl ? 'rtl' : 'ltr'} style={{ padding: 24, textAlign: 'center' }}>
         <h1 style={{
-          fontFamily: 'Playfair Display, Georgia, serif',
+          fontFamily: "var(--font-heading, 'Playfair Display', Georgia, serif)",
           fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em',
           margin: '0 0 12px', color: '#fafafa',
         }}>{headline}</h1>
@@ -1763,19 +1764,11 @@ export function App() {
   // legacy "indigo" is mapped to the editorial charcoal so older galleries
   // adopt the new neutral by default rather than carrying the bright
   // indigo into the cream design.
-  const themeColorId = ((raw as Record<string, unknown>).themeColor as string) || 'charcoal'
-  const themeColors: Record<string, string> = {
-    // Editorial palette (matches the photographer-side Design tab)
-    charcoal: '#141413',
-    sage:     '#7B8F6E',
-    rose:     '#C18A8A',
-    amber:    '#A67C52',
-    teal:     '#5E8A8A',
-    slate:    '#64748b',
-    // Legacy aliases for galleries created before the editorial palette
-    indigo:   '#141413',  // was '#6366f1' — re-mapped to charcoal
-  }
-  const themeAccent = themeColors[themeColorId] ?? themeColors.charcoal
+  // Colors + fonts resolved through the single shared branding resolver (same
+  // palette + contrast rules the editor uses), so Live and the editor preview
+  // never disagree. themeColor picks the accent; legacy ids are normalized.
+  const branding = resolveGalleryBranding(raw as Record<string, unknown>)
+  const themeAccent = branding.accentHex
 
   // Watermark settings — applied as a CSS overlay on web previews. Originals
   // download untouched (the watermark is presentation-only, not baked in).
@@ -2547,21 +2540,25 @@ export function App() {
         : null)
   const hasCustomCover = !!(effectiveResolvedCoverUrl || effectiveCoverUrl)
 
-  // Convert the chosen theme accent (#rrggbb) to "r, g, b" so it can override
-  // the existing --accent CSS variable used everywhere in styles.css.
-  const themeAccentRgb = (() => {
-    const hex = themeAccent.replace('#', '')
-    const r = parseInt(hex.slice(0, 2), 16)
-    const g = parseInt(hex.slice(2, 4), 16)
-    const b = parseInt(hex.slice(4, 6), 16)
-    return `${r}, ${g}, ${b}`
-  })()
+  // Accent as "r, g, b" for the existing --accent CSS variable, plus a
+  // contrast-safe ink for text placed on the accent, and the photographer's
+  // chosen fonts as CSS variables so they apply gallery-wide (not just the
+  // welcome screen). Only emitted when a font was actually chosen, so galleries
+  // that never set one keep the default stack unchanged.
+  const themeAccentRgb = branding.accentRgb
+  const brandCssVars = [
+    `--accent: ${themeAccentRgb};`,
+    `--accent-ink: ${branding.accentInk};`,
+    branding.headingFont ? `--font-heading: '${branding.headingFont}';` : '',
+    branding.bodyFont ? `--font-body: '${branding.bodyFont}';` : '',
+  ].filter(Boolean).join(' ')
 
   return (
     <>
-      {/* Override the global accent CSS variable to match the photographer's
-          chosen theme color. Cascades into every existing rgb(var(--accent)) ref. */}
-      <style>{`:root { --accent: ${themeAccentRgb}; }`}</style>
+      {/* Override the global branding CSS variables to match the photographer's
+          Design-tab choices. Cascades into every rgb(var(--accent)) rule plus
+          the gallery-wide heading/body font vars in styles.css. */}
+      <style>{`:root { ${brandCssVars} }`}</style>
 
       {/* Skip link — keyboard-only shortcut past the hero to the photo grid.
           Visible only on focus, hidden otherwise (WCAG 2.4.1 Bypass Blocks).
@@ -2606,7 +2603,7 @@ export function App() {
           padding: '16px 20px', textAlign: 'center',
         }}>
           <h1 style={{
-            fontFamily: "'Playfair Display', Georgia, serif",
+            fontFamily: "var(--font-heading, 'Playfair Display', Georgia, serif)",
             fontSize: 20, fontWeight: 700, color: '#fff', margin: 0, lineHeight: 1.2,
           }}>{galleryTitle}</h1>
           {studioName && (

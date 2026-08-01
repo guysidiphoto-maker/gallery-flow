@@ -71,7 +71,9 @@ body {
      Latin glyphs render in the editorial display face; Noto Sans Hebrew
      fills in for any Hebrew glyphs. Both share a similar x-height so
      mixed-script labels stay rhythmically consistent. */
-  font-family: 'Inter Tight', 'Noto Sans Hebrew', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* --font-body is set by the gallery viewer when the photographer picked a
+     body font in Design → Typography; otherwise this default stack applies. */
+  font-family: var(--font-body, 'Inter Tight', 'Noto Sans Hebrew', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   font-feature-settings: 'kern', 'liga', 'calt';
   letter-spacing: -0.005em;
   min-height: 100vh;
@@ -534,7 +536,9 @@ input, button, textarea, select {
   align-items: center;
   justify-content: center;
   background: rgb(var(--accent));
-  color: #fff;
+  /* Contrast-safe ink so the icon stays visible on lighter accent palettes
+     (rose/sage/amber); falls back to white when the var is unset. */
+  color: var(--accent-ink, #fff);
   border: 2px solid #0a0a0f;
   box-shadow: 0 2px 6px rgba(0, 0, 0, .35);
 }

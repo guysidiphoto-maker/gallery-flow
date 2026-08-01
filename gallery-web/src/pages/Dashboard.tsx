@@ -2056,6 +2056,23 @@ export function Dashboard() {
     return ok
   }
 
+  // Reset this gallery's Design-tab branding (accent + fonts) to the business
+  // Brand Kit defaults, clearing the per-gallery override. Fonts map cleanly
+  // (brand typography → gallery headingFont/bodyFont); the accent palette is
+  // gallery-specific so it resets to the app default rather than an arbitrary
+  // brand hex. Identity (studio name / logo) lives in Settings and is left
+  // alone. One optimistic write with rollback via updateGallerySettings.
+  async function resetGalleryBrandingToBrand() {
+    if (!editingGallery || !businessId) return
+    const brand = await getBrandKit(businessId)
+    const ok = await updateGallerySettings({
+      themeColor: null,
+      headingFont: brand?.typography?.heading_family ?? null,
+      bodyFont: brand?.typography?.body_family ?? null,
+    })
+    if (ok) showToast({ kind: 'success', text: 'העיצוב אופס לברירת מותג' })
+  }
+
   // Default the cover editor to the tab matching the current source whenever a
   // different gallery is opened for editing.
   useEffect(() => {
@@ -5954,6 +5971,28 @@ export function Dashboard() {
                     {/* ── Typography — heading + body font ── */}
                     {designSubTab === 'type' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+                        <div style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          gap: 12, flexWrap: 'wrap',
+                        }}>
+                          <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.5, maxWidth: 300 }}>
+                            הגלריה יורשת את הגופנים מערכת המותג. אפשר לשנות עבור הגלריה הזו בלבד.
+                            הגופנים חלים על כל הגלריה — כותרות וטקסט.
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void resetGalleryBrandingToBrand()}
+                            title="החזרת הצבע והגופנים לברירת המחדל של המותג"
+                            style={{
+                              background: 'transparent', color: textSecondary, cursor: 'pointer',
+                              border: `1px solid ${border}`, borderRadius: 8,
+                              padding: '8px 12px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            אפס לברירת מותג
+                          </button>
+                        </div>
                         {([
                           { key: 'headingFont', label: 'פונט כותרות', defaultV: 'Inter Tight' },
                           { key: 'bodyFont',    label: 'פונט גוף',    defaultV: 'Noto Sans Hebrew' },
@@ -6039,7 +6078,8 @@ export function Dashboard() {
                     {designSubTab === 'color' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                         <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.5 }}>
-                          הצבע הראשי משפיע על כפתורים, מסגרות ולוגו בגלריה הציבורית.
+                          צבע ההדגשה — משפיע על כפתורים, קישורים ומצבים פעילים בגלריה הציבורית.
+                          טקסט הכפתור מתכוונן אוטומטית לניגודיות קריאה.
                         </div>
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                           {([
