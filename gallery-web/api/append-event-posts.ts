@@ -24,6 +24,7 @@
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
+import { requireSocialStudio } from '../server/features.js'
 
 export const maxDuration = 60
 
@@ -379,7 +380,22 @@ async function handleVerifyCode(
     .maybeSingle()
   const hash = (cli as { access_code_hash?: string | null } | null)?.access_code_hash ?? null
   if (cli && hash === null) {
-    res.status(200).json({ ok: true, fallback_to_legacy: true }); return
+    // Fail-closed (Client Portal V2): only offer the legacy plaintext PIN path
+    // when a real legacy code is ACTUALLY configured on a live gallery. A client
+    // with neither a hashed code nor a non-empty `clientCode` must be denied —
+    // never invite a fallback compare against an empty/absent code.
+    const { data: coded } = await supabase
+      .from('galleries')
+      .select('id')
+      .eq('client_id', clientId)
+      .eq('status', 'live')
+      .not('delivery_settings->>clientCode', 'is', null)
+      .neq('delivery_settings->>clientCode', '')
+      .limit(1)
+    if (coded && coded.length > 0) {
+      res.status(200).json({ ok: true, fallback_to_legacy: true }); return
+    }
+    res.status(401).json({ ok: false, error: 'access_not_configured' }); return
   }
 
   res.status(401).json({ ok: false, error: 'invalid_code' })
@@ -1018,19 +1034,37 @@ async function handlePublicGallerySession(
 
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
+// The Social (feed-plan) actions of this mixed dispatcher. The other actions
+// (verify_code, redeem_token, signed_url, public_gallery_session) power the
+// legacy PIN login and CORE gallery viewing, and must keep working when the
+// Social studio is disabled — gating the whole endpoint would break image
+// signing and public gallery sessions everywhere.
+const SOCIAL_ACTIONS = new Set([
+  'append_event_posts',
+  'choose_variant',
+  'unchoose_variant',
+  'save_post_edit',
+])
+
 async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'method_not_allowed' })
   }
+
+  const body = (req.body || {}) as ActionBody
+  const action = (body as { action?: string }).action
+
+  // Feature availability gate (contract C1) — for Social actions, FIRST,
+  // before origin/config/ownership resolution. Missing action defaults to
+  // 'append_event_posts' (Social), so it is gated too.
+  if (SOCIAL_ACTIONS.has(action || 'append_event_posts') && !requireSocialStudio(res)) return
+
   if (!isAllowedOrigin(req.headers.origin)) {
     return res.status(403).json({ ok: false, error: 'origin_not_allowed' })
   }
   if (!supabase) {
     return res.status(500).json({ ok: false, error: 'supabase_not_configured' })
   }
-
-  const body = (req.body || {}) as ActionBody
-  const action = (body as { action?: string }).action
 
   if (action === 'append_event_posts' || !action) {
     await handleAppendEventPosts(body as AppendBody, req, res); return

@@ -36,6 +36,16 @@ import {
   formatStoryDuration,
 } from '../lib/storyRender'
 import { applyBrandKitToGalleryDefaults, getBrandKit } from '../lib/brandKit'
+import { ClientsManager } from './ClientsManager'
+// Client Portal V2 — wave-2 owner surfaces wired into this dashboard shell.
+import { useOwnerLocale } from '../lib/ownerLocale'
+import FirstRunTour from '../components/tour/FirstRunTour'
+import RestartTourButton from '../components/tour/RestartTourButton'
+import OwnerOverview from '../components/overview/OwnerOverview'
+import GlobalSearch from '../components/search/GlobalSearch'
+import ImportCenter from '../components/importer/ImportCenter'
+import AssignClientField from '../components/assignment/AssignClientField'
+import { assignGallery } from '../components/clients/api'
 
 // Mirrors the postgres enum gallery_status (migration 063).
 type GalleryStatus = 'draft' | 'live' | 'archived'
@@ -218,6 +228,9 @@ function exportProgressLabel(p: ExportProgress): string {
 export function Dashboard() {
   const { user, loading } = useAuth()
   const { showToast, ToastContainer } = useToast()
+  // Owner-side locale (he=RTL default). Drives the wave-2 surfaces (overview,
+  // search, tender, import, assignment) so they share one language preference.
+  const { locale, t: ownerT } = useOwnerLocale()
   // Promise-based replacement for native window.confirm(). Render
   // <ConfirmHost /> near the root and call `await confirm({…})` from any
   // destructive handler. See gallery-web/src/components/useConfirm.ts.
@@ -236,6 +249,16 @@ export function Dashboard() {
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [businessId, setBusinessId] = useState<string | null>(null)
   const [businessSlug, setBusinessSlug] = useState<string | null>(null)
+  // Client Portal V2: in-page view switch between the galleries workspace and
+  // the owner-side Clients Manager. Same shell/sidebar, no new route — the
+  // "לקוחות" nav item toggles this instead of navigating by URL.
+  // Default stays 'galleries' (existing behavior + tests unchanged). Overview is
+  // added as the FIRST nav item so it is discoverable without changing the
+  // default landing view.
+  const [activeView, setActiveView] = useState<'overview' | 'galleries' | 'clients' | 'search' | 'import'>('galleries')
+  // New-gallery modal: optional client to connect the gallery to on creation.
+  // null = "no client yet" (a first-class value; never blocks creation/upload).
+  const [newGalleryClientId, setNewGalleryClientId] = useState<string | null>(null)
   const [tokenBalance, setTokenBalance] = useState<number>(0)
   const [showBuyTokens, setShowBuyTokens] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -684,7 +707,7 @@ export function Dashboard() {
     // gallery defaults still win over brand defaults if they're non-empty.
     const brand = await getBrandKit(businessId)
     const brandDefaults = applyBrandKitToGalleryDefaults(brand)
-    const { error } = await supabase.from('galleries').insert({
+    const { data: created, error } = await supabase.from('galleries').insert({
       name: newName.trim(),
       business_id: businessId,
       status: 'draft',
@@ -725,7 +748,7 @@ export function Dashboard() {
         feedLayout,
         ...brandDefaults,
       },
-    })
+    }).select('id').single()
     setCreating(false)
     if (error) {
       console.warn('[createGallery]', error)
@@ -740,9 +763,20 @@ export function Dashboard() {
       })
       return
     }
+    // Optional client connection — runs AFTER the gallery insert succeeded and
+    // NEVER blocks creation/upload. "No client yet" (null) is a first-class
+    // value that simply skips this. A failure leaves the gallery in place; the
+    // owner can connect it later from the Clients screen.
+    if (newGalleryClientId && created?.id) {
+      const res = await assignGallery({ galleryId: created.id, clientId: newGalleryClientId })
+      if (!res.ok) {
+        showToast({ kind: 'error', text: 'הגלריה נוצרה, אך חיבור הלקוח נכשל. אפשר לחבר אותה מאוחר יותר במסך הלקוחות.' })
+      }
+    }
     setShowModal(false)
     setNewName('')
     setNewDate('')
+    setNewGalleryClientId(null)
     setWelcomeStyle('mosaic')
     setClientHidePhotosEnabled(false)
     setRequireGalleryCode(false)
@@ -2356,6 +2390,12 @@ export function Dashboard() {
       {/* In-app toasts (replaces silent alert() / vanished error states). */}
       <ToastContainer />
 
+      {/* First-run guided tour — owner only. `enabled` is true only for the
+          signed-in business operator once the business row is resolved; it
+          renders null (and touches no storage) otherwise, and never appears on
+          any client-portal route. */}
+      <FirstRunTour enabled={Boolean(user && businessId)} surface="owner_tour" />
+
       {/* Pre-upload duplicate summary. Shown when a (re)upload contains files
           already in the gallery (skipped to avoid duplicate rows) or files that
           share a filename with an existing image but differ (surfaced for
@@ -2523,16 +2563,27 @@ export function Dashboard() {
         }}>
           Workspace
         </div>
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-          {[
-            { icon: 'gallery' as IconName, label: 'הגלריות שלי', active: true, disabled: false, href: undefined as string | undefined },
-            { icon: 'palette' as IconName, label: 'Brand Kit',  active: false, disabled: false, href: '/brand-kit' as string | undefined },
-            { icon: 'clients' as IconName,  label: 'לקוחות',      active: false, disabled: true, href: undefined as string | undefined },
-          ].map(item => (
+        <nav data-tour="overview" style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+          {([
+            { icon: 'activity' as IconName, label: ownerT('nav.overview'),  active: activeView === 'overview', disabled: false, href: undefined, view: 'overview', tour: 'overview' },
+            { icon: 'gallery' as IconName,  label: ownerT('nav.galleries'), active: activeView === 'galleries', disabled: false, href: undefined, view: 'galleries', tour: 'galleries' },
+            { icon: 'search' as IconName,   label: ownerT('nav.search'),    active: activeView === 'search', disabled: false, href: undefined, view: 'search', tour: 'search' },
+            { icon: 'palette' as IconName,  label: 'Brand Kit',             active: false, disabled: false, href: '/brand-kit', view: undefined, tour: undefined },
+            { icon: 'clients' as IconName,  label: ownerT('nav.clients'),   active: activeView === 'clients', disabled: false, href: undefined, view: 'clients', tour: 'clients' },
+            { icon: 'download' as IconName, label: ownerT('nav.import'),    active: activeView === 'import', disabled: false, href: undefined, view: 'import', tour: 'import' },
+          ] as Array<{ icon: IconName; label: string; active: boolean; disabled: boolean; href: string | undefined; view: 'overview' | 'galleries' | 'clients' | 'search' | 'import' | undefined; tour: string | undefined }>).map(item => (
             <button
               key={item.label}
+              {...(item.tour ? { 'data-tour': item.tour } : {})}
               onClick={() => {
-                if (item.disabled || !item.href) return
+                if (item.disabled) return
+                if (item.view) {
+                  // In-page view switch — same Dashboard shell, no navigation.
+                  setActiveView(item.view)
+                  setSidebarOpen(false)
+                  return
+                }
+                if (!item.href) return
                 window.location.pathname = item.href
               }}
               style={{
@@ -2627,6 +2678,18 @@ export function Dashboard() {
           )
         })()}
 
+        {/* Restart the first-run tour — subtle text button in the Account
+            section. Resets progress and reopens the mounted FirstRunTour. */}
+        <RestartTourButton
+          surface="owner_tour"
+          className="dash-restart-tour"
+          style={{
+            background: 'none', border: 'none', padding: '2px 4px 14px',
+            fontFamily: 'inherit', fontSize: 11, color: textMuted,
+            cursor: 'pointer', textAlign: 'start', letterSpacing: '0.02em',
+          }}
+        />
+
         {/* Profile + logout */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10,
@@ -2675,6 +2738,34 @@ export function Dashboard() {
 
       {/* ======= Main content ======= */}
       <main style={{ maxWidth: 1180, margin: '0 auto', padding: '56px 40px 96px' }}>
+
+        {/* Client Portal V2 — owner-side view switch. All wave-2 surfaces render
+            in place of the galleries workspace within the same shell (no route
+            change). The default branch below keeps the original galleries
+            workspace unchanged. */}
+        {activeView === 'overview' ? (
+          <OwnerOverview
+            businessId={businessId}
+            businessSlug={businessSlug}
+            locale={locale}
+            onNavigate={(view) => setActiveView(view)}
+            onNewGallery={() => setShowModal(true)}
+          />
+        ) : activeView === 'clients' ? (
+          <ClientsManager businessSlug={businessSlug} businessId={businessId} />
+        ) : activeView === 'search' ? (
+          <GlobalSearch
+            locale={locale}
+            onOpenClient={() => { setActiveView('clients') }}
+            onOpenGallery={() => { setActiveView('galleries') }}
+          />
+        ) : activeView === 'import' ? (
+          <ImportCenter
+            locale={locale}
+            onExit={() => setActiveView('galleries')}
+            onOpenGallery={() => { setActiveView('galleries') }}
+          />
+        ) : (<>
 
         {/* Page heading + CTA — Pic-Time editorial rhythm: tracked uppercase
             eyebrow, semi-bold display title, outlined-black CTA on cream that
@@ -6263,6 +6354,7 @@ export function Dashboard() {
             </div>
           </div>
         )}
+        </>)}
       </main>
 
       {/* ======= Create gallery modal ======= */}
@@ -6369,6 +6461,18 @@ export function Dashboard() {
                 onBlur={(e) => { e.currentTarget.style.borderColor = border }}
               />
             </label>
+
+            {/* ── Connect to a client (optional) ── Never blocks creation or
+                upload; "no client yet" is a first-class choice. */}
+            <div data-tour="assign-gallery" style={{ display: 'block', marginBottom: 28 }}>
+              <span style={{ ...labelStyle, marginBottom: 8 }}>{ownerT('assign.modalLabel')}</span>
+              <AssignClientField
+                value={newGalleryClientId}
+                onChange={(clientId) => setNewGalleryClientId(clientId)}
+                allowCreateInline
+                locale={locale}
+              />
+            </div>
 
             {/* ── Divider ── */}
             <div style={{ height: 1, background: border, margin: '4px 0 24px' }} />

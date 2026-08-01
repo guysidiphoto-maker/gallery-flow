@@ -21,7 +21,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
-import { requireBusinessOwnerOfClient } from '../server/ownerAuth.js'
+import { requireProductionOwnerOfClient } from '../server/entitlements.js'
+import { requireSocialStudio } from '../server/features.js'
 
 export const maxDuration = 60
 
@@ -286,6 +287,9 @@ Plan ${totalGoal} posts across 3 variants (rhythm / symphony / continuity). Use 
 }
 
 async function handler(req: VercelRequest, res: VercelResponse) {
+  // Feature availability gate (contract C1) — FIRST, before origin/auth/
+  // entitlement resolution. Social studio is OFF by default for everyone.
+  if (!requireSocialStudio(res)) return
   const t0 = Date.now()
   const ALLOWED_ORIGINS = new Set([
     'https://pixflow-ai.com',
@@ -316,7 +320,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ ok: false, error: 'brief_required' })
 
   // Blocker 2 gate: authenticated owner of this client only, before any AI call.
-  const gate = await requireBusinessOwnerOfClient(req, supabase, clientId)
+  const gate = await requireProductionOwnerOfClient(req, supabase, clientId)
   if (!gate.ok) return res.status(gate.status).json({ ok: false, error: gate.code })
 
   const { data: client } = await supabase

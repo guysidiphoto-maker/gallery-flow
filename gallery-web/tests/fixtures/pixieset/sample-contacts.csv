@@ -1,0 +1,4 @@
+First Name,Last Name,Company,Email,Type,Address Line 1,Address Line 2,City,State/Province,Zip,Country,Notes
+Dana,Levi,Levi Events,dana@levi-events.example,Client,12 Herzl St,,Tel Aviv,,6100000,Israel,VIP wedding client
+Yossi,Cohen,,yossi.cohen@example.com,Client,,,Haifa,,,Israel,"Prefers WhatsApp, no email"
+Noa,Bar-On,Bar-On Studio,noa@baron.example,Vendor,3 Dizengoff,Suite 4,Tel Aviv,,,Israel,
