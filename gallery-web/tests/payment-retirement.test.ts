@@ -77,5 +77,23 @@ function ok(name: string, cond: boolean, detail = '') {
     !/startGalleryCheckout/.test(dash) && !/GALLERY_BILLING_ON/.test(dash.replace(/\/\/[^\n]*/g, '')))
 }
 
+// ── Marketing surfaces: the "$150 one-time gallery" offer is gone everywhere ─
+// (Browser QA found it lingering on the 3D homepage + photographers landing
+// after the first pass — this sweep makes that class of miss impossible.)
+{
+  const marketing = [
+    'gallery-web/src/pages/PricingPage.tsx',
+    'gallery-web/src/pages/LandingPageHe.tsx',
+    'gallery-web/src/pages/PhotographersLanding.tsx',
+    'gallery-web/src/components/landing3d/HomepagePricing.tsx',
+  ]
+  for (const f of marketing) {
+    const body = read(f).replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '') // strip comments
+    const hasOffer = /\$150/.test(body) || /שלמו? פעם אחת/.test(body)
+      || /רק גלריה אחת/.test(body) || /תשלום חד-פעמי/.test(body)
+    ok(`${f.split('/').pop()} shows no $150 one-time-gallery offer`, !hasOffer)
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)
