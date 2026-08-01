@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { FixedSizeGrid, type GridChildComponentProps } from 'react-window'
+import { useDismiss } from '../components/portal/useDismiss'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany, partitionUploadFiles, MAX_UPLOAD_BATCH, type UploadRejectReason } from '../lib/uploadPipeline'
@@ -405,6 +406,27 @@ export function Dashboard() {
     droppedOverLimit: number
   } | null>(null)
   const [imageMenuOpenId, setImageMenuOpenId] = useState<string | null>(null)
+  // Photo action menu dismissal. The menu anchor (the open tile) is captured so
+  // focus can return to the photo after the menu closes; menuOpenUpward flips
+  // the popup above the trigger when there isn't room below (viewport clamp).
+  const photoMenuAnchorRef = useRef<HTMLDivElement | null>(null)
+  const [menuOpenUpward, setMenuOpenUpward] = useState(false)
+  const closePhotoMenu = useCallback(() => {
+    // Only pull focus back to the photo when the dismissal came from within the
+    // menu (Escape / keyboard) — if the user clicked elsewhere, leave focus
+    // where they put it so we don't fight a lightbox or another control for it.
+    const active = document.activeElement as HTMLElement | null
+    const fromKeyboard = !!active?.closest('[role="menu"]')
+    setImageMenuOpenId(null)
+    if (fromKeyboard) {
+      const el = photoMenuAnchorRef.current
+      if (el) requestAnimationFrame(() => { try { el.focus({ preventScroll: true }) } catch { /* ignore */ } })
+    }
+  }, [])
+  // Outside-click + Escape dismissal, reusing the shared portal primitive. Ref
+  // is attached to the open popup; clicking anywhere outside it (or Escape)
+  // closes the menu and returns focus to the photo.
+  const photoMenuRef = useDismiss<HTMLDivElement>(imageMenuOpenId !== null, closePhotoMenu)
   const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
   const [photoSort, setPhotoSort] = useState<'order' | 'name' | 'newest'>('order')
   // Drag-to-reorder state. Only meaningful when photoSort === 'order'.
@@ -414,6 +436,21 @@ export function Dashboard() {
   // per-tile "..." menu.
   const [draggedImageId, setDraggedImageId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  // Close the photo menu whenever the editor context shifts out from under it:
+  // switching editor tab, switching the active section, entering select mode,
+  // or opening/closing/navigating between galleries. Setting to the same null
+  // value is a no-op in React, so this is safe to run on every such change.
+  useEffect(() => {
+    setImageMenuOpenId(null)
+  }, [editTab, activeSectionId, selectMode, editingGallery?.id])
+  // When the menu opens, move focus to its first item for keyboard users.
+  useEffect(() => {
+    if (imageMenuOpenId === null) return
+    const el = photoMenuRef.current
+    if (!el) return
+    const first = el.querySelector<HTMLButtonElement>('button')
+    requestAnimationFrame(() => { try { first?.focus({ preventScroll: true }) } catch { /* ignore */ } })
+  }, [imageMenuOpenId, photoMenuRef])
   // Section drag-reorder — mirrors the image-tile pattern but operates on the
   // sidebar section list. Sort order persists to gallery_sections.sort_order
   // and the row order updates optimistically as the user drags.
@@ -3982,6 +4019,9 @@ export function Dashboard() {
                           return (
                             <div
                               key={img.id}
+                              ref={isMenuOpen ? photoMenuAnchorRef : undefined}
+                              tabIndex={isMenuOpen ? -1 : undefined}
+                              data-photo-tile={img.id}
                               draggable={dragEnabled}
                               onDragStart={(e) => {
                                 if (!dragEnabled) return
@@ -4104,7 +4144,18 @@ export function Dashboard() {
                               {/* Menu trigger — only on hover */}
                               {showHoverOverlay && (
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); setImageMenuOpenId(isMenuOpen ? null : img.id) }}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    // Clicking the trigger of the open menu closes it (and
+                                    // returns focus to the photo). Otherwise open, deciding
+                                    // up/down flip from the room left below the trigger.
+                                    if (isMenuOpen) { closePhotoMenu(); return }
+                                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                                    setMenuOpenUpward(window.innerHeight - r.bottom < 240)
+                                    setImageMenuOpenId(img.id)
+                                  }}
+                                  aria-haspopup="menu"
+                                  aria-expanded={isMenuOpen}
                                   aria-label="תפריט תמונה"
                                   style={{
                                     position: 'absolute', top: 8, insetInlineEnd: 8,
@@ -4145,12 +4196,35 @@ export function Dashboard() {
                                   hitting on the cover slot). */}
                               {isMenuOpen && (
                                 <div
+                                  ref={photoMenuRef}
+                                  role="menu"
+                                  aria-orientation="vertical"
+                                  aria-label="פעולות תמונה"
                                   onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+                                    e.preventDefault()
+                                    const items = Array.from(
+                                      photoMenuRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? [],
+                                    )
+                                    if (!items.length) return
+                                    const cur = items.indexOf(document.activeElement as HTMLButtonElement)
+                                    const next = e.key === 'ArrowDown'
+                                      ? (cur + 1) % items.length
+                                      : (cur - 1 + items.length) % items.length
+                                    items[next]?.focus({ preventScroll: true })
+                                  }}
                                   style={{
-                                    position: 'absolute', top: 38, right: 8,
+                                    position: 'absolute',
+                                    // Flip above the trigger when there's no room below,
+                                    // so the popup always stays inside the viewport.
+                                    top: menuOpenUpward ? undefined : 38,
+                                    bottom: menuOpenUpward ? 38 : undefined,
+                                    right: 8,
                                     background: cardSolid, border: `1px solid ${border}`,
                                     boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 5,
                                     minWidth: 180, padding: 4, direction: 'rtl' as const,
+                                    maxHeight: 'min(60vh, 360px)', overflowY: 'auto',
                                   }}
                                 >
                                   {/* Move to set — sub-list */}
@@ -4164,7 +4238,7 @@ export function Dashboard() {
                                           photo to where it already lives is a wasted round-trip and
                                           made the menu visually noisy. */}
                                       {sections.filter(s => s.id !== img.section_id).map(s => (
-                                        <button key={s.id}
+                                        <button key={s.id} role="menuitem"
                                           onClick={() => { moveImageToSection(img.id, s.id); setImageMenuOpenId(null) }}
                                           style={{
                                             width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -4180,7 +4254,7 @@ export function Dashboard() {
                                       only meaningful when sorted manually. */}
                                   {photoSort === 'order' && (
                                     <>
-                                      <button
+                                      <button role="menuitem"
                                         onClick={() => { moveImageStep(img.id, 'up'); setImageMenuOpenId(null) }}
                                         style={{
                                           width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -4191,7 +4265,7 @@ export function Dashboard() {
                                         <span>הזז קדימה</span>
                                         <span aria-hidden="true">↑</span>
                                       </button>
-                                      <button
+                                      <button role="menuitem"
                                         onClick={() => { moveImageStep(img.id, 'down'); setImageMenuOpenId(null) }}
                                         style={{
                                           width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -4205,7 +4279,7 @@ export function Dashboard() {
                                       <div style={{ height: 1, background: border, margin: '4px 0' }} />
                                     </>
                                   )}
-                                  <button
+                                  <button role="menuitem"
                                     onClick={() => { downloadOriginal(img.id); setImageMenuOpenId(null) }}
                                     style={{
                                       width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -4216,7 +4290,7 @@ export function Dashboard() {
                                     <span>הורדה</span>
                                     <Icon name="download" size={13} strokeWidth={1.85} />
                                   </button>
-                                  <button
+                                  <button role="menuitem"
                                     onClick={() => { deleteSingleImage(img.id); setImageMenuOpenId(null) }}
                                     style={{
                                       width: '100%', textAlign: 'right' as const, padding: '8px 10px',
