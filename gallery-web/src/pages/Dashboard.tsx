@@ -5,7 +5,7 @@ import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany, partitionUploadFiles, MAX_UPLOAD_BATCH, type UploadRejectReason } from '../lib/uploadPipeline'
 import { uploadCoverImage, deleteCoverObject, CoverUploadError, type CoverUploadPhase } from '../lib/coverUpload'
-import { readCoverConfig } from '../lib/coverImage'
+import { readCoverConfig, coverPathBelongsToGallery } from '../lib/coverImage'
 import { fetchAllGalleryImages } from '../lib/fetchAllImages'
 import { classifyForUpload, extractExistingKeys, type ExistingImageRef } from '../lib/dedupeUpload'
 import { captureException } from '@sentry/react'
@@ -336,19 +336,28 @@ export function Dashboard() {
   // logically writes several keys at once (e.g. cover selection writing both
   // the canonical storage path and the legacy URL fallback in the same patch).
   // One DB round-trip, one optimistic UI update, one rollback path.
-  async function updateGallerySettings(patch: Record<string, unknown>) {
-    if (!editingGallery) return
+  async function updateGallerySettings(patch: Record<string, unknown>): Promise<boolean> {
+    if (!editingGallery) return false
+    const gid = editingGallery.id
     const prevSettings = editingGallery.delivery_settings || {}
     const nextSettings = { ...prevSettings, ...patch }
     setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
+    // Keep the dashboard gallery card (which reads delivery_settings off the
+    // galleries list, not editingGallery) in sync so cover/grid/branding
+    // changes show immediately behind the editor without a refetch.
+    setGalleries(prev => prev.map(g =>
+      g.id === gid ? { ...g, delivery_settings: nextSettings } : g))
     markDirty()
-    const { ok, errors } = await saveDeliverySettings(editingGallery.id, patch)
+    const { ok, errors } = await saveDeliverySettings(gid, patch)
     if (!ok) {
-      setEditingGallery(g => g && g.id === editingGallery.id
+      setEditingGallery(g => g && g.id === gid
         ? { ...g, delivery_settings: prevSettings } : g)
+      setGalleries(prev => prev.map(g =>
+        g.id === gid ? { ...g, delivery_settings: prevSettings } : g))
       showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
       console.warn('[updateGallerySettings]', patch, errors)
     }
+    return ok
   }
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number; description?: string | null }>>([])
   const [newSectionName, setNewSectionName] = useState('')
@@ -2021,19 +2030,36 @@ export function Dashboard() {
 
   // Pick an existing gallery photo as the cover. Switching away from a custom
   // upload removes the now-unused uploaded object.
-  async function selectGalleryCover(img: GalleryImage) {
-    if (!editingGallery) return
+  //
+  // Ownership: the image must be one of the currently-loaded photos of the
+  // gallery being edited (gallery_get_images only returns this owner's gallery
+  // images), so an image from another gallery or business can never be routed
+  // here. The write itself goes through update_gallery_settings, which is
+  // SECURITY DEFINER + owner-checked, and (delivery-settings allowlist
+  // migration) rejects a gallery_asset cover path not under this gallery's id.
+  async function selectGalleryCover(img: GalleryImage): Promise<boolean> {
+    if (!editingGallery) return false
+    if (!galleryImages.some(i => i.id === img.id)) {
+      console.warn('[selectGalleryCover] image not in current gallery — refused', img.id)
+      return false
+    }
+    // Defense in depth: the storage path must live under this gallery's id.
+    if (!coverPathBelongsToGallery(img.storage_path, editingGallery.id)) {
+      console.warn('[selectGalleryCover] cover path outside gallery — refused', img.storage_path)
+      return false
+    }
     const prevCfg = readCoverConfig((editingGallery.delivery_settings ?? {}) as Record<string, unknown>)
-    await updateGallerySettings({
+    const ok = await updateGallerySettings({
       coverEnabled: true,
       coverSource: 'gallery_asset',
       coverImagePath: img.storage_path,
       coverImageUrl: imgUrl(img.storage_path),
       coverImageId: img.id,
     })
-    if (prevCfg.source === 'custom_upload' && prevCfg.path && prevCfg.path !== img.storage_path) {
+    if (ok && prevCfg.source === 'custom_upload' && prevCfg.path && prevCfg.path !== img.storage_path) {
       void deleteCoverObject(prevCfg.path)
     }
+    return ok
   }
 
   // Default the cover editor to the tab matching the current source whenever a
@@ -2212,6 +2238,19 @@ export function Dashboard() {
       showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + error.message })
       console.warn('[deleteSingleImage]', error)
       return
+    }
+    // If the deleted photo was the gallery-asset cover, clear the cover so the
+    // viewer falls back to its default (no broken/404 cover image).
+    const deleted = galleryImages.find(i => i.id === imageId)
+    const coverCfg = readCoverConfig((editingGallery.delivery_settings ?? {}) as Record<string, unknown>)
+    if (deleted && coverCfg.source === 'gallery_asset' && coverCfg.path === deleted.storage_path) {
+      void updateGallerySettings({
+        coverEnabled: false,
+        coverSource: 'none',
+        coverImagePath: null,
+        coverImageUrl: null,
+        coverImageId: null,
+      })
     }
     setGalleryImages(prev => prev.filter(i => i.id !== imageId))
     markDirty()
@@ -3999,6 +4038,16 @@ export function Dashboard() {
                       const VIRTUALIZE_THRESHOLD = 300
                       const shouldVirtualizeDashboard =
                         visibleImages.length > VIRTUALIZE_THRESHOLD
+                      // Current cover — canonical source of truth is the
+                      // gallery's delivery_settings (coverImagePath, a stable
+                      // storage path, never a signed URL). A tile is "the cover"
+                      // only when the gallery uses a gallery photo as its cover
+                      // and that photo's storage path matches.
+                      const coverCfgGrid = readCoverConfig(
+                        (editingGallery?.delivery_settings ?? {}) as Record<string, unknown>,
+                      )
+                      const currentCoverPath =
+                        coverCfgGrid.source === 'gallery_asset' ? coverCfgGrid.path : null
                       // Tile renderer — shared between the non-virtualized
                       // grid and the FixedSizeGrid cell renderer so per-tile
                       // UX (drag, hover overlay, menu) is identical.
@@ -4006,6 +4055,7 @@ export function Dashboard() {
                           const isSelected = selectedImageIds.has(img.id)
                           const isHovered = hoveredImageId === img.id
                           const isMenuOpen = imageMenuOpenId === img.id
+                          const isCover = currentCoverPath != null && currentCoverPath === img.storage_path
                           // The hover overlay only appears when not in select
                           // mode — once you're selecting, the click target is
                           // the whole tile and per-tile actions disappear.
@@ -4116,6 +4166,32 @@ export function Dashboard() {
                                   transition: 'filter .15s',
                                 }}
                               />
+
+                              {/* Cover marker — always visible on the tile that is
+                                  the gallery's current cover, so the photographer can
+                                  see at a glance which photo represents the gallery. */}
+                              {isCover && !selectMode && (
+                                <div
+                                  aria-label="תמונת השער של הגלריה"
+                                  style={{
+                                    position: 'absolute', bottom: 8, insetInlineStart: 8,
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                    padding: '3px 8px', borderRadius: 999,
+                                    background: 'rgba(0,0,0,.62)', color: '#fff',
+                                    fontSize: 10, fontWeight: 600, letterSpacing: '.04em',
+                                    pointerEvents: 'none', zIndex: 3,
+                                  }}
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" strokeWidth="2.2"
+                                    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                                    <circle cx="8.5" cy="8.5" r="1.6" />
+                                    <path d="M21 15l-5-5L5 21" />
+                                  </svg>
+                                  <span>קאבר</span>
+                                </div>
+                              )}
 
                               {/* Star — always shown if pinned, otherwise only on hover.
                                   Click toggles is_top_pick without entering select mode. */}
@@ -4279,6 +4355,49 @@ export function Dashboard() {
                                       <div style={{ height: 1, background: border, margin: '4px 0' }} />
                                     </>
                                   )}
+                                  {/* Set / Remove gallery cover — reuses the canonical
+                                      cover model (delivery_settings.coverImagePath). The
+                                      current cover offers "remove"; any other photo offers
+                                      "set as cover". Optimistic write with rollback + a
+                                      confirmation toast live in the handlers. */}
+                                  {isCover ? (
+                                    <button role="menuitem"
+                                      onClick={() => {
+                                        setImageMenuOpenId(null)
+                                        void (async () => {
+                                          await handleCoverRemove()
+                                          showToast({ kind: 'success', text: 'תמונת השער הוסרה' })
+                                        })()
+                                      }}
+                                      style={{
+                                        width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                        background: 'transparent', border: 'none', cursor: 'pointer',
+                                        fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                      }}>
+                                      <span>הסר תמונת קאבר</span>
+                                      <Icon name="close" size={13} strokeWidth={1.85} />
+                                    </button>
+                                  ) : (
+                                    <button role="menuitem"
+                                      onClick={() => {
+                                        setImageMenuOpenId(null)
+                                        void (async () => {
+                                          const ok = await selectGalleryCover(img)
+                                          if (ok) showToast({ kind: 'success', text: 'הוגדר כתמונת השער' })
+                                        })()
+                                      }}
+                                      style={{
+                                        width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                        background: 'transparent', border: 'none', cursor: 'pointer',
+                                        fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                      }}>
+                                      <span>הגדר כתמונת קאבר</span>
+                                      <Icon name="photo" size={13} strokeWidth={1.85} />
+                                    </button>
+                                  )}
+                                  <div style={{ height: 1, background: border, margin: '4px 0' }} />
                                   <button role="menuitem"
                                     onClick={() => { downloadOriginal(img.id); setImageMenuOpenId(null) }}
                                     style={{
