@@ -168,6 +168,8 @@ const RULES: Record<string, FieldRule> = {
   // allowlist), so the value was silently rejected on save and the control did
   // nothing. Added on both sides; maps to imageSpacing in the viewer.
   gridSpacing:          oneOf('מרווח בין תמונות', ['regular', 'large'] as const),
+  // Gallery appearance (background + text). Curated, contrast-safe themes.
+  appearance:           oneOf('מראה', ['editorial', 'light', 'dark'] as const),
   cornerStyle:          oneOf('סגנון פינות', ['sharp', 'rounded'] as const),
   feedLayout:           oneOf('פריסת פיד', ['grid', 'masonry', 'carousel'] as const),
   welcomeStyle:         oneOf('סגנון פתיחה', ['mosaic', 'cinematic', 'minimal'] as const),

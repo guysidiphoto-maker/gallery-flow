@@ -5,7 +5,7 @@
 
 import {
   resolveGalleryBranding, readableInkOn, hexToRgbTriplet,
-  normalizeAccentId, ACCENT_PALETTE,
+  normalizeAccentId, ACCENT_PALETTE, APPEARANCE_THEMES, normalizeAppearance,
 } from '../src/lib/galleryBranding.ts'
 
 let pass = 0, fail = 0
@@ -69,6 +69,34 @@ function ok(name: string, cond: boolean, detail = '') {
   // Malformed brand accent is ignored (falls back to default) — no invisible UI.
   const badBrand = resolveGalleryBranding({}, { accentHex: 'not-a-hex' })
   ok('malformed brand accent ignored → default', badBrand.accentHex === ACCENT_PALETTE.charcoal.hex)
+}
+
+// ── Appearance theme (light / dark / editorial) ──────────────────────────────
+{
+  // Editorial default reproduces the classic dark viewer exactly.
+  const def = resolveGalleryBranding({})
+  ok('default appearance is editorial', def.appearance === 'editorial')
+  ok('editorial theme = current dark bg/text (no regression)',
+    def.theme.bg === '#0a0a0f' && def.theme.text === '#ffffff')
+  // Gallery override selects a curated theme.
+  const light = resolveGalleryBranding({ appearance: 'light' })
+  ok('light appearance flips to a light bg + dark text',
+    light.appearance === 'light' && light.theme.bg === '#faf9f7' && light.theme.text === '#141413')
+  const dark = resolveGalleryBranding({ appearance: 'dark' })
+  ok('dark appearance resolves the dark theme', dark.appearance === 'dark' && dark.theme.text === '#fafafa')
+  // Inheritance: brand appearance is the default when the gallery has none.
+  const inheritLight = resolveGalleryBranding({}, { appearance: 'light' })
+  ok('brand appearance inherited when no gallery override', inheritLight.appearance === 'light')
+  const overrideBeatsBrand = resolveGalleryBranding({ appearance: 'dark' }, { appearance: 'light' })
+  ok('gallery appearance override beats brand appearance', overrideBeatsBrand.appearance === 'dark')
+  // Bogus values are coerced to the safe default (never an unstyled page).
+  ok('bogus appearance → editorial', normalizeAppearance('neon') === 'editorial')
+  // Every curated theme is contrast-accessible (readable ink matches its text tone).
+  ok('every appearance theme is defined with bg+text+surface+muted',
+    (['editorial', 'light', 'dark'] as const).every(a => {
+      const t = APPEARANCE_THEMES[a]
+      return !!t.bg && !!t.text && !!t.surface && !!t.textMuted
+    }))
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

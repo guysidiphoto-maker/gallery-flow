@@ -1691,6 +1691,12 @@ export function App() {
     )
     el.style.setProperty('--accent', b.accentRgb)
     el.style.setProperty('--accent-ink', b.accentInk)
+    // Appearance theme (curated, contrast-safe background/text/surface).
+    el.style.setProperty('--bg', b.theme.bg)
+    el.style.setProperty('--surface', b.theme.surface)
+    el.style.setProperty('--text', b.theme.text)
+    el.style.setProperty('--text-muted', b.theme.textMuted)
+    el.setAttribute('data-appearance', b.appearance)
     if (b.headingFont) el.style.setProperty('--font-heading', `'${b.headingFont}'`)
     else el.style.removeProperty('--font-heading')
     if (b.bodyFont) el.style.setProperty('--font-body', `'${b.bodyFont}'`)
@@ -1698,6 +1704,11 @@ export function App() {
     return () => {
       el.style.removeProperty('--accent')
       el.style.removeProperty('--accent-ink')
+      el.style.removeProperty('--bg')
+      el.style.removeProperty('--surface')
+      el.style.removeProperty('--text')
+      el.style.removeProperty('--text-muted')
+      el.removeAttribute('data-appearance')
       el.style.removeProperty('--font-heading')
       el.style.removeProperty('--font-body')
     }

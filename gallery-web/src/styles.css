@@ -62,8 +62,11 @@
 }
 
 body {
-  background: #0a0a0f;
-  color: #fff;
+  /* --bg / --text are set by the gallery viewer from the resolved appearance
+     (editorial = these exact defaults, so existing galleries are unchanged;
+     light / dark flip the page with curated, contrast-safe palettes). */
+  background: var(--bg, #0a0a0f);
+  color: var(--text, #fff);
   /* Editorial type stack — Pic-Time-inspired "Quiet Magazine" aesthetic.
      Noto Sans Hebrew is purpose-built for Hebrew rendering (recommended
      by UI UX Pro Max for Israeli-market products) and pairs cleanly with
@@ -1036,10 +1039,11 @@ input, button, textarea, select {
   right: 0;
   bottom: 0;
   height: 1px;
+  /* Neutral gradient so the underline shows on both light and dark appearances. */
   background: linear-gradient(
     to right,
-    rgba(255, 255, 255, 0.14) 0%,
-    rgba(255, 255, 255, 0.06) 40%,
+    rgba(128, 128, 128, 0.28) 0%,
+    rgba(128, 128, 128, 0.12) 40%,
     transparent 80%
   );
 }
@@ -1048,7 +1052,8 @@ input, button, textarea, select {
   font-size: clamp(19px, 2.2vw, 26px);
   font-weight: 700;
   letter-spacing: -0.018em;
-  color: rgba(255, 255, 255, 0.96);
+  /* Theme-aware so the section title stays readable on light + dark appearances. */
+  color: var(--text, rgba(255, 255, 255, 0.96));
   flex: 1;
 }
 
@@ -1057,10 +1062,10 @@ input, button, textarea, select {
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted, rgba(255, 255, 255, 0.35));
   padding: 3px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(128, 128, 128, 0.10);
 }
 
 /* Optional photographer-written sub-line under the chapter heading. Treated as
@@ -1071,7 +1076,7 @@ input, button, textarea, select {
   max-width: 56ch;
   font-size: 14px;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-muted, rgba(255, 255, 255, 0.55));
   font-weight: 400;
 }
 

@@ -34,6 +34,34 @@ const LEGACY_ACCENT_ALIAS: Record<string, AccentId> = {
 
 const DEFAULT_ACCENT: AccentId = 'charcoal'
 
+// ── Appearance (background / text) themes ───────────────────────────────────
+// A CONTROLLED set of curated, contrast-validated palettes — not arbitrary
+// color pickers — so a gallery's background + text can never become
+// inaccessible. 'editorial' reproduces the current viewer EXACTLY (byte-for-hex)
+// so existing galleries are visually unchanged; 'light' and 'dark' flip the
+// page. Accent + accent-ink are resolved separately and layer on top.
+export type Appearance = 'editorial' | 'light' | 'dark'
+
+export interface AppearanceTheme {
+  bg: string          // page background
+  surface: string     // cards / raised chrome
+  text: string        // primary text (WCAG AA on bg)
+  textMuted: string   // secondary text (AA-large on bg)
+}
+
+export const APPEARANCE_THEMES: Record<Appearance, AppearanceTheme> = {
+  // Matches styles.css body defaults today — DO NOT change (backward compat).
+  editorial: { bg: '#0a0a0f', surface: '#141419', text: '#ffffff', textMuted: 'rgba(255,255,255,0.65)' },
+  dark:      { bg: '#111114', surface: '#1c1c22', text: '#fafafa', textMuted: 'rgba(250,250,250,0.62)' },
+  light:     { bg: '#faf9f7', surface: '#ffffff', text: '#141413', textMuted: 'rgba(20,20,19,0.60)' },
+}
+
+const DEFAULT_APPEARANCE: Appearance = 'editorial'
+
+export function normalizeAppearance(v: string | null | undefined): Appearance {
+  return v === 'light' || v === 'dark' || v === 'editorial' ? v : DEFAULT_APPEARANCE
+}
+
 /**
  * Business Brand Kit defaults, exposed to the public viewer via gallery_get_meta
  * (only this safe subset — accent hex + fonts + logo — is surfaced, never the
@@ -45,6 +73,7 @@ export interface BrandDefaults {
   headingFont?: string | null
   bodyFont?: string | null
   logoUrl?: string | null
+  appearance?: string | null
 }
 
 export interface ResolvedBranding {
@@ -59,6 +88,9 @@ export interface ResolvedBranding {
   bodyFont: string | null
   /** True when the accent came from the business Brand Kit, not a gallery override. */
   usingBrandAccent: boolean
+  /** Resolved appearance + its curated, contrast-safe background/text palette. */
+  appearance: Appearance
+  theme: AppearanceTheme
 }
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
@@ -134,6 +166,9 @@ export function resolveGalleryBranding(
   // Fonts inherit the brand family when the gallery hasn't chosen one.
   const headingFont = str(raw, 'headingFont') ?? (brand?.headingFont?.trim() || null)
   const bodyFont = str(raw, 'bodyFont') ?? (brand?.bodyFont?.trim() || null)
+  // Appearance: gallery override → brand default → editorial. Curated palette,
+  // so background/text are always accessible regardless of the choice.
+  const appearance = normalizeAppearance(str(raw, 'appearance') ?? brand?.appearance ?? null)
   return {
     accentId,
     accentHex,
@@ -142,5 +177,7 @@ export function resolveGalleryBranding(
     headingFont,
     bodyFont,
     usingBrandAccent,
+    appearance,
+    theme: APPEARANCE_THEMES[appearance],
   }
 }
