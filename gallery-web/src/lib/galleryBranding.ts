@@ -34,8 +34,22 @@ const LEGACY_ACCENT_ALIAS: Record<string, AccentId> = {
 
 const DEFAULT_ACCENT: AccentId = 'charcoal'
 
+/**
+ * Business Brand Kit defaults, exposed to the public viewer via gallery_get_meta
+ * (only this safe subset — accent hex + fonts + logo — is surfaced, never the
+ * full brand_kit). When a gallery has no per-gallery override for a property,
+ * the resolver inherits it from here.
+ */
+export interface BrandDefaults {
+  accentHex?: string | null
+  headingFont?: string | null
+  bodyFont?: string | null
+  logoUrl?: string | null
+}
+
 export interface ResolvedBranding {
-  accentId: AccentId
+  /** Palette id when a gallery override is set; null when inheriting a brand hex. */
+  accentId: AccentId | null
   accentHex: string
   /** "r, g, b" — for `--accent`, consumed by every rgb(var(--accent)) rule. */
   accentRgb: string
@@ -43,7 +57,11 @@ export interface ResolvedBranding {
   accentInk: string
   headingFont: string | null
   bodyFont: string | null
+  /** True when the accent came from the business Brand Kit, not a gallery override. */
+  usingBrandAccent: boolean
 }
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/
 
 function str(raw: Record<string, unknown> | null | undefined, key: string): string | null {
   const v = raw?.[key]
@@ -94,15 +112,35 @@ export function normalizeAccentId(id: string | null | undefined): AccentId {
 /** Resolve colors + fonts for a gallery from its delivery_settings. */
 export function resolveGalleryBranding(
   raw: Record<string, unknown> | null | undefined,
+  brand?: BrandDefaults | null,
 ): ResolvedBranding {
-  const accentId = normalizeAccentId(str(raw, 'themeColor'))
-  const accentHex = ACCENT_PALETTE[accentId].hex
+  // Accent inheritance: a gallery override (themeColor palette id) wins; else
+  // the business Brand Kit accent hex; else the editorial default.
+  const themeColorId = str(raw, 'themeColor')
+  let accentId: AccentId | null
+  let accentHex: string
+  let usingBrandAccent = false
+  if (themeColorId) {
+    accentId = normalizeAccentId(themeColorId)
+    accentHex = ACCENT_PALETTE[accentId].hex
+  } else if (brand?.accentHex && HEX_RE.test(brand.accentHex)) {
+    accentId = null
+    accentHex = brand.accentHex
+    usingBrandAccent = true
+  } else {
+    accentId = DEFAULT_ACCENT
+    accentHex = ACCENT_PALETTE[DEFAULT_ACCENT].hex
+  }
+  // Fonts inherit the brand family when the gallery hasn't chosen one.
+  const headingFont = str(raw, 'headingFont') ?? (brand?.headingFont?.trim() || null)
+  const bodyFont = str(raw, 'bodyFont') ?? (brand?.bodyFont?.trim() || null)
   return {
     accentId,
     accentHex,
     accentRgb: hexToRgbTriplet(accentHex),
     accentInk: readableInkOn(accentHex),
-    headingFont: str(raw, 'headingFont'),
-    bodyFont: str(raw, 'bodyFont'),
+    headingFont,
+    bodyFont,
+    usingBrandAccent,
   }
 }

@@ -1677,6 +1677,32 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewerIndex, viewerList, images])
 
+  // Apply the resolved gallery branding (accent + fonts — including live Brand
+  // Kit inheritance for galleries with no per-gallery override) as CSS variables
+  // on :root, so the brand reaches EVERY sub-view: the welcome/cover screen and
+  // the password gate (both early returns) as well as the main gallery grid.
+  // Runs before any early return so hook order stays stable.
+  useEffect(() => {
+    const el = document.documentElement
+    if (!gallery) return
+    const b = resolveGalleryBranding(
+      (gallery.delivery_settings ?? {}) as unknown as Record<string, unknown>,
+      (gallery as unknown as { brand?: import('./lib/galleryBranding').BrandDefaults }).brand,
+    )
+    el.style.setProperty('--accent', b.accentRgb)
+    el.style.setProperty('--accent-ink', b.accentInk)
+    if (b.headingFont) el.style.setProperty('--font-heading', `'${b.headingFont}'`)
+    else el.style.removeProperty('--font-heading')
+    if (b.bodyFont) el.style.setProperty('--font-body', `'${b.bodyFont}'`)
+    else el.style.removeProperty('--font-body')
+    return () => {
+      el.style.removeProperty('--accent')
+      el.style.removeProperty('--accent-ink')
+      el.style.removeProperty('--font-heading')
+      el.style.removeProperty('--font-body')
+    }
+  }, [gallery])
+
   if (error) {
     // Map internal English error keys to a localized, branded fallback. The
     // raw "Gallery not found" string was leaking to Hebrew clients hitting a
@@ -1738,10 +1764,14 @@ export function App() {
   // backward-compatible fallback so pre-Design-tab galleries look unchanged.
   const { layoutMode, imageSpacing } = resolveGridLayout(raw as Record<string, unknown>, isFeedMode)
   const cornerStyle      = isFeedMode ? 'sharp' : s(raw, 'cornerStyle', 'sharp')
-  // Typography — fonts the photographer picked in Design > Typography.
-  // Falls through to the dashboard's base stack if unset.
-  const headingFont      = (((raw as Record<string, unknown>).headingFont as string) || '').trim()
-  const bodyFont         = (((raw as Record<string, unknown>).bodyFont as string) || '').trim()
+  // Business Brand Kit defaults surfaced on the meta (gallery.brand) — accent
+  // hex + fonts + logo only. A per-gallery override always wins; otherwise these
+  // are inherited (resolved in resolveGalleryBranding, below).
+  const brandDefaults = (gallery as unknown as { brand?: import('./lib/galleryBranding').BrandDefaults }).brand
+  // Typography — the photographer's Design > Typography choice, else the brand
+  // font, else the dashboard's base stack.
+  const headingFont      = ((((raw as Record<string, unknown>).headingFont as string) || brandDefaults?.headingFont || '') as string).trim()
+  const bodyFont         = ((((raw as Record<string, unknown>).bodyFont as string) || brandDefaults?.bodyFont || '') as string).trim()
   const studioName       = s(raw, 'studioName', '')
   const studioWebsite    = (raw as Record<string, unknown>).studioWebsite as string || ''
   const showFooterCredit = s(raw, 'showFooterCredit', true)
@@ -1766,8 +1796,10 @@ export function App() {
   // indigo into the cream design.
   // Colors + fonts resolved through the single shared branding resolver (same
   // palette + contrast rules the editor uses), so Live and the editor preview
-  // never disagree. themeColor picks the accent; legacy ids are normalized.
-  const branding = resolveGalleryBranding(raw as Record<string, unknown>)
+  // never disagree. A per-gallery override (themeColor / fonts) wins; otherwise
+  // the resolver inherits the business Brand Kit defaults surfaced on the meta
+  // (gallery.brand — accent hex + fonts only, never the full brand_kit).
+  const branding = resolveGalleryBranding(raw as Record<string, unknown>, brandDefaults)
   const themeAccent = branding.accentHex
 
   // Watermark settings — applied as a CSS overlay on web previews. Originals

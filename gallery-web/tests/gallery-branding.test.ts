@@ -47,5 +47,29 @@ function ok(name: string, cond: boolean, detail = '') {
   ok('blank/whitespace font is treated as unset', blank.headingFont === null)
 }
 
+// ── Brand Kit inheritance (business kit → gallery default, override wins) ────
+{
+  const brand = { accentHex: '#7C3AED', headingFont: 'Playfair Display', bodyFont: 'Heebo', logoUrl: 'x' }
+  // No gallery override → inherit the brand accent + fonts.
+  const inherited = resolveGalleryBranding({}, brand)
+  ok('no override inherits brand accent hex', inherited.accentHex === '#7C3AED')
+  ok('no override marks usingBrandAccent', inherited.usingBrandAccent === true)
+  ok('no override inherits brand fonts',
+    inherited.headingFont === 'Playfair Display' && inherited.bodyFont === 'Heebo')
+  ok('inherited accent still gets contrast-safe ink', inherited.accentInk === '#ffffff')
+  // Gallery override WINS over the brand default.
+  const overridden = resolveGalleryBranding({ themeColor: 'teal', headingFont: 'Heebo' }, brand)
+  ok('gallery themeColor override beats brand accent',
+    overridden.accentHex === ACCENT_PALETTE.teal.hex && overridden.usingBrandAccent === false)
+  ok('gallery font override beats brand, other font still inherits',
+    overridden.headingFont === 'Heebo' && overridden.bodyFont === 'Heebo')
+  // No brand + no override → editorial default (unchanged legacy behavior).
+  const bare = resolveGalleryBranding({}, null)
+  ok('no brand + no override → charcoal default', bare.accentId === 'charcoal' && bare.usingBrandAccent === false)
+  // Malformed brand accent is ignored (falls back to default) — no invisible UI.
+  const badBrand = resolveGalleryBranding({}, { accentHex: 'not-a-hex' })
+  ok('malformed brand accent ignored → default', badBrand.accentHex === ACCENT_PALETTE.charcoal.hex)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)
