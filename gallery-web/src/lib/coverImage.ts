@@ -72,6 +72,24 @@ export function coverIsEnabled(
 }
 
 /**
+ * Ownership guard for a gallery-photo cover. Gallery image storage paths are
+ * laid out as `{business-slug}/{galleryId}/originals|thumbnails|web/...`, so a
+ * photo that belongs to this gallery always carries the gallery id as a path
+ * segment. A cover path missing that segment points at another gallery (or
+ * another business) and must be rejected. The update_gallery_settings RPC is
+ * already owner-checked, so a cover from another BUSINESS is impossible; this
+ * guard additionally blocks a cross-GALLERY path within the same business and
+ * keeps the UI from ever offering one.
+ */
+export function coverPathBelongsToGallery(
+  path: string | null | undefined,
+  galleryId: string | null | undefined,
+): boolean {
+  if (!path || !galleryId) return false
+  return path.split('/').includes(galleryId)
+}
+
+/**
  * Background URL for the PRIVATE gate (password / private face-search).
  *
  * Deliberately small + low quality: the gate blurs the image hard, so extra

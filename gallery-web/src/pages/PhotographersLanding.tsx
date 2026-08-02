@@ -321,11 +321,6 @@ export function PhotographersLanding() {
             </Detect>
           ))}
         </div>
-        <Reveal delay={120}>
-          <p style={{ ...text.small, color: color.textMuted, textAlign: 'center', margin: `${space[5]}px auto 0`, maxWidth: 560, lineHeight: 1.7 }}>
-            מעדיפים לשלם לפי אירוע? גלריה בודדת חד-פעמית ב-$150, בלי מנוי.
-          </p>
-        </Reveal>
       </section>
 
       {/* ── FAQ ── */}

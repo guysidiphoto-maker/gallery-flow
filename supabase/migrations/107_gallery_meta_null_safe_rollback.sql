@@ -1,0 +1,6 @@
+-- Rollback for 107 — restores the 106 gallery_get_meta (brand subset, but the
+-- non-null-safe delivery_settings handling). Only safe where every gallery has
+-- an object delivery_settings.
+--
+-- To roll back, re-apply the body of 106_gallery_meta_brand_defaults.sql
+-- (its CREATE OR REPLACE FUNCTION public.gallery_get_meta) verbatim.

@@ -5,12 +5,13 @@ import { createHmac } from 'https://deno.land/std@0.177.0/node/crypto.ts'
 // ─────────────────────────────────────────────────────────────────────────────
 // lemonsqueezy-webhook — pricing model v2 (PR2, 2026-06-20)
 //
-// Two purchase types arrive here:
+// Handles subscription events only:
 //   • Subscriptions (pro / business / agency) — each billing cycle RESETS the
 //     monthly photo allowance via reset_subscription_tokens() (use-it-or-lose-
 //     it), instead of the old cumulative add_tokens() grant.
-//   • One-time gallery unlock — custom_data.purpose === 'gallery_unlock' marks
-//     a single gallery as paid via mark_gallery_paid(); never touches tokens.
+//
+// The one-time "$150 gallery unlock" (order_created → mark_gallery_paid) was
+// RETIRED and is no longer processed here.
 //
 // Variant→plan mapping is env-driven so the dashboard variant IDs aren't
 // hardcoded: LEMONSQUEEZY_VARIANT_PRO / _BUSINESS / _AGENCY.
@@ -86,24 +87,9 @@ async function resetMonthlyAllowance(
   console.log(`[webhook] Reset ${businessId} to ${count} tokens (${planId}, charge ${chargeId})`)
 }
 
-/** Mark a single gallery as paid (one-time unlock). Idempotent per order. */
-async function unlockGallery(
-  businessId: string, galleryId: string, orderId: string, source: string,
-): Promise<void> {
-  if (!businessId || !galleryId || !orderId) return
-  const refUuid = await stableUuid(orderId)
-  const { error } = await supabase.rpc('mark_gallery_paid', {
-    p_business_id: businessId,
-    p_gallery_id: galleryId,
-    p_ref_id: refUuid,
-    p_metadata: { source, lemonsqueezy_order_id: orderId },
-  })
-  if (error) {
-    console.error('[webhook] mark_gallery_paid failed:', error)
-    throw new Error('mark_gallery_paid failed')
-  }
-  console.log(`[webhook] Unlocked gallery ${galleryId} for ${businessId} (order ${orderId})`)
-}
+// NOTE: unlockGallery() (which called mark_gallery_paid) was removed with the
+// retirement of the one-time "$150 gallery unlock" feature. The DB function
+// mark_gallery_paid is left in place (non-destructive) but is no longer invoked.
 
 serve(async (req) => {
   const signature = req.headers.get('x-signature')
@@ -161,15 +147,10 @@ serve(async (req) => {
         break
       }
 
-      case 'order_created': {
-        // One-time purchases. The only one-time SKU is the gallery unlock;
-        // subscription first-orders are handled via subscription_* events.
-        if (custom.purpose === 'gallery_unlock' && businessId && custom.gallery_id) {
-          const orderId = String(event.data?.id || attrs.order_id || '')
-          if (orderId) await unlockGallery(businessId, custom.gallery_id, orderId, 'order_created')
-        }
-        break
-      }
+      // NOTE: the 'order_created' → gallery_unlock handler was removed with the
+      // retirement of the one-time "$150 gallery unlock" feature. Subscription
+      // first-orders are handled via the subscription_* events above, so there
+      // is no remaining one-time SKU to process.
 
       case 'subscription_cancelled':
       case 'subscription_expired': {

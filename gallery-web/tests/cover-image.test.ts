@@ -7,7 +7,7 @@
 // their exact current behavior. Also proves the private-gate URL is small +
 // disabled-aware, and that source inference is correct.
 
-import { readCoverConfig, coverIsEnabled, gateCoverBackgroundUrl } from '../src/lib/coverImage.ts'
+import { readCoverConfig, coverIsEnabled, gateCoverBackgroundUrl, coverPathBelongsToGallery } from '../src/lib/coverImage.ts'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {
@@ -18,6 +18,27 @@ function ok(name: string, cond: boolean, detail = '') {
 const BUCKET = 'gallery-images'
 const GALLERY_ASSET = 'eclipse/GID/originals/abc_photo.jpg'
 const CUSTOM_COVER = 'eclipse/GID/covers/def_cover.jpg'
+
+// ── Cover ownership guard (Set-as-cover security) ────────────────────────────
+// A gallery photo's storage path always carries the gallery id as a segment:
+//   {slug}/{galleryId}/{originals|web|thumbs}/{hash}_{name}
+// so a foreign gallery/business image is rejected before it can become a cover.
+{
+  ok('own gallery photo passes the ownership guard',
+    coverPathBelongsToGallery('eclipse/GID/originals/abc_photo.jpg', 'GID') === true)
+  ok('own custom cover passes the ownership guard',
+    coverPathBelongsToGallery('eclipse/GID/covers/def_cover.jpg', 'GID') === true)
+  ok('foreign-gallery image is rejected',
+    coverPathBelongsToGallery('eclipse/OTHER_GID/originals/abc.jpg', 'GID') === false)
+  ok('foreign-business image is rejected',
+    coverPathBelongsToGallery('other-biz/OTHER_GID/originals/abc.jpg', 'GID') === false)
+  ok('empty path is rejected', coverPathBelongsToGallery('', 'GID') === false)
+  ok('null path is rejected', coverPathBelongsToGallery(null, 'GID') === false)
+  ok('missing gallery id is rejected',
+    coverPathBelongsToGallery('eclipse/GID/originals/abc.jpg', '') === false)
+  ok('gallery id as filename substring (not a segment) is rejected',
+    coverPathBelongsToGallery('eclipse/OTHER/originals/GID.jpg', 'GID') === false)
+}
 
 // ── Backward compat: legacy galleries (no coverEnabled / coverSource) ────────
 {

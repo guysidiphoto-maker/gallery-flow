@@ -1,6 +1,6 @@
 // PricingPage (/pricing) — first surface built on the Editorial design system.
 // Transparent pricing the marketing site previously lacked. Prices mirror the
-// `plans` table (migration 075) + the $150 one-time gallery (076-078).
+// `plans` table (migration 075). The one-time $150 gallery offer was retired.
 
 import { color, text, space, radius, font } from '../theme'
 import { Button, Card, Badge, Reveal, Detect } from '../components/ui'
@@ -123,30 +123,8 @@ export default function PricingPage() {
         ))}
       </section>
 
-      {/* One-time gallery */}
-      <section style={{ maxWidth: 1080, margin: `${space[7]}px auto 0`, padding: `0 clamp(20px, 5vw, 56px)` }}>
-        <Reveal>
-        <Card pad={32} style={{
-          display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
-          gap: space[4], background: color.surfaceAlt,
-        }}>
-          <div style={{ maxWidth: 560 }}>
-            <Badge tone="neutral">תשלום חד-פעמי</Badge>
-            <h2 style={{ ...text.h2, fontFamily: font.display, margin: `${space[2]}px 0 ${space[2]}px` }}>
-              רק גלריה אחת? שלם פעם אחת.
-            </h2>
-            <p style={{ ...text.body, color: color.inkSoft, margin: 0 }}>
-              מושלם לאירוע בודד — הזוג מקבל גלריה מלאה עם זיהוי פנים והורדות, אחסון ל-12 חודש. בלי מנוי מתחדש.
-            </p>
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em' }}>$150</div>
-            <div style={{ ...text.small, color: color.textMuted, marginBottom: space[3] }}>לגלריה</div>
-            <Button size="lg" onClick={() => { window.location.href = '/dashboard' }}>צור גלריה</Button>
-          </div>
-        </Card>
-        </Reveal>
-      </section>
+      {/* The one-time "$150 gallery" purchase offer was retired — pricing is
+          subscription-only now. */}
 
       {/* Free tier note */}
       <p style={{ ...text.small, textAlign: 'center', color: color.textMuted, padding: `${space[6]}px ${space[5]}px ${space[8]}px` }}>

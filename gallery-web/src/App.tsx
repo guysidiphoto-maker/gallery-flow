@@ -24,8 +24,9 @@ import {
 } from './lib/galleryClient'
 import { logDownload, logBatchDownload } from './lib/activityLog'
 import { downloadFileName, downloadCacheKey, pickDownloadPath, shouldWarmDownload, classifyDownloadError, keysOverCap, type DownloadQuality } from './lib/mobileViewer'
-import { startGalleryCheckout, GALLERY_UNLOCK_PRICE_ILS } from './lib/tokenClient'
 import { coverIsEnabled, gateCoverBackgroundUrl } from './lib/coverImage'
+import { resolveGridLayout, gapForSpacing } from './lib/galleryLayout'
+import { resolveGalleryBranding } from './lib/galleryBranding'
 
 // Both surfaces only mount once a guest opts in (face search button / story
 // circle). Lazy-loading keeps their JS (camera pipeline + autoplay video
@@ -233,7 +234,7 @@ function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle,
   }, [visibleCount, images.length])
   const visibleImages = useMemo(() => images.slice(0, visibleCount), [images, visibleCount])
 
-  const gap = imageSpacing === 'none' ? 0 : imageSpacing === 'medium' ? 10 : 4
+  const gap = gapForSpacing(imageSpacing)
   const rounded = cornerStyle === 'rounded'
   // Exact display width of one column → the precise size to fetch (× DPR).
   const colWidth = containerWidth > 0 ? (containerWidth - gap * (cols - 1)) / cols : 0
@@ -1676,6 +1677,43 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewerIndex, viewerList, images])
 
+  // Apply the resolved gallery branding (accent + fonts — including live Brand
+  // Kit inheritance for galleries with no per-gallery override) as CSS variables
+  // on :root, so the brand reaches EVERY sub-view: the welcome/cover screen and
+  // the password gate (both early returns) as well as the main gallery grid.
+  // Runs before any early return so hook order stays stable.
+  useEffect(() => {
+    const el = document.documentElement
+    if (!gallery) return
+    const b = resolveGalleryBranding(
+      (gallery.delivery_settings ?? {}) as unknown as Record<string, unknown>,
+      (gallery as unknown as { brand?: import('./lib/galleryBranding').BrandDefaults }).brand,
+    )
+    el.style.setProperty('--accent', b.accentRgb)
+    el.style.setProperty('--accent-ink', b.accentInk)
+    // Appearance theme (curated, contrast-safe background/text/surface).
+    el.style.setProperty('--bg', b.theme.bg)
+    el.style.setProperty('--surface', b.theme.surface)
+    el.style.setProperty('--text', b.theme.text)
+    el.style.setProperty('--text-muted', b.theme.textMuted)
+    el.setAttribute('data-appearance', b.appearance)
+    if (b.headingFont) el.style.setProperty('--font-heading', `'${b.headingFont}'`)
+    else el.style.removeProperty('--font-heading')
+    if (b.bodyFont) el.style.setProperty('--font-body', `'${b.bodyFont}'`)
+    else el.style.removeProperty('--font-body')
+    return () => {
+      el.style.removeProperty('--accent')
+      el.style.removeProperty('--accent-ink')
+      el.style.removeProperty('--bg')
+      el.style.removeProperty('--surface')
+      el.style.removeProperty('--text')
+      el.style.removeProperty('--text-muted')
+      el.removeAttribute('data-appearance')
+      el.style.removeProperty('--font-heading')
+      el.style.removeProperty('--font-body')
+    }
+  }, [gallery])
+
   if (error) {
     // Map internal English error keys to a localized, branded fallback. The
     // raw "Gallery not found" string was leaking to Hebrew clients hitting a
@@ -1689,7 +1727,7 @@ export function App() {
     return (
       <div className="center-msg" dir={isRtl ? 'rtl' : 'ltr'} style={{ padding: 24, textAlign: 'center' }}>
         <h1 style={{
-          fontFamily: 'Playfair Display, Georgia, serif',
+          fontFamily: "var(--font-heading, 'Playfair Display', Georgia, serif)",
           fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em',
           margin: '0 0 12px', color: '#fafafa',
         }}>{headline}</h1>
@@ -1710,48 +1748,12 @@ export function App() {
     )
   }
 
-  // ── One-time gallery paywall ────────────────────────────────────────────
-  // The server withholds images for a gallery opted into the one-time model
-  // and not yet paid (migrations 077/078); here we render the unlock screen
-  // instead of an empty grid. Flag fields arrive via gallery_get_meta. This is
-  // presentation only — the real enforcement is server-side, so it can't be
-  // bypassed by skipping this screen.
-  const payMeta = gallery as unknown as {
-    requires_payment?: boolean; one_time_paid?: boolean; paid_expires_at?: string | null
-  }
-  const paidWithinWindow = payMeta.one_time_paid === true && !!payMeta.paid_expires_at
-    && new Date(payMeta.paid_expires_at).getTime() > Date.now()
-  if (payMeta.requires_payment === true && !paidWithinWindow) {
-    const isRtl = document.documentElement.dir === 'rtl'
-    return (
-      <div className="center-msg" dir={isRtl ? 'rtl' : 'ltr'} style={{ padding: 24, textAlign: 'center' }}>
-        <div style={{ fontSize: 40, marginBottom: 16 }} aria-hidden>🔒</div>
-        <h1 style={{
-          fontFamily: 'Playfair Display, Georgia, serif',
-          fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em',
-          margin: '0 0 12px', color: '#fafafa',
-        }}>{gallery.name}</h1>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'rgba(255,255,255,.65)', margin: '0 0 24px', maxWidth: 420 }}>
-          {isRtl
-            ? `הגלריה מוכנה. לפתיחה מלאה — צפייה, חיפוש פנים והורדות — נדרש תשלום חד-פעמי של $${GALLERY_UNLOCK_PRICE_ILS}.`
-            : `Your gallery is ready. A one-time $${GALLERY_UNLOCK_PRICE_ILS} payment unlocks full viewing, face search and downloads.`}
-        </p>
-        <button
-          onClick={async () => {
-            const url = await startGalleryCheckout(gallery.id)
-            if (url) window.location.href = url
-          }}
-          style={{
-            background: '#fafafa', color: '#141413', border: 'none',
-            borderRadius: 10, padding: '14px 28px', fontSize: 15, fontWeight: 700,
-            cursor: 'pointer', letterSpacing: '-0.01em',
-          }}
-        >
-          {isRtl ? `שחרר את הגלריה · $${GALLERY_UNLOCK_PRICE_ILS}` : `Unlock gallery · $${GALLERY_UNLOCK_PRICE_ILS}`}
-        </button>
-      </div>
-    )
-  }
+  // ── One-time gallery paywall — RETIRED ──────────────────────────────────
+  // The "$150 unlock gallery" client-payment feature has been removed. The
+  // server-side gate gallery_is_locked() is neutralized (always false), so a
+  // gallery with a historical requires_payment=true value is served normally
+  // according to its publish / privacy / password / client-assignment rules
+  // and never shows a payment screen. No unlock screen or checkout is rendered.
 
   // ── Resolve settings with backward-compatible defaults ──────────────────
   const raw: Partial<DeliverySettings> = (gallery.delivery_settings || {}) as Partial<DeliverySettings>
@@ -1767,22 +1769,20 @@ export function App() {
   const isFeedSetting    = feedLayout === 'feed'
   const isMobileDevice   = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   const isFeedMode       = isFeedSetting && isMobileDevice
-  // Layout — read the legacy layoutMode/imageSpacing/cornerStyle keys, then
-  // honor the newer Design tab keys (thumbnailSize / gridSpacing) on top so
-  // photographer choices in the Design tab actually reach the public viewer.
-  // Backward compat: alma + lsports galleries don't have the new keys, so
-  // their existing layoutMode/imageSpacing values keep working unchanged.
-  const thumbnailSize    = ((raw as Record<string, unknown>).thumbnailSize as string) || null
-  const gridSpacing      = ((raw as Record<string, unknown>).gridSpacing as string) || null
-  const layoutModeFromThumb = thumbnailSize === 'large' ? '2-col' : (thumbnailSize === 'regular' ? '3-col' : null)
-  const spacingFromGap   = gridSpacing === 'large' ? 'medium' : (gridSpacing === 'regular' ? 'small' : null)
-  const layoutMode       = isFeedMode ? '1-col' : (layoutModeFromThumb ?? s(raw, 'layoutMode', '2-col'))
-  const imageSpacing     = isFeedMode ? 'none' : (spacingFromGap ?? s(raw, 'imageSpacing', 'small'))
+  // Layout — resolved through the single shared resolver so the editor preview,
+  // Preview route, and Live viewer can never disagree. Design tab keys
+  // (thumbnailSize / gridSpacing) win; legacy layoutMode / imageSpacing are the
+  // backward-compatible fallback so pre-Design-tab galleries look unchanged.
+  const { layoutMode, imageSpacing } = resolveGridLayout(raw as Record<string, unknown>, isFeedMode)
   const cornerStyle      = isFeedMode ? 'sharp' : s(raw, 'cornerStyle', 'sharp')
-  // Typography — fonts the photographer picked in Design > Typography.
-  // Falls through to the dashboard's base stack if unset.
-  const headingFont      = (((raw as Record<string, unknown>).headingFont as string) || '').trim()
-  const bodyFont         = (((raw as Record<string, unknown>).bodyFont as string) || '').trim()
+  // Business Brand Kit defaults surfaced on the meta (gallery.brand) — accent
+  // hex + fonts + logo only. A per-gallery override always wins; otherwise these
+  // are inherited (resolved in resolveGalleryBranding, below).
+  const brandDefaults = (gallery as unknown as { brand?: import('./lib/galleryBranding').BrandDefaults }).brand
+  // Typography — the photographer's Design > Typography choice, else the brand
+  // font, else the dashboard's base stack.
+  const headingFont      = ((((raw as Record<string, unknown>).headingFont as string) || brandDefaults?.headingFont || '') as string).trim()
+  const bodyFont         = ((((raw as Record<string, unknown>).bodyFont as string) || brandDefaults?.bodyFont || '') as string).trim()
   const studioName       = s(raw, 'studioName', '')
   const studioWebsite    = (raw as Record<string, unknown>).studioWebsite as string || ''
   const showFooterCredit = s(raw, 'showFooterCredit', true)
@@ -1805,19 +1805,13 @@ export function App() {
   // legacy "indigo" is mapped to the editorial charcoal so older galleries
   // adopt the new neutral by default rather than carrying the bright
   // indigo into the cream design.
-  const themeColorId = ((raw as Record<string, unknown>).themeColor as string) || 'charcoal'
-  const themeColors: Record<string, string> = {
-    // Editorial palette (matches the photographer-side Design tab)
-    charcoal: '#141413',
-    sage:     '#7B8F6E',
-    rose:     '#C18A8A',
-    amber:    '#A67C52',
-    teal:     '#5E8A8A',
-    slate:    '#64748b',
-    // Legacy aliases for galleries created before the editorial palette
-    indigo:   '#141413',  // was '#6366f1' — re-mapped to charcoal
-  }
-  const themeAccent = themeColors[themeColorId] ?? themeColors.charcoal
+  // Colors + fonts resolved through the single shared branding resolver (same
+  // palette + contrast rules the editor uses), so Live and the editor preview
+  // never disagree. A per-gallery override (themeColor / fonts) wins; otherwise
+  // the resolver inherits the business Brand Kit defaults surfaced on the meta
+  // (gallery.brand — accent hex + fonts only, never the full brand_kit).
+  const branding = resolveGalleryBranding(raw as Record<string, unknown>, brandDefaults)
+  const themeAccent = branding.accentHex
 
   // Watermark settings — applied as a CSS overlay on web previews. Originals
   // download untouched (the watermark is presentation-only, not baked in).
@@ -2589,21 +2583,25 @@ export function App() {
         : null)
   const hasCustomCover = !!(effectiveResolvedCoverUrl || effectiveCoverUrl)
 
-  // Convert the chosen theme accent (#rrggbb) to "r, g, b" so it can override
-  // the existing --accent CSS variable used everywhere in styles.css.
-  const themeAccentRgb = (() => {
-    const hex = themeAccent.replace('#', '')
-    const r = parseInt(hex.slice(0, 2), 16)
-    const g = parseInt(hex.slice(2, 4), 16)
-    const b = parseInt(hex.slice(4, 6), 16)
-    return `${r}, ${g}, ${b}`
-  })()
+  // Accent as "r, g, b" for the existing --accent CSS variable, plus a
+  // contrast-safe ink for text placed on the accent, and the photographer's
+  // chosen fonts as CSS variables so they apply gallery-wide (not just the
+  // welcome screen). Only emitted when a font was actually chosen, so galleries
+  // that never set one keep the default stack unchanged.
+  const themeAccentRgb = branding.accentRgb
+  const brandCssVars = [
+    `--accent: ${themeAccentRgb};`,
+    `--accent-ink: ${branding.accentInk};`,
+    branding.headingFont ? `--font-heading: '${branding.headingFont}';` : '',
+    branding.bodyFont ? `--font-body: '${branding.bodyFont}';` : '',
+  ].filter(Boolean).join(' ')
 
   return (
     <>
-      {/* Override the global accent CSS variable to match the photographer's
-          chosen theme color. Cascades into every existing rgb(var(--accent)) ref. */}
-      <style>{`:root { --accent: ${themeAccentRgb}; }`}</style>
+      {/* Override the global branding CSS variables to match the photographer's
+          Design-tab choices. Cascades into every rgb(var(--accent)) rule plus
+          the gallery-wide heading/body font vars in styles.css. */}
+      <style>{`:root { ${brandCssVars} }`}</style>
 
       {/* Skip link — keyboard-only shortcut past the hero to the photo grid.
           Visible only on focus, hidden otherwise (WCAG 2.4.1 Bypass Blocks).
@@ -2648,7 +2646,7 @@ export function App() {
           padding: '16px 20px', textAlign: 'center',
         }}>
           <h1 style={{
-            fontFamily: "'Playfair Display', Georgia, serif",
+            fontFamily: "var(--font-heading, 'Playfair Display', Georgia, serif)",
             fontSize: 20, fontWeight: 700, color: '#fff', margin: 0, lineHeight: 1.2,
           }}>{galleryTitle}</h1>
           {studioName && (

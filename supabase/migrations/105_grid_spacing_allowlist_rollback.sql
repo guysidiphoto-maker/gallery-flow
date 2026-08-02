@@ -1,0 +1,7 @@
+-- Rollback for 105_grid_spacing_allowlist.sql — restores the 086 validator
+-- (drops 'gridSpacing' from the allowlist and 'wide' from imageSpacing). After
+-- this, a gridSpacing write rejects as unknown_key again.
+--
+-- To roll back, run the body of 086_cover_settings_allowlist.sql (its
+-- CREATE OR REPLACE FUNCTION public._validate_delivery_settings_patch(...))
+-- verbatim. It is the immediately-prior definition of this function.

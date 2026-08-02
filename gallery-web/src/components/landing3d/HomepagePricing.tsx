@@ -1,11 +1,11 @@
 // HomepagePricing — the pricing beat the homepage was missing. An opaque cream
 // section (covers the fixed 3D canvas) that mirrors the /pricing page: three
-// subscription tiers, the one-time event gallery, and the free-tier note. CTAs
-// route to sign-in (onStart) or the full /pricing page. No live checkout is
-// wired here — payment state is owned elsewhere and untouched.
+// subscription tiers + the free-tier note. CTAs route to sign-in (onStart) or
+// the full /pricing page. No live checkout is wired here.
 //
-// Numbers mirror src/pages/PricingPage.tsx (plans table, migration 075 + the
-// $150 one-time, 076-078). Keep the two in sync if pricing changes.
+// Numbers mirror src/pages/PricingPage.tsx (plans table, migration 075). The
+// one-time "$150 gallery" offer was retired. Keep the two in sync if pricing
+// changes.
 
 import { Button, Card, Badge, Reveal, Detect } from '../ui'
 import { color, text, font, space } from '../../theme'
@@ -129,28 +129,8 @@ export function HomepagePricing({ onStart }: Props) {
           ))}
         </div>
 
-        {/* One-time event gallery */}
-        <Reveal>
-          <Card pad={32} style={{
-            marginTop: space[5], display: 'flex', flexWrap: 'wrap', alignItems: 'center',
-            justifyContent: 'space-between', gap: space[4], background: color.surfaceAlt,
-          }}>
-            <div style={{ maxWidth: 600 }}>
-              <Badge tone="neutral">תשלום חד-פעמי</Badge>
-              <h3 style={{ ...text.h2, fontFamily: font.display, margin: `${space[2]}px 0` }}>
-                רק גלריה אחת? שלמו פעם אחת.
-              </h3>
-              <p style={{ ...text.body, color: color.inkSoft, margin: 0, lineHeight: 1.6 }}>
-                מושלם לאירוע בודד. הזוג מקבל גלריה מלאה עם זיהוי פנים והורדות, אחסון ל-12 חודשים. בלי מנוי מתחדש.
-              </p>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em', color: color.ink }}>$150</div>
-              <div style={{ ...text.small, color: color.textMuted, marginBottom: space[3] }}>לגלריה</div>
-              <Button size="lg" onClick={onStart}>צרו גלריה</Button>
-            </div>
-          </Card>
-        </Reveal>
+        {/* The one-time "$150 gallery" purchase offer was retired — pricing is
+            subscription-only now. */}
 
         {/* Free tier note + link to the full pricing page */}
         <Reveal>

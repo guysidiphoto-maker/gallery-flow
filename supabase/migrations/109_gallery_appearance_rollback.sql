@@ -1,0 +1,6 @@
+-- Rollback for 109 — removes 'appearance' from the allowlist and from the meta
+-- brand subset. Re-apply the bodies of:
+--   • 105_grid_spacing_allowlist.sql  (validator without 'appearance')
+--   • 107_gallery_meta_null_safe.sql  (gallery_get_meta without brand.appearance)
+-- then re-assert the 108 grant hardening (REVOKE anon/PUBLIC on the validator).
+-- After rollback, an 'appearance' patch rejects as not_in_allowed_values again.

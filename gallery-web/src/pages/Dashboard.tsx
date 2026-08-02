@@ -1,17 +1,18 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { FixedSizeGrid, type GridChildComponentProps } from 'react-window'
+import { useDismiss } from '../components/portal/useDismiss'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany, partitionUploadFiles, MAX_UPLOAD_BATCH, type UploadRejectReason } from '../lib/uploadPipeline'
 import { uploadCoverImage, deleteCoverObject, CoverUploadError, type CoverUploadPhase } from '../lib/coverUpload'
-import { readCoverConfig } from '../lib/coverImage'
+import { readCoverConfig, coverPathBelongsToGallery } from '../lib/coverImage'
 import { fetchAllGalleryImages } from '../lib/fetchAllImages'
 import { classifyForUpload, extractExistingKeys, type ExistingImageRef } from '../lib/dedupeUpload'
 import { captureException } from '@sentry/react'
 import { signedStorageUrl } from '../lib/signedStorage'
 import { warmGalleryCache } from '../lib/warmCache'
 import { SignedImg } from '../components/SignedImg'
-import { getMyTokenBalance, startCheckout, startGalleryCheckout, TOKEN_PACKAGES, GALLERY_UNLOCK_PRICE_ILS } from '../lib/tokenClient'
+import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
 import { Icon, type IconName } from '../components/Icon'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import { useToast } from '../components/Toast'
@@ -56,12 +57,10 @@ type GalleryStatus = 'draft' | 'live' | 'archived'
 const STORY_GENERATE_MIN_PHOTOS = STORY_MIN_PHOTOS
 const STORY_GENERATE_MAX_PHOTOS = STORY_MAX_PHOTOS
 
-// Gallery one-time billing controls (paywall toggle + $150 unlock button) stay
-// behind a flag until LemonSqueezy checkout is wired + the edge functions are
-// deployed. OFF in production prevents a photographer from locking a real
-// gallery with no working way to pay. Flip VITE_FEATURE_GALLERY_BILLING=true
-// once billing is live.
-const GALLERY_BILLING_ON = import.meta.env.VITE_FEATURE_GALLERY_BILLING === 'true'
+// The one-time "$150 gallery unlock" client-payment controls have been retired
+// (feature removed). The GALLERY_BILLING_ON flag and its UI are gone; the
+// server-side lock is neutralized so historical requires_payment values can
+// never gate a gallery.
 
 // Token-pack buying (the "Buy more" / "קנה טוקנים" modal → startCheckout) is
 // gated by the same flag. The create-checkout edge function is NOT deployed to
@@ -85,11 +84,6 @@ interface Gallery {
   // legacy delivery_settings.faceIndexEnabled JSONB key — the column is the
   // canonical source for the rekognition RPC, JSONB for the public viewer.
   face_index_enabled?: boolean | null
-  // One-time gallery purchase (migrations 075-077). requires_payment opts a
-  // gallery into the $150 model; one_time_paid flips true once it's bought.
-  requires_payment?: boolean | null
-  one_time_paid?: boolean | null
-  paid_expires_at?: string | null
 }
 
 interface GalleryImage {
@@ -335,19 +329,28 @@ export function Dashboard() {
   // logically writes several keys at once (e.g. cover selection writing both
   // the canonical storage path and the legacy URL fallback in the same patch).
   // One DB round-trip, one optimistic UI update, one rollback path.
-  async function updateGallerySettings(patch: Record<string, unknown>) {
-    if (!editingGallery) return
+  async function updateGallerySettings(patch: Record<string, unknown>): Promise<boolean> {
+    if (!editingGallery) return false
+    const gid = editingGallery.id
     const prevSettings = editingGallery.delivery_settings || {}
     const nextSettings = { ...prevSettings, ...patch }
     setEditingGallery({ ...editingGallery, delivery_settings: nextSettings })
+    // Keep the dashboard gallery card (which reads delivery_settings off the
+    // galleries list, not editingGallery) in sync so cover/grid/branding
+    // changes show immediately behind the editor without a refetch.
+    setGalleries(prev => prev.map(g =>
+      g.id === gid ? { ...g, delivery_settings: nextSettings } : g))
     markDirty()
-    const { ok, errors } = await saveDeliverySettings(editingGallery.id, patch)
+    const { ok, errors } = await saveDeliverySettings(gid, patch)
     if (!ok) {
-      setEditingGallery(g => g && g.id === editingGallery.id
+      setEditingGallery(g => g && g.id === gid
         ? { ...g, delivery_settings: prevSettings } : g)
+      setGalleries(prev => prev.map(g =>
+        g.id === gid ? { ...g, delivery_settings: prevSettings } : g))
       showToast({ kind: 'error', text: 'שמירת ההגדרה נכשלה. נסה שוב.' })
       console.warn('[updateGallerySettings]', patch, errors)
     }
+    return ok
   }
   const [sections, setSections] = useState<Array<{ id: string; name: string; sort_order: number; description?: string | null }>>([])
   const [newSectionName, setNewSectionName] = useState('')
@@ -405,6 +408,27 @@ export function Dashboard() {
     droppedOverLimit: number
   } | null>(null)
   const [imageMenuOpenId, setImageMenuOpenId] = useState<string | null>(null)
+  // Photo action menu dismissal. The menu anchor (the open tile) is captured so
+  // focus can return to the photo after the menu closes; menuOpenUpward flips
+  // the popup above the trigger when there isn't room below (viewport clamp).
+  const photoMenuAnchorRef = useRef<HTMLDivElement | null>(null)
+  const [menuOpenUpward, setMenuOpenUpward] = useState(false)
+  const closePhotoMenu = useCallback(() => {
+    // Only pull focus back to the photo when the dismissal came from within the
+    // menu (Escape / keyboard) — if the user clicked elsewhere, leave focus
+    // where they put it so we don't fight a lightbox or another control for it.
+    const active = document.activeElement as HTMLElement | null
+    const fromKeyboard = !!active?.closest('[role="menu"]')
+    setImageMenuOpenId(null)
+    if (fromKeyboard) {
+      const el = photoMenuAnchorRef.current
+      if (el) requestAnimationFrame(() => { try { el.focus({ preventScroll: true }) } catch { /* ignore */ } })
+    }
+  }, [])
+  // Outside-click + Escape dismissal, reusing the shared portal primitive. Ref
+  // is attached to the open popup; clicking anywhere outside it (or Escape)
+  // closes the menu and returns focus to the photo.
+  const photoMenuRef = useDismiss<HTMLDivElement>(imageMenuOpenId !== null, closePhotoMenu)
   const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
   const [photoSort, setPhotoSort] = useState<'order' | 'name' | 'newest'>('order')
   // Drag-to-reorder state. Only meaningful when photoSort === 'order'.
@@ -414,6 +438,21 @@ export function Dashboard() {
   // per-tile "..." menu.
   const [draggedImageId, setDraggedImageId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  // Close the photo menu whenever the editor context shifts out from under it:
+  // switching editor tab, switching the active section, entering select mode,
+  // or opening/closing/navigating between galleries. Setting to the same null
+  // value is a no-op in React, so this is safe to run on every such change.
+  useEffect(() => {
+    setImageMenuOpenId(null)
+  }, [editTab, activeSectionId, selectMode, editingGallery?.id])
+  // When the menu opens, move focus to its first item for keyboard users.
+  useEffect(() => {
+    if (imageMenuOpenId === null) return
+    const el = photoMenuRef.current
+    if (!el) return
+    const first = el.querySelector<HTMLButtonElement>('button')
+    requestAnimationFrame(() => { try { first?.focus({ preventScroll: true }) } catch { /* ignore */ } })
+  }, [imageMenuOpenId, photoMenuRef])
   // Section drag-reorder — mirrors the image-tile pattern but operates on the
   // sidebar section list. Sort order persists to gallery_sections.sort_order
   // and the row order updates optimistically as the user drags.
@@ -423,7 +462,7 @@ export function Dashboard() {
   // the right pane. Cover holds the welcome screen + cover image picker;
   // Typography/Color/Grid/Nav write to delivery_settings JSONB so they
   // ship without a schema migration.
-  const [designSubTab, setDesignSubTab] = useState<'cover' | 'type' | 'color' | 'grid' | 'nav'>('cover')
+  const [designSubTab, setDesignSubTab] = useState<'cover' | 'type' | 'color' | 'grid'>('cover')
   const [uploading, setUploading] = useState(false)
   const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -685,7 +724,7 @@ export function Dashboard() {
     }
     const { data, error } = await supabase
       .from('galleries')
-      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings, requires_payment, one_time_paid, paid_expires_at')
+      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
@@ -1696,7 +1735,7 @@ export function Dashboard() {
       // produced, rather than reconstructing them client-side.
       const { data: fresh } = await supabase
         .from('galleries')
-        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings, requires_payment, one_time_paid, paid_expires_at')
+        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
         .eq('id', newId)
         .maybeSingle()
       if (fresh) openGalleryEditor(fresh as Gallery)
@@ -1984,19 +2023,55 @@ export function Dashboard() {
 
   // Pick an existing gallery photo as the cover. Switching away from a custom
   // upload removes the now-unused uploaded object.
-  async function selectGalleryCover(img: GalleryImage) {
-    if (!editingGallery) return
+  //
+  // Ownership: the image must be one of the currently-loaded photos of the
+  // gallery being edited (gallery_get_images only returns this owner's gallery
+  // images), so an image from another gallery or business can never be routed
+  // here. The write itself goes through update_gallery_settings, which is
+  // SECURITY DEFINER + owner-checked, so a cover from another business is
+  // impossible; the coverPathBelongsToGallery guard below adds a cross-gallery
+  // path check as defense in depth.
+  async function selectGalleryCover(img: GalleryImage): Promise<boolean> {
+    if (!editingGallery) return false
+    if (!galleryImages.some(i => i.id === img.id)) {
+      console.warn('[selectGalleryCover] image not in current gallery — refused', img.id)
+      return false
+    }
+    // Defense in depth: the storage path must live under this gallery's id.
+    if (!coverPathBelongsToGallery(img.storage_path, editingGallery.id)) {
+      console.warn('[selectGalleryCover] cover path outside gallery — refused', img.storage_path)
+      return false
+    }
     const prevCfg = readCoverConfig((editingGallery.delivery_settings ?? {}) as Record<string, unknown>)
-    await updateGallerySettings({
+    const ok = await updateGallerySettings({
       coverEnabled: true,
       coverSource: 'gallery_asset',
       coverImagePath: img.storage_path,
       coverImageUrl: imgUrl(img.storage_path),
       coverImageId: img.id,
     })
-    if (prevCfg.source === 'custom_upload' && prevCfg.path && prevCfg.path !== img.storage_path) {
+    if (ok && prevCfg.source === 'custom_upload' && prevCfg.path && prevCfg.path !== img.storage_path) {
       void deleteCoverObject(prevCfg.path)
     }
+    return ok
+  }
+
+  // Reset this gallery's Design-tab branding (accent + fonts) to the business
+  // Brand Kit defaults, clearing the per-gallery override. Fonts map cleanly
+  // (brand typography → gallery headingFont/bodyFont); the accent palette is
+  // gallery-specific so it resets to the app default rather than an arbitrary
+  // brand hex. Identity (studio name / logo) lives in Settings and is left
+  // alone. One optimistic write with rollback via updateGallerySettings.
+  async function resetGalleryBrandingToBrand() {
+    if (!editingGallery || !businessId) return
+    const brand = await getBrandKit(businessId)
+    const ok = await updateGallerySettings({
+      themeColor: null,
+      appearance: null,
+      headingFont: brand?.typography?.heading_family ?? null,
+      bodyFont: brand?.typography?.body_family ?? null,
+    })
+    if (ok) showToast({ kind: 'success', text: 'העיצוב אופס לברירת מותג' })
   }
 
   // Default the cover editor to the tab matching the current source whenever a
@@ -2175,6 +2250,19 @@ export function Dashboard() {
       showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + error.message })
       console.warn('[deleteSingleImage]', error)
       return
+    }
+    // If the deleted photo was the gallery-asset cover, clear the cover so the
+    // viewer falls back to its default (no broken/404 cover image).
+    const deleted = galleryImages.find(i => i.id === imageId)
+    const coverCfg = readCoverConfig((editingGallery.delivery_settings ?? {}) as Record<string, unknown>)
+    if (deleted && coverCfg.source === 'gallery_asset' && coverCfg.path === deleted.storage_path) {
+      void updateGallerySettings({
+        coverEnabled: false,
+        coverSource: 'none',
+        coverImagePath: null,
+        coverImageUrl: null,
+        coverImageId: null,
+      })
     }
     setGalleryImages(prev => prev.filter(i => i.id !== imageId))
     markDirty()
@@ -3265,60 +3353,9 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  {GALLERY_BILLING_ON && (<>
-                  {/* Toggle: opt this gallery into the one-time model. When on
-                      and unpaid, the public viewer locks behind a $150 paywall
-                      (server-enforced). Off by default. */}
-                  <button
-                    onClick={async () => {
-                      const next = !editingGallery.requires_payment
-                      const { error } = await supabase.from('galleries')
-                        .update({ requires_payment: next }).eq('id', editingGallery.id)
-                      if (error) { showToast({ kind: 'error', text: 'שגיאה בעדכון מצב התשלום.' }); return }
-                      setEditingGallery({ ...editingGallery, requires_payment: next })
-                      setGalleries(prev => prev.map(g => g.id === editingGallery.id ? { ...g, requires_payment: next } : g))
-                      showToast({ kind: 'success', text: next ? 'הגלריה נעולה ללקוח עד תשלום.' : 'נעילת התשלום בוטלה.' })
-                    }}
-                    title="כשפעיל, הלקוח רואה מסך תשלום ($150) עד שמשלמים"
-                    style={{
-                      background: editingGallery.requires_payment ? 'rgba(166,124,82,.14)' : 'transparent',
-                      color: editingGallery.requires_payment ? '#A67C52' : textSecondary,
-                      cursor: 'pointer',
-                      border: `1px solid ${editingGallery.requires_payment ? 'rgba(166,124,82,.4)' : border}`,
-                      borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
-                    }}
-                  >
-                    {editingGallery.requires_payment ? 'תשלום-לקוח: פעיל' : 'תשלום-לקוח: כבוי'}
-                  </button>
-                  {/* One-time gallery unlock ($150). Paid → badge; unpaid → buy
-                      button. Independent of subscription tokens. */}
-                  {editingGallery.one_time_paid ? (
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                      background: 'rgba(123,143,110,.14)', color: statusLive,
-                      border: `1px solid rgba(123,143,110,.4)`,
-                    }}>
-                      <Icon name="check" size={14} strokeWidth={2} /> גלריה שולמה
-                    </span>
-                  ) : (
-                    <button
-                      onClick={async () => {
-                        const url = await startGalleryCheckout(editingGallery.id)
-                        if (url) { window.location.href = url }
-                        else { showToast({ kind: 'error', text: 'שגיאה בפתיחת תשלום. נסה שוב.' }) }
-                      }}
-                      title="רכישה חד-פעמית של הגלריה — אחסון מורחב + זיהוי פנים"
-                      style={{
-                        background: 'transparent', color: textSecondary, cursor: 'pointer',
-                        border: `1px solid ${border}`, borderRadius: 8,
-                        padding: '6px 12px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
-                      }}
-                    >
-                      פתח גלריה · ${GALLERY_UNLOCK_PRICE_ILS}
-                    </button>
-                  )}
-                  </>)}
+                  {/* The one-time "$150 gallery unlock" client-payment controls
+                      (opt-in toggle + buy/paid badge) were retired. Subscription
+                      billing and the token economy are unaffected. */}
                   {/* Live-preview toggle — only meaningful on Settings + Welcome
                       tabs (where the side preview pane appears). Lets the
                       photographer reclaim the full editor width when they want
@@ -3962,6 +3999,16 @@ export function Dashboard() {
                       const VIRTUALIZE_THRESHOLD = 300
                       const shouldVirtualizeDashboard =
                         visibleImages.length > VIRTUALIZE_THRESHOLD
+                      // Current cover — canonical source of truth is the
+                      // gallery's delivery_settings (coverImagePath, a stable
+                      // storage path, never a signed URL). A tile is "the cover"
+                      // only when the gallery uses a gallery photo as its cover
+                      // and that photo's storage path matches.
+                      const coverCfgGrid = readCoverConfig(
+                        (editingGallery?.delivery_settings ?? {}) as Record<string, unknown>,
+                      )
+                      const currentCoverPath =
+                        coverCfgGrid.source === 'gallery_asset' ? coverCfgGrid.path : null
                       // Tile renderer — shared between the non-virtualized
                       // grid and the FixedSizeGrid cell renderer so per-tile
                       // UX (drag, hover overlay, menu) is identical.
@@ -3969,6 +4016,7 @@ export function Dashboard() {
                           const isSelected = selectedImageIds.has(img.id)
                           const isHovered = hoveredImageId === img.id
                           const isMenuOpen = imageMenuOpenId === img.id
+                          const isCover = currentCoverPath != null && currentCoverPath === img.storage_path
                           // The hover overlay only appears when not in select
                           // mode — once you're selecting, the click target is
                           // the whole tile and per-tile actions disappear.
@@ -3982,6 +4030,9 @@ export function Dashboard() {
                           return (
                             <div
                               key={img.id}
+                              ref={isMenuOpen ? photoMenuAnchorRef : undefined}
+                              tabIndex={isMenuOpen ? -1 : undefined}
+                              data-photo-tile={img.id}
                               draggable={dragEnabled}
                               onDragStart={(e) => {
                                 if (!dragEnabled) return
@@ -4077,6 +4128,32 @@ export function Dashboard() {
                                 }}
                               />
 
+                              {/* Cover marker — always visible on the tile that is
+                                  the gallery's current cover, so the photographer can
+                                  see at a glance which photo represents the gallery. */}
+                              {isCover && !selectMode && (
+                                <div
+                                  aria-label="תמונת השער של הגלריה"
+                                  style={{
+                                    position: 'absolute', bottom: 8, insetInlineStart: 8,
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                    padding: '3px 8px', borderRadius: 999,
+                                    background: 'rgba(0,0,0,.62)', color: '#fff',
+                                    fontSize: 10, fontWeight: 600, letterSpacing: '.04em',
+                                    pointerEvents: 'none', zIndex: 3,
+                                  }}
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" strokeWidth="2.2"
+                                    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                                    <circle cx="8.5" cy="8.5" r="1.6" />
+                                    <path d="M21 15l-5-5L5 21" />
+                                  </svg>
+                                  <span>קאבר</span>
+                                </div>
+                              )}
+
                               {/* Star — always shown if pinned, otherwise only on hover.
                                   Click toggles is_top_pick without entering select mode. */}
                               {(img.is_top_pick || showHoverOverlay) && (
@@ -4104,7 +4181,18 @@ export function Dashboard() {
                               {/* Menu trigger — only on hover */}
                               {showHoverOverlay && (
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); setImageMenuOpenId(isMenuOpen ? null : img.id) }}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    // Clicking the trigger of the open menu closes it (and
+                                    // returns focus to the photo). Otherwise open, deciding
+                                    // up/down flip from the room left below the trigger.
+                                    if (isMenuOpen) { closePhotoMenu(); return }
+                                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                                    setMenuOpenUpward(window.innerHeight - r.bottom < 240)
+                                    setImageMenuOpenId(img.id)
+                                  }}
+                                  aria-haspopup="menu"
+                                  aria-expanded={isMenuOpen}
                                   aria-label="תפריט תמונה"
                                   style={{
                                     position: 'absolute', top: 8, insetInlineEnd: 8,
@@ -4145,12 +4233,35 @@ export function Dashboard() {
                                   hitting on the cover slot). */}
                               {isMenuOpen && (
                                 <div
+                                  ref={photoMenuRef}
+                                  role="menu"
+                                  aria-orientation="vertical"
+                                  aria-label="פעולות תמונה"
                                   onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+                                    e.preventDefault()
+                                    const items = Array.from(
+                                      photoMenuRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? [],
+                                    )
+                                    if (!items.length) return
+                                    const cur = items.indexOf(document.activeElement as HTMLButtonElement)
+                                    const next = e.key === 'ArrowDown'
+                                      ? (cur + 1) % items.length
+                                      : (cur - 1 + items.length) % items.length
+                                    items[next]?.focus({ preventScroll: true })
+                                  }}
                                   style={{
-                                    position: 'absolute', top: 38, right: 8,
+                                    position: 'absolute',
+                                    // Flip above the trigger when there's no room below,
+                                    // so the popup always stays inside the viewport.
+                                    top: menuOpenUpward ? undefined : 38,
+                                    bottom: menuOpenUpward ? 38 : undefined,
+                                    right: 8,
                                     background: cardSolid, border: `1px solid ${border}`,
                                     boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 5,
                                     minWidth: 180, padding: 4, direction: 'rtl' as const,
+                                    maxHeight: 'min(60vh, 360px)', overflowY: 'auto',
                                   }}
                                 >
                                   {/* Move to set — sub-list */}
@@ -4164,7 +4275,7 @@ export function Dashboard() {
                                           photo to where it already lives is a wasted round-trip and
                                           made the menu visually noisy. */}
                                       {sections.filter(s => s.id !== img.section_id).map(s => (
-                                        <button key={s.id}
+                                        <button key={s.id} role="menuitem"
                                           onClick={() => { moveImageToSection(img.id, s.id); setImageMenuOpenId(null) }}
                                           style={{
                                             width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -4180,7 +4291,7 @@ export function Dashboard() {
                                       only meaningful when sorted manually. */}
                                   {photoSort === 'order' && (
                                     <>
-                                      <button
+                                      <button role="menuitem"
                                         onClick={() => { moveImageStep(img.id, 'up'); setImageMenuOpenId(null) }}
                                         style={{
                                           width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -4191,7 +4302,7 @@ export function Dashboard() {
                                         <span>הזז קדימה</span>
                                         <span aria-hidden="true">↑</span>
                                       </button>
-                                      <button
+                                      <button role="menuitem"
                                         onClick={() => { moveImageStep(img.id, 'down'); setImageMenuOpenId(null) }}
                                         style={{
                                           width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -4205,7 +4316,50 @@ export function Dashboard() {
                                       <div style={{ height: 1, background: border, margin: '4px 0' }} />
                                     </>
                                   )}
-                                  <button
+                                  {/* Set / Remove gallery cover — reuses the canonical
+                                      cover model (delivery_settings.coverImagePath). The
+                                      current cover offers "remove"; any other photo offers
+                                      "set as cover". Optimistic write with rollback + a
+                                      confirmation toast live in the handlers. */}
+                                  {isCover ? (
+                                    <button role="menuitem"
+                                      onClick={() => {
+                                        setImageMenuOpenId(null)
+                                        void (async () => {
+                                          await handleCoverRemove()
+                                          showToast({ kind: 'success', text: 'תמונת השער הוסרה' })
+                                        })()
+                                      }}
+                                      style={{
+                                        width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                        background: 'transparent', border: 'none', cursor: 'pointer',
+                                        fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                      }}>
+                                      <span>הסר תמונת קאבר</span>
+                                      <Icon name="close" size={13} strokeWidth={1.85} />
+                                    </button>
+                                  ) : (
+                                    <button role="menuitem"
+                                      onClick={() => {
+                                        setImageMenuOpenId(null)
+                                        void (async () => {
+                                          const ok = await selectGalleryCover(img)
+                                          if (ok) showToast({ kind: 'success', text: 'הוגדר כתמונת השער' })
+                                        })()
+                                      }}
+                                      style={{
+                                        width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                        background: 'transparent', border: 'none', cursor: 'pointer',
+                                        fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                      }}>
+                                      <span>הגדר כתמונת קאבר</span>
+                                      <Icon name="photo" size={13} strokeWidth={1.85} />
+                                    </button>
+                                  )}
+                                  <div style={{ height: 1, background: border, margin: '4px 0' }} />
+                                  <button role="menuitem"
                                     onClick={() => { downloadOriginal(img.id); setImageMenuOpenId(null) }}
                                     style={{
                                       width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -4216,7 +4370,7 @@ export function Dashboard() {
                                     <span>הורדה</span>
                                     <Icon name="download" size={13} strokeWidth={1.85} />
                                   </button>
-                                  <button
+                                  <button role="menuitem"
                                     onClick={() => { deleteSingleImage(img.id); setImageMenuOpenId(null) }}
                                     style={{
                                       width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -5528,7 +5682,6 @@ export function Dashboard() {
                         { id: 'type'  as const, label: 'Typography' },
                         { id: 'color' as const, label: 'Color' },
                         { id: 'grid'  as const, label: 'Grid' },
-                        { id: 'nav'   as const, label: 'Navigation' },
                       ]).map(t => {
                         const active = designSubTab === t.id
                         return (
@@ -5819,6 +5972,28 @@ export function Dashboard() {
                     {/* ── Typography — heading + body font ── */}
                     {designSubTab === 'type' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+                        <div style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          gap: 12, flexWrap: 'wrap',
+                        }}>
+                          <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.5, maxWidth: 300 }}>
+                            הגלריה יורשת את הגופנים מערכת המותג. אפשר לשנות עבור הגלריה הזו בלבד.
+                            הגופנים חלים על כל הגלריה — כותרות וטקסט.
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void resetGalleryBrandingToBrand()}
+                            title="החזרת הצבע והגופנים לברירת המחדל של המותג"
+                            style={{
+                              background: 'transparent', color: textSecondary, cursor: 'pointer',
+                              border: `1px solid ${border}`, borderRadius: 8,
+                              padding: '8px 12px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            אפס לברירת מותג
+                          </button>
+                        </div>
                         {([
                           { key: 'headingFont', label: 'פונט כותרות', defaultV: 'Inter Tight' },
                           { key: 'bodyFont',    label: 'פונט גוף',    defaultV: 'Noto Sans Hebrew' },
@@ -5903,8 +6078,41 @@ export function Dashboard() {
                     {/* ── Color — palette picker ── */}
                     {designSubTab === 'color' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                        {/* Appearance — curated, contrast-safe background+text theme.
+                            Editorial = the classic dark look; Light / Dark flip the
+                            page. Inherits the business Brand Kit default when unset. */}
+                        <div>
+                          <div style={{ ...labelStyle }}>מראה הגלריה</div>
+                          <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4, margin: '0 0 8px' }}>
+                            רקע וצבע טקסט — נגישים תמיד. ברירת המחדל מגיעה ממותג העסק.
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {([
+                              { id: 'editorial', label: 'אדיטוריאל', sw: '#0a0a0f' },
+                              { id: 'light',     label: 'בהיר',       sw: '#faf9f7' },
+                              { id: 'dark',      label: 'כהה',        sw: '#111114' },
+                            ] as const).map(a => {
+                              const active = ((ds.appearance as string) || 'editorial') === a.id
+                              return (
+                                <button key={a.id} onClick={() => updateGallerySetting('appearance', a.id)}
+                                  style={{
+                                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                    padding: '12px 10px', borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
+                                    border: `1px solid ${active ? textPrimary : border}`,
+                                    background: active ? '#fff' : 'transparent',
+                                    fontSize: 12, fontWeight: active ? 600 : 500, color: textPrimary,
+                                    transition: 'border-color .15s, background .15s',
+                                  }}>
+                                  <span style={{ width: 16, height: 16, borderRadius: '50%', background: a.sw, border: `1px solid ${border}` }} />
+                                  {a.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
                         <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.5 }}>
-                          הצבע הראשי משפיע על כפתורים, מסגרות ולוגו בגלריה הציבורית.
+                          צבע ההדגשה — משפיע על כפתורים, קישורים ומצבים פעילים בגלריה הציבורית.
+                          טקסט הכפתור מתכוונן אוטומטית לניגודיות קריאה.
                         </div>
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                           {([
@@ -5946,16 +6154,9 @@ export function Dashboard() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
                         {([
                           {
-                            key: 'gridDirection', defaultV: 'vertical',
-                            eyebrow: 'כיוון תמונות',
-                            opts: [
-                              { id: 'vertical',   label: 'אנכי' },
-                              { id: 'horizontal', label: 'אופקי' },
-                            ],
-                          },
-                          {
                             key: 'thumbnailSize', defaultV: 'regular',
-                            eyebrow: 'גודל תמונה ממוזערת',
+                            eyebrow: 'גודל תמונות',
+                            hint: 'רגיל = 4 עמודות · גדול = 3 עמודות רחבות (בדסקטופ)',
                             opts: [
                               { id: 'regular', label: 'רגיל' },
                               { id: 'large',   label: 'גדול' },
@@ -5963,7 +6164,8 @@ export function Dashboard() {
                           },
                           {
                             key: 'gridSpacing', defaultV: 'regular',
-                            eyebrow: 'מרווח גריד',
+                            eyebrow: 'מרווח בין תמונות',
+                            hint: 'רגיל = צמוד · מורווח = רווח נדיב',
                             opts: [
                               { id: 'regular', label: 'רגיל' },
                               { id: 'large',   label: 'מורווח' },
@@ -5972,6 +6174,7 @@ export function Dashboard() {
                         ] as const).map(g => (
                           <div key={g.key}>
                             <div style={{ ...labelStyle }}>{g.eyebrow}</div>
+                            <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4, margin: '0 0 8px' }}>{g.hint}</div>
                             <div style={{ display: 'flex', gap: 8 }}>
                               {g.opts.map(o => {
                                 const active = ((ds[g.key] as string) || g.defaultV) === o.id
@@ -5993,30 +6196,10 @@ export function Dashboard() {
                       </div>
                     )}
 
-                    {/* ── Navigation — top vs side ── */}
-                    {designSubTab === 'nav' && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-                        <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.5 }}>
-                          איך הניווט מופיע בגלריה הציבורית.
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                          {([
-                            { id: 'top',  label: 'ניווט עליון', desc: 'שורה אופקית בראש הגלריה' },
-                            { id: 'side', label: 'ניווט צדדי', desc: 'סרגל קבוע בצד המסך' },
-                          ] as const).map(n => {
-                            const active = ((ds.navStyle as string) || 'top') === n.id
-                            return (
-                              <button key={n.id} onClick={() => updateGallerySetting('navStyle', n.id)}
-                                style={tileStyle(active)}>
-                                <Icon name={n.id === 'top' ? 'menu' : 'sections'} size={22} strokeWidth={active ? 1.85 : 1.4} />
-                                <div style={{ fontSize: 13, fontWeight: active ? 600 : 500, color: textPrimary }}>{n.label}</div>
-                                <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4, textAlign: 'center' }}>{n.desc}</div>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
+                    {/* The Navigation sub-tab (navStyle top/side) was removed: the
+                        public viewer never read navStyle, so it was a control with
+                        no visible effect. It can return once a real side-nav layout
+                        is implemented in the viewer. */}
                   </div>
                   )
                 })()}
