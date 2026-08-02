@@ -481,7 +481,6 @@ export function Dashboard() {
 
   // New delivery settings state
   const [welcomeStyle, setWelcomeStyle] = useState<'mosaic' | 'cinematic' | 'minimal'>('mosaic')
-  const [clientHidePhotosEnabled, setClientHidePhotosEnabled] = useState(false)
   const [requireGalleryCode, setRequireGalleryCode] = useState(false)
   const [galleryCode, setGalleryCode] = useState('')
   const [trackDownloads, setTrackDownloads] = useState(false)
@@ -758,7 +757,6 @@ export function Dashboard() {
         generateStories: false,
         showStories: true,
         welcomeStyle,
-        clientHidePhotosEnabled,
         requireGalleryCode,
         galleryCode: requireGalleryCode ? galleryCode : '',
         trackDownloads,
@@ -795,7 +793,6 @@ export function Dashboard() {
     setNewDate('')
     setNewGalleryClientId(null)
     setWelcomeStyle('mosaic')
-    setClientHidePhotosEnabled(false)
     setRequireGalleryCode(false)
     setGalleryCode('')
     setTrackDownloads(false)
@@ -5146,19 +5143,43 @@ export function Dashboard() {
                       ))}
                     </Section>
 
-                    {/* Privacy */}
+                    {/* Privacy — client-as-admin. When on, the gallery opens with
+                        a "client or guest?" gate; the client enters the identity
+                        code below and can then hide photos from other guests. */}
                     <Section eyebrow="פרטיות">
-                      {([
-                        { key: 'clientHidePhotosEnabled', label: 'אפשר לאורחים להסתיר תמונות', desc: 'כל אורח יכול להסתיר תמונות שלו מאחרים' },
-                        { key: 'clientSelectionEnabled',  label: 'בחירת תמונות',                desc: 'אפשר ללקוח לבחור תמונות מועדפות' },
-                      ] as const).map((opt, i, arr) => (
-                        <ToggleRow key={opt.key}
-                          label={opt.label} desc={opt.desc}
-                          on={Boolean(ds[opt.key])}
-                          onChange={() => updateGallerySetting(opt.key, !ds[opt.key])}
-                          last={i === arr.length - 1}
-                        />
-                      ))}
+                      <ToggleRow
+                        label="הגדר לקוח כאדמין"
+                        desc="בפתיחת הגלריה הלקוח יבחר 'אני הלקוח' ויזין קוד הזדהות. לאחר מכן יוכל להסתיר תמונות משאר האורחים (הוא עצמו רואה הכל)."
+                        on={Boolean(ds.clientSelectionEnabled)}
+                        onChange={() => updateGallerySetting('clientSelectionEnabled', !ds.clientSelectionEnabled)}
+                        last={!ds.clientSelectionEnabled}
+                      />
+                      {Boolean(ds.clientSelectionEnabled) && (
+                        <div style={{ paddingTop: 14 }}>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                            קוד הזדהות ללקוח
+                          </label>
+                          <input
+                            type="text"
+                            dir="ltr"
+                            value={(ds.clientCode as string) ?? ''}
+                            onChange={e => updateGallerySetting('clientCode', e.target.value.toUpperCase().slice(0, 32))}
+                            placeholder="לדוגמה: DAVID2026"
+                            style={{
+                              width: '100%', boxSizing: 'border-box', padding: '11px 13px',
+                              borderRadius: 2, border: `1px solid ${border}`,
+                              background: '#fff', color: textPrimary, fontSize: 14,
+                              letterSpacing: '0.08em', textAlign: 'left' as const, outline: 'none',
+                              fontFamily: 'inherit',
+                            }}
+                          />
+                          <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.5, marginTop: 6 }}>
+                            {(ds.clientCode as string)?.trim()
+                              ? 'מסרו את הקוד הזה ללקוח בלבד. ללא הקוד הוא ייכנס כאורח רגיל.'
+                              : 'הזינו קוד. כל עוד השדה ריק, הלקוח לא יוכל להזדהות כאדמין.'}
+                          </div>
+                        </div>
+                      )}
                     </Section>
 
                     {/* Face Recognition */}
@@ -6684,8 +6705,6 @@ export function Dashboard() {
             {/* Toggle row helper — used for the three privacy switches below.
                 Charcoal "on" state matches the editorial palette; no green. */}
             {([
-              { key: 'hide',  on: clientHidePhotosEnabled, set: setClientHidePhotosEnabled,
-                title: 'הסתרת תמונות',  desc: 'אפשרו לאורחים להסתיר תמונות מאורחים אחרים' },
               { key: 'code',  on: requireGalleryCode, set: setRequireGalleryCode,
                 title: 'קוד גישה לגלריה', desc: 'דרשו קוד כניסה לצפייה בגלריה' },
               { key: 'track', on: trackDownloads, set: setTrackDownloads,
