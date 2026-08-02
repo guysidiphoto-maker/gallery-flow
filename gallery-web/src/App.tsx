@@ -971,6 +971,121 @@ function SectionNav({
   )
 }
 
+/** First-download email gate (Task: download tracking). Modal that collects an
+ *  email (required) + name (optional) before the pending download runs. Purely
+ *  presentational — the parent owns the captured identity + the deferred action. */
+function DownloadEmailGate({ lang, onSubmit, onClose }: {
+  lang: Lang
+  onSubmit: (email: string, name: string | null) => void
+  onClose: () => void
+}) {
+  const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [touched, setTouched] = useState(false)
+  const he = lang === 'he'
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+
+  const submit = () => {
+    setTouched(true)
+    if (!emailOk) return
+    onSubmit(email.trim(), name.trim() || null)
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 4000,
+        background: 'rgba(6,6,10,.72)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        animation: 'fadeIn .2s ease',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true"
+        dir={he ? 'rtl' : 'ltr'}
+        style={{
+          width: '100%', maxWidth: 400, background: '#141417',
+          border: '1px solid rgba(255,255,255,.1)', borderRadius: 18,
+          padding: 28, boxShadow: '0 24px 80px rgba(0,0,0,.55)',
+          color: '#fff', textAlign: he ? 'right' : 'left',
+        }}
+      >
+        <h3 style={{ margin: '0 0 8px', fontSize: 19, fontWeight: 600 }}>
+          {he ? 'לפני ההורדה' : 'Before you download'}
+        </h3>
+        <p style={{ margin: '0 0 20px', fontSize: 13, lineHeight: 1.5, color: 'rgba(255,255,255,.55)' }}>
+          {he
+            ? 'הצלם מבקש להשאיר אימייל כדי לקבל גישה להורדת התמונות.'
+            : 'The photographer asks for your email to grant access to downloads.'}
+        </p>
+
+        <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,.5)', marginBottom: 6 }}>
+          {he ? 'אימייל' : 'Email'} *
+        </label>
+        <input
+          type="email" inputMode="email" autoFocus dir="ltr"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submit() }}
+          placeholder="you@example.com"
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '11px 13px', marginBottom: 4,
+            borderRadius: 10, border: `1px solid ${touched && !emailOk ? 'rgba(248,113,113,.7)' : 'rgba(255,255,255,.14)'}`,
+            background: 'rgba(255,255,255,.04)', color: '#fff', fontSize: 14, outline: 'none',
+          }}
+        />
+        {touched && !emailOk && (
+          <p style={{ margin: '0 0 8px', fontSize: 11, color: 'rgba(248,113,113,.9)' }}>
+            {he ? 'נא להזין כתובת אימייל תקינה' : 'Please enter a valid email'}
+          </p>
+        )}
+
+        <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,.5)', margin: '12px 0 6px' }}>
+          {he ? 'שם (רשות)' : 'Name (optional)'}
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submit() }}
+          placeholder={he ? 'השם שלך' : 'Your name'}
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '11px 13px', marginBottom: 20,
+            borderRadius: 10, border: '1px solid rgba(255,255,255,.14)',
+            background: 'rgba(255,255,255,.04)', color: '#fff', fontSize: 14, outline: 'none',
+          }}
+        />
+
+        <div style={{ display: 'flex', gap: 10, flexDirection: he ? 'row-reverse' : 'row' }}>
+          <button
+            onClick={submit}
+            disabled={!emailOk}
+            style={{
+              flex: 1, padding: '12px 16px', borderRadius: 10, border: 'none',
+              background: emailOk ? '#fff' : 'rgba(255,255,255,.15)',
+              color: emailOk ? '#111' : 'rgba(255,255,255,.4)',
+              fontSize: 14, fontWeight: 600, cursor: emailOk ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {he ? 'המשך להורדה' : 'Continue to download'}
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(255,255,255,.14)',
+              background: 'transparent', color: 'rgba(255,255,255,.7)', fontSize: 14, cursor: 'pointer',
+            }}
+          >
+            {he ? 'ביטול' : 'Cancel'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function App() {
   const [gallery, setGallery] = useState<Gallery | null>(null)
   const [images, setImages] = useState<GalleryImage[]>([])
@@ -1042,6 +1157,16 @@ export function App() {
 
   // Download progress tracking
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null)
+
+  // ── Download-tracking email gate ──────────────────────────────────────────
+  // When the gallery has trackDownloads on, the first download prompts for an
+  // email. downloaderRef is the source of truth for the guard + the log call
+  // (a ref sidesteps the stale-closure trap where the pending action captured a
+  // pre-submit null email). The state mirror only drives re-render of the gate.
+  const [downloader, setDownloader] = useState<{ email: string; name: string | null } | null>(null)
+  const downloaderRef = useRef<{ email: string; name: string | null } | null>(null)
+  const [emailGateOpen, setEmailGateOpen] = useState(false)
+  const pendingDownloadRef = useRef<(() => void) | null>(null)
 
   // Parse gallery from URL. Every form may carry one extra trailing segment
   // — the section page slug (/<biz>/<gallery>/<section>). basePath is the
@@ -1643,6 +1768,27 @@ export function App() {
   const effectiveResolvedCoverUrl = coverEnabled ? resolvedCoverUrl : null
   const effectiveCoverUrl = coverEnabled ? coverUrl : null
 
+  // Hydrate a previously-captured downloader email for THIS gallery so a
+  // returning guest isn't asked twice. Keyed per gallery id in localStorage.
+  useEffect(() => {
+    const gid = gallery?.id
+    if (!gid) return
+    try {
+      const raw = localStorage.getItem(`pf-dl-id-${gid}`)
+      if (raw) {
+        const parsed = JSON.parse(raw) as { email?: string; name?: string | null }
+        if (parsed?.email) {
+          const d = { email: parsed.email, name: parsed.name ?? null }
+          downloaderRef.current = d
+          setDownloader(d)
+          return
+        }
+      }
+    } catch { /* ignore malformed cache */ }
+    downloaderRef.current = null
+    setDownloader(null)
+  }, [gallery?.id])
+
   // Warm the downloadable File for the image the guest is viewing (and the
   // likely-next one, web quality only) so the one-tap share path is armed
   // before they tap. MUST live here, above every early return, to satisfy the
@@ -1797,6 +1943,10 @@ export function App() {
   const downloadsEnabled = raw.downloadsEnabled !== undefined
     ? raw.downloadsEnabled
     : (raw as Record<string, unknown>).allowDownloads !== false
+  // Download tracking (מעקב הורדות): when on, the first guest to download must
+  // enter an email so the photographer can attribute downloads. See the email
+  // gate + downloaderRef below.
+  const trackDownloads = (raw as Record<string, unknown>).trackDownloads === true
   const facePrivacyMode = ((raw as Record<string, unknown>).facePrivacyMode as 'open' | 'private') || 'open'
 
   // Theme color — selected by the photographer in the Design tab.
@@ -2260,8 +2410,30 @@ export function App() {
    * gesture is never spent on an await, so the save completes on the first tap.
    * Otherwise we fall back to the async fetch→share/download path.
    */
+  /** Persist the captured downloader identity (ref for immediate reads, state
+   *  for render, localStorage so it survives reloads of this gallery). */
+  function saveDownloader(email: string, name: string | null) {
+    const d = { email, name }
+    downloaderRef.current = d
+    setDownloader(d)
+    if (gallery) {
+      try { localStorage.setItem(`pf-dl-id-${gallery.id}`, JSON.stringify(d)) } catch { /* ignore */ }
+    }
+  }
+
+  /** Email gate: when trackDownloads is on and we have no identity yet, stash
+   *  the intended download and open the modal instead. Returns true if the
+   *  caller may proceed now, false if it was deferred behind the gate. */
+  function ensureDownloaderEmail(proceed: () => void): boolean {
+    if (!trackDownloads || downloaderRef.current) return true
+    pendingDownloadRef.current = proceed
+    setEmailGateOpen(true)
+    return false
+  }
+
   function handleImageDownload(img: GalleryImage) {
     if (savingPhoto) return
+    if (!ensureDownloaderEmail(() => handleImageDownload(img))) return
     const quality = currentQuality()
     const cached = isMobile ? downloadFileCache.current.get(downloadCacheKey(img.id, quality)) : undefined
     const canShareFiles = !!cached && !!navigator.share && !!navigator.canShare?.({ files: [cached.file] })
@@ -2273,7 +2445,7 @@ export function App() {
       navigator.share({ files: [cached.file], title: galleryTitle })
         .then(() => {
           flashSaved()
-          if (gallery) void logDownload(gallery.id, img.id, quality, 'single')
+          if (gallery) void logDownload(gallery.id, img.id, quality, 'single', downloaderRef.current)
         })
         .catch((err: unknown) => {
           // AbortError = the guest dismissed the share sheet: not a failure.
@@ -2320,7 +2492,7 @@ export function App() {
         await handleDownload(url, img.filename)
       }
       flashSaved()
-      if (gallery) void logDownload(gallery.id, img.id, quality, 'single')
+      if (gallery) void logDownload(gallery.id, img.id, quality, 'single', downloaderRef.current)
     } catch (err) {
       // Only a REAL failure gets a retry message. A dismissed share sheet
       // (AbortError) or an iOS gesture-timing rejection (NotAllowedError, which
@@ -2372,9 +2544,10 @@ export function App() {
   }
 
   async function handleBatchDownload(imgs: GalleryImage[]) {
+    if (imgs.length > 0 && !ensureDownloaderEmail(() => { void handleBatchDownload(imgs) })) return
     if (gallery && imgs.length > 0) {
       const wantsHd = downloadQuality === 'original'
-      void logBatchDownload(gallery.id, imgs.map(i => i.id), wantsHd ? 'original' : 'web')
+      void logBatchDownload(gallery.id, imgs.map(i => i.id), wantsHd ? 'original' : 'web', downloaderRef.current)
     }
     // Resolve URLs in parallel BEFORE the download loop. HEAD-check each
     // original so a stale original_uploaded flag doesn't downgrade the
@@ -3153,6 +3326,27 @@ export function App() {
       )}
 
       {/* ── Download progress overlay ── */}
+      {/* ── Download-tracking email gate ──
+          Shown on the first download when trackDownloads is on. Blocks the
+          pending download until the guest supplies an email; a name is
+          optional. The identity is remembered for this gallery afterwards. */}
+      {emailGateOpen && (
+        <DownloadEmailGate
+          lang={lang}
+          onSubmit={(email, name) => {
+            saveDownloader(email, name)
+            setEmailGateOpen(false)
+            const run = pendingDownloadRef.current
+            pendingDownloadRef.current = null
+            if (run) run()
+          }}
+          onClose={() => {
+            setEmailGateOpen(false)
+            pendingDownloadRef.current = null
+          }}
+        />
+      )}
+
       {downloadProgress && (
         <div style={{
           position: 'fixed', bottom: isMobile ? 80 : 24, left: '50%', transform: 'translateX(-50%)',

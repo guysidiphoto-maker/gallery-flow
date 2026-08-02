@@ -353,7 +353,8 @@ export function Dashboard() {
     downloads_total: number
     favorites_total: number
     emails_total: number
-    recent_downloads: Array<{ id: string; image_id: string | null; resolution: string; download_kind: string; created_at: string }>
+    recent_downloads: Array<{ id: string; image_id: string | null; resolution: string; download_kind: string; guest_email?: string | null; guest_name?: string | null; created_at: string }>
+    downloaders?: Array<{ guest_email: string; guest_name: string | null; downloads: number; last_at: string }>
     recent_favorites: Array<{ id: string; image_id: string; guest_name: string | null; note: string | null; created_at: string }>
     recent_emails: Array<{ id: string; recipient_email: string; subject: string | null; status: string; created_at: string }>
   } | null>(null)
@@ -4848,6 +4849,55 @@ export function Dashboard() {
                           ))}
                         </div>
 
+                        {/* Downloaders — distinct guests who identified via the
+                            download email gate (trackDownloads). */}
+                        {activitySummary.downloaders && activitySummary.downloaders.length > 0 && (
+                          <section style={{ marginBottom: 32 }}>
+                            <div style={{
+                              fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                              color: textMuted, textTransform: 'uppercase',
+                              marginBottom: 12,
+                            }}>
+                              מי הוריד · Downloaders
+                            </div>
+                            <div style={{ borderTop: `1px solid ${border}` }}>
+                              {activitySummary.downloaders.slice(0, 50).map(u => (
+                                <div key={u.guest_email} style={{
+                                  display: 'flex', alignItems: 'center', gap: 12,
+                                  padding: '12px 4px', borderBottom: `1px solid ${border}`,
+                                  fontSize: 13, color: textPrimary,
+                                }}>
+                                  <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+                                    {u.guest_name && (
+                                      <span style={{ fontWeight: 500 }}>{u.guest_name}</span>
+                                    )}
+                                    <span style={{
+                                      direction: 'ltr', textAlign: 'left' as const, color: u.guest_name ? textMuted : textPrimary,
+                                      fontSize: u.guest_name ? 12 : 13,
+                                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                    }}>
+                                      {u.guest_email}
+                                    </span>
+                                  </span>
+                                  <span style={{
+                                    fontSize: 10, fontWeight: 500,
+                                    letterSpacing: '0.18em', textTransform: 'uppercase', color: textMuted,
+                                  }}>
+                                    {u.downloads} {u.downloads === 1 ? 'download' : 'downloads'}
+                                  </span>
+                                  <span style={{
+                                    color: textMuted, fontSize: 12,
+                                    fontFeatureSettings: '"tnum" 1, "lnum" 1',
+                                    minWidth: 110, textAlign: 'left' as const,
+                                  }}>
+                                    {new Date(u.last_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+                        )}
+
                         {/* Recent downloads */}
                         {activitySummary.recent_downloads.length > 0 && (
                           <section style={{ marginBottom: 32 }}>
@@ -4873,6 +4923,15 @@ export function Dashboard() {
                                     }}>
                                       {img?.filename ?? '(תמונה נמחקה)'}
                                     </span>
+                                    {d.guest_email && (
+                                      <span style={{
+                                        direction: 'ltr', fontSize: 12, color: textSecondary,
+                                        maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                      }} title={d.guest_name ? `${d.guest_name} · ${d.guest_email}` : d.guest_email}>
+                                        {d.guest_name || d.guest_email}
+                                      </span>
+                                    )}
                                     <span style={{
                                       fontSize: 10, fontWeight: 500,
                                       letterSpacing: '0.18em', textTransform: 'uppercase',
