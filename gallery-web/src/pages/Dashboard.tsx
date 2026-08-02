@@ -259,22 +259,14 @@ export function Dashboard() {
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
   // 'sections' removed (was a redundant editor tab — sections live in the
-  // Photos-tab sidebar). 'preview' is Phase 5's Live Preview iframe.
-  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'welcome' | 'stories' | 'preview'>('photos')
-  // Live Preview pane — Phase 5. The iframe's src includes ?v=${previewRefreshKey}
-  // so bumping this number forces React to swap the iframe DOM node, which
-  // triggers a fresh navigation (sidestepping aggressive browser/CDN caches).
-  // unpublishedChanges is informational — until Phase 6 lands draft/publish
-  // snapshots, the public viewer reads delivery_settings directly so the
-  // iframe is always live; the badge just communicates that the photographer
-  // has unpublished local edits that haven't yet bumped published_at.
-  const [previewRefreshKey, setPreviewRefreshKey] = useState(0)
+  // Photos-tab sidebar).
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'welcome' | 'stories'>('photos')
+  // unpublishedChanges is informational — the public viewer reads
+  // delivery_settings directly, so the badge just communicates that the
+  // photographer has unpublished local edits that haven't yet bumped
+  // published_at. (The in-editor Live Preview iframe was removed; use the
+  // Preview button to open the gallery in a new tab.)
   const [unpublishedChanges, setUnpublishedChanges] = useState(false)
-  // Inline side-by-side preview pane — visible alongside Settings + Welcome
-  // tabs so every config tweak reflects live in the iframe without tab-
-  // switching. Default ON; a toggle in the header collapses it for full-
-  // width editing when needed.
-  const [showSidePreview, setShowSidePreview] = useState(true)
   // In-flight + just-published states for the Publish/Update button so a click
   // gives immediate visual feedback (was: silent black button → toast 200ms
   // later, easy to miss). `publishing` flips true during the await; `justPublished`
@@ -285,26 +277,11 @@ export function Dashboard() {
   // the eye is already on the button at the moment of click. Mirrors the
   // copy-link pattern on the gallery list cards.
   const [copiedInEditor, setCopiedInEditor] = useState(false)
-  // Debounced preview refresh — typing in an input fires onChange per
-  // keystroke; bumping the iframe key each time forced a navigation that
-  // stole focus from the active text field after every character. Holding
-  // the bump for ~800ms of idle keystrokes keeps the input usable and
-  // still feels live to the eye on the preview.
-  const previewRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const scheduleSidePreviewRefresh = () => {
-    if (previewRefreshTimerRef.current) clearTimeout(previewRefreshTimerRef.current)
-    previewRefreshTimerRef.current = setTimeout(() => {
-      previewRefreshTimerRef.current = null
-      setPreviewRefreshKey(k => k + 1)
-    }, 1500)
-  }
   // Called by every mutation that changes what the client sees (sections,
   // photo order, uploads, top-picks, deletes, stories, …). Lights up the
-  // "שינויים שטרם פורסמו" pill + Update button and queues a Live Preview
-  // refresh (debounced so typing doesn't reload the iframe per keystroke).
+  // "שינויים שטרם פורסמו" pill + Update button.
   const markDirty = () => {
     setUnpublishedChanges(true)
-    scheduleSidePreviewRefresh()
   }
   // The ONLY allowed write path for delivery_settings. Migration 069 revoked
   // the direct column UPDATE for the authenticated role, so every
@@ -835,7 +812,6 @@ export function Dashboard() {
     // gallery in the same session doesn't inherit the previous one's dirty
     // flag or stale cache-buster.
     setUnpublishedChanges(false)
-    setPreviewRefreshKey(0)
     const [imagesAll, sectionsRes, storiesRes] = await Promise.all([
       // Paginated: galleries can exceed PostgREST's 1000-row cap. A plain
       // .select() here silently truncated large galleries to 1000 in the editor.
@@ -1408,7 +1384,6 @@ export function Dashboard() {
         console.warn('[updateGallerySetting]', key, errors)
         return
       }
-      scheduleSidePreviewRefresh()
     }
 
     if (TEXT_INPUT_KEYS.has(key)) {
@@ -1441,7 +1416,6 @@ export function Dashboard() {
     setEditingGallery({ ...editingGallery, name: newTitle, delivery_settings: nextSettings })
     setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: newTitle } : g))
     setUnpublishedChanges(true)
-    scheduleSidePreviewRefresh()
     // `name` is a granted column (direct UPDATE is fine); galleryTitle lives in
     // delivery_settings, which must go through the RPC (069). Two writes.
     const { error: nameErr } = await supabase
@@ -1664,10 +1638,8 @@ export function Dashboard() {
       return
     }
     setEditingGallery({ ...editingGallery, status: 'live', published_at: publishedAt })
-    // Phase 5 — clear the "unpublished changes" pill in the Live Preview pane
-    // and force the iframe to reload so it picks up the freshest snapshot.
+    // Clear the "unpublished changes" pill now that the gallery is published.
     setUnpublishedChanges(false)
-    setPreviewRefreshKey(k => k + 1)
     // Inline button feedback — briefly turns the button into a "✓ עודכן"
     // confirmation, then back to the resting state. Survives alongside the
     // toast so both screen-reading users and eyes-on-button users get a hit.
@@ -3356,28 +3328,8 @@ export function Dashboard() {
                   {/* The one-time "$150 gallery unlock" client-payment controls
                       (opt-in toggle + buy/paid badge) were retired. Subscription
                       billing and the token economy are unaffected. */}
-                  {/* Live-preview toggle — only meaningful on Settings + Welcome
-                      tabs (where the side preview pane appears). Lets the
-                      photographer reclaim the full editor width when they want
-                      to focus, then bring the preview back in. */}
-                  {(editTab === 'settings' || editTab === 'welcome') && (
-                    <button
-                      onClick={() => setShowSidePreview(v => !v)}
-                      title={showSidePreview ? 'הסתר תצוגה חיה' : 'הצג תצוגה חיה'}
-                      style={{
-                        padding: '10px 14px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-                        background: showSidePreview ? textPrimary : 'transparent',
-                        border: `1px solid ${showSidePreview ? textPrimary : border}`,
-                        color: showSidePreview ? '#fff' : textPrimary,
-                        cursor: 'pointer', fontFamily: 'inherit',
-                        letterSpacing: '0.18em', textTransform: 'uppercase',
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                      }}
-                    >
-                      <Icon name="arrow-out" size={12} strokeWidth={1.85} />
-                      Live
-                    </button>
-                  )}
+                  {/* The in-editor Live Preview pane was removed; use Preview
+                      (opens the gallery in a new tab) instead. */}
                   <a href={galleryShareUrl(editingGallery)} target="_blank" style={{
                     padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
                     background: 'transparent', border: `1px solid ${border}`, color: textPrimary,
@@ -3539,7 +3491,6 @@ export function Dashboard() {
                       // reorder), so a dedicated tab was redundant.
                       { id: 'stories' as const,    icon: 'stories'   as IconName, label: 'סטוריז' },
                       { id: 'welcome' as const,    icon: 'palette'   as IconName, label: 'עיצוב' },
-                      { id: 'preview' as const,    icon: 'arrow-out' as IconName, label: 'תצוגה חיה' },
                       { id: 'activities' as const, icon: 'activity'  as IconName, label: 'פעילות' },
                       { id: 'settings' as const,   icon: 'settings'  as IconName, label: 'הגדרות' },
                     ]).map(t => {
@@ -3743,10 +3694,8 @@ export function Dashboard() {
                   )}
                 </aside>
 
-                {/* ── Main content pane + optional side-preview ─────── */}
+                {/* ── Main content pane ─────────────────────────────── */}
                 {(() => {
-                  const sidePreviewActive = showSidePreview &&
-                    (editTab === 'settings' || editTab === 'welcome')
                   return (
                 <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
                 <div style={{
@@ -6204,160 +6153,7 @@ export function Dashboard() {
                   )
                 })()}
 
-                {/* ── Live Preview Tab ── Phase 5.
-                    Renders the gallery's public URL inside an iframe scoped to
-                    the editor's main content pane. The src carries a ?v=N cache
-                    buster (bumped on every successful save) so reloads are
-                    guaranteed even with aggressive CDN/browser caching.
-                    Until Phase 6 introduces draft/publish snapshots the public
-                    viewer reads delivery_settings directly — so the iframe IS
-                    the latest saved state; the "unpublished changes" pill is
-                    purely informational. */}
-                {false && editingGallery && (() => {  /* full-page preview tab disabled — inline split takes over */
-                  const shareUrl = galleryShareUrl(editingGallery!)
-                  const previewSrc = `${shareUrl}${shareUrl.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
-                  return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minHeight: '100%' }}>
-                      {/* Pane header — eyebrow label + dirty-state pill + refresh */}
-                      <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        gap: 12, flexWrap: 'wrap',
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <span style={{
-                            fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-                            textTransform: 'uppercase', color: textMuted,
-                          }}>תצוגה חיה</span>
-                          {unpublishedChanges && (
-                            <span style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 6,
-                              padding: '4px 10px', borderRadius: 2,
-                              border: `1px solid ${border}`, background: bgSubtle,
-                              fontSize: 11, fontWeight: 500, color: textSecondary,
-                              fontFamily: 'inherit',
-                            }}>
-                              <span aria-hidden="true" style={{
-                                width: 7, height: 7, borderRadius: '50%',
-                                background: textMuted, display: 'inline-block',
-                              }} />
-                              שינויים שטרם פורסמו
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => setPreviewRefreshKey(k => k + 1)}
-                          aria-label="רענן תצוגה חיה"
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6,
-                            padding: '8px 14px', borderRadius: 2,
-                            background: 'transparent', border: `1px solid ${border}`,
-                            color: textPrimary, cursor: 'pointer', fontFamily: 'inherit',
-                            fontSize: 11, fontWeight: 500,
-                            letterSpacing: '0.18em', textTransform: 'uppercase',
-                          }}
-                        >
-                          <Icon name="arrow-out" size={12} strokeWidth={1.85} />
-                          רענן
-                        </button>
-                      </div>
-
-                      {/* Iframe shell — full content width, capped at 1400px and
-                          centered so wide monitors don't stretch the preview
-                          past where it's legible. On viewports < 900px we let
-                          it fill 100% per the spec. */}
-                      <div style={{
-                        width: '100%', maxWidth: 1400, marginInline: 'auto',
-                        border: `1px solid ${border}`, background: bgSubtle,
-                      }}>
-                        <iframe
-                          key={previewRefreshKey}
-                          src={previewSrc}
-                          title="תצוגה חיה של הגלריה"
-                          style={{
-                            display: 'block', width: '100%', height: '80vh',
-                            border: 'none', background: bgSubtle,
-                          }}
-                        />
-                      </div>
-
-                      {/* Footer hint — make the URL discoverable for copy + the
-                          "open in new tab" escape hatch (some browsers throttle
-                          iframes harder than top-level navigations). */}
-                      <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        gap: 12, flexWrap: 'wrap', color: textMuted,
-                        fontSize: 11, letterSpacing: '0.02em',
-                      }}>
-                        <span style={{ direction: 'ltr', unicodeBidi: 'isolate' }}>{shareUrl}</span>
-                        <a href={shareUrl} target="_blank" rel="noreferrer" style={{
-                          color: textSecondary, textDecoration: 'none',
-                          display: 'inline-flex', alignItems: 'center', gap: 6,
-                          fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
-                        }}>
-                          <Icon name="arrow-out" size={11} strokeWidth={1.85} />
-                          פתח בלשונית חדשה
-                        </a>
-                      </div>
-                    </div>
-                  )
-                })()}
                 </div>
-                {/* Side-preview iframe — auto-refreshes via previewRefreshKey
-                    on every settings save. Shown only on Settings + Welcome
-                    tabs (config-heavy surfaces); other tabs get full width. */}
-                {sidePreviewActive && (
-                  <aside style={{
-                    width: 'min(48%, 540px)', flexShrink: 0,
-                    borderInlineStart: `1px solid ${border}`,
-                    background: bgSubtle, display: 'flex', flexDirection: 'column',
-                  }}>
-                    <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      gap: 8, padding: '12px 14px',
-                      borderBottom: `1px solid ${border}`, background: '#fff',
-                    }}>
-                      <span style={{
-                        fontSize: 10, fontWeight: 500, letterSpacing: '0.22em',
-                        textTransform: 'uppercase', color: textMuted,
-                      }}>תצוגה חיה ללקוח</span>
-                      <div style={{ display: 'inline-flex', gap: 6 }}>
-                        <button
-                          onClick={() => setPreviewRefreshKey(k => k + 1)}
-                          aria-label="רענן תצוגה"
-                          style={{
-                            padding: '4px 10px', borderRadius: 2,
-                            background: 'transparent', border: `1px solid ${border}`,
-                            color: textMuted, cursor: 'pointer', fontFamily: 'inherit',
-                            fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
-                          }}
-                        >רענן</button>
-                        <button
-                          onClick={() => setShowSidePreview(false)}
-                          aria-label="הסתר תצוגה"
-                          title="הסתר תצוגה"
-                          style={{
-                            padding: '4px 8px', borderRadius: 2,
-                            background: 'transparent', border: `1px solid ${border}`,
-                            color: textMuted, cursor: 'pointer', fontFamily: 'inherit',
-                            fontSize: 10,
-                          }}
-                        >✕</button>
-                      </div>
-                    </div>
-                    <iframe
-                      key={previewRefreshKey}
-                      src={(() => {
-                        const u = galleryShareUrl(editingGallery)
-                        return `${u}${u.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
-                      })()}
-                      title="תצוגה חיה של הגלריה"
-                      style={{
-                        display: 'block', width: '100%', flex: 1,
-                        border: 'none', background: bgSubtle, minHeight: 0,
-                      }}
-                    />
-                  </aside>
-                )}
                 </div>
                 )
                 })()}
