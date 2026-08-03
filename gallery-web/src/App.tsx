@@ -1345,10 +1345,14 @@ export function App() {
     return () => observer.disconnect()
   }, [sections, showWelcome, images])
 
-  // Load hidden images for this gallery
+  // Load hidden images for this gallery. Public galleries never flip `unlocked`
+  // (there's no token to store), so we must NOT gate on it — otherwise a client
+  // hides a photo but guests never filter it out. Access is enforced
+  // server-side by gallery_get_hidden's _gallery_authz: a gated gallery with no
+  // token simply returns [] until unlock, and this effect re-runs on `unlocked`
+  // to pick up the token-scoped list.
   useEffect(() => {
     if (!gallery) return
-    if (!unlocked) return  // gated galleries: wait for the unlock token
     gcGetHidden(gallery.id).then(ids => {
       setHiddenImageIds(new Set(ids))
     })
