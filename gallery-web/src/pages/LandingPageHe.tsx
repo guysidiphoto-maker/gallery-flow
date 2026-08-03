@@ -107,7 +107,7 @@ const STEPS = [
 const FAQS = [
   { q: 'כמה מדויק זיהוי הפנים?', a: 'גבוה מאוד — עובד גם בתאורה חלשה, עם משקפיים ובתמונות קבוצתיות.' },
   { q: 'הלקוחות צריכים אפליקציה?', a: 'לא. לינק, סלפי, תמונות. זהו.' },
-  { q: 'איך עובד התמחור?', a: 'מנוי חודשי לפי כמות תמונות (מ-$39), או תשלום חד-פעמי של $150 לגלריית אירוע בודדת.' },
+  { q: 'איך עובד התמחור?', a: 'מנוי חודשי לפי כמות תמונות, החל מ-$39. מתחילים חינם עם 100 תמונות ומשדרגים כשגדלים.' },
   { q: 'מה עם פרטיות?', a: 'כל אורח רואה רק את עצמו. הסלפי משמש לזיהוי בלבד.' },
 ]
 
@@ -213,7 +213,7 @@ export function LandingPageHe() {
           <Badge tone="accent">זיהוי פנים כלול בכל מנוי</Badge>
           <h2 style={{ ...text.h1, fontSize: 'clamp(24px,3.5vw,34px)', margin: 0 }}>תמחור פשוט ושקוף</h2>
           <p style={{ ...text.body, color: color.inkSoft, margin: 0, maxWidth: 480 }}>
-            מנוי מ-<strong>$39/חודש</strong>, או <strong>$150</strong> לגלריית אירוע בודדת. בלי כוכביות, בלי שיחת מכירה.
+            מנוי מ-<strong>$39/חודש</strong>. מתחילים חינם עם 100 תמונות. בלי כוכביות, בלי שיחת מכירה.
           </p>
           <div style={{ display: 'flex', gap: space[3], marginTop: space[2], flexWrap: 'wrap', justifyContent: 'center' }}>
             <Button size="lg" onClick={() => { window.location.href = '/pricing' }}>ראה תמחור מלא</Button>
