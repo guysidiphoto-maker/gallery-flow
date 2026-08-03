@@ -1,0 +1,12 @@
+-- Rollback for 088 — restores gallery_activity_summary to its 045 shape (no
+-- guest_email on recent_downloads, no downloaders roll-up) and drops the
+-- attribution columns. Re-apply the body of 045_activities_and_favorites.sql's
+-- gallery_activity_summary if you need the exact original, then:
+--
+--   DROP INDEX IF EXISTS gallery_download_log_email_idx;
+--   ALTER TABLE gallery_download_log
+--     DROP COLUMN IF EXISTS guest_email,
+--     DROP COLUMN IF EXISTS guest_name;
+--
+-- Columns are additive + nullable, so dropping them is safe (only tracking data
+-- is lost). After rollback the viewer's email param is simply ignored.
