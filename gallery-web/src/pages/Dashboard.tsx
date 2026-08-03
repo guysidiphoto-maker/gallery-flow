@@ -5146,20 +5146,33 @@ export function Dashboard() {
                     {/* Privacy — client-as-admin. When on, the gallery opens with
                         a "client or guest?" gate; the client enters the identity
                         code below and can then hide photos from other guests. */}
-                    <Section eyebrow="פרטיות">
-                      <ToggleRow
-                        label="הגדר לקוח כאדמין"
-                        desc="בפתיחת הגלריה הלקוח יבחר 'אני הלקוח' ויזין קוד הזדהות. לאחר מכן יוכל להסתיר תמונות משאר האורחים (הוא עצמו רואה הכל)."
-                        on={Boolean(ds.clientSelectionEnabled)}
-                        onChange={() => updateGallerySetting('clientSelectionEnabled', !ds.clientSelectionEnabled)}
-                        last={!ds.clientSelectionEnabled}
-                      />
+                    {/* Privacy — built from stable HOST elements (not the inline
+                        Section/ToggleRow components, which are redefined every
+                        render and would remount the code <input>, stealing focus
+                        after each keystroke). */}
+                    <section style={{ padding: '24px 24px 16px', background: bgSubtle, border: `1px solid ${border}` }}>
+                      <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', color: textMuted, textTransform: 'uppercase', marginBottom: 12 }}>פרטיות</div>
+                      <div
+                        onClick={() => updateGallerySetting('clientSelectionEnabled', !ds.clientSelectionEnabled)}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 0', cursor: 'pointer', userSelect: 'none', gap: 16, borderBottom: ds.clientSelectionEnabled ? `1px solid ${border}` : 'none' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 4 }}>הגדר לקוח כאדמין</div>
+                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.5 }}>בפתיחת הגלריה הלקוח יבחר 'אני הלקוח' ויזין קוד הזדהות. לאחר מכן יוכל להסתיר תמונות משאר האורחים (הוא עצמו רואה הכל).</div>
+                        </div>
+                        <div
+                          role="switch" aria-checked={Boolean(ds.clientSelectionEnabled)}
+                          onClick={(e) => { e.stopPropagation(); updateGallerySetting('clientSelectionEnabled', !ds.clientSelectionEnabled) }}
+                          style={{ width: 44, height: 24, borderRadius: 24, padding: 2, background: ds.clientSelectionEnabled ? textPrimary : border, transition: 'background .2s', flexShrink: 0, cursor: 'pointer', position: 'relative' }}>
+                          <div style={{ width: 20, height: 20, borderRadius: 10, background: '#fff', transition: 'transform .2s', transform: ds.clientSelectionEnabled ? 'translateX(-20px)' : 'translateX(0)', boxShadow: '0 1px 3px rgba(0,0,0,.18)' }} />
+                        </div>
+                      </div>
                       {Boolean(ds.clientSelectionEnabled) && (
                         <div style={{ paddingTop: 14 }}>
-                          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                          <label htmlFor="client-code-input" style={{ display: 'block', fontSize: 12, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
                             קוד הזדהות ללקוח
                           </label>
                           <input
+                            id="client-code-input"
                             type="text"
                             dir="ltr"
                             value={(ds.clientCode as string) ?? ''}
@@ -5180,7 +5193,7 @@ export function Dashboard() {
                           </div>
                         </div>
                       )}
-                    </Section>
+                    </section>
 
                     {/* Face Recognition */}
                     <Section eyebrow="זיהוי פנים">
