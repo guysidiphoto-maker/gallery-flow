@@ -410,6 +410,19 @@ export function Dashboard() {
   // Photo-grid view state — hovered tile + open per-tile menu + grid size
   // (Pixieset offers Regular/Large) + sort order.
   const [hoveredImageId, setHoveredImageId] = useState<string | null>(null)
+  // Touch devices have no hover, so the hover-revealed photo overlay (top-pick
+  // star + "…" action-menu trigger) would be unreachable — making Replace /
+  // Copy filename / Set-cover / Move / Delete impossible on a phone. Detect a
+  // coarse pointer and show those affordances persistently there.
+  const [coarsePointer, setCoarsePointer] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(hover: none), (pointer: coarse)')
+    const update = () => setCoarsePointer(mq.matches)
+    update()
+    mq.addEventListener?.('change', update)
+    return () => mq.removeEventListener?.('change', update)
+  }, [])
   // Cover-image editor state (Design → Cover). `coverMode` chooses between
   // picking an existing photo and uploading a separate cover.
   const [coverMode, setCoverMode] = useState<'gallery' | 'upload'>('gallery')
@@ -4388,7 +4401,11 @@ export function Dashboard() {
                           // The hover overlay only appears when not in select
                           // mode — once you're selecting, the click target is
                           // the whole tile and per-tile actions disappear.
-                          const showHoverOverlay = isHovered && !selectMode
+                          // On touch/coarse-pointer devices there is no hover,
+                          // so reveal the tile affordances persistently — else
+                          // the "…" menu (Replace / Copy / cover / move / delete)
+                          // is unreachable on mobile.
+                          const showHoverOverlay = (isHovered || coarsePointer) && !selectMode
                           // Drag is only meaningful when sorting manually;
                           // disabling it under name/newest keeps the visible
                           // order in sync with what's persisted.
