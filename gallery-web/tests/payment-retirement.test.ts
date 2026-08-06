@@ -49,7 +49,7 @@ function ok(name: string, cond: boolean, detail = '') {
 
 // ── SQL: paywall gate neutralized non-destructively ──────────────────────────
 {
-  const s = read('supabase/migrations/104_retire_gallery_paywall.sql')
+  const s = read('supabase/migrations/106_retire_gallery_paywall.sql')
   ok('migration 104 redefines gallery_is_locked to always return false',
     /CREATE OR REPLACE FUNCTION gallery_is_locked/.test(s) && /SELECT false;/.test(s))
   ok('migration 104 is non-destructive (no DROP COLUMN / DROP FUNCTION)',

@@ -10,7 +10,7 @@ import { dirname, resolve } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..')
-const m = readFileSync(resolve(root, 'supabase/migrations/108_editor_rpc_grant_hardening.sql'), 'utf8')
+const m = readFileSync(resolve(root, 'supabase/migrations/110_editor_rpc_grant_hardening.sql'), 'utf8')
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

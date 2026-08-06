@@ -1,4 +1,4 @@
-// draft-isolation.test.ts — contract guard for migration 112 (fail-closed public
+// draft-isolation.test.ts — contract guard for migration 114 (renumbered from 112) (fail-closed public
 // gallery resolution). Anonymous/non-owner callers must not receive non-live
 // gallery metadata/sections via the SECURITY DEFINER public resolvers; owner
 // preview stays enabled via authenticated ownership. Behaviorally verified on a
@@ -12,8 +12,8 @@ import { dirname, resolve } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..')
-const mig = readFileSync(resolve(root, 'supabase/migrations/112_draft_isolation_hardening.sql'), 'utf8')
-const rb  = readFileSync(resolve(root, 'supabase/migrations/112_draft_isolation_hardening_rollback.sql'), 'utf8')
+const mig = readFileSync(resolve(root, 'supabase/migrations/114_draft_isolation_hardening.sql'), 'utf8')
+const rb  = readFileSync(resolve(root, 'supabase/migrations/114_draft_isolation_hardening_rollback.sql'), 'utf8')
 const body = mig.replace(/--[^\n]*/g, '') // strip comments
 
 let pass = 0, fail = 0

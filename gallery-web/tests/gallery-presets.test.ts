@@ -11,7 +11,7 @@ import { capturePresetSettings, summarizePreset, PRESET_ALLOWED_KEYS } from '../
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..')
-const mig = readFileSync(resolve(root, 'supabase/migrations/111_gallery_presets.sql'), 'utf8')
+const mig = readFileSync(resolve(root, 'supabase/migrations/113_gallery_presets.sql'), 'utf8')
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

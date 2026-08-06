@@ -24,7 +24,7 @@ function ok(name: string, cond: boolean, detail = '') {
 
 // (A) gallery_get_meta null-safety (migration 107)
 {
-  const m = read('supabase/migrations/107_gallery_meta_null_safe.sql')
+  const m = read('supabase/migrations/109_gallery_meta_null_safe.sql')
   ok('107 coerces a non-object delivery_settings to {} before key removal',
     /jsonb_typeof\(ds\)\s*<>\s*'object'/.test(m) && /ds\s*:=\s*'\{\}'::jsonb/.test(m))
   ok('107 still removes the password key and keeps the brand subset',

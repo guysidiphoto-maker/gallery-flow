@@ -1,7 +1,9 @@
 # Gallery Workflow Completion — design notes & deferrals
 
+> RECONCILIATION NOTE (2026-08): to avoid a migration-number collision with main.download-tracking 088/089, the CPV2 chain was renumbered +2. Original 088-112 -> 090-114. Numbers below are the RECONCILED numbers; SQL bodies are byte-identical to the originals.
+
 Branch: `feat/gallery-workflow-completion` (off `feat/client-portal-v2-overnight` @ `18aa55b`).
-Migrations added: **110** (replace_image RPC), **111** (gallery_presets).
+Migrations added: **112** (replace_image RPC), **113** (gallery_presets), **114** (draft-isolation hardening).
 
 This document records the non-obvious design decisions and the items deliberately
 deferred, so the follow-up work starts from a known position instead of re-deriving it.
@@ -10,7 +12,7 @@ deferred, so the follow-up work starts from a known position instead of re-deriv
 
 ## Replace photo — face-index invalidation (decided)
 
-`replace_image` (migration 110) resets `images.face_indexed_at` / `face_count` to
+`replace_image` (migration 112) resets `images.face_indexed_at` / `face_count` to
 NULL and **deletes every `image_faces` row** for the replaced image. Rationale:
 
 - Recognition data belonging to the OLD pixels must not stay attributed to the
@@ -91,14 +93,14 @@ Explicitly out of scope. Recorded design constraints for when it is picked up:
 `feat/client-portal-v2-overnight` (this branch's base) is Draft PR #214's branch.
 This work sits on top of `18aa55b` (PR #216 already merged into it). Ordering:
 
-1. **PR #214 first.** It carries migrations 088–103 and the client-portal-v2 base.
-2. **PR #216 next** (already merged into the CPV2 branch): migrations 104–109.
-3. **This branch last:** migrations **110** then **111** (numeric order; both are
+1. **PR #214 first.** It carries migrations 090–105 (renumbered from 088–103) and the client-portal-v2 base.
+2. **PR #216 next** (already merged into the CPV2 branch): migrations 106–111 (renumbered from 104–109).
+3. **This branch last:** migrations **112**, **113**, **114** (numeric order; all are
    additive and independent of each other, but keep the sequence).
 
 Because everything here branched from the current CPV2 HEAD, a Draft PR of
 `feat/gallery-workflow-completion` targeting `feat/client-portal-v2-overnight`
 merges cleanly with no rebase. Do not target `main` directly.
 
-Migrations 110/111 are additive and reversible (each ships a `_rollback.sql`).
+Migrations 112/113/114 are additive and reversible (each ships a `_rollback.sql`).
 They have NOT been applied to Production or shared Staging.
