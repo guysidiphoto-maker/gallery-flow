@@ -452,6 +452,19 @@ export function Dashboard() {
   // dropdown. Dismisses on outside click / Escape via the shared hook.
   const [galleryMoreOpen, setGalleryMoreOpen] = useState(false)
   const galleryMoreRef = useDismiss<HTMLDivElement>(galleryMoreOpen, () => setGalleryMoreOpen(false))
+  const galleryMoreTriggerRef = useRef<HTMLButtonElement>(null)
+  // Keyboard parity with the photo menu: focus the first item when the More
+  // menu opens, and restore focus to the trigger when it closes.
+  useEffect(() => {
+    if (galleryMoreOpen) {
+      const first = galleryMoreRef.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]')
+      first?.focus({ preventScroll: true })
+    } else if (document.activeElement && galleryMoreRef.current?.contains(document.activeElement)) {
+      // Only pull focus back to the trigger if focus was still inside the menu
+      // (i.e. keyboard dismissal), not when the user clicked elsewhere.
+      galleryMoreTriggerRef.current?.focus({ preventScroll: true })
+    }
+  }, [galleryMoreOpen])
   // Gallery presets — owner-scoped reusable settings bundles.
   const [presets, setPresets] = useState<GalleryPreset[]>([])
   const [presetsLoaded, setPresetsLoaded] = useState(false)
@@ -2472,6 +2485,16 @@ export function Dashboard() {
         imageId,
         businessSlug,
         file,
+        // If this photo is the gallery cover, re-point the cover to the new
+        // pixels through the canonical owner-checked write (which owns URL
+        // construction) BEFORE the old storage object is deleted — so the
+        // cover never briefly references a deleted object.
+        onRepointCover: async (newPath) => {
+          await updateGallerySettings({
+            coverImagePath: newPath,
+            coverImageUrl: imgUrl(newPath),
+          })
+        },
       })
       // Re-point local state to the new object so the grid + lightbox repaint.
       setGalleryImages(prev => prev.map(i =>
@@ -2479,15 +2502,6 @@ export function Dashboard() {
           ? { ...i, storage_path: res.newPath, thumbnail_path: res.newPath, original_path: res.newPath, filename: res.filename }
           : i,
       ))
-      // If this photo was the gallery cover, re-point the cover to the new
-      // pixels through the canonical owner-checked write (which owns URL
-      // construction). Keeps the cover working after the swap.
-      if (res.wasCover) {
-        await updateGallerySettings({
-          coverImagePath: res.newPath,
-          coverImageUrl: imgUrl(res.newPath),
-        })
-      }
       // The web/thumb transform URLs are keyed by the (now changed) storage
       // path, so no stale-cache bust is needed for those; but clear any signed
       // URL cache entry to be safe for HD-download resolution.
@@ -3647,6 +3661,7 @@ export function Dashboard() {
                       role=menu + arrow-key nav + outside-click/Escape dismiss. */}
                   <div ref={galleryMoreRef} style={{ position: 'relative' }}>
                     <button
+                      ref={galleryMoreTriggerRef}
                       onClick={() => setGalleryMoreOpen(o => !o)}
                       aria-haspopup="menu"
                       aria-expanded={galleryMoreOpen}
@@ -3713,7 +3728,6 @@ export function Dashboard() {
                               <span>{item.label}</span>
                               <Icon name={item.icon} size={13} strokeWidth={1.85} />
                             </button>
-                            {!item.danger && i < arr.length - 2 && null}
                           </React.Fragment>
                         ))}
                       </div>
@@ -4231,13 +4245,15 @@ export function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Bulk action toolbar — sticky inline strip */}
+                    {/* Bulk action toolbar — sticky inline strip. Wraps on
+                        narrow (mobile) viewports so the trailing Download/Delete/
+                        close controls are never clipped or pushed off-screen. */}
                     {selectMode && (
                       <div style={{
                         position: 'sticky', top: 0, zIndex: 10,
                         marginBottom: 16, padding: '10px 16px',
                         background: textPrimary, color: '#fff',
-                        display: 'flex', alignItems: 'center', gap: 12,
+                        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12,
                         fontSize: 12,
                       }}>
                         <span style={{ fontWeight: 500, letterSpacing: '0.04em' }}>
@@ -7543,6 +7559,7 @@ export function Dashboard() {
             aria-modal="true"
             aria-labelledby="email-share-heading"
             onClick={e => e.stopPropagation()}
+            className="dash-mobile-modal"
             style={{
               background: bg, width: '100%', maxWidth: 520,
               borderRadius: 22, padding: 32,

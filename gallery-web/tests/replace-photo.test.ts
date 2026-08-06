@@ -72,6 +72,16 @@ ok('on RPC failure, removes the just-uploaded object (no orphan)',
 ok('never deletes the new object during cleanup', /p !== newPath/.test(lib))
 ok('validates the file with the shared upload gate', /validateUploadFile\(file\)/.test(lib))
 
+// ── cover re-point happens BEFORE old-object cleanup (no 404-cover window) ────
+const iRepoint = lib.indexOf('onRepointCover(newPath)')
+ok('re-points the cover before deleting old objects',
+  iRepoint > iRpc && iRepoint < iCleanup, `repoint=${iRepoint} rpc=${iRpc} cleanup=${iCleanup}`)
+ok('cover re-point only runs when the replaced image was the cover',
+  /result\.was_cover && opts\.onRepointCover/.test(lib))
+// ── cleanup also removes the stale public-thumb copy ─────────────────────────
+ok('cleanup covers the public thumbs bucket too',
+  /gallery-images-thumbs-public/.test(lib) && /CLEANUP_BUCKETS/.test(lib))
+
 // ── uploadPipeline: replacement helper does not record a row / consume token ──
 const helper = (pipeline.match(/export async function uploadReplacementOriginal[\s\S]*?\n}/) || [''])[0]
 ok('uploadReplacementOriginal does NOT call record_image_upload',
