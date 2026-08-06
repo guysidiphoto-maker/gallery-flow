@@ -6,6 +6,10 @@ import { supabase, storageUrl } from '../supabase'
 import { uploadMany, partitionUploadFiles, MAX_UPLOAD_BATCH, type UploadRejectReason } from '../lib/uploadPipeline'
 import { uploadCoverImage, deleteCoverObject, CoverUploadError, type CoverUploadPhase } from '../lib/coverUpload'
 import { replacePhoto, ReplacePhotoError } from '../lib/replacePhoto'
+import {
+  listPresets, savePreset, renamePreset, deletePreset, setDefaultPreset,
+  capturePresetSettings, summarizePreset, type GalleryPreset,
+} from '../lib/galleryPresets'
 import { readCoverConfig, coverPathBelongsToGallery } from '../lib/coverImage'
 import { fetchAllGalleryImages } from '../lib/fetchAllImages'
 import { classifyForUpload, extractExistingKeys, type ExistingImageRef } from '../lib/dedupeUpload'
@@ -441,6 +445,10 @@ export function Dashboard() {
   // dropdown. Dismisses on outside click / Escape via the shared hook.
   const [galleryMoreOpen, setGalleryMoreOpen] = useState(false)
   const galleryMoreRef = useDismiss<HTMLDivElement>(galleryMoreOpen, () => setGalleryMoreOpen(false))
+  // Gallery presets — owner-scoped reusable settings bundles.
+  const [presets, setPresets] = useState<GalleryPreset[]>([])
+  const [presetsLoaded, setPresetsLoaded] = useState(false)
+  const [presetBusy, setPresetBusy] = useState(false)
   const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
   const [photoSort, setPhotoSort] = useState<'order' | 'name' | 'newest'>('order')
   // Drag-to-reorder state. Only meaningful when photoSort === 'order'.
@@ -686,6 +694,73 @@ export function Dashboard() {
     if (editTab !== 'activities' || !editingGallery) return
     void loadActivitySummary(editingGallery.id)
   }, [editTab, editingGallery?.id, loadActivitySummary])
+
+  // Presets: load once per editor session when the Settings tab is first opened.
+  const refreshPresets = useCallback(async () => {
+    if (!businessId) return
+    setPresets(await listPresets(businessId))
+    setPresetsLoaded(true)
+  }, [businessId])
+  useEffect(() => {
+    if (editTab === 'settings' && businessId && !presetsLoaded) void refreshPresets()
+  }, [editTab, businessId, presetsLoaded, refreshPresets])
+
+  // Save the current gallery's reusable settings as a named preset. capture*
+  // strips identity/secrets client-side; the server trigger re-strips.
+  async function handleSavePreset() {
+    if (!businessId || !editingGallery) return
+    const name = window.prompt('שם הפריסט')?.trim()
+    if (!name) return
+    setPresetBusy(true)
+    const created = await savePreset(businessId, name, editingGallery.delivery_settings as Record<string, unknown>)
+    setPresetBusy(false)
+    if (created) { await refreshPresets(); showToast({ kind: 'success', text: 'הפריסט נשמר' }) }
+    else showToast({ kind: 'error', text: 'שמירת הפריסט נכשלה' })
+  }
+
+  // Apply a preset to the current gallery after a summary confirm. Reuses the
+  // owner-checked + validated update_gallery_settings write path.
+  async function handleApplyPreset(p: GalleryPreset) {
+    if (!editingGallery) return
+    const summary = summarizePreset(p)
+    const ok = await confirm({
+      title: `להחיל את "${p.name}"?`,
+      body: summary.length ? summary.join(' · ') : 'ללא הגדרות',
+      confirmLabel: 'החל',
+    })
+    if (!ok) return
+    setPresetBusy(true)
+    const applied = await updateGallerySettings(capturePresetSettings(p.settings))
+    setPresetBusy(false)
+    showToast(applied
+      ? { kind: 'success', text: 'הפריסט הוחל' }
+      : { kind: 'error', text: 'החלת הפריסט נכשלה' })
+  }
+
+  async function handleRenamePreset(p: GalleryPreset) {
+    const name = window.prompt('שם חדש לפריסט', p.name)?.trim()
+    if (!name || name === p.name) return
+    setPresetBusy(true)
+    const ok = await renamePreset(p.id, name)
+    setPresetBusy(false)
+    if (ok) { await refreshPresets(); showToast({ kind: 'success', text: 'שם הפריסט עודכן' }) }
+  }
+
+  async function handleDeletePreset(p: GalleryPreset) {
+    const ok = await confirm({ title: `למחוק את "${p.name}"?`, body: 'פעולה זו אינה הפיכה.', confirmLabel: 'מחק', danger: true })
+    if (!ok) return
+    setPresetBusy(true)
+    const done = await deletePreset(p.id)
+    setPresetBusy(false)
+    if (done) { await refreshPresets(); showToast({ kind: 'success', text: 'הפריסט נמחק' }) }
+  }
+
+  async function handleSetDefaultPreset(p: GalleryPreset) {
+    setPresetBusy(true)
+    const ok = await setDefaultPreset(p.id)
+    setPresetBusy(false)
+    if (ok) { await refreshPresets(); showToast({ kind: 'success', text: 'הוגדר כברירת מחדל' }) }
+  }
 
   async function initBusiness() {
     // Look up existing business for this user
@@ -5404,6 +5479,74 @@ export function Dashboard() {
                             }}
                           />
                         </div>
+                      </div>
+                    </Section>
+
+                    {/* Presets — reusable delivery + appearance bundles. Apply a
+                        saved preset to this gallery, or capture the current
+                        settings as a new preset. Never carries identity/secrets
+                        (enforced client + server). Default preset is highlighted. */}
+                    <Section eyebrow="פריסטים">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {!presetsLoaded ? (
+                          <div style={{ fontSize: 12, color: textMuted, padding: '4px 0' }}>טוען…</div>
+                        ) : presets.length === 0 ? (
+                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.5, padding: '4px 0' }}>
+                            עדיין אין פריסטים. שמרו את הגדרות הגלריה הנוכחית כפריסט לשימוש חוזר.
+                          </div>
+                        ) : (
+                          presets.map(p => (
+                            <div key={p.id} style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                              padding: '10px 12px', border: `1px solid ${border}`, borderRadius: 2, background: '#fff',
+                            }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 500, color: textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                                  {p.is_default && (
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
+                                      color: '#1b8a4e', background: 'rgba(45,196,121,.12)', padding: '2px 6px', borderRadius: 10,
+                                    }}>ברירת מחדל</span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: 11, color: textMuted, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {summarizePreset(p).join(' · ') || 'ללא הגדרות'}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                <button disabled={presetBusy} onClick={() => handleApplyPreset(p)} style={{
+                                  padding: '7px 12px', borderRadius: 2, border: `1px solid ${textPrimary}`,
+                                  background: textPrimary, color: '#fff', fontSize: 11, fontWeight: 500,
+                                  cursor: presetBusy ? 'default' : 'pointer', fontFamily: 'inherit', opacity: presetBusy ? 0.5 : 1,
+                                }}>החל</button>
+                                {!p.is_default && (
+                                  <button disabled={presetBusy} onClick={() => handleSetDefaultPreset(p)} aria-label="הגדר כברירת מחדל" title="הגדר כברירת מחדל" style={{
+                                    padding: '7px 10px', borderRadius: 2, border: `1px solid ${border}`,
+                                    background: 'transparent', color: textPrimary, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                                  }}>★</button>
+                                )}
+                                <button disabled={presetBusy} onClick={() => handleRenamePreset(p)} aria-label="שנה שם" title="שנה שם" style={{
+                                  padding: '7px 10px', borderRadius: 2, border: `1px solid ${border}`,
+                                  background: 'transparent', color: textPrimary, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                                }}>✎</button>
+                                <button disabled={presetBusy} onClick={() => handleDeletePreset(p)} aria-label="מחק" title="מחק" style={{
+                                  padding: '7px 10px', borderRadius: 2, border: `1px solid ${border}`,
+                                  background: 'transparent', color: '#dc2626', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                                }}>✕</button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                        <button disabled={presetBusy} onClick={handleSavePreset} style={{
+                          alignSelf: 'flex-start', marginTop: 4, padding: '9px 14px', borderRadius: 2,
+                          border: `1px dashed ${border}`, background: 'transparent', color: textPrimary,
+                          fontSize: 12, fontWeight: 500, cursor: presetBusy ? 'default' : 'pointer',
+                          fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6,
+                        }}>
+                          <Icon name="plus" size={13} strokeWidth={1.85} />
+                          שמור הגדרות נוכחיות כפריסט
+                        </button>
                       </div>
                     </Section>
 
