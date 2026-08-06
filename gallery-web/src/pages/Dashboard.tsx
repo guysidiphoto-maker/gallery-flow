@@ -89,6 +89,13 @@ interface Gallery {
   // legacy delivery_settings.faceIndexEnabled JSONB key — the column is the
   // canonical source for the rekognition RPC, JSONB for the public viewer.
   face_index_enabled?: boolean | null
+  // Canonical event metadata columns (public viewer / search / portal read
+  // these). update_gallery_settings dual-writes them from delivery_settings.
+  // The editor displays these as the fallback so a gallery whose date lives
+  // only in the column (created before delivery_settings.eventDate existed)
+  // still shows its date.
+  event_date?: string | null
+  event_location?: string | null
 }
 
 interface GalleryImage {
@@ -818,7 +825,7 @@ export function Dashboard() {
     }
     const { data, error } = await supabase
       .from('galleries')
-      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings, event_date, event_location')
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
@@ -1829,7 +1836,7 @@ export function Dashboard() {
       // produced, rather than reconstructing them client-side.
       const { data: fresh } = await supabase
         .from('galleries')
-        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings, event_date, event_location')
         .eq('id', newId)
         .maybeSingle()
       if (fresh) openGalleryEditor(fresh as Gallery)
@@ -4186,6 +4193,26 @@ export function Dashboard() {
                             </button>
                           ))}
                         </div>
+                        {/* Enter select mode — the gateway to the bulk-action
+                            bar (move to set / download / pin / delete). Shown
+                            only when there are photos and we're not already
+                            selecting. */}
+                        {galleryImages.length > 0 && !selectMode && (
+                          <button
+                            onClick={() => setSelectMode(true)}
+                            aria-label="בחירת תמונות"
+                            style={{
+                              padding: '10px 16px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                              background: 'transparent', border: `1px solid ${border}`,
+                              color: textPrimary, cursor: 'pointer', fontFamily: 'inherit',
+                              letterSpacing: '0.18em', textTransform: 'uppercase',
+                              display: 'inline-flex', alignItems: 'center', gap: 8,
+                            }}
+                          >
+                            <Icon name="check" size={13} strokeWidth={1.85} />
+                            בחר
+                          </button>
+                        )}
                         <button
                           onClick={() => fileInputRef.current?.click()}
                           disabled={uploading}
@@ -5504,7 +5531,7 @@ export function Dashboard() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <input
                               type="date"
-                              value={(ds.eventDate as string) || ''}
+                              value={(ds.eventDate as string) || (editingGallery.event_date ?? '')}
                               onChange={(e) => updateGallerySetting('eventDate', e.target.value)}
                               aria-label="תאריך האירוע"
                               style={{
@@ -5512,7 +5539,7 @@ export function Dashboard() {
                                 background: '#fff', color: textPrimary, fontFamily: 'inherit', fontSize: 13,
                               }}
                             />
-                            {(ds.eventDate as string) ? (
+                            {((ds.eventDate as string) || editingGallery.event_date) ? (
                               <button
                                 onClick={() => updateGallerySetting('eventDate', '')}
                                 style={{
@@ -5529,10 +5556,11 @@ export function Dashboard() {
                           </label>
                           <input
                             type="text"
-                            defaultValue={(ds.eventLocation as string) || ''}
+                            defaultValue={(ds.eventLocation as string) || (editingGallery.event_location ?? '')}
                             onBlur={(e) => {
                               const v = e.target.value.trim()
-                              if (v !== ((ds.eventLocation as string) || '')) updateGallerySetting('eventLocation', v)
+                              const cur = (ds.eventLocation as string) || (editingGallery.event_location ?? '')
+                              if (v !== cur) updateGallerySetting('eventLocation', v)
                             }}
                             placeholder="עיר / אולם"
                             aria-label="מיקום האירוע"
