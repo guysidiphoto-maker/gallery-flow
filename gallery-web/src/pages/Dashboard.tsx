@@ -436,6 +436,11 @@ export function Dashboard() {
   // is attached to the open popup; clicking anywhere outside it (or Escape)
   // closes the menu and returns focus to the photo.
   const photoMenuRef = useDismiss<HTMLDivElement>(imageMenuOpenId !== null, closePhotoMenu)
+  // Gallery-level "More" menu (editor header) — consolidates the scattered
+  // gallery actions (share, export, duplicate, delete) into one accessible
+  // dropdown. Dismisses on outside click / Escape via the shared hook.
+  const [galleryMoreOpen, setGalleryMoreOpen] = useState(false)
+  const galleryMoreRef = useDismiss<HTMLDivElement>(galleryMoreOpen, () => setGalleryMoreOpen(false))
   const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
   const [photoSort, setPhotoSort] = useState<'order' | 'name' | 'newest'>('order')
   // Drag-to-reorder state. Only meaningful when photoSort === 'order'.
@@ -657,13 +662,13 @@ export function Dashboard() {
     }
   }, [editingGallery?.id])
 
-  // Lazy-load activity summary when the tab opens. Re-fetches when switching
-  // galleries, but caches per-gallery within the editor session.
-  useEffect(() => {
-    if (editTab !== 'activities' || !editingGallery) return
+  // Load the activity summary for a gallery (downloads / favourites / recent
+  // email recipients). Reused by the Activities tab and the Share Center, which
+  // both surface recent_emails. Owner-scoped via the RPC's RLS.
+  const loadActivitySummary = useCallback((galleryId: string) => {
     setActivityLoading(true)
-    supabase
-      .rpc('gallery_activity_summary', { p_gallery_id: editingGallery.id })
+    return supabase
+      .rpc('gallery_activity_summary', { p_gallery_id: galleryId })
       .then(({ data, error }) => {
         if (error) {
           console.warn('[activities] fetch failed', error)
@@ -673,7 +678,14 @@ export function Dashboard() {
         }
         setActivityLoading(false)
       })
-  }, [editTab, editingGallery?.id])
+  }, [])
+
+  // Lazy-load activity summary when the tab opens. Re-fetches when switching
+  // galleries, but caches per-gallery within the editor session.
+  useEffect(() => {
+    if (editTab !== 'activities' || !editingGallery) return
+    void loadActivitySummary(editingGallery.id)
+  }, [editTab, editingGallery?.id, loadActivitySummary])
 
   async function initBusiness() {
     // Look up existing business for this user
@@ -1769,7 +1781,12 @@ export function Dashboard() {
     setShareMessage('')
     setShareEmail('')
     setShareSent(false)
+    setShareLinkCopied(false)
+    // Populate the Share Center's "recent recipients" list from the real
+    // email log (no fabricated history — empty state shows when there's none).
+    void loadActivitySummary(g.id)
   }
+  const [shareLinkCopied, setShareLinkCopied] = useState(false)
 
   // Focus traps — one per modal. Each is wired to escape-to-close so
   // keyboard users can dismiss the modal exactly the way mouse users do.
@@ -3503,6 +3520,84 @@ export function Dashboard() {
                       {copiedInEditor ? 'הקישור הועתק' : 'Copy Link'}
                     </button>
                   )}
+                  {/* Gallery-level More menu — consolidates share/export/
+                      duplicate/delete so these live in one place instead of
+                      scattered icons. Destructive Delete is visually separated.
+                      role=menu + arrow-key nav + outside-click/Escape dismiss. */}
+                  <div ref={galleryMoreRef} style={{ position: 'relative' }}>
+                    <button
+                      onClick={() => setGalleryMoreOpen(o => !o)}
+                      aria-haspopup="menu"
+                      aria-expanded={galleryMoreOpen}
+                      aria-label="עוד פעולות לגלריה"
+                      style={{
+                        padding: '10px 16px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                        background: galleryMoreOpen ? 'rgba(0,0,0,.04)' : 'transparent',
+                        border: `1px solid ${border}`, color: textPrimary, cursor: 'pointer',
+                        fontFamily: 'inherit', letterSpacing: '0.18em', textTransform: 'uppercase',
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                      }}
+                    >
+                      More
+                      <Icon name="menu" size={13} strokeWidth={1.85} />
+                    </button>
+                    {galleryMoreOpen && (
+                      <div
+                        role="menu"
+                        aria-orientation="vertical"
+                        aria-label="פעולות גלריה"
+                        onKeyDown={(e) => {
+                          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+                          e.preventDefault()
+                          const items = Array.from(galleryMoreRef.current?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') ?? [])
+                          if (!items.length) return
+                          const cur = items.indexOf(document.activeElement as HTMLButtonElement)
+                          const next = e.key === 'ArrowDown' ? (cur + 1) % items.length : (cur - 1 + items.length) % items.length
+                          items[next]?.focus({ preventScroll: true })
+                        }}
+                        style={{
+                          position: 'absolute', top: 40, insetInlineEnd: 0, zIndex: 20,
+                          minWidth: 220, padding: 4, direction: 'rtl',
+                          background: cardSolid, border: `1px solid ${border}`,
+                          boxShadow: '0 8px 24px rgba(0,0,0,.12)',
+                        }}
+                      >
+                        {([
+                          { icon: 'link' as const, label: 'העתק קישור ישיר', danger: false, onClick: () => {
+                            const url = galleryShareUrl(editingGallery)
+                            navigator.clipboard.writeText(url).then(
+                              () => showToast({ kind: 'success', text: 'הקישור הועתק ✓' }),
+                              () => showToast({ kind: 'error', text: 'ההעתקה נכשלה' }),
+                            )
+                            void warmGalleryCache(editingGallery.id)
+                          } },
+                          { icon: 'share' as const, label: 'שיתוף ומרכז שיתוף', danger: false, onClick: () => openEmailShare(editingGallery) },
+                          { icon: 'download' as const, label: 'ייצוא הגלריה (ZIP)', danger: false, onClick: () => { void handleGalleryExport() } },
+                          { icon: 'duplicate' as const, label: 'שכפל גלריה', danger: false, onClick: () => { void duplicateGallery(editingGallery) } },
+                          { icon: 'trash' as const, label: 'מחק גלריה', danger: true, onClick: () => { void deleteGallery(editingGallery) } },
+                        ]).map((item, i, arr) => (
+                          <React.Fragment key={item.label}>
+                            {item.danger && <div style={{ height: 1, background: border, margin: '4px 0' }} />}
+                            <button
+                              role="menuitem"
+                              onClick={() => { setGalleryMoreOpen(false); item.onClick() }}
+                              style={{
+                                width: '100%', textAlign: 'right', padding: '9px 10px',
+                                background: 'transparent', border: 'none', cursor: 'pointer',
+                                fontFamily: 'inherit', fontSize: 12,
+                                color: item.danger ? '#dc2626' : textPrimary,
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              }}
+                            >
+                              <span>{item.label}</span>
+                              <Icon name={item.icon} size={13} strokeWidth={1.85} />
+                            </button>
+                            {!item.danger && i < arr.length - 2 && null}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   {/* Publish (drafts) or Update (live). Visual states designed
                       to be undeniable at a glance:
                       - clean live   → outlined + heavily muted (opacity .4),
@@ -5256,6 +5351,61 @@ export function Dashboard() {
                         letterSpacing: '-0.015em', color: textPrimary,
                       }}>הגדרות גלריה</h3>
                     </div>
+
+                    {/* Event details — the canonical event_date lives in
+                        delivery_settings.eventDate; update_gallery_settings
+                        dual-writes the typed galleries.event_date column so
+                        dashboard, public metadata, portal and search stay in
+                        sync. Editable here after creation (was creation-only). */}
+                    <Section eyebrow="פרטי האירוע">
+                      <div style={{ display: 'grid', gap: 14 }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                            תאריך האירוע
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <input
+                              type="date"
+                              value={(ds.eventDate as string) || ''}
+                              onChange={(e) => updateGallerySetting('eventDate', e.target.value)}
+                              aria-label="תאריך האירוע"
+                              style={{
+                                padding: '10px 12px', borderRadius: 2, border: `1px solid ${border}`,
+                                background: '#fff', color: textPrimary, fontFamily: 'inherit', fontSize: 13,
+                              }}
+                            />
+                            {(ds.eventDate as string) ? (
+                              <button
+                                onClick={() => updateGallerySetting('eventDate', '')}
+                                style={{
+                                  padding: '8px 12px', borderRadius: 2, border: `1px solid ${border}`,
+                                  background: 'transparent', color: textMuted, fontFamily: 'inherit',
+                                  fontSize: 12, cursor: 'pointer',
+                                }}>נקה</button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                            מיקום
+                          </label>
+                          <input
+                            type="text"
+                            defaultValue={(ds.eventLocation as string) || ''}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim()
+                              if (v !== ((ds.eventLocation as string) || '')) updateGallerySetting('eventLocation', v)
+                            }}
+                            placeholder="עיר / אולם"
+                            aria-label="מיקום האירוע"
+                            style={{
+                              width: '100%', padding: '10px 12px', borderRadius: 2, border: `1px solid ${border}`,
+                              background: '#fff', color: textPrimary, fontFamily: 'inherit', fontSize: 13,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </Section>
 
                     {/* Downloads */}
                     <Section eyebrow="הורדות">
@@ -7169,7 +7319,7 @@ export function Dashboard() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
               <h2 id="email-share-heading" style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
-                שלח קישור במייל
+                מרכז שיתוף
               </h2>
               <button onClick={() => setShareGallery(null)} disabled={shareSending} aria-label="סגירה" style={{
                 background: 'transparent', border: 'none', color: textMuted, fontSize: 20,
@@ -7177,9 +7327,72 @@ export function Dashboard() {
                 opacity: shareSending ? 0.5 : 1,
               }}>×</button>
             </div>
-            <p style={{ fontSize: 13, color: textSecondary, margin: '0 0 22px', lineHeight: 1.5 }}>
-              שולח לכתובת המייל קישור לגלריה <strong>{shareGallery.name}</strong>. הלקוח יקבל מייל ממותג עם הקישור הציבורי.
+            <p style={{ fontSize: 13, color: textSecondary, margin: '0 0 18px', lineHeight: 1.5 }}>
+              שיתוף הגלריה <strong>{shareGallery.name}</strong> — קישור ציבורי, שליחה במייל, ונמענים אחרונים.
             </p>
+
+            {/* Canonical public URL + copy + publish status. The URL is the same
+                short route the email uses. Copy never exposes a storage path. */}
+            {(() => {
+              const url = galleryShareUrl(shareGallery)
+              const isLive = (shareGallery.status ?? '') === 'live'
+              return (
+                <div style={{
+                  display: 'flex', flexDirection: 'column', gap: 10,
+                  padding: 14, marginBottom: 18, borderRadius: 12,
+                  background: 'rgba(0,0,0,.03)', border: `1px solid ${border}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600,
+                      color: isLive ? '#1b8a4e' : '#b45309',
+                    }}>
+                      <span style={{
+                        width: 7, height: 7, borderRadius: '50%',
+                        background: isLive ? '#22c55e' : '#d97706',
+                      }} />
+                      {isLive ? 'פורסם — הקישור פעיל' : 'טיוטה — הקישור לא פעיל עד לפרסום'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      readOnly
+                      value={url}
+                      onFocus={e => e.currentTarget.select()}
+                      aria-label="קישור ציבורי לגלריה"
+                      style={{
+                        flex: 1, padding: '9px 12px', borderRadius: 8, direction: 'ltr', textAlign: 'left',
+                        background: '#fff', border: `1px solid ${border}`, color: textPrimary,
+                        fontSize: 12, fontFamily: 'inherit', outline: 'none', minWidth: 0,
+                      }}
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(url).then(
+                          () => {
+                            setShareLinkCopied(true)
+                            setTimeout(() => setShareLinkCopied(false), 1800)
+                          },
+                          () => showToast({ kind: 'error', text: 'ההעתקה נכשלה' }),
+                        )
+                        void warmGalleryCache(shareGallery.id)
+                      }}
+                      style={{
+                        padding: '9px 14px', borderRadius: 8, whiteSpace: 'nowrap',
+                        background: shareLinkCopied ? 'rgba(45,196,121,.10)' : textPrimary,
+                        border: `1px solid ${shareLinkCopied ? 'rgba(45,196,121,.45)' : textPrimary}`,
+                        color: shareLinkCopied ? '#1b8a4e' : '#fff',
+                        fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                      }}
+                    >
+                      <Icon name={shareLinkCopied ? 'check' : 'copy'} size={12} strokeWidth={1.85} />
+                      {shareLinkCopied ? 'הועתק' : 'העתק'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
 
             {shareSent ? (
               <div style={{
@@ -7290,6 +7503,46 @@ export function Dashboard() {
                 </div>
               </>
             )}
+
+            {/* Recent recipients — real send history from gallery_email_log via
+                gallery_activity_summary. Owner-scoped; empty state when none.
+                Never fabricated. */}
+            <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid ${border}` }}>
+              <div style={{
+                fontSize: 10, fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase',
+                color: textMuted, marginBottom: 10,
+              }}>נמענים אחרונים</div>
+              {activityLoading && !activitySummary ? (
+                <div style={{ fontSize: 12, color: textMuted, padding: '8px 0' }}>טוען…</div>
+              ) : (activitySummary?.recent_emails?.length ?? 0) === 0 ? (
+                <div style={{ fontSize: 12, color: textMuted, padding: '8px 0', lineHeight: 1.5 }}>
+                  עדיין לא נשלחו מיילים לגלריה זו. שליחה ראשונה תופיע כאן.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 180, overflowY: 'auto' }}>
+                  {activitySummary!.recent_emails.slice(0, 8).map(row => {
+                    const failed = row.status === 'failed'
+                    return (
+                      <div key={row.id} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                        fontSize: 12,
+                      }}>
+                        <span style={{ direction: 'ltr', textAlign: 'left', color: textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {row.recipient_email}
+                        </span>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                          color: failed ? '#b4544b' : textMuted,
+                        }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: failed ? '#b4544b' : '#22c55e' }} />
+                          {failed ? 'נכשל' : 'נשלח'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
