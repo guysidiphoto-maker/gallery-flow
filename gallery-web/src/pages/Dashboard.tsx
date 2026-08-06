@@ -5,11 +5,12 @@ import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany, partitionUploadFiles, MAX_UPLOAD_BATCH, type UploadRejectReason } from '../lib/uploadPipeline'
 import { uploadCoverImage, deleteCoverObject, CoverUploadError, type CoverUploadPhase } from '../lib/coverUpload'
+import { replacePhoto, ReplacePhotoError } from '../lib/replacePhoto'
 import { readCoverConfig, coverPathBelongsToGallery } from '../lib/coverImage'
 import { fetchAllGalleryImages } from '../lib/fetchAllImages'
 import { classifyForUpload, extractExistingKeys, type ExistingImageRef } from '../lib/dedupeUpload'
 import { captureException } from '@sentry/react'
-import { signedStorageUrl } from '../lib/signedStorage'
+import { signedStorageUrl, clearSignedUrlCache } from '../lib/signedStorage'
 import { warmGalleryCache } from '../lib/warmCache'
 import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
@@ -388,6 +389,12 @@ export function Dashboard() {
   // active section's grid even if state changes mid-view.
   const [viewerImages, setViewerImages] = useState<GalleryImage[] | null>(null)
   const [viewerIndex, setViewerIndex] = useState<number>(0)
+  // "Replace photo" — the image whose pixels are being swapped, and the hidden
+  // file input driving the picker. Non-null while a replace is in flight so the
+  // tile can show a spinner and the menu item can guard against double-fire.
+  const [replacingImageId, setReplacingImageId] = useState<string | null>(null)
+  const replaceInputRef = useRef<HTMLInputElement>(null)
+  const replaceTargetRef = useRef<string | null>(null)
   const [selectMode, setSelectMode] = useState(false)
   // Photo-grid view state — hovered tile + open per-tile menu + grid size
   // (Pixieset offers Regular/Large) + sort order.
@@ -2287,6 +2294,81 @@ export function Dashboard() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
   }
 
+  // Copy an image's original filename to the clipboard. The filename is the
+  // photographer-facing identity (their camera's export name) and is stored on
+  // the row; copying never touches storage paths.
+  async function copyImageFilename(imageId: string) {
+    const img = galleryImages.find(i => i.id === imageId)
+    if (!img?.filename) return
+    try {
+      await navigator.clipboard.writeText(img.filename)
+      showToast({ kind: 'success', text: 'שם הקובץ הועתק' })
+    } catch {
+      showToast({ kind: 'error', text: 'ההעתקה נכשלה' })
+    }
+  }
+
+  // "Replace photo" — open the file picker for a specific image. The actual
+  // swap runs in handleReplaceFile once a file is chosen.
+  function openReplacePicker(imageId: string) {
+    if (replacingImageId) return
+    replaceTargetRef.current = imageId
+    replaceInputRef.current?.click()
+  }
+
+  // Swap the pixels behind an existing photo, preserving its identity (section,
+  // order, top-pick, favourites, cover role). The replacePhoto lib uploads the
+  // new original first, flips the row via the owner-checked replace_image RPC,
+  // then deletes the old object — so a failure at any step leaves the original
+  // fully usable. On success we re-point local state (and the cover, if this
+  // photo was the cover) to the new pixels and bust the signed-URL cache so the
+  // grid repaints the new image instead of the stale cached one.
+  async function handleReplaceFile(file: File) {
+    const imageId = replaceTargetRef.current
+    replaceTargetRef.current = null
+    if (!file || !imageId || !editingGallery || !businessSlug) return
+    setReplacingImageId(imageId)
+    try {
+      const res = await replacePhoto({
+        galleryId: editingGallery.id,
+        imageId,
+        businessSlug,
+        file,
+      })
+      // Re-point local state to the new object so the grid + lightbox repaint.
+      setGalleryImages(prev => prev.map(i =>
+        i.id === imageId
+          ? { ...i, storage_path: res.newPath, thumbnail_path: res.newPath, original_path: res.newPath, filename: res.filename }
+          : i,
+      ))
+      // If this photo was the gallery cover, re-point the cover to the new
+      // pixels through the canonical owner-checked write (which owns URL
+      // construction). Keeps the cover working after the swap.
+      if (res.wasCover) {
+        await updateGallerySettings({
+          coverImagePath: res.newPath,
+          coverImageUrl: imgUrl(res.newPath),
+        })
+      }
+      // The web/thumb transform URLs are keyed by the (now changed) storage
+      // path, so no stale-cache bust is needed for those; but clear any signed
+      // URL cache entry to be safe for HD-download resolution.
+      clearSignedUrlCache()
+      markDirty()
+      showToast({ kind: 'success', text: 'התמונה הוחלפה' })
+    } catch (e) {
+      const reason = e instanceof ReplacePhotoError ? e.reason : undefined
+      const msg = reason === 'heic' ? 'HEIC אינו נתמך. המירו ל-JPEG'
+        : reason === 'too_large' ? 'הקובץ גדול מדי'
+        : reason === 'unsupported' ? 'פורמט לא נתמך (JPEG / PNG / WebP בלבד)'
+        : 'החלפת התמונה נכשלה. התמונה המקורית נשמרה'
+      showToast({ kind: 'error', text: msg })
+      console.warn('[handleReplaceFile] replace failed', e)
+    } finally {
+      setReplacingImageId(null)
+    }
+  }
+
   // Reorder helper. Operates on the *visible* list (the active section's
   // images, sorted by sort_order). Used by both the drag-and-drop handler
   // and the keyboard "Move up / Move down" menu items so visual users and
@@ -3840,6 +3922,16 @@ export function Dashboard() {
                       <input ref={fileInputRef} type="file" multiple accept="image/*"
                         style={{ display: 'none' }}
                         onChange={e => handleFileUpload(e.target.files)} />
+                      {/* Single-file picker driving "Replace photo" (per-image
+                          overflow menu). Reset value after use so re-selecting
+                          the same file fires onChange again. */}
+                      <input ref={replaceInputRef} type="file" accept="image/jpeg,image/png,image/webp"
+                        style={{ display: 'none' }}
+                        onChange={e => {
+                          const f = e.target.files?.[0]
+                          e.target.value = ''
+                          if (f) void handleReplaceFile(f)
+                        }} />
                       {/* Right cluster — sort dropdown + grid size toggle + Add Media */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {/* Sort */}
@@ -4360,6 +4452,22 @@ export function Dashboard() {
                                   )}
                                   <div style={{ height: 1, background: border, margin: '4px 0' }} />
                                   <button role="menuitem"
+                                    onClick={() => {
+                                      setImageMenuOpenId(null)
+                                      const sorted = visibleImages
+                                      const idx = sorted.findIndex(i => i.id === img.id)
+                                      if (idx >= 0) { setViewerImages(sorted); setViewerIndex(idx) }
+                                    }}
+                                    style={{
+                                      width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                      background: 'transparent', border: 'none', cursor: 'pointer',
+                                      fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    }}>
+                                    <span>פתח</span>
+                                    <Icon name="eye" size={13} strokeWidth={1.85} />
+                                  </button>
+                                  <button role="menuitem"
                                     onClick={() => { downloadOriginal(img.id); setImageMenuOpenId(null) }}
                                     style={{
                                       width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -4370,6 +4478,33 @@ export function Dashboard() {
                                     <span>הורדה</span>
                                     <Icon name="download" size={13} strokeWidth={1.85} />
                                   </button>
+                                  <button role="menuitem"
+                                    onClick={() => { void copyImageFilename(img.id); setImageMenuOpenId(null) }}
+                                    title={img.filename || undefined}
+                                    style={{
+                                      width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                      background: 'transparent', border: 'none', cursor: 'pointer',
+                                      fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    }}>
+                                    <span>העתק שם קובץ</span>
+                                    <Icon name="copy" size={13} strokeWidth={1.85} />
+                                  </button>
+                                  <button role="menuitem"
+                                    disabled={replacingImageId === img.id}
+                                    onClick={() => { setImageMenuOpenId(null); openReplacePicker(img.id) }}
+                                    style={{
+                                      width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                      background: 'transparent', border: 'none',
+                                      cursor: replacingImageId === img.id ? 'default' : 'pointer',
+                                      opacity: replacingImageId === img.id ? 0.5 : 1,
+                                      fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    }}>
+                                    <span>{replacingImageId === img.id ? 'מחליף…' : 'החלף תמונה'}</span>
+                                    <Icon name="refresh" size={13} strokeWidth={1.85} />
+                                  </button>
+                                  <div style={{ height: 1, background: border, margin: '4px 0' }} />
                                   <button role="menuitem"
                                     onClick={() => { deleteSingleImage(img.id); setImageMenuOpenId(null) }}
                                     style={{
