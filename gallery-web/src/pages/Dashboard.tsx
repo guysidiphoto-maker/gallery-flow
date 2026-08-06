@@ -2300,6 +2300,45 @@ export function Dashboard() {
     markDirty()
     exitSelectMode()
   }
+  // Move every selected photo to another Set. Scoped to the editing gallery's
+  // rows (RLS enforces ownership); a section from another gallery can't be a
+  // target because `sections` only holds this gallery's sections.
+  async function bulkMoveToSection(sectionId: string) {
+    if (!editingGallery || selectedImageIds.size === 0) return
+    const ids = Array.from(selectedImageIds)
+    const { error } = await supabase.from('images')
+      .update({ section_id: sectionId })
+      .in('id', ids)
+      .eq('gallery_id', editingGallery.id)
+    if (error) {
+      showToast({ kind: 'error', text: 'העברה נכשלה: ' + error.message })
+      console.warn('[bulkMoveToSection]', error)
+      return
+    }
+    setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, section_id: sectionId } : i))
+    markDirty()
+    exitSelectMode()
+    showToast({ kind: 'success', text: `${ids.length} תמונות הועברו` })
+  }
+  // Download every selected original. Sequential (with a short gap) so the
+  // browser doesn't drop concurrent programmatic downloads. Reuses the same
+  // signed-URL resolution as the single-photo download.
+  async function bulkDownloadSelected() {
+    if (selectedImageIds.size === 0) return
+    const snap = galleryImages.filter(i => selectedImageIds.has(i.id))
+    for (const img of snap) {
+      try {
+        const url = await signedStorageUrl('gallery-images', img.storage_path)
+        const a = document.createElement('a')
+        a.href = url; a.download = img.filename || 'photo.jpg'
+        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        await new Promise(r => setTimeout(r, 250))
+      } catch (e) {
+        console.warn('[bulkDownload] failed for', img.id, e)
+      }
+    }
+    showToast({ kind: 'success', text: `הורדת ${snap.length} תמונות החלה` })
+  }
   // Select-all should match what the photographer is LOOKING at — sections
   // act as separate galleries (no "all photos" anymore), so selecting across
   // sections would silently bulk-delete invisible photos.
@@ -4194,6 +4233,30 @@ export function Dashboard() {
                           color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
                           fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
                         }}>Unpin</button>
+                        {/* Move selected to another Set — only sections other than
+                            the one being viewed are useful destinations. */}
+                        {sections.filter(s => s.id !== activeSectionId).length > 0 && (
+                          <select
+                            aria-label="העבר לסט"
+                            value=""
+                            onChange={(e) => { if (e.target.value) void bulkMoveToSection(e.target.value) }}
+                            style={{
+                              background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
+                              color: '#fff', padding: '6px 10px', fontSize: 11, cursor: 'pointer',
+                              fontFamily: 'inherit', letterSpacing: '0.08em',
+                            }}
+                          >
+                            <option value="" style={{ color: '#111' }}>העבר לסט…</option>
+                            {sections.filter(s => s.id !== activeSectionId).map(s => (
+                              <option key={s.id} value={s.id} style={{ color: '#111' }}>{s.name}</option>
+                            ))}
+                          </select>
+                        )}
+                        <button onClick={() => void bulkDownloadSelected()} style={{
+                          background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
+                          color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
+                          fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
+                        }}>Download</button>
                         <button onClick={bulkDeleteSelected} style={{
                           background: '#dc2626', border: `1px solid #dc2626`, borderRadius: 2,
                           color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
