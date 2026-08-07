@@ -15,8 +15,17 @@ export function makeDismissHandlers(
     const c = getContainer()
     if (c && !c.contains(e.target)) onClose()
   }
-  const onKey = (e: { key: string }) => {
-    if (e.key === 'Escape') onClose()
+  const onKey = (e: { key: string; stopPropagation?: () => void; stopImmediatePropagation?: () => void }) => {
+    if (e.key !== 'Escape') return
+    onClose()
+    // Consume the Escape so it doesn't ALSO reach an outer Escape handler on
+    // the document (e.g. a modal's focus trap). Without this, pressing Escape
+    // with a menu open inside the gallery editor closed both the menu AND the
+    // editor. useDismiss listens in the capture phase (see below), so stopping
+    // immediate propagation here prevents the bubble-phase document listeners
+    // (useFocusTrap) from ever firing for this event.
+    e.stopPropagation?.()
+    e.stopImmediatePropagation?.()
   }
   return { onPointer, onKey }
 }
@@ -27,10 +36,12 @@ export function useDismiss<T extends HTMLElement>(open: boolean, onClose: () => 
     if (!open) return
     const { onPointer, onKey } = makeDismissHandlers(() => ref.current, onClose)
     document.addEventListener('mousedown', onPointer as (e: MouseEvent) => void)
-    document.addEventListener('keydown', onKey as (e: KeyboardEvent) => void)
+    // Capture phase so an open popover consumes Escape before any bubble-phase
+    // document handler (e.g. the editor's focus trap) can act on it.
+    document.addEventListener('keydown', onKey as (e: KeyboardEvent) => void, true)
     return () => {
       document.removeEventListener('mousedown', onPointer as (e: MouseEvent) => void)
-      document.removeEventListener('keydown', onKey as (e: KeyboardEvent) => void)
+      document.removeEventListener('keydown', onKey as (e: KeyboardEvent) => void, true)
     }
   }, [open, onClose])
   return ref

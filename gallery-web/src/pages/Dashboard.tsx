@@ -5,11 +5,16 @@ import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
 import { supabase, storageUrl } from '../supabase'
 import { uploadMany, partitionUploadFiles, MAX_UPLOAD_BATCH, type UploadRejectReason } from '../lib/uploadPipeline'
 import { uploadCoverImage, deleteCoverObject, CoverUploadError, type CoverUploadPhase } from '../lib/coverUpload'
+import { replacePhoto, ReplacePhotoError } from '../lib/replacePhoto'
+import {
+  listPresets, savePreset, renamePreset, deletePreset, setDefaultPreset,
+  capturePresetSettings, summarizePreset, type GalleryPreset,
+} from '../lib/galleryPresets'
 import { readCoverConfig, coverPathBelongsToGallery } from '../lib/coverImage'
 import { fetchAllGalleryImages } from '../lib/fetchAllImages'
 import { classifyForUpload, extractExistingKeys, type ExistingImageRef } from '../lib/dedupeUpload'
 import { captureException } from '@sentry/react'
-import { signedStorageUrl } from '../lib/signedStorage'
+import { signedStorageUrl, clearSignedUrlCache } from '../lib/signedStorage'
 import { warmGalleryCache } from '../lib/warmCache'
 import { SignedImg } from '../components/SignedImg'
 import { getMyTokenBalance, startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
@@ -84,6 +89,13 @@ interface Gallery {
   // legacy delivery_settings.faceIndexEnabled JSONB key — the column is the
   // canonical source for the rekognition RPC, JSONB for the public viewer.
   face_index_enabled?: boolean | null
+  // Canonical event metadata columns (public viewer / search / portal read
+  // these). update_gallery_settings dual-writes them from delivery_settings.
+  // The editor displays these as the fallback so a gallery whose date lives
+  // only in the column (created before delivery_settings.eventDate existed)
+  // still shows its date.
+  event_date?: string | null
+  event_location?: string | null
 }
 
 interface GalleryImage {
@@ -388,10 +400,29 @@ export function Dashboard() {
   // active section's grid even if state changes mid-view.
   const [viewerImages, setViewerImages] = useState<GalleryImage[] | null>(null)
   const [viewerIndex, setViewerIndex] = useState<number>(0)
+  // "Replace photo" — the image whose pixels are being swapped, and the hidden
+  // file input driving the picker. Non-null while a replace is in flight so the
+  // tile can show a spinner and the menu item can guard against double-fire.
+  const [replacingImageId, setReplacingImageId] = useState<string | null>(null)
+  const replaceInputRef = useRef<HTMLInputElement>(null)
+  const replaceTargetRef = useRef<string | null>(null)
   const [selectMode, setSelectMode] = useState(false)
   // Photo-grid view state — hovered tile + open per-tile menu + grid size
   // (Pixieset offers Regular/Large) + sort order.
   const [hoveredImageId, setHoveredImageId] = useState<string | null>(null)
+  // Touch devices have no hover, so the hover-revealed photo overlay (top-pick
+  // star + "…" action-menu trigger) would be unreachable — making Replace /
+  // Copy filename / Set-cover / Move / Delete impossible on a phone. Detect a
+  // coarse pointer and show those affordances persistently there.
+  const [coarsePointer, setCoarsePointer] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(hover: none), (pointer: coarse)')
+    const update = () => setCoarsePointer(mq.matches)
+    update()
+    mq.addEventListener?.('change', update)
+    return () => mq.removeEventListener?.('change', update)
+  }, [])
   // Cover-image editor state (Design → Cover). `coverMode` chooses between
   // picking an existing photo and uploading a separate cover.
   const [coverMode, setCoverMode] = useState<'gallery' | 'upload'>('gallery')
@@ -429,6 +460,28 @@ export function Dashboard() {
   // is attached to the open popup; clicking anywhere outside it (or Escape)
   // closes the menu and returns focus to the photo.
   const photoMenuRef = useDismiss<HTMLDivElement>(imageMenuOpenId !== null, closePhotoMenu)
+  // Gallery-level "More" menu (editor header) — consolidates the scattered
+  // gallery actions (share, export, duplicate, delete) into one accessible
+  // dropdown. Dismisses on outside click / Escape via the shared hook.
+  const [galleryMoreOpen, setGalleryMoreOpen] = useState(false)
+  const galleryMoreRef = useDismiss<HTMLDivElement>(galleryMoreOpen, () => setGalleryMoreOpen(false))
+  const galleryMoreTriggerRef = useRef<HTMLButtonElement>(null)
+  // Keyboard parity with the photo menu: focus the first item when the More
+  // menu opens, and restore focus to the trigger when it closes.
+  useEffect(() => {
+    if (galleryMoreOpen) {
+      const first = galleryMoreRef.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]')
+      first?.focus({ preventScroll: true })
+    } else if (document.activeElement && galleryMoreRef.current?.contains(document.activeElement)) {
+      // Only pull focus back to the trigger if focus was still inside the menu
+      // (i.e. keyboard dismissal), not when the user clicked elsewhere.
+      galleryMoreTriggerRef.current?.focus({ preventScroll: true })
+    }
+  }, [galleryMoreOpen])
+  // Gallery presets — owner-scoped reusable settings bundles.
+  const [presets, setPresets] = useState<GalleryPreset[]>([])
+  const [presetsLoaded, setPresetsLoaded] = useState(false)
+  const [presetBusy, setPresetBusy] = useState(false)
   const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
   const [photoSort, setPhotoSort] = useState<'order' | 'name' | 'newest'>('order')
   // Drag-to-reorder state. Only meaningful when photoSort === 'order'.
@@ -650,13 +703,13 @@ export function Dashboard() {
     }
   }, [editingGallery?.id])
 
-  // Lazy-load activity summary when the tab opens. Re-fetches when switching
-  // galleries, but caches per-gallery within the editor session.
-  useEffect(() => {
-    if (editTab !== 'activities' || !editingGallery) return
+  // Load the activity summary for a gallery (downloads / favourites / recent
+  // email recipients). Reused by the Activities tab and the Share Center, which
+  // both surface recent_emails. Owner-scoped via the RPC's RLS.
+  const loadActivitySummary = useCallback((galleryId: string) => {
     setActivityLoading(true)
-    supabase
-      .rpc('gallery_activity_summary', { p_gallery_id: editingGallery.id })
+    return supabase
+      .rpc('gallery_activity_summary', { p_gallery_id: galleryId })
       .then(({ data, error }) => {
         if (error) {
           console.warn('[activities] fetch failed', error)
@@ -666,7 +719,81 @@ export function Dashboard() {
         }
         setActivityLoading(false)
       })
-  }, [editTab, editingGallery?.id])
+  }, [])
+
+  // Lazy-load activity summary when the tab opens. Re-fetches when switching
+  // galleries, but caches per-gallery within the editor session.
+  useEffect(() => {
+    if (editTab !== 'activities' || !editingGallery) return
+    void loadActivitySummary(editingGallery.id)
+  }, [editTab, editingGallery?.id, loadActivitySummary])
+
+  // Presets: load once per editor session when the Settings tab is first opened.
+  const refreshPresets = useCallback(async () => {
+    if (!businessId) return
+    setPresets(await listPresets(businessId))
+    setPresetsLoaded(true)
+  }, [businessId])
+  useEffect(() => {
+    if (editTab === 'settings' && businessId && !presetsLoaded) void refreshPresets()
+  }, [editTab, businessId, presetsLoaded, refreshPresets])
+
+  // Save the current gallery's reusable settings as a named preset. capture*
+  // strips identity/secrets client-side; the server trigger re-strips.
+  async function handleSavePreset() {
+    if (!businessId || !editingGallery) return
+    const name = window.prompt('שם הפריסט')?.trim()
+    if (!name) return
+    setPresetBusy(true)
+    const created = await savePreset(businessId, name, editingGallery.delivery_settings as Record<string, unknown>)
+    setPresetBusy(false)
+    if (created) { await refreshPresets(); showToast({ kind: 'success', text: 'הפריסט נשמר' }) }
+    else showToast({ kind: 'error', text: 'שמירת הפריסט נכשלה' })
+  }
+
+  // Apply a preset to the current gallery after a summary confirm. Reuses the
+  // owner-checked + validated update_gallery_settings write path.
+  async function handleApplyPreset(p: GalleryPreset) {
+    if (!editingGallery) return
+    const summary = summarizePreset(p)
+    const ok = await confirm({
+      title: `להחיל את "${p.name}"?`,
+      body: summary.length ? summary.join(' · ') : 'ללא הגדרות',
+      confirmLabel: 'החל',
+    })
+    if (!ok) return
+    setPresetBusy(true)
+    const applied = await updateGallerySettings(capturePresetSettings(p.settings))
+    setPresetBusy(false)
+    showToast(applied
+      ? { kind: 'success', text: 'הפריסט הוחל' }
+      : { kind: 'error', text: 'החלת הפריסט נכשלה' })
+  }
+
+  async function handleRenamePreset(p: GalleryPreset) {
+    const name = window.prompt('שם חדש לפריסט', p.name)?.trim()
+    if (!name || name === p.name) return
+    setPresetBusy(true)
+    const ok = await renamePreset(p.id, name)
+    setPresetBusy(false)
+    if (ok) { await refreshPresets(); showToast({ kind: 'success', text: 'שם הפריסט עודכן' }) }
+  }
+
+  async function handleDeletePreset(p: GalleryPreset) {
+    const ok = await confirm({ title: `למחוק את "${p.name}"?`, body: 'פעולה זו אינה הפיכה.', confirmLabel: 'מחק', danger: true })
+    if (!ok) return
+    setPresetBusy(true)
+    const done = await deletePreset(p.id)
+    setPresetBusy(false)
+    if (done) { await refreshPresets(); showToast({ kind: 'success', text: 'הפריסט נמחק' }) }
+  }
+
+  async function handleSetDefaultPreset(p: GalleryPreset) {
+    setPresetBusy(true)
+    const ok = await setDefaultPreset(p.id)
+    setPresetBusy(false)
+    if (ok) { await refreshPresets(); showToast({ kind: 'success', text: 'הוגדר כברירת מחדל' }) }
+  }
 
   async function initBusiness() {
     // Look up existing business for this user
@@ -724,7 +851,7 @@ export function Dashboard() {
     }
     const { data, error } = await supabase
       .from('galleries')
-      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+      .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings, event_date, event_location')
       .eq('business_id', bId)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch galleries error:', error)
@@ -1735,7 +1862,7 @@ export function Dashboard() {
       // produced, rather than reconstructing them client-side.
       const { data: fresh } = await supabase
         .from('galleries')
-        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings')
+        .select('id, name, slug, image_count, published_at, status, download_count, favorite_count, delivery_settings, event_date, event_location')
         .eq('id', newId)
         .maybeSingle()
       if (fresh) openGalleryEditor(fresh as Gallery)
@@ -1762,7 +1889,12 @@ export function Dashboard() {
     setShareMessage('')
     setShareEmail('')
     setShareSent(false)
+    setShareLinkCopied(false)
+    // Populate the Share Center's "recent recipients" list from the real
+    // email log (no fabricated history — empty state shows when there's none).
+    void loadActivitySummary(g.id)
   }
+  const [shareLinkCopied, setShareLinkCopied] = useState(false)
 
   // Focus traps — one per modal. Each is wired to escape-to-close so
   // keyboard users can dismiss the modal exactly the way mouse users do.
@@ -2201,6 +2333,45 @@ export function Dashboard() {
     markDirty()
     exitSelectMode()
   }
+  // Move every selected photo to another Set. Scoped to the editing gallery's
+  // rows (RLS enforces ownership); a section from another gallery can't be a
+  // target because `sections` only holds this gallery's sections.
+  async function bulkMoveToSection(sectionId: string) {
+    if (!editingGallery || selectedImageIds.size === 0) return
+    const ids = Array.from(selectedImageIds)
+    const { error } = await supabase.from('images')
+      .update({ section_id: sectionId })
+      .in('id', ids)
+      .eq('gallery_id', editingGallery.id)
+    if (error) {
+      showToast({ kind: 'error', text: 'העברה נכשלה: ' + error.message })
+      console.warn('[bulkMoveToSection]', error)
+      return
+    }
+    setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, section_id: sectionId } : i))
+    markDirty()
+    exitSelectMode()
+    showToast({ kind: 'success', text: `${ids.length} תמונות הועברו` })
+  }
+  // Download every selected original. Sequential (with a short gap) so the
+  // browser doesn't drop concurrent programmatic downloads. Reuses the same
+  // signed-URL resolution as the single-photo download.
+  async function bulkDownloadSelected() {
+    if (selectedImageIds.size === 0) return
+    const snap = galleryImages.filter(i => selectedImageIds.has(i.id))
+    for (const img of snap) {
+      try {
+        const url = await signedStorageUrl('gallery-images', img.storage_path)
+        const a = document.createElement('a')
+        a.href = url; a.download = img.filename || 'photo.jpg'
+        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        await new Promise(r => setTimeout(r, 250))
+      } catch (e) {
+        console.warn('[bulkDownload] failed for', img.id, e)
+      }
+    }
+    showToast({ kind: 'success', text: `הורדת ${snap.length} תמונות החלה` })
+  }
   // Select-all should match what the photographer is LOOKING at — sections
   // act as separate galleries (no "all photos" anymore), so selecting across
   // sections would silently bulk-delete invisible photos.
@@ -2285,6 +2456,82 @@ export function Dashboard() {
     const a = document.createElement('a')
     a.href = url; a.download = img.filename || 'photo.jpg'
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
+  }
+
+  // Copy an image's original filename to the clipboard. The filename is the
+  // photographer-facing identity (their camera's export name) and is stored on
+  // the row; copying never touches storage paths.
+  async function copyImageFilename(imageId: string) {
+    const img = galleryImages.find(i => i.id === imageId)
+    if (!img?.filename) return
+    try {
+      await navigator.clipboard.writeText(img.filename)
+      showToast({ kind: 'success', text: 'שם הקובץ הועתק' })
+    } catch {
+      showToast({ kind: 'error', text: 'ההעתקה נכשלה' })
+    }
+  }
+
+  // "Replace photo" — open the file picker for a specific image. The actual
+  // swap runs in handleReplaceFile once a file is chosen.
+  function openReplacePicker(imageId: string) {
+    if (replacingImageId) return
+    replaceTargetRef.current = imageId
+    replaceInputRef.current?.click()
+  }
+
+  // Swap the pixels behind an existing photo, preserving its identity (section,
+  // order, top-pick, favourites, cover role). The replacePhoto lib uploads the
+  // new original first, flips the row via the owner-checked replace_image RPC,
+  // then deletes the old object — so a failure at any step leaves the original
+  // fully usable. On success we re-point local state (and the cover, if this
+  // photo was the cover) to the new pixels and bust the signed-URL cache so the
+  // grid repaints the new image instead of the stale cached one.
+  async function handleReplaceFile(file: File) {
+    const imageId = replaceTargetRef.current
+    replaceTargetRef.current = null
+    if (!file || !imageId || !editingGallery || !businessSlug) return
+    setReplacingImageId(imageId)
+    try {
+      const res = await replacePhoto({
+        galleryId: editingGallery.id,
+        imageId,
+        businessSlug,
+        file,
+        // If this photo is the gallery cover, re-point the cover to the new
+        // pixels through the canonical owner-checked write (which owns URL
+        // construction) BEFORE the old storage object is deleted — so the
+        // cover never briefly references a deleted object.
+        onRepointCover: async (newPath) => {
+          await updateGallerySettings({
+            coverImagePath: newPath,
+            coverImageUrl: imgUrl(newPath),
+          })
+        },
+      })
+      // Re-point local state to the new object so the grid + lightbox repaint.
+      setGalleryImages(prev => prev.map(i =>
+        i.id === imageId
+          ? { ...i, storage_path: res.newPath, thumbnail_path: res.newPath, original_path: res.newPath, filename: res.filename }
+          : i,
+      ))
+      // The web/thumb transform URLs are keyed by the (now changed) storage
+      // path, so no stale-cache bust is needed for those; but clear any signed
+      // URL cache entry to be safe for HD-download resolution.
+      clearSignedUrlCache()
+      markDirty()
+      showToast({ kind: 'success', text: 'התמונה הוחלפה' })
+    } catch (e) {
+      const reason = e instanceof ReplacePhotoError ? e.reason : undefined
+      const msg = reason === 'heic' ? 'HEIC אינו נתמך. המירו ל-JPEG'
+        : reason === 'too_large' ? 'הקובץ גדול מדי'
+        : reason === 'unsupported' ? 'פורמט לא נתמך (JPEG / PNG / WebP בלבד)'
+        : 'החלפת התמונה נכשלה. התמונה המקורית נשמרה'
+      showToast({ kind: 'error', text: msg })
+      console.warn('[handleReplaceFile] replace failed', e)
+    } finally {
+      setReplacingImageId(null)
+    }
   }
 
   // Reorder helper. Operates on the *visible* list (the active section's
@@ -3421,6 +3668,84 @@ export function Dashboard() {
                       {copiedInEditor ? 'הקישור הועתק' : 'Copy Link'}
                     </button>
                   )}
+                  {/* Gallery-level More menu — consolidates share/export/
+                      duplicate/delete so these live in one place instead of
+                      scattered icons. Destructive Delete is visually separated.
+                      role=menu + arrow-key nav + outside-click/Escape dismiss. */}
+                  <div ref={galleryMoreRef} style={{ position: 'relative' }}>
+                    <button
+                      ref={galleryMoreTriggerRef}
+                      onClick={() => setGalleryMoreOpen(o => !o)}
+                      aria-haspopup="menu"
+                      aria-expanded={galleryMoreOpen}
+                      aria-label="עוד פעולות לגלריה"
+                      style={{
+                        padding: '10px 16px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                        background: galleryMoreOpen ? 'rgba(0,0,0,.04)' : 'transparent',
+                        border: `1px solid ${border}`, color: textPrimary, cursor: 'pointer',
+                        fontFamily: 'inherit', letterSpacing: '0.18em', textTransform: 'uppercase',
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                      }}
+                    >
+                      More
+                      <Icon name="menu" size={13} strokeWidth={1.85} />
+                    </button>
+                    {galleryMoreOpen && (
+                      <div
+                        role="menu"
+                        aria-orientation="vertical"
+                        aria-label="פעולות גלריה"
+                        onKeyDown={(e) => {
+                          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+                          e.preventDefault()
+                          const items = Array.from(galleryMoreRef.current?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') ?? [])
+                          if (!items.length) return
+                          const cur = items.indexOf(document.activeElement as HTMLButtonElement)
+                          const next = e.key === 'ArrowDown' ? (cur + 1) % items.length : (cur - 1 + items.length) % items.length
+                          items[next]?.focus({ preventScroll: true })
+                        }}
+                        style={{
+                          position: 'absolute', top: 40, insetInlineEnd: 0, zIndex: 20,
+                          minWidth: 220, padding: 4, direction: 'rtl',
+                          background: cardSolid, border: `1px solid ${border}`,
+                          boxShadow: '0 8px 24px rgba(0,0,0,.12)',
+                        }}
+                      >
+                        {([
+                          { icon: 'link' as const, label: 'העתק קישור ישיר', danger: false, onClick: () => {
+                            const url = galleryShareUrl(editingGallery)
+                            navigator.clipboard.writeText(url).then(
+                              () => showToast({ kind: 'success', text: 'הקישור הועתק ✓' }),
+                              () => showToast({ kind: 'error', text: 'ההעתקה נכשלה' }),
+                            )
+                            void warmGalleryCache(editingGallery.id)
+                          } },
+                          { icon: 'share' as const, label: 'שיתוף ומרכז שיתוף', danger: false, onClick: () => openEmailShare(editingGallery) },
+                          { icon: 'download' as const, label: 'ייצוא הגלריה (ZIP)', danger: false, onClick: () => { void handleGalleryExport() } },
+                          { icon: 'duplicate' as const, label: 'שכפל גלריה', danger: false, onClick: () => { void duplicateGallery(editingGallery) } },
+                          { icon: 'trash' as const, label: 'מחק גלריה', danger: true, onClick: () => { void deleteGallery(editingGallery) } },
+                        ]).map((item, i, arr) => (
+                          <React.Fragment key={item.label}>
+                            {item.danger && <div style={{ height: 1, background: border, margin: '4px 0' }} />}
+                            <button
+                              role="menuitem"
+                              onClick={() => { setGalleryMoreOpen(false); item.onClick() }}
+                              style={{
+                                width: '100%', textAlign: 'right', padding: '9px 10px',
+                                background: 'transparent', border: 'none', cursor: 'pointer',
+                                fontFamily: 'inherit', fontSize: 12,
+                                color: item.danger ? '#dc2626' : textPrimary,
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              }}
+                            >
+                              <span>{item.label}</span>
+                              <Icon name={item.icon} size={13} strokeWidth={1.85} />
+                            </button>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   {/* Publish (drafts) or Update (live). Visual states designed
                       to be undeniable at a glance:
                       - clean live   → outlined + heavily muted (opacity .4),
@@ -3840,6 +4165,16 @@ export function Dashboard() {
                       <input ref={fileInputRef} type="file" multiple accept="image/*"
                         style={{ display: 'none' }}
                         onChange={e => handleFileUpload(e.target.files)} />
+                      {/* Single-file picker driving "Replace photo" (per-image
+                          overflow menu). Reset value after use so re-selecting
+                          the same file fires onChange again. */}
+                      <input ref={replaceInputRef} type="file" accept="image/jpeg,image/png,image/webp"
+                        style={{ display: 'none' }}
+                        onChange={e => {
+                          const f = e.target.files?.[0]
+                          e.target.value = ''
+                          if (f) void handleReplaceFile(f)
+                        }} />
                       {/* Right cluster — sort dropdown + grid size toggle + Add Media */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {/* Sort */}
@@ -3885,6 +4220,26 @@ export function Dashboard() {
                             </button>
                           ))}
                         </div>
+                        {/* Enter select mode — the gateway to the bulk-action
+                            bar (move to set / download / pin / delete). Shown
+                            only when there are photos and we're not already
+                            selecting. */}
+                        {galleryImages.length > 0 && !selectMode && (
+                          <button
+                            onClick={() => setSelectMode(true)}
+                            aria-label="בחירת תמונות"
+                            style={{
+                              padding: '10px 16px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                              background: 'transparent', border: `1px solid ${border}`,
+                              color: textPrimary, cursor: 'pointer', fontFamily: 'inherit',
+                              letterSpacing: '0.18em', textTransform: 'uppercase',
+                              display: 'inline-flex', alignItems: 'center', gap: 8,
+                            }}
+                          >
+                            <Icon name="check" size={13} strokeWidth={1.85} />
+                            בחר
+                          </button>
+                        )}
                         <button
                           onClick={() => fileInputRef.current?.click()}
                           disabled={uploading}
@@ -3903,13 +4258,15 @@ export function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Bulk action toolbar — sticky inline strip */}
+                    {/* Bulk action toolbar — sticky inline strip. Wraps on
+                        narrow (mobile) viewports so the trailing Download/Delete/
+                        close controls are never clipped or pushed off-screen. */}
                     {selectMode && (
                       <div style={{
                         position: 'sticky', top: 0, zIndex: 10,
                         marginBottom: 16, padding: '10px 16px',
                         background: textPrimary, color: '#fff',
-                        display: 'flex', alignItems: 'center', gap: 12,
+                        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12,
                         fontSize: 12,
                       }}>
                         <span style={{ fontWeight: 500, letterSpacing: '0.04em' }}>
@@ -3932,6 +4289,30 @@ export function Dashboard() {
                           color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
                           fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
                         }}>Unpin</button>
+                        {/* Move selected to another Set — only sections other than
+                            the one being viewed are useful destinations. */}
+                        {sections.filter(s => s.id !== activeSectionId).length > 0 && (
+                          <select
+                            aria-label="העבר לסט"
+                            value=""
+                            onChange={(e) => { if (e.target.value) void bulkMoveToSection(e.target.value) }}
+                            style={{
+                              background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
+                              color: '#fff', padding: '6px 10px', fontSize: 11, cursor: 'pointer',
+                              fontFamily: 'inherit', letterSpacing: '0.08em',
+                            }}
+                          >
+                            <option value="" style={{ color: '#111' }}>העבר לסט…</option>
+                            {sections.filter(s => s.id !== activeSectionId).map(s => (
+                              <option key={s.id} value={s.id} style={{ color: '#111' }}>{s.name}</option>
+                            ))}
+                          </select>
+                        )}
+                        <button onClick={() => void bulkDownloadSelected()} style={{
+                          background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
+                          color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
+                          fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
+                        }}>Download</button>
                         <button onClick={bulkDeleteSelected} style={{
                           background: '#dc2626', border: `1px solid #dc2626`, borderRadius: 2,
                           color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
@@ -4020,7 +4401,11 @@ export function Dashboard() {
                           // The hover overlay only appears when not in select
                           // mode — once you're selecting, the click target is
                           // the whole tile and per-tile actions disappear.
-                          const showHoverOverlay = isHovered && !selectMode
+                          // On touch/coarse-pointer devices there is no hover,
+                          // so reveal the tile affordances persistently — else
+                          // the "…" menu (Replace / Copy / cover / move / delete)
+                          // is unreachable on mobile.
+                          const showHoverOverlay = (isHovered || coarsePointer) && !selectMode
                           // Drag is only meaningful when sorting manually;
                           // disabling it under name/newest keeps the visible
                           // order in sync with what's persisted.
@@ -4360,6 +4745,22 @@ export function Dashboard() {
                                   )}
                                   <div style={{ height: 1, background: border, margin: '4px 0' }} />
                                   <button role="menuitem"
+                                    onClick={() => {
+                                      setImageMenuOpenId(null)
+                                      const sorted = visibleImages
+                                      const idx = sorted.findIndex(i => i.id === img.id)
+                                      if (idx >= 0) { setViewerImages(sorted); setViewerIndex(idx) }
+                                    }}
+                                    style={{
+                                      width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                      background: 'transparent', border: 'none', cursor: 'pointer',
+                                      fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    }}>
+                                    <span>פתח</span>
+                                    <Icon name="eye" size={13} strokeWidth={1.85} />
+                                  </button>
+                                  <button role="menuitem"
                                     onClick={() => { downloadOriginal(img.id); setImageMenuOpenId(null) }}
                                     style={{
                                       width: '100%', textAlign: 'right' as const, padding: '8px 10px',
@@ -4370,6 +4771,33 @@ export function Dashboard() {
                                     <span>הורדה</span>
                                     <Icon name="download" size={13} strokeWidth={1.85} />
                                   </button>
+                                  <button role="menuitem"
+                                    onClick={() => { void copyImageFilename(img.id); setImageMenuOpenId(null) }}
+                                    title={img.filename || undefined}
+                                    style={{
+                                      width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                      background: 'transparent', border: 'none', cursor: 'pointer',
+                                      fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    }}>
+                                    <span>העתק שם קובץ</span>
+                                    <Icon name="copy" size={13} strokeWidth={1.85} />
+                                  </button>
+                                  <button role="menuitem"
+                                    disabled={replacingImageId === img.id}
+                                    onClick={() => { setImageMenuOpenId(null); openReplacePicker(img.id) }}
+                                    style={{
+                                      width: '100%', textAlign: 'right' as const, padding: '8px 10px',
+                                      background: 'transparent', border: 'none',
+                                      cursor: replacingImageId === img.id ? 'default' : 'pointer',
+                                      opacity: replacingImageId === img.id ? 0.5 : 1,
+                                      fontFamily: 'inherit', fontSize: 12, color: textPrimary,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    }}>
+                                    <span>{replacingImageId === img.id ? 'מחליף…' : 'החלף תמונה'}</span>
+                                    <Icon name="refresh" size={13} strokeWidth={1.85} />
+                                  </button>
+                                  <div style={{ height: 1, background: border, margin: '4px 0' }} />
                                   <button role="menuitem"
                                     onClick={() => { deleteSingleImage(img.id); setImageMenuOpenId(null) }}
                                     style={{
@@ -5121,6 +5549,130 @@ export function Dashboard() {
                         letterSpacing: '-0.015em', color: textPrimary,
                       }}>הגדרות גלריה</h3>
                     </div>
+
+                    {/* Event details — the canonical event_date lives in
+                        delivery_settings.eventDate; update_gallery_settings
+                        dual-writes the typed galleries.event_date column so
+                        dashboard, public metadata, portal and search stay in
+                        sync. Editable here after creation (was creation-only). */}
+                    <Section eyebrow="פרטי האירוע">
+                      <div style={{ display: 'grid', gap: 14 }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                            תאריך האירוע
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <input
+                              type="date"
+                              value={(ds.eventDate as string) || (editingGallery.event_date ?? '')}
+                              onChange={(e) => updateGallerySetting('eventDate', e.target.value)}
+                              aria-label="תאריך האירוע"
+                              style={{
+                                padding: '10px 12px', borderRadius: 2, border: `1px solid ${border}`,
+                                background: '#fff', color: textPrimary, fontFamily: 'inherit', fontSize: 13,
+                              }}
+                            />
+                            {((ds.eventDate as string) || editingGallery.event_date) ? (
+                              <button
+                                onClick={() => updateGallerySetting('eventDate', '')}
+                                style={{
+                                  padding: '8px 12px', borderRadius: 2, border: `1px solid ${border}`,
+                                  background: 'transparent', color: textMuted, fontFamily: 'inherit',
+                                  fontSize: 12, cursor: 'pointer',
+                                }}>נקה</button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                            מיקום
+                          </label>
+                          <input
+                            type="text"
+                            defaultValue={(ds.eventLocation as string) || (editingGallery.event_location ?? '')}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim()
+                              const cur = (ds.eventLocation as string) || (editingGallery.event_location ?? '')
+                              if (v !== cur) updateGallerySetting('eventLocation', v)
+                            }}
+                            placeholder="עיר / אולם"
+                            aria-label="מיקום האירוע"
+                            style={{
+                              width: '100%', padding: '10px 12px', borderRadius: 2, border: `1px solid ${border}`,
+                              background: '#fff', color: textPrimary, fontFamily: 'inherit', fontSize: 13,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </Section>
+
+                    {/* Presets — reusable delivery + appearance bundles. Apply a
+                        saved preset to this gallery, or capture the current
+                        settings as a new preset. Never carries identity/secrets
+                        (enforced client + server). Default preset is highlighted. */}
+                    <Section eyebrow="פריסטים">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {!presetsLoaded ? (
+                          <div style={{ fontSize: 12, color: textMuted, padding: '4px 0' }}>טוען…</div>
+                        ) : presets.length === 0 ? (
+                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.5, padding: '4px 0' }}>
+                            עדיין אין פריסטים. שמרו את הגדרות הגלריה הנוכחית כפריסט לשימוש חוזר.
+                          </div>
+                        ) : (
+                          presets.map(p => (
+                            <div key={p.id} style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                              padding: '10px 12px', border: `1px solid ${border}`, borderRadius: 2, background: '#fff',
+                            }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 500, color: textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                                  {p.is_default && (
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
+                                      color: '#1b8a4e', background: 'rgba(45,196,121,.12)', padding: '2px 6px', borderRadius: 10,
+                                    }}>ברירת מחדל</span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: 11, color: textMuted, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {summarizePreset(p).join(' · ') || 'ללא הגדרות'}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                <button disabled={presetBusy} onClick={() => handleApplyPreset(p)} style={{
+                                  padding: '7px 12px', borderRadius: 2, border: `1px solid ${textPrimary}`,
+                                  background: textPrimary, color: '#fff', fontSize: 11, fontWeight: 500,
+                                  cursor: presetBusy ? 'default' : 'pointer', fontFamily: 'inherit', opacity: presetBusy ? 0.5 : 1,
+                                }}>החל</button>
+                                {!p.is_default && (
+                                  <button disabled={presetBusy} onClick={() => handleSetDefaultPreset(p)} aria-label="הגדר כברירת מחדל" title="הגדר כברירת מחדל" style={{
+                                    padding: '7px 10px', borderRadius: 2, border: `1px solid ${border}`,
+                                    background: 'transparent', color: textPrimary, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                                  }}>★</button>
+                                )}
+                                <button disabled={presetBusy} onClick={() => handleRenamePreset(p)} aria-label="שנה שם" title="שנה שם" style={{
+                                  padding: '7px 10px', borderRadius: 2, border: `1px solid ${border}`,
+                                  background: 'transparent', color: textPrimary, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                                }}>✎</button>
+                                <button disabled={presetBusy} onClick={() => handleDeletePreset(p)} aria-label="מחק" title="מחק" style={{
+                                  padding: '7px 10px', borderRadius: 2, border: `1px solid ${border}`,
+                                  background: 'transparent', color: '#dc2626', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                                }}>✕</button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                        <button disabled={presetBusy} onClick={handleSavePreset} style={{
+                          alignSelf: 'flex-start', marginTop: 4, padding: '9px 14px', borderRadius: 2,
+                          border: `1px dashed ${border}`, background: 'transparent', color: textPrimary,
+                          fontSize: 12, fontWeight: 500, cursor: presetBusy ? 'default' : 'pointer',
+                          fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6,
+                        }}>
+                          <Icon name="plus" size={13} strokeWidth={1.85} />
+                          שמור הגדרות נוכחיות כפריסט
+                        </button>
+                      </div>
+                    </Section>
 
                     {/* Downloads */}
                     <Section eyebrow="הורדות">
@@ -7024,6 +7576,7 @@ export function Dashboard() {
             aria-modal="true"
             aria-labelledby="email-share-heading"
             onClick={e => e.stopPropagation()}
+            className="dash-mobile-modal"
             style={{
               background: bg, width: '100%', maxWidth: 520,
               borderRadius: 22, padding: 32,
@@ -7034,7 +7587,7 @@ export function Dashboard() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
               <h2 id="email-share-heading" style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
-                שלח קישור במייל
+                מרכז שיתוף
               </h2>
               <button onClick={() => setShareGallery(null)} disabled={shareSending} aria-label="סגירה" style={{
                 background: 'transparent', border: 'none', color: textMuted, fontSize: 20,
@@ -7042,9 +7595,72 @@ export function Dashboard() {
                 opacity: shareSending ? 0.5 : 1,
               }}>×</button>
             </div>
-            <p style={{ fontSize: 13, color: textSecondary, margin: '0 0 22px', lineHeight: 1.5 }}>
-              שולח לכתובת המייל קישור לגלריה <strong>{shareGallery.name}</strong>. הלקוח יקבל מייל ממותג עם הקישור הציבורי.
+            <p style={{ fontSize: 13, color: textSecondary, margin: '0 0 18px', lineHeight: 1.5 }}>
+              שיתוף הגלריה <strong>{shareGallery.name}</strong> — קישור ציבורי, שליחה במייל, ונמענים אחרונים.
             </p>
+
+            {/* Canonical public URL + copy + publish status. The URL is the same
+                short route the email uses. Copy never exposes a storage path. */}
+            {(() => {
+              const url = galleryShareUrl(shareGallery)
+              const isLive = (shareGallery.status ?? '') === 'live'
+              return (
+                <div style={{
+                  display: 'flex', flexDirection: 'column', gap: 10,
+                  padding: 14, marginBottom: 18, borderRadius: 12,
+                  background: 'rgba(0,0,0,.03)', border: `1px solid ${border}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600,
+                      color: isLive ? '#1b8a4e' : '#b45309',
+                    }}>
+                      <span style={{
+                        width: 7, height: 7, borderRadius: '50%',
+                        background: isLive ? '#22c55e' : '#d97706',
+                      }} />
+                      {isLive ? 'פורסם — הקישור פעיל' : 'טיוטה — הקישור לא פעיל עד לפרסום'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      readOnly
+                      value={url}
+                      onFocus={e => e.currentTarget.select()}
+                      aria-label="קישור ציבורי לגלריה"
+                      style={{
+                        flex: 1, padding: '9px 12px', borderRadius: 8, direction: 'ltr', textAlign: 'left',
+                        background: '#fff', border: `1px solid ${border}`, color: textPrimary,
+                        fontSize: 12, fontFamily: 'inherit', outline: 'none', minWidth: 0,
+                      }}
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(url).then(
+                          () => {
+                            setShareLinkCopied(true)
+                            setTimeout(() => setShareLinkCopied(false), 1800)
+                          },
+                          () => showToast({ kind: 'error', text: 'ההעתקה נכשלה' }),
+                        )
+                        void warmGalleryCache(shareGallery.id)
+                      }}
+                      style={{
+                        padding: '9px 14px', borderRadius: 8, whiteSpace: 'nowrap',
+                        background: shareLinkCopied ? 'rgba(45,196,121,.10)' : textPrimary,
+                        border: `1px solid ${shareLinkCopied ? 'rgba(45,196,121,.45)' : textPrimary}`,
+                        color: shareLinkCopied ? '#1b8a4e' : '#fff',
+                        fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                      }}
+                    >
+                      <Icon name={shareLinkCopied ? 'check' : 'copy'} size={12} strokeWidth={1.85} />
+                      {shareLinkCopied ? 'הועתק' : 'העתק'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
 
             {shareSent ? (
               <div style={{
@@ -7155,6 +7771,46 @@ export function Dashboard() {
                 </div>
               </>
             )}
+
+            {/* Recent recipients — real send history from gallery_email_log via
+                gallery_activity_summary. Owner-scoped; empty state when none.
+                Never fabricated. */}
+            <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid ${border}` }}>
+              <div style={{
+                fontSize: 10, fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase',
+                color: textMuted, marginBottom: 10,
+              }}>נמענים אחרונים</div>
+              {activityLoading && !activitySummary ? (
+                <div style={{ fontSize: 12, color: textMuted, padding: '8px 0' }}>טוען…</div>
+              ) : (activitySummary?.recent_emails?.length ?? 0) === 0 ? (
+                <div style={{ fontSize: 12, color: textMuted, padding: '8px 0', lineHeight: 1.5 }}>
+                  עדיין לא נשלחו מיילים לגלריה זו. שליחה ראשונה תופיע כאן.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 180, overflowY: 'auto' }}>
+                  {activitySummary!.recent_emails.slice(0, 8).map(row => {
+                    const failed = row.status === 'failed'
+                    return (
+                      <div key={row.id} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                        fontSize: 12,
+                      }}>
+                        <span style={{ direction: 'ltr', textAlign: 'left', color: textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {row.recipient_email}
+                        </span>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                          color: failed ? '#b4544b' : textMuted,
+                        }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: failed ? '#b4544b' : '#22c55e' }} />
+                          {failed ? 'נכשל' : 'נשלח'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

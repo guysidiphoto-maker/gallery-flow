@@ -261,6 +261,46 @@ export async function uploadOneImage(file: File, opts: UploadOptions): Promise<U
   }
 }
 
+/** Upload a single ORIGINAL object to storage WITHOUT recording an images row
+ *  or consuming a token. Used by the "Replace photo" flow, which reuses an
+ *  existing row rather than inserting one. Content-addressed key (hash embeds
+ *  size + lastModified) so a genuinely different replacement never collides
+ *  with the object it replaces — the old bytes stay intact until the caller
+ *  explicitly deletes them AFTER the DB flip. Returns the storage path. */
+export async function uploadReplacementOriginal(
+  file: File,
+  opts: { galleryId: string; businessSlug: string; onProgress?: ProgressFn },
+): Promise<{ path: string; size: number }> {
+  const reason = validateUploadFile(file)
+  if (reason) throw new Error(reason)
+  const { galleryId, businessSlug, onProgress } = opts
+  const hash     = pathHash(`${galleryId}/${file.name}/${file.size}/${file.lastModified}`)
+  const origPath = buildPath(businessSlug, galleryId, 'originals', hash, file.name)
+  onProgress?.({ phase: 'original' })
+  await uploadOne(BUCKET, origPath, file, file.type || 'image/jpeg')
+  onProgress?.({ phase: 'done' })
+  return { path: origPath, size: file.size }
+}
+
+/** Best-effort decode of an image file's intrinsic pixel dimensions. Returns
+ *  nulls if decoding is unavailable — callers must tolerate that. */
+export async function readImageDimensions(
+  file: File,
+): Promise<{ width: number | null; height: number | null }> {
+  try {
+    if (typeof createImageBitmap === 'function') {
+      const bmp = await createImageBitmap(file)
+      const dims = { width: bmp.width || null, height: bmp.height || null }
+      bmp.close()
+      return dims
+    }
+    const img = await loadImageElement(file)
+    return { width: img.naturalWidth || null, height: img.naturalHeight || null }
+  } catch {
+    return { width: null, height: null }
+  }
+}
+
 /** Run a list of uploads with bounded concurrency. Per-file errors are
  *  surfaced via the callback so one bad file (e.g. a corrupt jpeg) doesn't
  *  abort the whole batch. */

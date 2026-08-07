@@ -46,6 +46,21 @@ function fakeContainer(insideNodes: unknown[]) {
   ok('Escape closes the menu', closed === 1, `closed=${closed}`)
 }
 
+// --- Escape is CONSUMED (stopPropagation) so it doesn't also close an outer
+//     modal (e.g. the gallery editor's focus trap) when a menu is open ---
+{
+  let closed = 0, stopped = 0, stoppedImmediate = 0
+  const { onKey } = makeDismissHandlers(() => fakeContainer([]), () => { closed++ })
+  onKey({ key: 'Escape', stopPropagation: () => { stopped++ }, stopImmediatePropagation: () => { stoppedImmediate++ } })
+  ok('Escape is consumed (stopPropagation + stopImmediatePropagation)',
+    closed === 1 && stopped === 1 && stoppedImmediate === 1,
+    `closed=${closed} stopped=${stopped} immediate=${stoppedImmediate}`)
+  // A non-Escape key must NOT stop propagation (arrow keys must still bubble).
+  let stopped2 = 0
+  onKey({ key: 'ArrowDown', stopPropagation: () => { stopped2++ } })
+  ok('non-Escape keys are not consumed', stopped2 === 0, `stopped2=${stopped2}`)
+}
+
 // --- Other keys do NOT close (e.g. arrow keys drive in-menu navigation) ---
 {
   let closed = 0
