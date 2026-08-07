@@ -15,12 +15,14 @@
 
 BEGIN;
 
+DROP POLICY IF EXISTS galleries_member_select ON public.galleries;
 CREATE POLICY galleries_member_select ON public.galleries
   FOR SELECT TO authenticated
   USING (status = 'live' AND client_id IN (
     SELECT m.client_id FROM public.client_memberships m
     WHERE m.auth_user_id = auth.uid() AND m.status = 'active'));
 
+DROP POLICY IF EXISTS images_member_select ON public.images;
 CREATE POLICY images_member_select ON public.images
   FOR SELECT TO authenticated
   USING (EXISTS (
@@ -29,6 +31,7 @@ CREATE POLICY images_member_select ON public.images
     WHERE g.id = images.gallery_id AND g.status = 'live'
       AND m.auth_user_id = auth.uid() AND m.status = 'active'));
 
+DROP POLICY IF EXISTS sections_member_select ON public.gallery_sections;
 CREATE POLICY sections_member_select ON public.gallery_sections
   FOR SELECT TO authenticated
   USING (EXISTS (
@@ -37,6 +40,7 @@ CREATE POLICY sections_member_select ON public.gallery_sections
     WHERE g.id = gallery_sections.gallery_id AND g.status = 'live'
       AND m.auth_user_id = auth.uid() AND m.status = 'active'));
 
+DROP POLICY IF EXISTS stories_member_select ON public.stories;
 CREATE POLICY stories_member_select ON public.stories
   FOR SELECT TO authenticated
   USING (EXISTS (

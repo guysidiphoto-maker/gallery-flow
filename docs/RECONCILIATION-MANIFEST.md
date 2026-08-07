@@ -31,3 +31,23 @@ Root cause: migration numbers 088/089 collided between `main` (download-tracking
 | 112 | 114 | `114_draft_isolation_hardening.sql` | draft isolation hardening | `31b7ecab46ae…` | `a867b9bd4e3f…` |
 
 Note: SQL bodies are byte-identical to the pre-reconciliation files (verified: 0/50 content-checksum changes). Internal SQL header comments retain their pre-reconciliation numbers as historical references (non-executing); no executable migration-number dependency exists in any body. Test readFileSync paths and this branch's docs were updated to the reconciled numbers. The staging artifact `supabase/staging/STAGING_provision_editor_rpcs.sql` is a non-canonical QA provisioning script excluded from Production and left unchanged.
+
+## Post-rehearsal remediation (2026-08-07) — 4 files intentionally NOT byte-identical
+
+Following the Production-faithful rehearsal, four files were edited to fix reviewer-flagged
+robustness issues (these are the only exceptions to the pure-rename note above):
+
+- `097_client_member_read_policies.sql` — added `DROP POLICY IF EXISTS` before each of the 4
+  `CREATE POLICY` statements (re-runnable / partial-recovery safe). Behaviorally identical on first apply.
+- `107_grid_spacing_allowlist_rollback.sql` — was a comment-only no-op; now executably restores
+  `_validate_delivery_settings_patch` to the pre-107 (086) baseline body.
+- `109_gallery_meta_null_safe_rollback.sql` — was a comment-only no-op; now executably restores
+  `gallery_get_meta` to the pre-109 (108) body.
+- `111_gallery_appearance_rollback.sql` — was a comment-only no-op; now executably restores
+  `_validate_delivery_settings_patch` (to 107 body) and `gallery_get_meta` (to 109 body).
+
+Validated on disposable QA (icxitoczqtcgdkwiaxxc): forward 25/25 and rollback 25/25 still pass;
+097 re-applies twice with no error; after a full 114->090 rollback `_validate_delivery_settings_patch`
+returns byte-exact to baseline (md5 match) and `gallery_get_meta` returns behavior-exact to baseline
+(identical logic; only whitespace/dollar-tag differs, inherited from 108_rollback's hand-authored body).
+Contract suite remains 25 suites / 599 checks / 0 failed.
