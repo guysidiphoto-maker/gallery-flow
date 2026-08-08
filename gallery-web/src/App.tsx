@@ -711,11 +711,15 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
           const columns = Array.from({ length: colCount }, (_, ci) => {
             const col: typeof images = []
             const shuffled = shuffle(allImgs, ci * 7919 + 1)
-            // Cap column length so the DOUBLED, animated element stays within
-            // iOS/WebKit compositing limits — a ~10,000px-tall layer (e.g. a
-            // 128-photo highlight reel) renders STATIC in iPhone in-app browsers
-            // (WhatsApp/Instagram WKWebView). ~14 imgs still fills + loops seamlessly.
-            const needed = Math.min(14, Math.max(10, allImgs.length))
+            // Size each column so ONE (un-doubled) set already OVERFLOWS the
+            // viewport — the doubled copy used for the seamless loop then stays
+            // fully OFF-screen, so a paused animation (e.g. iOS Low Power Mode)
+            // never shows the duplicate half stacked below. Estimated tile height
+            // = (viewport width / columns) * 4/3. Capped at 40 so the animated
+            // layer stays reasonable for mobile WebKit.
+            const estTileH = Math.max(70, (window.innerWidth / colCount) * (4 / 3))
+            const fillCount = Math.ceil((window.innerHeight * 2.2) / estTileH)
+            const needed = Math.max(12, Math.min(fillCount, 40))
             let lastId = ''
             for (let j = 0; col.length < needed; j++) {
               const img = shuffled[j % shuffled.length]
