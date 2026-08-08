@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, lazy, Suspense, type CSSProperties } from 'react'
+import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react'
 import { supabase, storageUrl } from '../supabase'
 import { signedStorageUrl } from '../lib/signedStorage'
 import { SignedImg } from '../components/SignedImg'
@@ -13,7 +13,15 @@ const PortfolioEditor  = lazy(() => import('../components/PortfolioEditor').then
 const FeedStudio       = lazy(() => import('../components/FeedStudio').then(m => ({ default: m.FeedStudio })))
 const CreativeEngineDialog = lazy(() => import('../components/CreativeEngineDialog').then(m => ({ default: m.CreativeEngineDialog })))
 import { loadPortfolioSettings } from '../components/portfolioSettings'
-import { Icon, type IconName } from '../components/Icon'
+import { Icon } from '../components/Icon'
+import { usePortalLocale } from '../lib/portalLocale'
+import { SOCIAL_STUDIO_ENABLED } from '../lib/features'
+import SocialComingSoon from '../components/social-lock/SocialComingSoon'
+import { PortalShell } from '../components/portal/PortalShell'
+import { type NavItem } from '../components/portal/PortalNav'
+import { OverviewScreen } from '../components/portal/OverviewScreen'
+import { GalleryGrid } from '../components/portal/GalleryGrid'
+import { type GalleryCardData } from '../components/portal/GalleryCard'
 const ClientHome = lazy(() => import('../components/ClientHome').then(m => ({ default: m.ClientHome })))
 
 // PR1 — "Social OS" simplified navigation (Dashboard / Social Studio / Library).
@@ -21,9 +29,6 @@ const ClientHome = lazy(() => import('../components/ClientHome').then(m => ({ de
 // flag is off, the client dashboard renders exactly as before. Enable per-env
 // (e.g. Vercel preview) with VITE_FEATURE_NEW_IA=true.
 const SOCIAL_OS = import.meta.env.VITE_FEATURE_NEW_IA === 'true'
-// Default posting cadence for a production-company retainer (drives the
-// "content remaining" math on the Dashboard).
-const CADENCE_PER_WEEK = 3
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -37,19 +42,50 @@ interface ImageRow {
 }
 interface StoryRow { id: string; gallery_id: string; style: string; storage_path: string }
 
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+// ─── Client Portal V2 — authenticated bootstrap contract ────────────────────
+// Self-scoped RPC: resolves auth.uid() → active memberships + published
+// galleries. Takes NO arguments; disabled/revoked members get empty arrays.
+interface PortalMembership {
+  membership_id: string
+  client_id: string
+  business_id: string
+  client_name: string
+  client_slug: string | null
+  role: string
+  production_suite: boolean
+}
+interface PortalBootstrap {
+  authenticated: boolean
+  memberships: PortalMembership[]
+  galleries: Array<Record<string, unknown>>
+}
+function isPortalBootstrap(v: unknown): v is PortalBootstrap {
+  if (typeof v !== 'object' || v === null) return false
+  const o = v as Record<string, unknown>
+  return typeof o.authenticated === 'boolean'
+    && Array.isArray(o.memberships) && Array.isArray(o.galleries)
+}
+
+// Social / Feed-studio tabs. These stay LOCKED behind the Social feature flag
+// (Social is a more complex feature, not ready yet) — hidden for everyone,
+// entitled members included, until the flag is turned on.
+const SOCIAL_TABS = ['feed-studio', 'content', 'calendar', 'stories'] as const
+// 'tender' is a SEPARATE Production capability for production-company clients.
+// It is gated by the `production_suite` entitlement ALONE (not the Social flag),
+// so entitled clients can use the tender library now while Social stays locked.
+// The legacy PIN path has no membership → not entitled → tender hidden.
 
 // ─── Editorial design tokens (Pic-Time aesthetic) ─────────────────────────
 // Same palette + spacing system used throughout Dashboard.tsx so the
 // public client view feels like the same product as the photographer admin.
+// Retained for the Production module content blocks (Content Studio, Stories)
+// that keep their original presentation.
 const bg          = '#F2EFE9' // cream canvas
 const bgSubtle    = '#FAF9F5' // section panels
-const card        = '#FBFBF9' // raised surfaces
 const border      = '#D0D0D0' // hairline 1px
 const textPrimary = '#141413' // charcoal
 const textSecondary = '#333333'
 const textMuted   = '#767470'  // WCAG-AA accessible muted on cream
-const statusLive  = '#7B8F6E' // sage status dot
 
 function readStr(obj: Record<string, unknown> | null, key: string): string {
   if (!obj) return ''; const v = obj[key]; return typeof v === 'string' ? v : ''
@@ -148,15 +184,16 @@ export function ClientDashboard() {
   useEffect(() => {
     let cancelled = false
     if (clientId) {
-      // Legacy UUID URL — canonicalize to short form in the URL bar.
+      // Legacy UUID URL — canonicalize to short form in the URL bar. Resolves
+      // slugs through the membership-gated SECURITY DEFINER resolver: the
+      // owner-scoped `businesses`/`clients` tables are unreadable under the
+      // member session, and this never leaks slugs to a non-member.
       ;(async () => {
-        const { data: c } = await supabase
-          .from('clients').select('slug, business_id').eq('id', clientId).maybeSingle()
-        if (cancelled || !c?.slug) return
-        const { data: b } = await supabase
-          .from('businesses').select('slug').eq('id', c.business_id).maybeSingle()
-        if (cancelled || !b?.slug) return
-        const newUrl = `/${b.slug}/c/${c.slug}`
+        const { data, error: e } = await supabase.rpc('resolve_client_portal_by_id', { p_client_id: clientId })
+        if (cancelled || e) return
+        const row = Array.isArray(data) ? data[0] : null
+        if (!row?.business_slug || !row?.client_slug) return
+        const newUrl = `/${row.business_slug}/c/${row.client_slug}`
         if (window.location.pathname !== newUrl) {
           window.history.replaceState(null, '', newUrl + window.location.search + window.location.hash)
         }
@@ -165,16 +202,18 @@ export function ClientDashboard() {
     }
     if (!parsedUrl.slug || !parsedUrl.clientSlug) return
     ;(async () => {
-      const { data: biz } = await supabase
-        .from('businesses').select('id').eq('slug', parsedUrl.slug).maybeSingle()
+      // Short-URL resolution via the membership-gated SECURITY DEFINER resolver.
+      // Returns a row ONLY when the current member actively belongs to the
+      // resolved client — a non-member (or unknown slugs) gets no rows, so the
+      // caller learns nothing about businesses/clients they don't belong to.
+      const { data, error: e } = await supabase.rpc('resolve_client_portal', {
+        p_business_slug: parsedUrl.slug,
+        p_client_slug: parsedUrl.clientSlug,
+      })
       if (cancelled) return
-      if (!biz) { setResolveErr('Business not found'); return }
-      const { data: c } = await supabase
-        .from('clients').select('id')
-        .eq('business_id', biz.id).eq('slug', parsedUrl.clientSlug).maybeSingle()
-      if (cancelled) return
-      if (!c) { setResolveErr('Client not found'); return }
-      setClientId(c.id)
+      const row = !e && Array.isArray(data) ? data[0] : null
+      if (!row?.client_id) { setResolveErr('Business not found'); return }
+      setClientId(row.client_id)
     })()
     return () => { cancelled = true }
   }, [parsedUrl.slug, parsedUrl.clientSlug, clientId])
@@ -183,6 +222,55 @@ export function ClientDashboard() {
   const [authenticated, setAuthenticated] = useState(() => {
     return sessionStorage.getItem(`client-dash-${clientId}`) === 'true'
   })
+
+  // ── Client Portal V2 authenticated path ──────────────────────────────────
+  // When a Supabase session exists AND client_portal_bootstrap returns an
+  // ACTIVE membership for the resolved clientId, that membership is the
+  // authorization + entitlement source — it REPLACES the legacy PIN/route-trust
+  // gate. `memberAuthorized` short-circuits the PIN gates below; the active
+  // membership drives Production-tab gating. Un-upgraded clients (no membership)
+  // fall through to the legacy PIN gate, which is already fail-closed.
+  const [bootstrap, setBootstrap] = useState<PortalBootstrap | null>(null)
+  const [bootstrapChecked, setBootstrapChecked] = useState(false)
+  const [memberEmail, setMemberEmail] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (cancelled) return
+        if (!session) { setBootstrap(null); setBootstrapChecked(true); return }
+        setMemberEmail(session.user.email ?? null)
+        const { data, error: e } = await supabase.rpc('client_portal_bootstrap')
+        if (cancelled) return
+        setBootstrap(!e && isPortalBootstrap(data) ? data : null)
+      } catch {
+        if (!cancelled) setBootstrap(null)
+      } finally {
+        if (!cancelled) setBootstrapChecked(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // Active membership for the CURRENTLY-resolved clientId (server-verified —
+  // bootstrap is self-scoped via auth.uid(), never trusts the route param).
+  const activeMembership =
+    clientId && bootstrap?.authenticated
+      ? bootstrap.memberships.find(m => m.client_id === clientId) ?? null
+      : null
+  // An authenticated member with an active membership for THIS client. This is
+  // the only condition that bypasses the legacy PIN gate.
+  const memberAuthorized = activeMembership !== null
+  // Production/social suite entitlement. Default deny: only true when the active
+  // membership explicitly carries production_suite. Legacy PIN path → false.
+  const productionEnabled = activeMembership?.production_suite === true
+  // Feature availability (contract C1): the Social/Production studio renders
+  // ONLY when the global feature flag AND the entitlement are both true. The
+  // flag is off in every environment today, so this is false for everyone —
+  // entitled members included. Entitlement architecture stays intact above.
+  const socialAllowed = SOCIAL_STUDIO_ENABLED && productionEnabled
+
   const [codeInput, setCodeInput] = useState('')
   const [codeError, setCodeError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -219,8 +307,43 @@ export function ClientDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'home' | 'feed-studio' | 'content' | 'calendar' | 'galleries' | 'stories' | 'page' | 'tender'>(SOCIAL_OS ? 'home' : 'feed-studio')
-  // PR1: open/close state for the "More" (frozen/legacy) menu in the Social OS nav.
-  const [moreOpen, setMoreOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+
+  // ── Client Portal V2 presentation state ──────────────────────────────────
+  // Locale (he default / en) drives the entire interface — never mixed. Called
+  // here with the other hooks so the value is available to the loading/gate
+  // screens below (hooks must precede the early returns).
+  const loc = usePortalLocale()
+  // Presentation-only Overview flag for NON-ENTITLED clients. Their `tab` is
+  // pinned to a gated-safe value ('galleries') by the preserved redirect guard,
+  // so `home` (a Production tab) cannot back a non-entitled Overview. This flag
+  // toggles between MY Overview screen and the Galleries screen WITHOUT touching
+  // `tab` or the entitlement guard. Entitled clients ignore it (they use `tab`).
+  const [nonEntitledOverview, setNonEntitledOverview] = useState(true)
+  // Presentation state for the LOCKED Social Studio nav item (feature flag
+  // off). Selecting it shows the Coming-soon panel — never the studio. Like
+  // `nonEntitledOverview` it NEVER touches `tab`, so the redirect guard keeps
+  // `tab` pinned to a safe value the whole time.
+  const [socialLockOpen, setSocialLockOpen] = useState(false)
+
+  // Production-tab safety: the non-SOCIAL_OS default tab is 'feed-studio' (a
+  // Production tab). Once we know the entitlement, if Production is disabled and
+  // the active tab is a Production module, redirect to a safe section so the
+  // module never renders. Runs whenever entitlement or tab changes.
+  useEffect(() => {
+    if (!bootstrapChecked) return
+    // Social/Feed tabs + 'home' (the content-engine dashboard) stay locked
+    // behind the Social flag: with the flag off, even entitled members are
+    // redirected out of them.
+    if (!socialAllowed && ((SOCIAL_TABS as readonly string[]).includes(tab) || tab === 'home')) {
+      setTab('galleries')
+    } else if (tab === 'tender' && !productionEnabled) {
+      // Tender is available to entitled production-company clients only. A
+      // non-entitled (or tampered) client on the tender tab is sent to a safe
+      // section so the module never renders.
+      setTab('galleries')
+    }
+  }, [bootstrapChecked, socialAllowed, productionEnabled, tab])
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(() => {
     // Hydrate from sessionStorage so the user's selection survives refresh
     // within the same browser session. Real persistence (a
@@ -236,10 +359,6 @@ export function ClientDashboard() {
   })
   const [playingStory, setPlayingStory] = useState<string | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
-  // Filter & sort for galleries tab
-  const [galleryFilter, setGalleryFilter] = useState('')
-  const [gallerySortBy, setGallerySortBy] = useState<'date' | 'name' | 'top-picks'>('date')
-  const [galleryViewMode, setGalleryViewMode] = useState<'grid' | 'masonry' | 'list'>('grid')
   const [creativeGallery, setCreativeGallery] = useState<{ id: string; name: string; topPicksCount: number } | null>(null)
   const reveal = useReveal()
 
@@ -338,11 +457,15 @@ export function ClientDashboard() {
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
-  if (loading) return (
-    <div style={{
+  // Hold the render until the authenticated bootstrap check resolves — without
+  // this, a valid member would briefly see the PIN/"access restricted" gate
+  // before bootstrap confirms their membership. Only gate on this while the user
+  // is NOT already cached as authenticated via the legacy path.
+  if (!bootstrapChecked && !authenticated) return (
+    <div dir={loc.dir} style={{
       minHeight: '100vh', background: bg,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'inherit', direction: 'rtl',
+      fontFamily: 'inherit',
     }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{
@@ -354,15 +477,36 @@ export function ClientDashboard() {
         <p style={{
           fontSize: 11, color: textMuted, fontWeight: 500,
           letterSpacing: '0.18em', textTransform: 'uppercase',
-        }}>Loading</p>
+        }}>{loc.t('loading')}</p>
+      </div>
+    </div>
+  )
+
+  if (loading) return (
+    <div dir={loc.dir} style={{
+      minHeight: '100vh', background: bg,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: 'inherit',
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{
+          width: 36, height: 36, border: `2px solid ${border}`,
+          borderTopColor: textPrimary, borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite', margin: '0 auto 16px',
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <p style={{
+          fontSize: 11, color: textMuted, fontWeight: 500,
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+        }}>{loc.t('loading')}</p>
       </div>
     </div>
   )
   if (error) return (
-    <div style={{
+    <div dir={loc.dir} style={{
       minHeight: '100vh', background: bg,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'inherit', direction: 'rtl',
+      fontFamily: 'inherit',
     }}>
       <div style={{
         textAlign: 'center', padding: '40px 36px',
@@ -372,7 +516,7 @@ export function ClientDashboard() {
         <div style={{
           fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
           color: textMuted, textTransform: 'uppercase', marginBottom: 14,
-        }}>Error</div>
+        }}>{loc.t('error.title')}</div>
         <p style={{ fontSize: 15, color: textPrimary, margin: 0, lineHeight: 1.5 }}>{error}</p>
       </div>
     </div>
@@ -429,12 +573,14 @@ export function ClientDashboard() {
   }
 
   // ── Code gate ──────────────────────────────────────────────────────────
-  if (!authenticated && clientCode) {
+  // Authenticated members with an active membership skip the PIN entirely —
+  // their server-verified membership is the authorization.
+  if (!authenticated && !memberAuthorized && clientCode) {
     return (
-      <div style={{
+      <div dir="rtl" style={{
         minHeight: '100vh', background: bg, color: textPrimary,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'inherit', direction: 'rtl',
+        fontFamily: 'inherit',
       }}>
         <div style={{
           textAlign: 'center', maxWidth: 440, padding: '48px 40px',
@@ -511,6 +657,50 @@ export function ClientDashboard() {
     )
   }
 
+  // ── Fail-closed guard (Client Portal V2) ─────────────────────────────────
+  // SECURITY: a legacy client with NO configured access code previously
+  // rendered the portal OPEN here — the coded gate above only triggers when
+  // `clientCode` is truthy, so an empty/absent clientCode silently bypassed
+  // authentication (audit finding). Reaching this point means loading+error are
+  // already handled and the user is NOT authenticated. Missing access
+  // configuration must fail CLOSED, not open. Coded clients (gate above) and
+  // authenticated sessions are unaffected. New clients use authenticated
+  // `client_memberships` access instead of a PIN.
+  //
+  // Client Portal V2: an authenticated member with an active membership for this
+  // client (memberAuthorized) is allowed through here — the legacy fail-closed
+  // block only applies to un-upgraded clients with neither a PIN nor a
+  // membership. A logged-in user without a membership for THIS client still
+  // fails closed (memberAuthorized === false).
+  if (!authenticated && !memberAuthorized && !clientCode) {
+    return (
+      <div dir={loc.dir} style={{
+        minHeight: '100vh', background: bg, color: textPrimary,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'inherit',
+      }}>
+        <div style={{
+          textAlign: 'center', maxWidth: 440, padding: '48px 40px',
+          background: '#fff', border: `1px solid ${border}`,
+        }}>
+          <div style={{
+            fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+            color: textMuted, textTransform: 'uppercase', marginBottom: 18,
+          }}>{loc.t('portal.badge')}</div>
+          <h2 style={{
+            fontSize: 26, fontWeight: 500, margin: '0 0 12px',
+            letterSpacing: '-0.02em', color: textPrimary, lineHeight: 1.15,
+          }}>{loc.t('gate.restricted.title')}</h2>
+          <p style={{
+            fontSize: 14, color: textSecondary, margin: '0 0 8px', lineHeight: 1.55,
+          }}>
+            {loc.t('gate.restricted.body')}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   const first = galleries[0]
   const deliverySettings = (first.delivery_settings || {}) as Record<string, unknown>
   const studioName = readStr(deliverySettings, 'studioName')
@@ -533,186 +723,189 @@ export function ClientDashboard() {
 
   const selectedImages = allImages.filter(img => selectedPicks.has(img.id))
 
-  const tabs: Array<{ id: typeof tab; label: string; icon: IconName }> = [
-    // Feed Studio is the new flagship — appears first so it's the photographer's
-    // first move when demoing piXflow's AI Visual OS to a paying client.
-    { id: 'feed-studio', label: '✨ Feed Studio', icon: 'gallery' },
-    { id: 'content', label: 'Content Studio', icon: 'gallery' },
-    { id: 'calendar', label: 'Content Calendar', icon: 'calendar' },
-    { id: 'galleries', label: 'Galleries', icon: 'sections' },
-    ...(hasStories ? [{ id: 'stories' as const, label: 'Stories', icon: 'stories' as IconName }] : []),
-    { id: 'page', label: 'My Page', icon: 'palette' },
-    { id: 'tender', label: 'חיפוש למכרז', icon: 'search' },
-  ]
+  // Log out an authenticated member. Clears any legacy session cache too so a
+  // stale PIN flag can't re-open the dashboard, then routes to the login page.
+  const handleSignOut = async () => {
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await supabase.auth.signOut()
+    } catch { /* fall through to redirect regardless */ }
+    try {
+      sessionStorage.removeItem(`client-dash-${clientId}`)
+      sessionStorage.removeItem(`client-token-${clientId}`)
+      sessionStorage.removeItem(`client-token-expires-${clientId}`)
+    } catch { /* ignore */ }
+    window.location.href = '/client-login'
+  }
 
-  // ── PR1 Social OS navigation model ──────────────────────────────────────
-  // Three primary areas map onto the existing `tab` content blocks (nothing is
-  // rebuilt): Dashboard → 'home', Social Studio → the social trio
-  // (feed-studio/content/calendar), Library → 'galleries'. Everything else
-  // (Stories, My Page, Tender) is frozen under "More" — code + routes intact.
-  const SOCIAL_TABS = ['feed-studio', 'content', 'calendar']
-  const primaryArea: 'dashboard' | 'social' | 'library' | 'more' =
-    tab === 'home' ? 'dashboard'
-      : SOCIAL_TABS.includes(tab) ? 'social'
-        : tab === 'galleries' ? 'library'
-          : 'more'
-  const moreItems: Array<{ id: typeof tab; label: string }> = [
-    ...(hasStories ? [{ id: 'stories' as const, label: 'Stories' }] : []),
-    { id: 'page' as const, label: 'My Page' },
-    { id: 'tender' as const, label: 'חיפוש למכרז' },
-  ]
-  const socialSubTabs: Array<{ id: typeof tab; label: string }> = [
-    { id: 'feed-studio', label: 'Feed' },
-    { id: 'content', label: 'Compose' },
-    { id: 'calendar', label: 'Calendar' },
-  ]
-  // Shared nav-button style (matches the legacy tab buttons exactly).
-  const navBtnStyle = (active: boolean, divider: boolean): CSSProperties => ({
-    padding: '8px 14px', border: 'none', cursor: 'pointer',
-    borderInlineStart: divider ? `1px solid ${border}` : 'none',
-    background: active ? textPrimary : 'transparent',
-    color: active ? '#fff' : textPrimary,
-    fontFamily: 'inherit', fontSize: 10, fontWeight: 500,
-    letterSpacing: '0.18em', textTransform: 'uppercase',
-    display: 'inline-flex', alignItems: 'center', gap: 6,
-    transition: 'background .15s, color .15s', whiteSpace: 'nowrap',
-  })
+  // ── Client Portal V2 navigation model ────────────────────────────────────
+  // The information architecture is driven ENTIRELY by `productionEnabled`.
+  //
+  //   Non-entitled client: Overview · Galleries        (Account lives in shell)
+  //   Entitled client:     Overview · Galleries · Content Library ·
+  //                        Social Studio · Content Calendar · My Page
+  //
+  // Production areas map onto the EXISTING gated `tab` content blocks — nothing
+  // is rebuilt. Production nav items are appended ONLY when `productionEnabled`,
+  // so a non-entitled client can NEVER see a Production entry point. The
+  // preserved redirect guard keeps `tab` on a safe value for non-entitled
+  // clients; their Overview↔Galleries switch is presentation-only
+  // (`nonEntitledOverview`) and never touches `tab`.
+
+  // Gallery data adapted for the new card components. Covers may be absent (the
+  // common case in the test env) — GalleryCard/CoverFallback handle that.
+  const galleryCards: GalleryCardData[] = galleries.map(g => ({
+    id: g.id,
+    name: g.name,
+    coverUrl: covers.get(g.id) ?? null,
+    imageCount: g.image_count,
+    publishedIso: g.published_at,
+  }))
+
+  // Which nav item is visually active.
+  const activeNavId: string = socialAllowed
+    ? (tab === 'home' ? 'overview'
+      : tab === 'galleries' ? 'galleries'
+      : tab === 'content' ? 'library'
+      : (tab === 'feed-studio' || tab === 'calendar') ? (tab === 'calendar' ? 'calendar' : 'social')
+      : tab === 'page' ? 'mypage'
+      : 'overview')
+    : (socialLockOpen ? 'social'
+      : tab === 'tender' ? 'tender'
+      : tab === 'page' ? 'mypage'
+      : nonEntitledOverview ? 'overview'
+      : 'galleries')
+
+  // Selecting a non-entitled area is presentation-only; `tab` stays put.
+  const goOverview = () => {
+    if (socialAllowed) { setTab('home'); return }
+    setSocialLockOpen(false); setNonEntitledOverview(true)
+  }
+  const goGalleries = () => { setSocialLockOpen(false); setNonEntitledOverview(false); setTab('galleries') }
+
+  // Contract C1 navigation:
+  //   flag ON + entitled  → full Production nav (prior behavior).
+  //   flag OFF (everyone) → Overview · Galleries · Social Studio (LOCKED,
+  //                         "Coming soon", opens a panel, never the studio)
+  //                         · My Page only for entitled members (not Social).
+  //   flag ON + not entitled → Overview · Galleries (prior behavior).
+  const navItems: NavItem[] = socialAllowed
+    ? [
+        { id: 'overview',  label: loc.t('nav.overview'),        icon: 'activity', onSelect: () => setTab('home') },
+        { id: 'galleries', label: loc.t('nav.galleries'),       icon: 'sections', onSelect: () => setTab('galleries') },
+        { id: 'library',   label: loc.t('nav.contentLibrary'),  icon: 'gallery',  onSelect: () => setTab('content') },
+        { id: 'social',    label: loc.t('nav.socialStudio'),    icon: 'stories',  onSelect: () => setTab('feed-studio') },
+        { id: 'calendar',  label: loc.t('nav.calendar'),        icon: 'calendar', onSelect: () => setTab('calendar') },
+        { id: 'mypage',    label: loc.t('nav.myPage'),          icon: 'palette',  onSelect: () => setTab('page') },
+      ]
+    : [
+        { id: 'overview',  label: loc.t('nav.overview'),  icon: 'activity', onSelect: goOverview },
+        { id: 'galleries', label: loc.t('nav.galleries'), icon: 'sections', onSelect: goGalleries },
+        ...(productionEnabled ? [{
+          id: 'tender',
+          label: loc.t('nav.tenderLibrary'),
+          icon: 'search' as const,
+          onSelect: () => { setSocialLockOpen(false); setNonEntitledOverview(false); setTab('tender') },
+        }] : []),
+        ...(!SOCIAL_STUDIO_ENABLED ? [{
+          id: 'social',
+          label: `${loc.t('nav.socialStudio')} · ${loc.t('nav.comingSoon')}`,
+          icon: 'stories' as const,
+          onSelect: () => { setNonEntitledOverview(false); setSocialLockOpen(true) },
+        }] : []),
+        ...(productionEnabled ? [{
+          id: 'mypage',
+          label: loc.t('nav.myPage'),
+          icon: 'palette' as const,
+          onSelect: () => { setSocialLockOpen(false); setNonEntitledOverview(false); setTab('page') },
+        }] : []),
+      ]
+
+  // Whether to render the presentation-only Overview screen instead of the
+  // Galleries screen. Applies to every client while `socialAllowed` is false
+  // (today: everyone). The Coming-soon panel takes over the content area when
+  // the locked Social item is selected.
+  const showNonEntitledOverview = !socialAllowed && nonEntitledOverview && !socialLockOpen
+  const showSocialLock = !socialAllowed && socialLockOpen
 
   return (
-    <div style={{
-      minHeight: '100vh', background: bg, color: textPrimary,
-      fontFamily: 'inherit', direction: 'rtl',
-    }}>
+    <PortalShell
+      loc={loc}
+      studioName={studioName}
+      clientTitle={displayTitle}
+      navItems={navItems}
+      activeNavId={activeNavId}
+      showAccount={memberAuthorized}
+      email={memberEmail}
+      clientName={activeMembership?.client_name ?? clientName}
+      signingOut={signingOut}
+      onSignOut={() => { void handleSignOut() }}
+    >
+    <div dir={loc.dir}>
 
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header style={{
-        borderBottom: `1px solid ${border}`,
-        padding: '0 24px',
-        background: bg,
-        position: 'sticky', top: 0, zIndex: 100,
-      }}>
-        <div style={{
-          maxWidth: 1200, margin: '0 auto',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          height: 72, gap: 24, flexWrap: 'wrap',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-            {studioName && (
-              <div style={{
-                fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-                color: textMuted, textTransform: 'uppercase',
-              }}>
-                {studioName}
-              </div>
-            )}
-            <h1 style={{
-              fontSize: 18, fontWeight: 500, margin: 0,
-              letterSpacing: '-0.015em', color: textPrimary,
-            }}>{displayTitle}</h1>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%',
-              background: statusLive, display: 'inline-block',
-            }} />
+        {/* ── Overview (non-entitled clients) ──────────────────────────────
+            Presentation-only Overview backed by `nonEntitledOverview`. Never a
+            Production surface — a simple, honest welcome + galleries. */}
+        {showNonEntitledOverview && (
+          <OverviewScreen
+            loc={loc}
+            clientName={activeMembership?.client_name || clientName}
+            galleries={galleryCards}
+            hrefFor={galleryUrl}
+            onViewAll={goGalleries}
+          />
+        )}
+
+        {/* ── Social Studio locked (feature flag off, contract C1) ─────────
+            An elegant Coming-soon panel. Presentation-only: `tab` stays on a
+            safe value, no studio module mounts, no Instagram flow reachable. */}
+        {showSocialLock && (
+          <SocialComingSoon loc={loc} onGoGalleries={goGalleries} />
+        )}
+
+        {/* ── Production module unavailable (defensive) ────────────────────
+            If a Production tab is somehow active without the entitlement (e.g.
+            a transient state before the redirect effect fires, or a tampered
+            value), render a safe notice instead of the Production module. The
+            module content blocks are ALSO individually gated on
+            `productionEnabled`, so they never mount here. */}
+        {bootstrapChecked && !socialAllowed && !showNonEntitledOverview && !showSocialLock && (SOCIAL_TABS as readonly string[]).includes(tab) && (
+          <div style={{
+            padding: '48px 40px', textAlign: 'center',
+            background: '#fff', border: `1px solid ${border}`, maxWidth: 480, margin: '0 auto',
+          }}>
+            <div style={{
+              fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
+              color: textMuted, textTransform: 'uppercase', marginBottom: 14,
+            }}>{loc.t('gate.notAvailable.badge')}</div>
+            <p style={{ fontSize: 15, color: textPrimary, margin: '0 0 6px', lineHeight: 1.5 }}>
+              {loc.t('gate.notAvailable.title')}
+            </p>
+            <p style={{ fontSize: 13, color: textSecondary, margin: 0, lineHeight: 1.5 }}>
+              {loc.t('gate.notAvailable.body')}
+            </p>
           </div>
-          {/* ── Tab Navigation — tracked uppercase, hairline-divided ── */}
-          {SOCIAL_OS ? (
-            /* PR1 Social OS nav: 3 primary areas + a "More" menu for frozen/
-               legacy areas (Stories, My Page, Tender). Same visual language. */
-            <nav aria-label="Primary" style={{ display: 'flex', gap: 4, border: `1px solid ${border}`, background: '#fff', position: 'relative' }}>
-              {([
-                { area: 'dashboard', label: 'Dashboard', icon: 'activity' as IconName, go: () => setTab('home') },
-                { area: 'social', label: 'Social Studio', icon: 'gallery' as IconName, go: () => setTab('feed-studio') },
-                { area: 'library', label: 'Library', icon: 'sections' as IconName, go: () => setTab('galleries') },
-              ] as const).map((p, i) => (
-                <button key={p.area} onClick={p.go} style={navBtnStyle(primaryArea === p.area, i > 0)}>
-                  <Icon name={p.icon} size={12} strokeWidth={1.6} />
-                  {p.label}
-                </button>
-              ))}
-              {/* More — frozen/legacy areas kept reachable (not deleted) */}
-              <button aria-label="More" onClick={() => setMoreOpen(o => !o)} style={navBtnStyle(primaryArea === 'more', true)}>
-                <Icon name="menu" size={12} strokeWidth={1.6} />
-                More
-              </button>
-              {moreOpen && (
-                <div role="menu" style={{ position: 'absolute', top: '100%', insetInlineEnd: 0, marginTop: 4, background: '#fff', border: `1px solid ${border}`, minWidth: 180, zIndex: 200, boxShadow: '0 8px 24px rgba(0,0,0,.08)' }}>
-                  {moreItems.map(m => (
-                    <button
-                      key={m.id}
-                      role="menuitem"
-                      onClick={() => { setTab(m.id); setMoreOpen(false) }}
-                      style={{ display: 'block', width: '100%', textAlign: 'start', padding: '10px 14px', border: 'none', borderBottom: `1px solid ${border}`, background: tab === m.id ? textPrimary : 'transparent', color: tab === m.id ? '#fff' : textPrimary, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </nav>
-          ) : (
-            <nav style={{
-              display: 'flex', gap: 4,
-              border: `1px solid ${border}`,
-              background: '#fff',
-            }}>
-              {tabs.map((t, i) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTab(t.id)}
-                  style={{
-                    padding: '8px 14px', border: 'none', cursor: 'pointer',
-                    borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
-                    background: tab === t.id ? textPrimary : 'transparent',
-                    color: tab === t.id ? '#fff' : textPrimary,
-                    fontFamily: 'inherit',
-                    fontSize: 10, fontWeight: 500,
-                    letterSpacing: '0.18em', textTransform: 'uppercase',
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    transition: 'background .15s, color .15s',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <Icon name={t.icon} size={12} strokeWidth={1.6} />
-                  {t.label}
-                </button>
-              ))}
-            </nav>
-          )}
-        </div>
-      </header>
+        )}
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 24px 96px' }}>
-
-        {/* ── PR1 Dashboard (Social OS home) — content-engine overview ──── */}
-        {SOCIAL_OS && tab === 'home' && (
-          <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>Loading…</div>}>
+        {/* ── Overview (entitled clients) — personalized content-engine home ──
+            Production-gated: only entitled businesses see this surface. */}
+        {tab === 'home' && socialAllowed && (
+          <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>{loc.t('loading')}…</div>}>
             <ClientHome
+              loc={loc}
+              clientName={activeMembership?.client_name || clientName}
               galleries={galleries}
               covers={covers}
-              topPicksCount={topPicks.length}
-              storiesCount={Array.from(stories.values()).flat().length}
-              cadencePerWeek={CADENCE_PER_WEEK}
+              galleryHref={galleryUrl}
               onGoSocial={() => setTab('feed-studio')}
               onGoLibrary={() => setTab('galleries')}
-              palette={{ textPrimary, textMuted, border, statusLive }}
             />
           </Suspense>
         )}
 
-        {/* ── PR1 Social Studio sub-nav — unifies Feed / Compose / Calendar
-            (the legacy social trio) under one area. Just switches `tab`. ── */}
-        {SOCIAL_OS && primaryArea === 'social' && (
-          <div style={{ display: 'flex', gap: 4, marginBottom: 28, border: `1px solid ${border}`, width: 'fit-content', background: '#fff' }}>
-            {socialSubTabs.map((s, i) => (
-              <button key={s.id} onClick={() => setTab(s.id)} style={navBtnStyle(tab === s.id, i > 0)}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* ── Feed Studio Tab — the AI Visual OS surface ──────────────── */}
-        {tab === 'feed-studio' && (
+        {/* ── Feed Studio Tab — the AI Visual OS surface (Production) ──── */}
+        {tab === 'feed-studio' && socialAllowed && (
           <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>Loading Feed Studio…</div>}>
             <FeedStudio
               clientId={clientId}
@@ -722,8 +915,8 @@ export function ClientDashboard() {
           </Suspense>
         )}
 
-        {/* ── Content Studio Tab ──────────────────────────────────────── */}
-        {tab === 'content' && (
+        {/* ── Content Studio Tab (Production) ─────────────────────────── */}
+        {tab === 'content' && socialAllowed && (
           <div>
             {/* Stats bar — single hairline-bordered grid row */}
             <div ref={reveal} style={{
@@ -995,8 +1188,8 @@ export function ClientDashboard() {
           </div>
         )}
 
-        {/* ── Content Calendar Tab ─────────────────────────────────── */}
-        {tab === 'calendar' && (
+        {/* ── Content Calendar Tab (Production) ────────────────────── */}
+        {tab === 'calendar' && socialAllowed && (
           <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
             <SocialManager
               galleries={galleries}
@@ -1009,228 +1202,16 @@ export function ClientDashboard() {
         )}
 
         {/* ── Galleries Tab ───────────────────────────────────────────── */}
-        {tab === 'galleries' && (
-          <div>
-            {/* Filter & Sort Toolbar — hairline panels, no glass blur */}
-            <div style={{
-              display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap', alignItems: 'center',
-            }}>
-              {/* Search */}
-              <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: 360 }}>
-                <span style={{
-                  position: 'absolute', insetInlineStart: 14, top: '50%',
-                  transform: 'translateY(-50%)', pointerEvents: 'none',
-                  color: textMuted, display: 'flex',
-                }}>
-                  <Icon name="search" size={13} strokeWidth={1.85} />
-                </span>
-                <input
-                  value={galleryFilter} onChange={e => setGalleryFilter(e.target.value)}
-                  placeholder="חפש גלריה…"
-                  style={{
-                    width: '100%', padding: '10px 14px 10px 38px',
-                    background: '#fff', border: `1px solid ${border}`, borderRadius: 2,
-                    color: textPrimary, fontSize: 13, fontFamily: 'inherit', outline: 'none',
-                    transition: 'border-color .15s',
-                  }}
-                  onFocus={e => { e.currentTarget.style.borderColor = textPrimary }}
-                  onBlur={e => { e.currentTarget.style.borderColor = border }}
-                />
-              </div>
-
-              {/* Sort */}
-              <div style={{ display: 'flex', border: `1px solid ${border}`, background: '#fff' }}>
-                {([
-                  { id: 'date' as const, label: 'תאריך' },
-                  { id: 'name' as const, label: 'שם' },
-                  { id: 'top-picks' as const, label: 'מועדפים' },
-                ] as const).map((s, i) => (
-                  <button key={s.id} onClick={() => setGallerySortBy(s.id)} style={{
-                    padding: '8px 14px', border: 'none', cursor: 'pointer',
-                    borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
-                    background: gallerySortBy === s.id ? textPrimary : 'transparent',
-                    color: gallerySortBy === s.id ? '#fff' : textPrimary,
-                    fontSize: 10, fontWeight: 500, fontFamily: 'inherit',
-                    letterSpacing: '0.18em', textTransform: 'uppercase',
-                    transition: 'background .15s, color .15s',
-                  }}>{s.label}</button>
-                ))}
-              </div>
-
-              {/* View mode */}
-              <div style={{ display: 'flex', border: `1px solid ${border}`, background: '#fff' }}>
-                {([
-                  { id: 'grid' as const,    name: 'gallery'  as IconName, label: 'תצוגת רשת' },
-                  { id: 'masonry' as const, name: 'sections' as IconName, label: 'תצוגת אבן' },
-                  { id: 'list' as const,    name: 'menu'     as IconName, label: 'תצוגת רשימה' },
-                ] as const).map((v, i) => (
-                  <button key={v.id} onClick={() => setGalleryViewMode(v.id)} aria-label={v.label} aria-pressed={galleryViewMode === v.id} style={{
-                    padding: '8px 10px', border: 'none', cursor: 'pointer',
-                    borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
-                    background: galleryViewMode === v.id ? textPrimary : 'transparent',
-                    color: galleryViewMode === v.id ? '#fff' : textPrimary,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    transition: 'background .15s, color .15s',
-                  }}>
-                    <Icon name={v.name} size={13} strokeWidth={1.85} />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Keyboard shortcut hint — quiet meta line */}
-            <p style={{
-              fontSize: 11, color: textMuted, marginBottom: 24,
-              letterSpacing: '0.04em',
-            }}>
-              לחצו <kbd style={{
-                padding: '2px 6px', background: '#fff', border: `1px solid ${border}`,
-                fontSize: 10, fontFamily: 'monospace', color: textPrimary,
-              }}>T</kbd> על תמונה כדי לסמן כמועדף
-            </p>
-
-            {galleries
-              .filter(g => !galleryFilter || g.name.toLowerCase().includes(galleryFilter.toLowerCase()) || (g.client_name || '').toLowerCase().includes(galleryFilter.toLowerCase()))
-              .sort((a, b) => {
-                if (gallerySortBy === 'name') return a.name.localeCompare(b.name)
-                if (gallerySortBy === 'top-picks') {
-                  const aTops = allImages.filter(img => img.gallery_id === a.id && img.is_top_pick).length
-                  const bTops = allImages.filter(img => img.gallery_id === b.id && img.is_top_pick).length
-                  return bTops - aTops
-                }
-                return (b.published_at || '').localeCompare(a.published_at || '')
-              })
-              .map(g => {
-              const galleryImages = allImages.filter(img => img.gallery_id === g.id)
-              const d = g.published_at ? new Date(g.published_at) : null
-              return (
-                <div key={g.id} ref={reveal} style={{
-                  marginBottom: 32, padding: 28,
-                  background: '#fff', border: `1px solid ${border}`,
-                }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-                    marginBottom: 22, gap: 12, flexWrap: 'wrap',
-                  }}>
-                    <div>
-                      <div style={{
-                        fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-                        color: textMuted, textTransform: 'uppercase', marginBottom: 8,
-                        display: 'flex', alignItems: 'center', gap: 8,
-                      }}>
-                        <span style={{
-                          width: 6, height: 6, borderRadius: '50%', background: statusLive,
-                        }} />
-                        Published
-                        {d && (
-                          <>
-                            <span style={{ color: border, marginInline: 2 }}>·</span>
-                            <span>{MONTHS[d.getMonth()]} {d.getFullYear()}</span>
-                          </>
-                        )}
-                      </div>
-                      <h3 style={{
-                        fontSize: 22, fontWeight: 500, margin: '0 0 6px',
-                        letterSpacing: '-0.015em', color: textPrimary,
-                      }}>{g.name}</h3>
-                      <p style={{ fontSize: 13, color: textSecondary, margin: 0 }}>
-                        {g.image_count.toLocaleString('he-IL')} תמונות
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <button
-                        onClick={() => setCreativeGallery({ id: g.id, name: g.name, topPicksCount: galleryImages.filter(i => i.is_top_pick).length })}
-                        style={{
-                          padding: '11px 22px', borderRadius: 2,
-                          background: '#0a0a0f', border: '1px solid #0a0a0f',
-                          color: '#D4FF00',
-                          fontSize: 11, fontWeight: 700,
-                          letterSpacing: '0.18em', textTransform: 'uppercase',
-                          fontFamily: 'inherit', cursor: 'pointer',
-                          display: 'inline-flex', alignItems: 'center', gap: 8,
-                          transition: 'background .15s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = '#1a1a25' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = '#0a0a0f' }}
-                      >
-                        🎨 מנוע יצירה
-                      </button>
-                      <a href={galleryUrl(g.id)} style={{
-                        padding: '11px 22px', borderRadius: 2,
-                        background: 'transparent', border: `1px solid ${textPrimary}`,
-                        color: textPrimary,
-                        fontSize: 11, fontWeight: 500,
-                        letterSpacing: '0.18em', textTransform: 'uppercase',
-                        textDecoration: 'none', fontFamily: 'inherit',
-                        display: 'inline-flex', alignItems: 'center', gap: 8,
-                        transition: 'background .15s, color .15s',
-                      }}
-                        onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => { e.currentTarget.style.background = textPrimary; e.currentTarget.style.color = '#fff' }}
-                        onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = textPrimary }}
-                      >
-                        View Gallery
-                        <Icon name="arrow-out" size={12} strokeWidth={1.85} />
-                      </a>
-                    </div>
-                  </div>
-                  <div style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 4,
-                  }}>
-                    {galleryImages.map(img => {
-                      const selected = selectedPicks.has(img.id)
-                      return (
-                        <div
-                          key={img.id}
-                          onClick={() => togglePick(img.id)}
-                          style={{
-                            aspectRatio: '1', overflow: 'hidden', position: 'relative',
-                            cursor: 'pointer', background: bgSubtle,
-                            outline: selected ? `2px solid ${textPrimary}` : 'none',
-                            outlineOffset: selected ? -2 : 0,
-                          }}
-                        >
-                          <SignedImg
-                            bucket="gallery-images"
-                            path={img.thumbnail_path || img.storage_path}
-                            alt="" loading="lazy"
-                            style={{
-                              width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                              opacity: selected ? 1 : 0.55,
-                              transition: 'opacity .15s',
-                            }}
-                          />
-                          {selected && (
-                            <div style={{
-                              position: 'absolute', top: 6, insetInlineEnd: 6,
-                              width: 20, height: 20, borderRadius: '50%',
-                              background: textPrimary, color: '#fff',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}>
-                              <Icon name="check" size={11} strokeWidth={3} />
-                            </div>
-                          )}
-                          {img.is_top_pick && !selected && (
-                            <div style={{
-                              position: 'absolute', top: 6, insetInlineStart: 6,
-                              width: 20, height: 20, borderRadius: '50%',
-                              background: 'rgba(255,255,255,.9)', color: textPrimary,
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}>
-                              <Icon name="star" size={10} strokeWidth={1.85} />
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+        {tab === 'galleries' && !showNonEntitledOverview && !showSocialLock && (
+          <GalleryGrid
+            loc={loc}
+            items={galleryCards}
+            hrefFor={galleryUrl}
+          />
         )}
 
         {/* ── Stories Tab ──────────────────────────────────────────────── */}
-        {tab === 'stories' && hasStories && (
+        {tab === 'stories' && hasStories && socialAllowed && (
           <div>
             <div ref={reveal} style={{ marginBottom: 32 }}>
               <div style={{
@@ -1336,7 +1317,13 @@ export function ClientDashboard() {
           </Suspense>
         )}
 
-        {tab === 'tender' && (
+        {/* ── Tender Library (production-company clients) ──────────────────
+            Gated by the `production_suite` entitlement ALONE (NOT the Social
+            flag), so entitled clients get the tender library now while Social
+            stays locked. TenderBuilder is self-contained (client-side filter +
+            ZIP/PDF over galleries the client can already see); it calls none of
+            the locked Social APIs. */}
+        {tab === 'tender' && productionEnabled && !showNonEntitledOverview && !showSocialLock && (
           <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
             <TenderBuilder
               galleries={galleries}
@@ -1346,21 +1333,6 @@ export function ClientDashboard() {
             />
           </Suspense>
         )}
-      </div>
-
-      {/* Footer — small, monochrome */}
-      <footer style={{
-        borderTop: `1px solid ${border}`, padding: '24px 24px',
-        textAlign: 'center', background: bg,
-      }}>
-        <div style={{
-          fontSize: 10, color: textMuted, fontWeight: 500,
-          letterSpacing: '0.18em', textTransform: 'uppercase',
-        }}>
-          Powered by Pixflow
-        </div>
-      </footer>
-
       {/* Story player */}
       {playingStory && <StoryPlayer url={playingStory} onClose={() => setPlayingStory(null)} />}
 
@@ -1378,5 +1350,6 @@ export function ClientDashboard() {
         </Suspense>
       )}
     </div>
+    </PortalShell>
   )
 }

@@ -57,8 +57,12 @@ export type ProgressFn = (p: UploadProgress) => void
 //   • Supported formats: JPEG / PNG / WebP. HEIC/HEIF is explicitly REJECTED
 //     (with its own reason) because the on-the-fly transform pipeline can't
 //     decode it yet — accepting it would produce broken gallery images.
-//   • MAX_UPLOAD_BYTES: covers any real high-res JPEG/PNG deliverable while
-//     blocking RAW dumps / video / abuse.
+//   • MAX_UPLOAD_BYTES: 200 MB. Covers max-quality JPEGs from 45-61MP bodies
+//     (a7R V, R5, Z8/Z9 run 25-60 MB) and 100MP GFX, plus Pixieset "Original"
+//     exports (Pixieset caps uploads at 100 MB). The prior 40 MB cap SILENTLY
+//     rejected legitimate high-res photography. RAW/TIFF/HEIC are still
+//     unsupported (JPEG/PNG/WebP only) and need server-side transcode — see
+//     docs/PIXIESET-IMPORT-PRODUCTION-ARCHITECTURE.md.
 //   • MAX_UPLOAD_BATCH: high guardrail against a pathological drag-drop only.
 //     It is NOT a per-gallery limit — uploadMany streams with bounded
 //     concurrency (~8 in flight), so a real wedding selection (often
@@ -67,7 +71,7 @@ export type ProgressFn = (p: UploadProgress) => void
 //     uploaded, 165 lost). Raised so normal large galleries are never
 //     truncated; anything beyond this still surfaces a visible warning.
 
-export const MAX_UPLOAD_BYTES = 40 * 1024 * 1024 // 40 MB per image
+export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024 // 200 MB per image (was 40 MB — silently rejected valid high-res)
 export const MAX_UPLOAD_BATCH = 5000             // files per selection (concurrency is 8)
 
 const ALLOWED_UPLOAD_MIME = new Set(['image/jpeg', 'image/png', 'image/webp'])
@@ -254,6 +258,46 @@ export async function uploadOneImage(file: File, opts: UploadOptions): Promise<U
     webPath: origPath, thumbPath: origPath, originalPath: origPath,
     originalSize: file.size,
     publicThumbPresent: false,
+  }
+}
+
+/** Upload a single ORIGINAL object to storage WITHOUT recording an images row
+ *  or consuming a token. Used by the "Replace photo" flow, which reuses an
+ *  existing row rather than inserting one. Content-addressed key (hash embeds
+ *  size + lastModified) so a genuinely different replacement never collides
+ *  with the object it replaces — the old bytes stay intact until the caller
+ *  explicitly deletes them AFTER the DB flip. Returns the storage path. */
+export async function uploadReplacementOriginal(
+  file: File,
+  opts: { galleryId: string; businessSlug: string; onProgress?: ProgressFn },
+): Promise<{ path: string; size: number }> {
+  const reason = validateUploadFile(file)
+  if (reason) throw new Error(reason)
+  const { galleryId, businessSlug, onProgress } = opts
+  const hash     = pathHash(`${galleryId}/${file.name}/${file.size}/${file.lastModified}`)
+  const origPath = buildPath(businessSlug, galleryId, 'originals', hash, file.name)
+  onProgress?.({ phase: 'original' })
+  await uploadOne(BUCKET, origPath, file, file.type || 'image/jpeg')
+  onProgress?.({ phase: 'done' })
+  return { path: origPath, size: file.size }
+}
+
+/** Best-effort decode of an image file's intrinsic pixel dimensions. Returns
+ *  nulls if decoding is unavailable — callers must tolerate that. */
+export async function readImageDimensions(
+  file: File,
+): Promise<{ width: number | null; height: number | null }> {
+  try {
+    if (typeof createImageBitmap === 'function') {
+      const bmp = await createImageBitmap(file)
+      const dims = { width: bmp.width || null, height: bmp.height || null }
+      bmp.close()
+      return dims
+    }
+    const img = await loadImageElement(file)
+    return { width: img.naturalWidth || null, height: img.naturalHeight || null }
+  } catch {
+    return { width: null, height: null }
   }
 }
 

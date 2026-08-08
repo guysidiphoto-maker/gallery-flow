@@ -9,7 +9,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
-import { requireBusinessOwnerOfClient } from '../server/ownerAuth.js'
+import { requireProductionOwnerOfClient } from '../server/entitlements.js'
+import { requireSocialStudio } from '../server/features.js'
 
 export const maxDuration = 60
 
@@ -217,6 +218,9 @@ async function scoreBatch(
 }
 
 async function handler(req: VercelRequest, res: VercelResponse) {
+  // Feature availability gate (contract C1) — FIRST, before origin/auth/
+  // entitlement resolution. Social studio is OFF by default for everyone.
+  if (!requireSocialStudio(res)) return
   const t0 = Date.now()
   const ALLOWED_ORIGINS = new Set([
     'https://pixflow-ai.com',
@@ -254,7 +258,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   // Blocker 2 gate: require a valid Supabase JWT whose user owns this client's
   // business. Rejects (401/403/404) BEFORE any paid Anthropic call. Origin gate
   // above is defense-in-depth only — this is the real boundary.
-  const gate = await requireBusinessOwnerOfClient(req, supabase, clientId)
+  const gate = await requireProductionOwnerOfClient(req, supabase, clientId)
   if (!gate.ok) {
     return res.status(gate.status).json({ ok: false, error: gate.code })
   }
