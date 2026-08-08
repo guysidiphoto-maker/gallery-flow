@@ -271,22 +271,12 @@ export function Dashboard() {
   // Gallery editor
   const [editingGallery, setEditingGallery] = useState<Gallery | null>(null)
   // 'sections' removed (was a redundant editor tab — sections live in the
-  // Photos-tab sidebar). 'preview' is Phase 5's Live Preview iframe.
-  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'welcome' | 'stories' | 'preview'>('photos')
-  // Live Preview pane — Phase 5. The iframe's src includes ?v=${previewRefreshKey}
-  // so bumping this number forces React to swap the iframe DOM node, which
-  // triggers a fresh navigation (sidestepping aggressive browser/CDN caches).
-  // unpublishedChanges is informational — until Phase 6 lands draft/publish
-  // snapshots, the public viewer reads delivery_settings directly so the
-  // iframe is always live; the badge just communicates that the photographer
-  // has unpublished local edits that haven't yet bumped published_at.
-  const [previewRefreshKey, setPreviewRefreshKey] = useState(0)
+  // Photos-tab sidebar).
+  const [editTab, setEditTab] = useState<'photos' | 'settings' | 'activities' | 'welcome' | 'stories'>('photos')
+  // unpublishedChanges is informational — the public viewer reads
+  // delivery_settings directly, so a saved edit is already live; the badge just
+  // communicates that the photographer has local edits not yet published.
   const [unpublishedChanges, setUnpublishedChanges] = useState(false)
-  // Inline side-by-side preview pane — visible alongside Settings + Welcome
-  // tabs so every config tweak reflects live in the iframe without tab-
-  // switching. Default ON; a toggle in the header collapses it for full-
-  // width editing when needed.
-  const [showSidePreview, setShowSidePreview] = useState(true)
   // In-flight + just-published states for the Publish/Update button so a click
   // gives immediate visual feedback (was: silent black button → toast 200ms
   // later, easy to miss). `publishing` flips true during the await; `justPublished`
@@ -297,26 +287,11 @@ export function Dashboard() {
   // the eye is already on the button at the moment of click. Mirrors the
   // copy-link pattern on the gallery list cards.
   const [copiedInEditor, setCopiedInEditor] = useState(false)
-  // Debounced preview refresh — typing in an input fires onChange per
-  // keystroke; bumping the iframe key each time forced a navigation that
-  // stole focus from the active text field after every character. Holding
-  // the bump for ~800ms of idle keystrokes keeps the input usable and
-  // still feels live to the eye on the preview.
-  const previewRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const scheduleSidePreviewRefresh = () => {
-    if (previewRefreshTimerRef.current) clearTimeout(previewRefreshTimerRef.current)
-    previewRefreshTimerRef.current = setTimeout(() => {
-      previewRefreshTimerRef.current = null
-      setPreviewRefreshKey(k => k + 1)
-    }, 1500)
-  }
   // Called by every mutation that changes what the client sees (sections,
   // photo order, uploads, top-picks, deletes, stories, …). Lights up the
-  // "שינויים שטרם פורסמו" pill + Update button and queues a Live Preview
-  // refresh (debounced so typing doesn't reload the iframe per keystroke).
+  // "שינויים שטרם פורסמו" pill + Update button.
   const markDirty = () => {
     setUnpublishedChanges(true)
-    scheduleSidePreviewRefresh()
   }
   // The ONLY allowed write path for delivery_settings. Migration 069 revoked
   // the direct column UPDATE for the authenticated role, so every
@@ -388,7 +363,8 @@ export function Dashboard() {
     downloads_total: number
     favorites_total: number
     emails_total: number
-    recent_downloads: Array<{ id: string; image_id: string | null; resolution: string; download_kind: string; created_at: string }>
+    recent_downloads: Array<{ id: string; image_id: string | null; resolution: string; download_kind: string; guest_email?: string | null; guest_name?: string | null; created_at: string }>
+    downloaders?: Array<{ guest_email: string; guest_name: string | null; downloads: number; last_at: string }>
     recent_favorites: Array<{ id: string; image_id: string; guest_name: string | null; note: string | null; created_at: string }>
     recent_emails: Array<{ id: string; recipient_email: string; subject: string | null; status: string; created_at: string }>
   } | null>(null)
@@ -556,7 +532,6 @@ export function Dashboard() {
 
   // New delivery settings state
   const [welcomeStyle, setWelcomeStyle] = useState<'mosaic' | 'cinematic' | 'minimal'>('mosaic')
-  const [clientHidePhotosEnabled, setClientHidePhotosEnabled] = useState(false)
   const [requireGalleryCode, setRequireGalleryCode] = useState(false)
   const [galleryCode, setGalleryCode] = useState('')
   const [trackDownloads, setTrackDownloads] = useState(false)
@@ -907,7 +882,6 @@ export function Dashboard() {
         generateStories: false,
         showStories: true,
         welcomeStyle,
-        clientHidePhotosEnabled,
         requireGalleryCode,
         galleryCode: requireGalleryCode ? galleryCode : '',
         trackDownloads,
@@ -944,7 +918,6 @@ export function Dashboard() {
     setNewDate('')
     setNewGalleryClientId(null)
     setWelcomeStyle('mosaic')
-    setClientHidePhotosEnabled(false)
     setRequireGalleryCode(false)
     setGalleryCode('')
     setTrackDownloads(false)
@@ -962,7 +935,6 @@ export function Dashboard() {
     // gallery in the same session doesn't inherit the previous one's dirty
     // flag or stale cache-buster.
     setUnpublishedChanges(false)
-    setPreviewRefreshKey(0)
     const [imagesAll, sectionsRes, storiesRes] = await Promise.all([
       // Paginated: galleries can exceed PostgREST's 1000-row cap. A plain
       // .select() here silently truncated large galleries to 1000 in the editor.
@@ -1535,7 +1507,6 @@ export function Dashboard() {
         console.warn('[updateGallerySetting]', key, errors)
         return
       }
-      scheduleSidePreviewRefresh()
     }
 
     if (TEXT_INPUT_KEYS.has(key)) {
@@ -1568,7 +1539,6 @@ export function Dashboard() {
     setEditingGallery({ ...editingGallery, name: newTitle, delivery_settings: nextSettings })
     setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: newTitle } : g))
     setUnpublishedChanges(true)
-    scheduleSidePreviewRefresh()
     // `name` is a granted column (direct UPDATE is fine); galleryTitle lives in
     // delivery_settings, which must go through the RPC (069). Two writes.
     const { error: nameErr } = await supabase
@@ -1791,10 +1761,9 @@ export function Dashboard() {
       return
     }
     setEditingGallery({ ...editingGallery, status: 'live', published_at: publishedAt })
-    // Phase 5 — clear the "unpublished changes" pill in the Live Preview pane
-    // and force the iframe to reload so it picks up the freshest snapshot.
+    // Clear the "unpublished changes" pill — the public viewer reads
+    // delivery_settings directly, so the published edit is already live.
     setUnpublishedChanges(false)
-    setPreviewRefreshKey(k => k + 1)
     // Inline button feedback — briefly turns the button into a "✓ עודכן"
     // confirmation, then back to the resting state. Survives alongside the
     // toast so both screen-reading users and eyes-on-button users get a hit.
@@ -3601,30 +3570,9 @@ export function Dashboard() {
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   {/* The one-time "$150 gallery unlock" client-payment controls
-                      (opt-in toggle + buy/paid badge) were retired. Subscription
-                      billing and the token economy are unaffected. */}
-                  {/* Live-preview toggle — only meaningful on Settings + Welcome
-                      tabs (where the side preview pane appears). Lets the
-                      photographer reclaim the full editor width when they want
-                      to focus, then bring the preview back in. */}
-                  {(editTab === 'settings' || editTab === 'welcome') && (
-                    <button
-                      onClick={() => setShowSidePreview(v => !v)}
-                      title={showSidePreview ? 'הסתר תצוגה חיה' : 'הצג תצוגה חיה'}
-                      style={{
-                        padding: '10px 14px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-                        background: showSidePreview ? textPrimary : 'transparent',
-                        border: `1px solid ${showSidePreview ? textPrimary : border}`,
-                        color: showSidePreview ? '#fff' : textPrimary,
-                        cursor: 'pointer', fontFamily: 'inherit',
-                        letterSpacing: '0.18em', textTransform: 'uppercase',
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                      }}
-                    >
-                      <Icon name="arrow-out" size={12} strokeWidth={1.85} />
-                      Live
-                    </button>
-                  )}
+                      (opt-in toggle + buy/paid badge) were retired (migration 106).
+                      Subscription billing and the token economy are unaffected.
+                      The Live-preview side-pane toggle was removed on main (#218). */}
                   <a href={galleryShareUrl(editingGallery)} target="_blank" style={{
                     padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
                     background: 'transparent', border: `1px solid ${border}`, color: textPrimary,
@@ -3864,7 +3812,6 @@ export function Dashboard() {
                       // reorder), so a dedicated tab was redundant.
                       { id: 'stories' as const,    icon: 'stories'   as IconName, label: 'סטוריז' },
                       { id: 'welcome' as const,    icon: 'palette'   as IconName, label: 'עיצוב' },
-                      { id: 'preview' as const,    icon: 'arrow-out' as IconName, label: 'תצוגה חיה' },
                       { id: 'activities' as const, icon: 'activity'  as IconName, label: 'פעילות' },
                       { id: 'settings' as const,   icon: 'settings'  as IconName, label: 'הגדרות' },
                     ]).map(t => {
@@ -4068,10 +4015,8 @@ export function Dashboard() {
                   )}
                 </aside>
 
-                {/* ── Main content pane + optional side-preview ─────── */}
+                {/* ── Main content pane ─────────────────────────────── */}
                 {(() => {
-                  const sidePreviewActive = showSidePreview &&
-                    (editTab === 'settings' || editTab === 'welcome')
                   return (
                 <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
                 <div style={{
@@ -5328,6 +5273,55 @@ export function Dashboard() {
                         </div>
 
                         {/* Recent downloads */}
+                        {/* Downloaders — distinct guests who identified via the
+                            download email gate (trackDownloads). */}
+                        {activitySummary.downloaders && activitySummary.downloaders.length > 0 && (
+                          <section style={{ marginBottom: 32 }}>
+                            <div style={{
+                              fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
+                              color: textMuted, textTransform: 'uppercase',
+                              marginBottom: 12,
+                            }}>
+                              מי הוריד · Downloaders
+                            </div>
+                            <div style={{ borderTop: `1px solid ${border}` }}>
+                              {activitySummary.downloaders.slice(0, 50).map(u => (
+                                <div key={u.guest_email} style={{
+                                  display: 'flex', alignItems: 'center', gap: 12,
+                                  padding: '12px 4px', borderBottom: `1px solid ${border}`,
+                                  fontSize: 13, color: textPrimary,
+                                }}>
+                                  <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+                                    {u.guest_name && (
+                                      <span style={{ fontWeight: 500 }}>{u.guest_name}</span>
+                                    )}
+                                    <span style={{
+                                      direction: 'ltr', textAlign: 'left' as const, color: u.guest_name ? textMuted : textPrimary,
+                                      fontSize: u.guest_name ? 12 : 13,
+                                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                    }}>
+                                      {u.guest_email}
+                                    </span>
+                                  </span>
+                                  <span style={{
+                                    fontSize: 10, fontWeight: 500,
+                                    letterSpacing: '0.18em', textTransform: 'uppercase', color: textMuted,
+                                  }}>
+                                    {u.downloads} {u.downloads === 1 ? 'download' : 'downloads'}
+                                  </span>
+                                  <span style={{
+                                    color: textMuted, fontSize: 12,
+                                    fontFeatureSettings: '"tnum" 1, "lnum" 1',
+                                    minWidth: 110, textAlign: 'left' as const,
+                                  }}>
+                                    {new Date(u.last_at).toLocaleString('he-IL', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+                        )}
+
                         {activitySummary.recent_downloads.length > 0 && (
                           <section style={{ marginBottom: 32 }}>
                             <div style={{
@@ -5352,6 +5346,15 @@ export function Dashboard() {
                                     }}>
                                       {img?.filename ?? '(תמונה נמחקה)'}
                                     </span>
+                                    {d.guest_email && (
+                                      <span style={{
+                                        direction: 'ltr', fontSize: 12, color: textSecondary,
+                                        maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                      }} title={d.guest_name ? `${d.guest_name} · ${d.guest_email}` : d.guest_email}>
+                                        {d.guest_name || d.guest_email}
+                                      </span>
+                                    )}
                                     <span style={{
                                       fontSize: 10, fontWeight: 500,
                                       letterSpacing: '0.18em', textTransform: 'uppercase',
@@ -5690,20 +5693,56 @@ export function Dashboard() {
                       ))}
                     </Section>
 
-                    {/* Privacy */}
-                    <Section eyebrow="פרטיות">
-                      {([
-                        { key: 'clientHidePhotosEnabled', label: 'אפשר לאורחים להסתיר תמונות', desc: 'כל אורח יכול להסתיר תמונות שלו מאחרים' },
-                        { key: 'clientSelectionEnabled',  label: 'בחירת תמונות',                desc: 'אפשר ללקוח לבחור תמונות מועדפות' },
-                      ] as const).map((opt, i, arr) => (
-                        <ToggleRow key={opt.key}
-                          label={opt.label} desc={opt.desc}
-                          on={Boolean(ds[opt.key])}
-                          onChange={() => updateGallerySetting(opt.key, !ds[opt.key])}
-                          last={i === arr.length - 1}
-                        />
-                      ))}
-                    </Section>
+                    {/* Privacy — client-as-admin. Built from stable HOST elements
+                        (not the inline Section/ToggleRow helpers, which are
+                        redefined every render and would remount the code <input>,
+                        stealing focus after each keystroke). When on, the gallery
+                        opens with a "client or guest?" gate; the client enters the
+                        identity code below and can then hide photos from guests. */}
+                    <section style={{ padding: '24px 24px 16px', background: bgSubtle, border: `1px solid ${border}` }}>
+                      <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', color: textMuted, textTransform: 'uppercase', marginBottom: 12 }}>פרטיות</div>
+                      <div
+                        onClick={() => updateGallerySetting('clientSelectionEnabled', !ds.clientSelectionEnabled)}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 0', cursor: 'pointer', userSelect: 'none', gap: 16, borderBottom: ds.clientSelectionEnabled ? `1px solid ${border}` : 'none' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 4 }}>הגדר לקוח כאדמין</div>
+                          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.5 }}>בפתיחת הגלריה הלקוח יבחר 'אני הלקוח' ויזין קוד הזדהות. לאחר מכן יוכל להסתיר תמונות משאר האורחים (הוא עצמו רואה הכל).</div>
+                        </div>
+                        <div
+                          role="switch" aria-checked={Boolean(ds.clientSelectionEnabled)}
+                          onClick={(e) => { e.stopPropagation(); updateGallerySetting('clientSelectionEnabled', !ds.clientSelectionEnabled) }}
+                          style={{ width: 44, height: 24, borderRadius: 24, padding: 2, background: ds.clientSelectionEnabled ? textPrimary : border, transition: 'background .2s', flexShrink: 0, cursor: 'pointer', position: 'relative' }}>
+                          <div style={{ width: 20, height: 20, borderRadius: 10, background: '#fff', transition: 'transform .2s', transform: ds.clientSelectionEnabled ? 'translateX(-20px)' : 'translateX(0)', boxShadow: '0 1px 3px rgba(0,0,0,.18)' }} />
+                        </div>
+                      </div>
+                      {Boolean(ds.clientSelectionEnabled) && (
+                        <div style={{ paddingTop: 14 }}>
+                          <label htmlFor="client-code-input" style={{ display: 'block', fontSize: 12, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+                            קוד הזדהות ללקוח
+                          </label>
+                          <input
+                            id="client-code-input"
+                            type="text"
+                            dir="ltr"
+                            value={(ds.clientCode as string) ?? ''}
+                            onChange={e => updateGallerySetting('clientCode', e.target.value.toUpperCase().slice(0, 32))}
+                            placeholder="לדוגמה: DAVID2026"
+                            style={{
+                              width: '100%', boxSizing: 'border-box', padding: '11px 13px',
+                              borderRadius: 2, border: `1px solid ${border}`,
+                              background: '#fff', color: textPrimary, fontSize: 14,
+                              letterSpacing: '0.08em', textAlign: 'left' as const, outline: 'none',
+                              fontFamily: 'inherit',
+                            }}
+                          />
+                          <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.5, marginTop: 6 }}>
+                            {(ds.clientCode as string)?.trim()
+                              ? 'מסרו את הקוד הזה ללקוח בלבד. ללא הקוד הוא ייכנס כאורח רגיל.'
+                              : 'הזינו קוד. כל עוד השדה ריק, הלקוח לא יוכל להזדהות כאדמין.'}
+                          </div>
+                        </div>
+                      )}
+                    </section>
 
                     {/* Face Recognition */}
                     <Section eyebrow="זיהוי פנים">
@@ -6756,160 +6795,7 @@ export function Dashboard() {
                   )
                 })()}
 
-                {/* ── Live Preview Tab ── Phase 5.
-                    Renders the gallery's public URL inside an iframe scoped to
-                    the editor's main content pane. The src carries a ?v=N cache
-                    buster (bumped on every successful save) so reloads are
-                    guaranteed even with aggressive CDN/browser caching.
-                    Until Phase 6 introduces draft/publish snapshots the public
-                    viewer reads delivery_settings directly — so the iframe IS
-                    the latest saved state; the "unpublished changes" pill is
-                    purely informational. */}
-                {false && editingGallery && (() => {  /* full-page preview tab disabled — inline split takes over */
-                  const shareUrl = galleryShareUrl(editingGallery!)
-                  const previewSrc = `${shareUrl}${shareUrl.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
-                  return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minHeight: '100%' }}>
-                      {/* Pane header — eyebrow label + dirty-state pill + refresh */}
-                      <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        gap: 12, flexWrap: 'wrap',
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <span style={{
-                            fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-                            textTransform: 'uppercase', color: textMuted,
-                          }}>תצוגה חיה</span>
-                          {unpublishedChanges && (
-                            <span style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 6,
-                              padding: '4px 10px', borderRadius: 2,
-                              border: `1px solid ${border}`, background: bgSubtle,
-                              fontSize: 11, fontWeight: 500, color: textSecondary,
-                              fontFamily: 'inherit',
-                            }}>
-                              <span aria-hidden="true" style={{
-                                width: 7, height: 7, borderRadius: '50%',
-                                background: textMuted, display: 'inline-block',
-                              }} />
-                              שינויים שטרם פורסמו
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => setPreviewRefreshKey(k => k + 1)}
-                          aria-label="רענן תצוגה חיה"
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6,
-                            padding: '8px 14px', borderRadius: 2,
-                            background: 'transparent', border: `1px solid ${border}`,
-                            color: textPrimary, cursor: 'pointer', fontFamily: 'inherit',
-                            fontSize: 11, fontWeight: 500,
-                            letterSpacing: '0.18em', textTransform: 'uppercase',
-                          }}
-                        >
-                          <Icon name="arrow-out" size={12} strokeWidth={1.85} />
-                          רענן
-                        </button>
-                      </div>
-
-                      {/* Iframe shell — full content width, capped at 1400px and
-                          centered so wide monitors don't stretch the preview
-                          past where it's legible. On viewports < 900px we let
-                          it fill 100% per the spec. */}
-                      <div style={{
-                        width: '100%', maxWidth: 1400, marginInline: 'auto',
-                        border: `1px solid ${border}`, background: bgSubtle,
-                      }}>
-                        <iframe
-                          key={previewRefreshKey}
-                          src={previewSrc}
-                          title="תצוגה חיה של הגלריה"
-                          style={{
-                            display: 'block', width: '100%', height: '80vh',
-                            border: 'none', background: bgSubtle,
-                          }}
-                        />
-                      </div>
-
-                      {/* Footer hint — make the URL discoverable for copy + the
-                          "open in new tab" escape hatch (some browsers throttle
-                          iframes harder than top-level navigations). */}
-                      <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        gap: 12, flexWrap: 'wrap', color: textMuted,
-                        fontSize: 11, letterSpacing: '0.02em',
-                      }}>
-                        <span style={{ direction: 'ltr', unicodeBidi: 'isolate' }}>{shareUrl}</span>
-                        <a href={shareUrl} target="_blank" rel="noreferrer" style={{
-                          color: textSecondary, textDecoration: 'none',
-                          display: 'inline-flex', alignItems: 'center', gap: 6,
-                          fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
-                        }}>
-                          <Icon name="arrow-out" size={11} strokeWidth={1.85} />
-                          פתח בלשונית חדשה
-                        </a>
-                      </div>
-                    </div>
-                  )
-                })()}
                 </div>
-                {/* Side-preview iframe — auto-refreshes via previewRefreshKey
-                    on every settings save. Shown only on Settings + Welcome
-                    tabs (config-heavy surfaces); other tabs get full width. */}
-                {sidePreviewActive && (
-                  <aside style={{
-                    width: 'min(48%, 540px)', flexShrink: 0,
-                    borderInlineStart: `1px solid ${border}`,
-                    background: bgSubtle, display: 'flex', flexDirection: 'column',
-                  }}>
-                    <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      gap: 8, padding: '12px 14px',
-                      borderBottom: `1px solid ${border}`, background: '#fff',
-                    }}>
-                      <span style={{
-                        fontSize: 10, fontWeight: 500, letterSpacing: '0.22em',
-                        textTransform: 'uppercase', color: textMuted,
-                      }}>תצוגה חיה ללקוח</span>
-                      <div style={{ display: 'inline-flex', gap: 6 }}>
-                        <button
-                          onClick={() => setPreviewRefreshKey(k => k + 1)}
-                          aria-label="רענן תצוגה"
-                          style={{
-                            padding: '4px 10px', borderRadius: 2,
-                            background: 'transparent', border: `1px solid ${border}`,
-                            color: textMuted, cursor: 'pointer', fontFamily: 'inherit',
-                            fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
-                          }}
-                        >רענן</button>
-                        <button
-                          onClick={() => setShowSidePreview(false)}
-                          aria-label="הסתר תצוגה"
-                          title="הסתר תצוגה"
-                          style={{
-                            padding: '4px 8px', borderRadius: 2,
-                            background: 'transparent', border: `1px solid ${border}`,
-                            color: textMuted, cursor: 'pointer', fontFamily: 'inherit',
-                            fontSize: 10,
-                          }}
-                        >✕</button>
-                      </div>
-                    </div>
-                    <iframe
-                      key={previewRefreshKey}
-                      src={(() => {
-                        const u = galleryShareUrl(editingGallery)
-                        return `${u}${u.includes('?') ? '&' : '?'}v=${previewRefreshKey}`
-                      })()}
-                      title="תצוגה חיה של הגלריה"
-                      style={{
-                        display: 'block', width: '100%', flex: 1,
-                        border: 'none', background: bgSubtle, minHeight: 0,
-                      }}
-                    />
-                  </aside>
-                )}
                 </div>
                 )
                 })()}
@@ -7381,8 +7267,6 @@ export function Dashboard() {
             {/* Toggle row helper — used for the three privacy switches below.
                 Charcoal "on" state matches the editorial palette; no green. */}
             {([
-              { key: 'hide',  on: clientHidePhotosEnabled, set: setClientHidePhotosEnabled,
-                title: 'הסתרת תמונות',  desc: 'אפשרו לאורחים להסתיר תמונות מאורחים אחרים' },
               { key: 'code',  on: requireGalleryCode, set: setRequireGalleryCode,
                 title: 'קוד גישה לגלריה', desc: 'דרשו קוד כניסה לצפייה בגלריה' },
               { key: 'track', on: trackDownloads, set: setTrackDownloads,

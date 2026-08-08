@@ -1,11 +1,11 @@
 // HomepagePricing — the pricing beat the homepage was missing. An opaque cream
 // section (covers the fixed 3D canvas) that mirrors the /pricing page: three
-// subscription tiers + the free-tier note. CTAs route to sign-in (onStart) or
-// the full /pricing page. No live checkout is wired here.
+// subscription tiers and the free-tier note. CTAs route to sign-in (onStart)
+// or the full /pricing page. No live checkout is wired here — payment state is
+// owned elsewhere and untouched.
 //
-// Numbers mirror src/pages/PricingPage.tsx (plans table, migration 075). The
-// one-time "$150 gallery" offer was retired. Keep the two in sync if pricing
-// changes.
+// Numbers mirror src/pages/PricingPage.tsx (plans table, migration 075).
+// Keep the two in sync if pricing changes.
 
 import { Button, Card, Badge, Reveal, Detect } from '../ui'
 import { color, text, font, space } from '../../theme'
@@ -128,9 +128,6 @@ export function HomepagePricing({ onStart }: Props) {
             </Detect>
           ))}
         </div>
-
-        {/* The one-time "$150 gallery" purchase offer was retired — pricing is
-            subscription-only now. */}
 
         {/* Free tier note + link to the full pricing page */}
         <Reveal>

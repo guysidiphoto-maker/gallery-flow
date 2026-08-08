@@ -1,6 +1,6 @@
 // PricingPage (/pricing) — first surface built on the Editorial design system.
 // Transparent pricing the marketing site previously lacked. Prices mirror the
-// `plans` table (migration 075). The one-time $150 gallery offer was retired.
+// `plans` table (migration 075).
 
 import { color, text, space, radius, font } from '../theme'
 import { Button, Card, Badge, Reveal, Detect } from '../components/ui'
@@ -123,11 +123,8 @@ export default function PricingPage() {
         ))}
       </section>
 
-      {/* The one-time "$150 gallery" purchase offer was retired — pricing is
-          subscription-only now. */}
-
       {/* Free tier note */}
-      <p style={{ ...text.small, textAlign: 'center', color: color.textMuted, padding: `${space[6]}px ${space[5]}px ${space[8]}px` }}>
+      <p style={{ ...text.small, textAlign: 'center', color: color.textMuted, padding: `${space[7]}px ${space[5]}px ${space[8]}px` }}>
         רוצה להתנסות? כל חשבון חדש מקבל <strong style={{ color: color.ink }}>100 תמונות חינם</strong>. בלי כרטיס אשראי.
       </p>
     </div>
