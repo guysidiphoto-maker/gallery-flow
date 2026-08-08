@@ -67,7 +67,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   if (id && supabase) {
     const { data: gallery } = await supabase
       .from('galleries')
-      .select('id, name, delivery_settings, image_count')
+      .select('id, name, delivery_settings')
       .eq('id', id)
       .in('status', ['live'])
       .single()
@@ -93,9 +93,12 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       const studio = safeSettings.studioName || ''
       const t = safeSettings.galleryTitle || (gallery.name as string) || 'Gallery'
       title = studio ? `${t} — ${studio}` : t
-      const count = Number(gallery.image_count ?? 0)
-      description = count > 0
-        ? `${t} · ${count} photos · find yours with a selfie`
+      // Prefer the photographer's own gallery description; fall back to the
+      // face-search hook. The old "· {N} photos" segment relied on the cached,
+      // often-stale gallery.image_count, which under-reported the real count.
+      const custom = (safeSettings.galleryDescription || '').trim()
+      description = custom
+        ? custom
         : `${t} · find your photos with a selfie`
     }
   }
