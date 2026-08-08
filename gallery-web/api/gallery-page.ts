@@ -134,10 +134,18 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   const baseTitle = (s.galleryTitle as string) || (gallery.name as string) || 'Gallery'
   const title = sectionName ? `${baseTitle} — ${sectionName}` : baseTitle
   const studioName = (s.studioName as string) || ''
-  const imageCount = gallery.image_count as number || 0
-  const description = studioName
-    ? `${title} by ${studioName} — ${imageCount} photos`
-    : `${title} — ${imageCount} photos`
+  // Prefer the photographer's own text (welcome message / gallery description)
+  // for the share card. The old "{title} — {N} photos" format repeated the
+  // gallery name (already the og:title) and leaned on gallery.image_count — a
+  // cached, frequently-stale counter that under-reports the real photo count.
+  const welcomeText = (
+    (s.welcomeMessage as string) || (s.galleryDescription as string) || ''
+  ).trim()
+  const description = welcomeText
+    ? welcomeText
+    : studioName
+      ? `${title} by ${studioName}`
+      : title
 
   // Wrap a storage object path in a bounded Supabase image transform. In the
   // originals-only model web_preview_path points at the multi-MB original;
