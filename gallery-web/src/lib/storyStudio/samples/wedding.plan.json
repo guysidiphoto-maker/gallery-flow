@@ -1,0 +1,803 @@
+{
+  "version": 1,
+  "galleryId": "sample-wedding",
+  "format": "9:16",
+  "template": "editorial-clean",
+  "length": "extended",
+  "pace": "relaxed",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+  "opening": {
+    "kind": "opening",
+    "enabled": true,
+    "title": "Dana & Tom",
+    "subtitle": "20 Jun 2026  ·  Caesarea",
+    "showLogo": true,
+    "durationSec": 2.4
+  },
+  "outro": {
+    "kind": "outro",
+    "enabled": true,
+    "title": "Guy Sidi Photography",
+    "showLogo": true,
+    "durationSec": 2.6
+  },
+  "scenes": [
+    {
+      "id": "sc_0_wed-0002",
+      "imageId": "wed-0002-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 2.24,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_1_wed-0000",
+      "imageId": "wed-0000-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fit",
+      "background": "blur",
+      "focal": {
+        "x": 0.13,
+        "y": 0.41
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_2_wed-0001",
+      "imageId": "wed-0001-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "pull-out",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_3_wed-0005",
+      "imageId": "wed-0005-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_4_wed-0003",
+      "imageId": "wed-0003-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "none",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_5_wed-0004",
+      "imageId": "wed-0004-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.13,
+        "y": 0.41
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_6_wed-0006",
+      "imageId": "wed-0006-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "pull-out",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_7_wed-0007",
+      "imageId": "wed-0007-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_8_wed-0015",
+      "imageId": "wed-0015-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "none",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_9_wed-0008",
+      "imageId": "wed-0008-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.13,
+        "y": 0.41
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_10_wed-0011",
+      "imageId": "wed-0011-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "pull-out",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_11_wed-0020",
+      "imageId": "wed-0020-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fit",
+      "background": "blur",
+      "focal": {
+        "x": 0.13,
+        "y": 0.41
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_12_wed-0013",
+      "imageId": "wed-0013-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_13_wed-0014",
+      "imageId": "wed-0014-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_14_wed-0025",
+      "imageId": "wed-0025-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "pull-out",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_15_wed-0016",
+      "imageId": "wed-0016-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.13,
+        "y": 0.41
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_16_wed-0017",
+      "imageId": "wed-0017-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_17_wed-0030",
+      "imageId": "wed-0030-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_18_wed-0018",
+      "imageId": "wed-0018-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "pull-out",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_19_wed-0019",
+      "imageId": "wed-0019-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_20_wed-0035",
+      "imageId": "wed-0035-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "none",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_21_wed-0021",
+      "imageId": "wed-0021-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.9,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_22_wed-0022",
+      "imageId": "wed-0022-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "pull-out",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_23_wed-0040",
+      "imageId": "wed-0040-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.9,
+      "fit": "fit",
+      "background": "blur",
+      "focal": {
+        "x": 0.13,
+        "y": 0.41
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_24_wed-0023",
+      "imageId": "wed-0023-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_25_wed-0024",
+      "imageId": "wed-0024-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.13,
+        "y": 0.41
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_26_wed-0026",
+      "imageId": "wed-0026-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "pull-out",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_27_wed-0027",
+      "imageId": "wed-0027-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_28_wed-0028",
+      "imageId": "wed-0028-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.13,
+        "y": 0.41
+      },
+      "motion": "none",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_29_wed-0029",
+      "imageId": "wed-0029-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_30_wed-0031",
+      "imageId": "wed-0031-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "pull-out",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_31_wed-0032",
+      "imageId": "wed-0032-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.13,
+        "y": 0.41
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_32_wed-0033",
+      "imageId": "wed-0033-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.9,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_33_wed-0034",
+      "imageId": "wed-0034-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_34_wed-0036",
+      "imageId": "wed-0036-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.13,
+        "y": 0.41
+      },
+      "motion": "none",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_35_wed-0037",
+      "imageId": "wed-0037-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_36_wed-0038",
+      "imageId": "wed-0038-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "none",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_37_wed-0039",
+      "imageId": "wed-0039-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_38_wed-0041",
+      "imageId": "wed-0041-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "pull-out",
+      "motionDirection": "up",
+      "motionIntensity": "subtle",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_39_wed-0010",
+      "imageId": "wed-0010-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.9,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.35
+      },
+      "motion": "push-in",
+      "motionDirection": "down",
+      "motionIntensity": "subtle",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    }
+  ],
+  "brand": {
+    "accentHex": "#B45309",
+    "headingFont": "Fraunces",
+    "bodyFont": "Inter",
+    "studioName": "Guy Sidi Photography",
+    "logoUrl": "https://example.test/logo.png",
+    "watermark": {
+      "enabled": true,
+      "opacityPercent": 18,
+      "position": "bottom-right"
+    }
+  },
+  "music": null,
+  "generatedBy": "auto",
+  "planSeed": 20
+}
