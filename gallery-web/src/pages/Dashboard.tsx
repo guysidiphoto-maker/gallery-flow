@@ -6747,10 +6747,11 @@ export function Dashboard() {
                           {
                             key: 'thumbnailSize', defaultV: 'regular',
                             eyebrow: 'גודל תמונות',
-                            hint: 'רגיל = 4 עמודות · גדול = 3 עמודות רחבות (בדסקטופ)',
+                            hint: 'רגיל = 4 עמ׳ · גדול = 3 עמ׳ · ענק = תמונה אחת בשורה (גם במובייל)',
                             opts: [
                               { id: 'regular', label: 'רגיל' },
                               { id: 'large',   label: 'גדול' },
+                              { id: 'full',    label: 'ענק' },
                             ],
                           },
                           {

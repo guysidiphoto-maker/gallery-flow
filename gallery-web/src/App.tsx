@@ -673,9 +673,11 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
   const renderMosaicBg = () => (
     <>
       <style>{`
-        @keyframes wcScroll { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+        @keyframes wcScroll { from { transform: translate3d(0,0,0); } to { transform: translate3d(0,-50%,0); } }
         @keyframes wcBgFadeIn { from { opacity: 0; } to { opacity: var(--wc-bg-target, 0.45); } }
-        .wc-col { display: flex; flex-direction: column; gap: 2px; }
+        /* translate3d + will-change force GPU compositing so the infinite scroll
+           runs on iOS/WebKit in-app browsers (WhatsApp/Instagram), not just desktop. */
+        .wc-col { display: flex; flex-direction: column; gap: 2px; will-change: transform; backface-visibility: hidden; }
         .wc-col img {
           width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block;
           opacity: 0; transition: opacity .6s ease;
@@ -709,7 +711,11 @@ function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, wel
           const columns = Array.from({ length: colCount }, (_, ci) => {
             const col: typeof images = []
             const shuffled = shuffle(allImgs, ci * 7919 + 1)
-            const needed = Math.max(12, Math.ceil(allImgs.length / colCount) * 3)
+            // Cap column length so the DOUBLED, animated element stays within
+            // iOS/WebKit compositing limits — a ~10,000px-tall layer (e.g. a
+            // 128-photo highlight reel) renders STATIC in iPhone in-app browsers
+            // (WhatsApp/Instagram WKWebView). ~14 imgs still fills + loops seamlessly.
+            const needed = Math.min(14, Math.max(10, allImgs.length))
             let lastId = ''
             for (let j = 0; col.length < needed; j++) {
               const img = shuffled[j % shuffled.length]

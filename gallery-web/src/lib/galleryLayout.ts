@@ -34,9 +34,10 @@ export function resolveGridLayout(
   const gridSpacing = str(raw, 'gridSpacing')
 
   // thumbnailSize → column mode. 'regular' = more, smaller columns (3-col →
-  // 4 desktop cols); 'large' = fewer, bigger (2-col → 3 desktop cols).
+  // 4 desktop cols); 'large' = fewer, bigger (2-col → 3 desktop cols);
+  // 'full' = one image per row on every device (1-col — big on mobile).
   const layoutFromThumb: LayoutMode | null =
-    thumbnailSize === 'large' ? '2-col' : thumbnailSize === 'regular' ? '3-col' : null
+    thumbnailSize === 'full' ? '1-col' : thumbnailSize === 'large' ? '2-col' : thumbnailSize === 'regular' ? '3-col' : null
   // gridSpacing → gap tier. 'large' maps to a genuinely wide gap so the choice
   // is obvious on desktop; 'regular' stays tight.
   const spacingFromGrid: ImageSpacing | null =
