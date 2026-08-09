@@ -415,20 +415,12 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       if (brandKit) inputProps.brand = brandKit
       compositionId = COMPOSITION_BY_STYLE[style as AllowedStyle]
     }
-    const composition = await selectComposition({
-      serveUrl,
-      id: compositionId,
-      inputProps,
-    })
-
-    // Write the mp4 to /tmp — the only writable path on the Vercel function
-    // sandbox. The Supabase upload below reads it back as a Buffer.
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gf-story-'))
-    const outPath = path.join(tmpDir, `${renderId}.mp4`)
-
-    // Resolve the Chromium executable from @sparticuz/chromium. The package
-    // ships a brotli'd Chrome binary tuned for AWS-Lambda-style sandboxes —
-    // which is exactly what Vercel's nodejs runtime provides under the hood.
+    // Resolve the @sparticuz/chromium executable BEFORE selectComposition.
+    // Story Studio's composition uses calculateMetadata, so selectComposition
+    // must launch a browser too — without this it downloads Remotion's own
+    // headless shell, which lacks system libs (libnspr4.so) on the Vercel
+    // sandbox and dies with exit 127. Passing the bundled Chromium to BOTH
+    // selectComposition and renderMedia avoids the download entirely.
     const executablePath =
       typeof (chromium as { executablePath?: unknown }).executablePath === 'function'
         ? await (chromium as { executablePath: () => Promise<string> }).executablePath()
@@ -436,8 +428,25 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     if (!executablePath) {
       throw new Error('renderer_not_ready: chromium binary unavailable')
     }
-    const chromiumArgs =
-      ((chromium as { args?: string[] }).args ?? []) as string[]
+    const chromiumArgs = ((chromium as { args?: string[] }).args ?? []) as string[]
+    const chromiumOptions = {
+      gl: 'angle',
+      enableMultiProcessOnLinux: true,
+      ...(chromiumArgs.length > 0 ? { args: chromiumArgs } : {}),
+    } as Parameters<typeof renderMedia>[0]['chromiumOptions']
+
+    const composition = await selectComposition({
+      serveUrl,
+      id: compositionId,
+      inputProps,
+      browserExecutable: executablePath,
+      chromiumOptions,
+    })
+
+    // Write the mp4 to /tmp — the only writable path on the Vercel function
+    // sandbox. The Supabase upload below reads it back as a Buffer.
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gf-story-'))
+    const outPath = path.join(tmpDir, `${renderId}.mp4`)
 
     await renderMedia({
       composition,
@@ -450,15 +459,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       // Tell Remotion to drive the bundled Chromium instead of trying to
       // launch a system-installed one (which doesn't exist in the sandbox).
       browserExecutable: executablePath,
-      chromiumOptions: {
-        // Forward @sparticuz/chromium's recommended flags. They disable the
-        // GPU sandbox + a few extensions the binary doesn't carry.
-        // The Remotion type is intentionally loose here; the renderer forwards
-        // any extra flags via Chromium's --arg list.
-        gl: 'angle',
-        enableMultiProcessOnLinux: true,
-        ...(chromiumArgs.length > 0 ? { args: chromiumArgs } : {}),
-      } as Parameters<typeof renderMedia>[0]['chromiumOptions'],
+      chromiumOptions,
       onProgress: ({ progress }) => {
         // Light heartbeat in the logs so we can spot stuck renders.
         if (progress === 0 || progress === 1 || (progress * 100) % 10 < 1) {
