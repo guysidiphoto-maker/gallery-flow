@@ -1,0 +1,2 @@
+# Large render binaries are regenerable via story-studio-remotion/renderSample.mjs
+samples/renders/*.mp4

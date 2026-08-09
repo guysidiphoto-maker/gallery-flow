@@ -102,6 +102,29 @@ images + brand + event ──▶ planStory() ──▶ ScenePlan ──▶ valid
 - **Isolated Preview:** **NO-GO this session** — there is no user-facing UI to preview yet. Becomes a GO once the editor UI + `ScenePlan`-driven render are wired.
 - **Production:** **HARD NO-GO** — no prod action taken or requested; requires your explicit approval.
 
+## 9b. PHASE 2 ADDENDUM (render engine + real MP4s) — 2026-08-09
+Built the `ScenePlan`-driven Remotion render engine and produced **real MP4s**, converting several NOT-DONE items to DONE. This supersedes the matching rows in §5.
+
+**New files (all additive):**
+- `gallery-web/story-studio-remotion/StoryStudioVideo.tsx` — composition consuming a `ScenePlan`: motion (push-in/pull-out/pan/focus-zoom via focal + intensity), fit/crop (`object-position` focal for fill; blurred-cover for edge-face `fit`), transitions (cross-dissolve/cut/slide/soft-blur/light-leak), brand title cards (accent bar + logo + heading/body fonts + **RTL-aware** title/caption), watermark.
+- `Root.tsx` / `index.ts` — registers the composition; `calculateMetadata` derives duration/size from the plan (timeline length can't drift).
+- `renderSample.mjs` / `renderPoster.mjs` — headless render via **system Chrome** (no download), synthetic SVG placeholders only (**no customer data**).
+
+**Rendered outputs (real files in `samples/renders/`, MP4s gitignored as regenerable):**
+| Sample | Template | Video | Size | Render time | Speed |
+|--------|----------|------:|-----:|------------:|------:|
+| concert | fast-highlights | 22.8s | 3.8 MB | 38.5s | 1.69× realtime |
+| corporate | cinematic-energy | 41.9s | 9.3 MB | 52.2s | 1.25× realtime |
+| wedding | editorial-clean | 77.8s | 12.5 MB | 88.0s | 1.13× realtime |
+
+All 1080×1920 H.264 (codec requested `h264`). **Visual QA done** by rendering poster stills and inspecting them: corporate mid-scene shows full-bleed 9:16 fill + focal marker + "Eclipse Media" watermark; concert opening card shows brand accent bar, logo, "Neon Nights" title, "02 Aug 2026" date, watermark — polished, not a generic slideshow. Posters committed (`*.poster.png`).
+
+**Cost note (indicative, not billed infra):** ~1.1–1.7× realtime on a local M-series Chrome at concurrency 2. On the existing Vercel Function path (3008 MB) expect this order of magnitude; a 30s standard story ≈ under a minute of function time. Recommend a per-gallery concurrency cap of 1 in-flight render (already enforced by the `story_renders` partial-unique) and a daily render quota — **no billing/plan change made**.
+
+**Updated deliverable statuses:** #13 sample MP4s ✅ · #17 perf/cost ✅ (measured) · #10 templates ◑→✅ (one composition, genuinely differentiated pacing/motion/crop/cards per template; separate cinematic/fast *visual* treatments still a polish item) · #14 preview=export ◑ (render engine exists + is the same composition a Remotion `<Player>` preview would use; empirical A/B awaits the editor `<Player>`) · #12/#16 ◑ (render output visually QA'd via posters; editor-UI browser matrix still pending).
+
+**Still NOT done:** the editor UI (timeline/per-scene panels/autosave/undo + live `<Player>` preview) and wiring `/api/stories/render` to accept + validate a `scene_plan`. These are the next slice.
+
 ## 10. Recommended next phase (concrete)
 1. Refactor `Clean.tsx` to consume `ScenePlan` directly (locks in preview=export); add cinematic + fast compositions.
 2. Build the editor UI slice (storyboard + per-scene panel + `<Player>` preview + autosave via owner endpoint) — desktop first, RTL-aware.
