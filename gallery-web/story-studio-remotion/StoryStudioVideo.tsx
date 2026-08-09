@@ -90,6 +90,13 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
   const objectPosition = focalPercent(scene.focal);
   const transformOrigin = objectPosition;
 
+  // Caption renders in BOTH fit modes (previously it was dropped on the
+  // fit/landscape branch, so a typed caption silently vanished on landscape
+  // scenes — a preview==export violation). Position honors text.position.
+  const caption = scene.text ? (
+    <SceneCaption text={scene.text.content} position={scene.text.position} />
+  ) : null;
+
   if (scene.fit === "fit") {
     // Blurred cover background + contained foreground (never crops a face,
     // never shows black bars).
@@ -118,6 +125,7 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
             transformOrigin,
           }}
         />
+        {caption}
       </AbsoluteFill>
     );
   }
@@ -135,20 +143,30 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
           transformOrigin,
         }}
       />
-      {scene.text ? <SceneCaption text={scene.text.content} accent="#ffffff" /> : null}
+      {caption}
     </AbsoluteFill>
   );
 };
 
-const SceneCaption: React.FC<{ text: string; accent: string }> = ({ text }) => {
+const SceneCaption: React.FC<{ text: string; position?: "top" | "center" | "bottom" }> = ({
+  text,
+  position = "bottom",
+}) => {
   const rtl = isHebrew(text);
+  // Vertical placement honors text.position; bottom stays inside the IG safe zone.
+  const vertical: React.CSSProperties =
+    position === "top"
+      ? { top: 200 }
+      : position === "center"
+        ? { top: "50%", transform: "translateY(-50%)" }
+        : { bottom: 360 };
   return (
     <div
       style={{
         position: "absolute",
         left: 60,
         right: 60,
-        bottom: 360, // inside IG bottom safe zone (~35%)
+        ...vertical,
         color: "#fff",
         fontSize: 52,
         lineHeight: 1.2,
