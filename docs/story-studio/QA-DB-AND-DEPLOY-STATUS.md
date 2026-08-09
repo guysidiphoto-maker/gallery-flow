@@ -21,7 +21,24 @@ Project inventory (org zrkgnikhgnxjzoqoaawn):
 **Schema applied (qa2 only, minimal + additive on existing `story_renders`):** `scene_plan jsonb`, `title text`, `draft_updated_at timestamptz`, `'draft'` status value, `story_renders_one_draft_per_gallery` partial-unique index.
 - ✅ draft insert works; ✅ duplicate-draft rejected by the index; ✅ **rollback verified** (0 leftover columns, original CHECK restored, index dropped) then re-applied. qa2 currently = applied.
 
-## Step 3 — Isolated Preview ⛔ BLOCKED (needs your decision)
+## Step 3 — Isolated Preview 🟡 DEPLOYED, awaiting 2 inputs (2026-08-09)
+The Vercel CLI was already authenticated locally (`guysidiphoto-maker`), so no token was needed.
+- **Isolated project created:** `pixflow-story-studio-qa` (`prj_KFifYyAvWc8aUDnF8zqvmok1xScE`), separate from gallery-web/pixflow-staging/prod. No custom domain.
+- **Deployed exact HEAD** `dbebad4` of `feat/story-studio-revival`. Build **passed** (~1m) on the fresh project.
+- **Target = preview** (verified via `vercel inspect`). The unavoidable first-deploy-to-production artifact was **removed**; only one **Preview** deployment remains.
+- **Preview URL:** `https://pixflow-story-studio-8eiggry3f-guysidiphoto-makers-projects.vercel.app`
+- **Env (Preview scope only):** `SUPABASE_URL`, `VITE_SUPABASE_URL`, `SUPABASE_ANON_KEY`, `VITE_SUPABASE_ANON_KEY` → all point to qa2 (`icxitoczqtcgdkwiaxxc`). No Production/shared vars set.
+- **Supabase target ref:** `icxitoczqtcgdkwiaxxc` (pixflow-cpv2-qa2) — confirmed, no secret exposed.
+
+### 2 inputs needed to run the end-to-end flow
+1. **Service-role key (only you):** Vercel → team `guysidiphoto-makers-projects` → project **pixflow-story-studio-qa** → **Settings → Environment Variables → Add New** → Key `SUPABASE_SERVICE_ROLE_KEY`, **Environment = Preview only**, **no `VITE_` prefix**. Value = qa2 service_role from Supabase → project **pixflow-cpv2-qa2** → **Project Settings → API → service_role**. Do not paste it here.
+2. **Deployment Protection:** the preview is behind Vercel SSO (302 → sso-api), so browser QA can't reach it. Choose: (a) I disable Deployment Protection on this isolated QA project (synthetic-only, obscure URL), or (b) I generate a Protection-Bypass-for-Automation token. Your call.
+
+After both: I redeploy (env applies on next deploy), seed qa2 with synthetic renderable images + a synthetic login, then run Steps 4–9.
+
+---
+
+## (historical) Step 3 — original blocker analysis
 To deploy `feat/story-studio-revival` to a Preview wired **only** to qa2, three things are missing and cannot be obtained safely without you:
 
 1. **Vercel access** — `vercel` CLI is not installed and no `VERCEL_TOKEN` is present. The only linked Vercel project here is **pixflow-staging** (`prj_CiFlBmNSR3fDK0hHdysJFQBNfOYs`) — a **shared** project. Deploying this branch there would inherit shared env vars → violates "no Production/shared-Staging env" and "all data synthetic." I will not do that.
