@@ -36,6 +36,14 @@ export const MAX_SCENES = 40;
 export const MAX_TEXT_LEN = 120;
 export const MAX_TITLE_LEN = 80;
 
+// FIRST-RELEASE synchronous-render cap (separate from the structural MAX_SCENES).
+// One Vercel function is capped at 300s; measured render cost is ~10-12s/scene,
+// so we hard-limit a synchronous render to keep it well under the ceiling and
+// avoid orphaned jobs. Longer stories require the queue/Lambda path (documented
+// in docs/story-studio). Mirrored by api/stories/_scenePlanGuard.ts.
+export const RENDER_MAX_SCENES = 18;
+export const RENDER_MAX_DURATION_SEC = 45;
+
 // ── Enumerated vocabularies (string-literal unions, not TS enums) ─────────────
 export type StoryFormat = "9:16"; // primary + only supported export today
 export type StoryTemplate = "editorial-clean" | "cinematic-energy" | "fast-highlights";
@@ -313,6 +321,30 @@ export function validateScenePlan(
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Render-feasibility gate, separate from structural validity (validateScenePlan).
+ * A plan can be a valid ScenePlan yet be too long to render synchronously within
+ * the Vercel function ceiling. The editor uses this to explain the limit and
+ * disable the render button; the render endpoint enforces the identical rule.
+ */
+export function checkRenderFeasibility(plan: ScenePlan): { ok: boolean; reason?: string } {
+  const n = plan?.scenes?.length ?? 0;
+  if (n > RENDER_MAX_SCENES) {
+    return {
+      ok: false,
+      reason: `Story has ${n} scenes; the current limit is ${RENDER_MAX_SCENES}. Remove a few photos and try again.`,
+    };
+  }
+  const dur = computeTotalDuration(plan);
+  if (dur > RENDER_MAX_DURATION_SEC + 1e-6) {
+    return {
+      ok: false,
+      reason: `Story is ${dur.toFixed(1)}s; the current limit is ${RENDER_MAX_DURATION_SEC}s. Shorten scenes or remove photos.`,
+    };
+  }
+  return { ok: true };
 }
 
 /**

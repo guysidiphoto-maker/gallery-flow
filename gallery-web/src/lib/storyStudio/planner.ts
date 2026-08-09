@@ -30,6 +30,7 @@ import {
   MIN_SCENE_SEC,
   MAX_SCENES,
   MIN_SCENES,
+  RENDER_MAX_SCENES,
   SCENE_PLAN_VERSION,
   STORY_FPS,
   STORY_HEIGHT,
@@ -288,6 +289,28 @@ function interleaveByOrientation(imgs: PlannerImage[]): PlannerImage[] {
   return result;
 }
 
+// Deterministic run-breaker: eliminates runs of >2 same-orientation scenes by
+// swapping the 3rd offender with the next interior scene of a different
+// orientation. Never moves index 0 (opener) or the last element (closer). Stable
+// and idempotent enough for our sizes; if no swap candidate exists the run is
+// left (unavoidable given the available orientation mix).
+function breakOrientationRuns(list: PlannerImage[]): void {
+  const orient = (im: PlannerImage) => orientationOf(im.width, im.height);
+  for (let i = 2; i < list.length; i++) {
+    if (orient(list[i]) === orient(list[i - 1]) && orient(list[i - 1]) === orient(list[i - 2])) {
+      let j = -1;
+      for (let k = i + 1; k < list.length - 1; k++) {
+        if (orient(list[k]) !== orient(list[i])) { j = k; break; }
+      }
+      if (j !== -1) {
+        const tmp = list[i];
+        list[i] = list[j];
+        list[j] = tmp;
+      }
+    }
+  }
+}
+
 // ── Main entry ────────────────────────────────────────────────────────────────
 
 export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePlan {
@@ -305,8 +328,9 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
   // 2. Burst de-dup (only when capture time exists).
   const deduped = dedupeBursts(base);
 
-  // 3. Budget: cap by length target and hard MAX. Never below MIN (if enough exist).
-  const budget = Math.min(deduped.length, lengthTarget.maxScenes, MAX_SCENES);
+  // 3. Budget: cap by length target and the FIRST-RELEASE render cap, so an
+  // auto-generated plan is always renderable synchronously (never orphans a job).
+  const budget = Math.min(deduped.length, lengthTarget.maxScenes, RENDER_MAX_SCENES, MAX_SCENES);
   const usingScores = hasQualityScores(deduped);
 
   // 4. Selection: if we must trim, keep the strongest while preserving order.
@@ -360,6 +384,12 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
     const [closer] = ordered.splice(bestIdx, 1);
     ordered.push(closer);
   }
+
+  // 7b. Promoting the opener/closer can re-introduce a 3-in-a-row orientation
+  // run (esp. once trimming to the render cap skews the portrait/landscape mix).
+  // Break any such run with a deterministic interior swap, keeping the pinned
+  // opener (index 0) and closer (last) in place.
+  breakOrientationRuns(ordered);
 
   // 8. Build scenes with motion/transition variety + subject-aware crop.
   // Built imperatively (not via .map) so each scene can look back at the

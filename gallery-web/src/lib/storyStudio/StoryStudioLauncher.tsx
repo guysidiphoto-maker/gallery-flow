@@ -14,7 +14,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { StoryStudioEditor } from "./StoryStudioEditor";
 import type { PlannerImage } from "./planner";
 import type { BrandResolved, ScenePlan } from "./sceneplan";
+import { checkRenderFeasibility, RENDER_MAX_SCENES, RENDER_MAX_DURATION_SEC } from "./sceneplan";
 import {
+  cancelRender,
   getRenderStatus,
   loadDraft,
   requestStudioRender,
@@ -47,9 +49,18 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
   const [initialPlan, setInitialPlan] = useState<ScenePlan | null>(null);
   const [renderState, setRenderState] = useState<RenderState>("idle");
   const [outputUrl, setOutputUrl] = useState<string | null>(null);
+  const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [currentPlan, setCurrentPlan] = useState<ScenePlan | null>(null);
+  const [renderId, setRenderId] = useState<string | null>(null);
   const latestPlan = useRef<ScenePlan | null>(null);
   const cancelled = useRef(false);
+
+  // Live render-feasibility (first-release scene/duration cap). Drives the UI
+  // explanation + disables the render button so an unsupported render can never
+  // be submitted. The server enforces the identical rule authoritatively.
+  const capPlan = currentPlan ?? initialPlan;
+  const feasibility = capPlan ? checkRenderFeasibility(capPlan) : { ok: true as const };
 
   // Restore the saved draft on open.
   useEffect(() => {
@@ -59,7 +70,10 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
         const token = await getToken();
         if (token) {
           const draft = await loadDraft(galleryId, token);
-          if (alive && draft.scenePlan) setInitialPlan(draft.scenePlan);
+          if (alive && draft.scenePlan) {
+            setInitialPlan(draft.scenePlan);
+            setCurrentPlan(draft.scenePlan);
+          }
         }
       } catch {
         // No draft or endpoint not live yet — start from the auto cut.
@@ -76,6 +90,7 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
   const handleSave = useCallback(
     async (plan: ScenePlan) => {
       latestPlan.current = plan;
+      setCurrentPlan(plan);
       try {
         const token = await getToken();
         if (token) await saveDraft(galleryId, plan, token);
@@ -89,20 +104,39 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
   const handleRender = useCallback(async () => {
     const plan = latestPlan.current ?? initialPlan;
     if (!plan) return;
+    // Client-side gate (server enforces the same). Never submit an over-cap plan.
+    const feas = checkRenderFeasibility(plan);
+    if (!feas.ok) {
+      setErrorMsg(feas.reason ?? "הסטורי ארוך מדי");
+      setRenderState("failed");
+      return;
+    }
     setRenderState("rendering");
     setErrorMsg(null);
     setOutputUrl(null);
+    setPosterUrl(null);
+    setRenderId(null);
     cancelled.current = false;
     try {
       const token = await getToken();
       if (!token) throw new Error("לא מחוברים");
       const start = await requestStudioRender(galleryId, plan, token);
       if (!start.ok) {
-        throw new Error(start.error === "invalid_scene_plan" ? "התוכנית לא עברה אימות" : start.error || "שגיאת רינדור");
+        // Prefer the server's human message (e.g. the too-long explanation).
+        const msg =
+          start.message ||
+          (start.error === "invalid_scene_plan"
+            ? "התוכנית לא עברה אימות"
+            : start.error === "story_too_long"
+              ? "הסטורי ארוך מדי להפקה"
+              : start.error || "שגיאת רינדור");
+        throw new Error(msg);
       }
+      if (start.renderId) setRenderId(start.renderId);
       // Synchronous render returns outputUrl directly; otherwise poll.
       if (start.outputUrl) {
         setOutputUrl(start.outputUrl);
+        setPosterUrl(start.posterUrl ?? null);
         setRenderState("ready");
         return;
       }
@@ -127,6 +161,19 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
     }
   }, [galleryId, getToken, initialPlan]);
 
+  // Cooperative cancel: stop polling immediately AND tell the server to abandon
+  // the in-flight render (it discards its artifacts and releases the lock).
+  const handleCancel = useCallback(async () => {
+    cancelled.current = true;
+    setRenderState("idle");
+    try {
+      const token = await getToken();
+      if (token) await cancelRender(galleryId, token, renderId ?? undefined);
+    } catch {
+      // Best-effort — the client has already stopped polling regardless.
+    }
+  }, [galleryId, getToken, renderId]);
+
   const editor = useMemo(
     () => (
       <StoryStudioEditor
@@ -149,19 +196,36 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
         <div style={{ flex: 1 }} />
         {renderState === "ready" && outputUrl ? (
           <>
+            {posterUrl ? (
+              <img src={posterUrl} alt="" style={{ height: 34, width: 19, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.border}` }} />
+            ) : null}
             <span style={{ color: "#4ade80", fontSize: 13 }}>✓ הסרטון מוכן</span>
             <a href={outputUrl} download style={{ ...primary, textDecoration: "none" }}>⬇ הורד MP4</a>
             <button onClick={handleRender} style={ghost}>רנדר מחדש</button>
           </>
         ) : renderState === "failed" ? (
           <>
-            <span style={{ color: "#f87171", fontSize: 13 }}>{errorMsg}</span>
-            <button onClick={handleRender} style={primary}>נסה שוב</button>
+            <span style={{ color: "#f87171", fontSize: 13, maxWidth: 420, textAlign: "left" }}>{errorMsg}</span>
+            <button onClick={handleRender} style={primary} disabled={!feasibility.ok}>נסה שוב</button>
           </>
         ) : renderState === "rendering" ? (
-          <span style={{ color: C.muted, fontSize: 13 }}>מפיק סרטון… זה יכול לקחת עד דקה</span>
+          <>
+            <span style={{ color: C.muted, fontSize: 13 }}>מפיק סרטון… זה יכול לקחת עד דקה</span>
+            <button onClick={handleCancel} style={ghost}>בטל</button>
+          </>
         ) : (
-          <button onClick={handleRender} style={primary} disabled={loading}>🎬 הפק סרטון</button>
+          <>
+            {!feasibility.ok ? (
+              <span style={{ color: "#fbbf24", fontSize: 12, maxWidth: 460, textAlign: "left", lineHeight: 1.3 }}>
+                כדי לשמור על איכות ומהירות, ההפקה מוגבלת כרגע ל־{RENDER_MAX_SCENES} תמונות / {RENDER_MAX_DURATION_SEC} שניות. הסירו כמה תמונות כדי להפיק.
+              </span>
+            ) : (
+              <span style={{ color: C.muted, fontSize: 12 }}>
+                עד {RENDER_MAX_SCENES} תמונות · {RENDER_MAX_DURATION_SEC} שניות
+              </span>
+            )}
+            <button onClick={handleRender} style={primary} disabled={loading || !feasibility.ok}>🎬 הפק סרטון</button>
+          </>
         )}
       </div>
 

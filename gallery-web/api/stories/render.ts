@@ -76,7 +76,7 @@ import { promises as fs, existsSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { resolveAndValidatePlan, type OwnerImage } from './_scenePlanGuard.js'
+import { resolveAndValidatePlan, checkRenderFeasibility, type OwnerImage } from './_scenePlanGuard.js'
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
@@ -104,6 +104,13 @@ const COMPOSITION_BY_STYLE: Record<AllowedStyle, string> = {
 const STORAGE_BUCKET = 'gallery-stories'
 const DEFAULT_STORY_DURATION_SECONDS = 30
 const STORY_MAX_PHOTOS = 60
+
+// A synchronous render is bounded by vercel.json maxDuration (300s). Any row
+// still 'queued'/'rendering' beyond this window is an orphan from a function
+// that timed out or crashed mid-render — it must NOT block future renders via
+// the in-flight unique index. We treat such rows as stale, flip them to
+// 'failed', and let a fresh render proceed. Set comfortably above 300s.
+const STALE_RENDER_MS = 6 * 60 * 1000
 
 // Loose UUID v4-ish regex. We only need to reject obviously-malformed input
 // at the edge; Supabase's typed `eq('id', …)` will hard-reject anything that
@@ -206,6 +213,13 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     if (typeof body.scenePlan !== 'object') {
       return res.status(400).json({ ok: false, error: 'invalid_scene_plan' })
     }
+    // FIRST-RELEASE render cap. Reject over-long stories BEFORE creating any row
+    // so an unsupported render can never start (and never orphans a job). The
+    // client shows the same limit; this is the authoritative gate.
+    const feasible = checkRenderFeasibility(body.scenePlan)
+    if (!feasible.ok) {
+      return res.status(400).json({ ok: false, error: 'story_too_long', message: feasible.reason })
+    }
     style = 'studio'
   } else {
     if (!isAllowedStyle(styleRaw)) {
@@ -281,10 +295,14 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const brandKit = projectBrandKit(bizRow?.brand_kit)
 
-  // ── Idempotency: short-circuit if a render is already in flight ────────
+  // ── Idempotency + stale-render sweep ───────────────────────────────────
+  // Short-circuit if a render is genuinely in flight (duplicate-click / double
+  // submit protection). But a row left 'rendering' past STALE_RENDER_MS is an
+  // orphan from a timed-out function — flip it to 'failed' so it releases the
+  // in-flight unique lock and this fresh render can proceed.
   const { data: inflight } = await adminClient
     .from('story_renders')
-    .select('id, status')
+    .select('id, status, created_at')
     .eq('gallery_id', galleryId)
     .eq('style', style)
     .in('status', ['queued', 'rendering'])
@@ -292,12 +310,22 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     .limit(1)
     .maybeSingle()
   if (inflight) {
-    return res.status(200).json({
-      ok: true,
-      status: inflight.status,
-      renderId: inflight.id,
-      message: 'render_in_progress',
-    })
+    const ageMs = Date.now() - new Date(inflight.created_at as string).getTime()
+    if (ageMs < STALE_RENDER_MS) {
+      return res.status(200).json({
+        ok: true,
+        status: inflight.status,
+        renderId: inflight.id,
+        message: 'render_in_progress',
+      })
+    }
+    // Stale orphan: reap it, then fall through to start a fresh render.
+    await adminClient
+      .from('story_renders')
+      .update({ status: 'failed', error_message: 'render timed out (stale job reaped)' })
+      .eq('id', inflight.id)
+      .in('status', ['queued', 'rendering'])
+    console.warn(`[stories/render] reaped stale ${inflight.status} row ${inflight.id} (age ${Math.round(ageMs / 1000)}s)`)
   }
 
   // ── Persist a story_renders row in 'queued' state ─────────────────────
@@ -367,7 +395,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // Lazy-import the heavy renderer modules so requests that fail early
     // (env / auth / validation) don't pay the cold-start cost.
-    const [{ renderMedia, selectComposition }, chromiumMod] = await Promise.all([
+    const [{ renderMedia, renderStill, selectComposition }, chromiumMod] = await Promise.all([
       import('@remotion/renderer'),
       import('@sparticuz/chromium'),
     ])
@@ -474,6 +502,40 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     const mp4 = await fs.readFile(outPath)
     const fileSizeBytes = stat.size
 
+    // Poster frame: render a single representative still (~1.5s in, past most
+    // opening cards) so the viewer/library can show a thumbnail before the mp4
+    // loads. Best-effort — a poster failure never fails the render.
+    let posterUrl: string | null = null
+    try {
+      const posterPath = path.join(tmpDir, `${renderId}.jpg`)
+      const posterFrame = Math.min(Math.max(0, composition.durationInFrames - 1), 45)
+      await renderStill({
+        composition,
+        serveUrl,
+        output: posterPath,
+        frame: posterFrame,
+        inputProps,
+        imageFormat: 'jpeg',
+        jpegQuality: 80,
+        browserExecutable: executablePath,
+        chromiumOptions,
+      })
+      const posterBuf = await fs.readFile(posterPath)
+      const posterStoragePath = `${galleryId}/${renderId}.jpg`
+      const { error: posterErr } = await adminClient.storage
+        .from(STORAGE_BUCKET)
+        .upload(posterStoragePath, posterBuf, {
+          contentType: 'image/jpeg',
+          cacheControl: 'public, max-age=31536000, immutable',
+          upsert: true,
+        })
+      if (!posterErr) {
+        posterUrl = adminClient.storage.from(STORAGE_BUCKET).getPublicUrl(posterStoragePath).data?.publicUrl ?? null
+      }
+    } catch (posterErr) {
+      console.warn('[stories/render] poster generation skipped', posterErr instanceof Error ? posterErr.message : posterErr)
+    }
+
     // Upload to Supabase Storage. Path scheme: {gallery_id}/{render_id}.mp4.
     // upsert:true so a retried render with the same renderId (e.g. operator
     // re-running by id) overwrites cleanly instead of erroring.
@@ -487,6 +549,27 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       })
     if (uploadErr) {
       throw new Error(`storage_upload_failed: ${uploadErr.message}`)
+    }
+
+    // ── Cooperative cancel + idempotent completion ─────────────────────────
+    // This synchronous function cannot be killed mid-render, but a cancel
+    // request may have flipped the row out of 'rendering' while we worked. Only
+    // promote to 'ready' if the row is STILL 'rendering' (i.e. not cancelled and
+    // not already completed by a racing invocation). If it was cancelled, drop
+    // the artifacts we just uploaded so storage doesn't accumulate orphans.
+    const { data: current } = await adminClient
+      .from('story_renders')
+      .select('status')
+      .eq('id', renderId)
+      .maybeSingle()
+    if (current && current.status !== 'rendering') {
+      await adminClient.storage.from(STORAGE_BUCKET).remove([storagePath, `${galleryId}/${renderId}.jpg`]).catch(() => {})
+      return res.status(200).json({
+        ok: true,
+        status: current.status,
+        renderId,
+        message: current.status === 'ready' ? 'already_completed' : 'render_cancelled',
+      })
     }
 
     const { data: publicUrlData } = adminClient.storage
@@ -506,12 +589,14 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         output_path: storagePath,
       })
       .eq('id', renderId)
+      .eq('status', 'rendering') // idempotent: don't clobber a cancel/complete race
 
     return res.status(200).json({
       ok: true,
       status: 'completed',
       renderId,
       outputUrl,
+      posterUrl,
       outputPath: storagePath,
       durationSeconds: DEFAULT_STORY_DURATION_SECONDS,
       fileSizeBytes,

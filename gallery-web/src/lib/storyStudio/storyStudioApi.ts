@@ -44,7 +44,9 @@ export interface RenderStart {
   renderId?: string;
   status?: string;
   outputUrl?: string;
+  posterUrl?: string;
   error?: string;
+  message?: string;
   details?: string[];
 }
 
@@ -61,6 +63,25 @@ export async function requestStudioRender(
   });
   const data = (await res.json().catch(() => ({}))) as RenderStart;
   return { ...data, ok: res.ok && data.ok !== false };
+}
+
+/**
+ * Cancel the in-flight studio render for a gallery (cooperative — the running
+ * render discards its artifacts when it sees the row is no longer 'rendering').
+ * Safe to call even if nothing is in flight (returns cancelled:false).
+ */
+export async function cancelRender(
+  galleryId: string,
+  accessToken: string,
+  renderId?: string
+): Promise<{ ok: boolean; cancelled: boolean }> {
+  const res = await fetch(`/api/stories/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ galleryId, renderId }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; cancelled?: boolean };
+  return { ok: res.ok && data.ok !== false, cancelled: Boolean(data.cancelled) };
 }
 
 export interface RenderStatus {

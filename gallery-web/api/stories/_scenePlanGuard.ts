@@ -8,7 +8,8 @@
 // (tenant isolation, client-src discard, server-authoritative dims, injection +
 // range checks). Keep in sync with those; a follow-up can dedupe via a build step.
 
-const MIN_SCENE_SEC = 1.8;
+// KEEP IN SYNC with src/lib/storyStudio/sceneplan.ts.
+const MIN_SCENE_SEC = 1.2;
 const MAX_SCENE_SEC = 6.0;
 const MAX_TRANSITION_SEC = 1.2;
 const MIN_SCENES = 3;
@@ -16,8 +17,45 @@ const MAX_SCENES = 40;
 const MAX_TEXT_LEN = 120;
 const MAX_TITLE_LEN = 80;
 const TEMPLATES = ['editorial-clean', 'cinematic-energy', 'fast-highlights'];
-const MOTION = ['none', 'push-in', 'pull-out', 'pan', 'focus-zoom'];
-const TRANSITIONS = ['cut', 'cross-dissolve', 'slide', 'soft-blur', 'light-leak'];
+const MOTION = ['none', 'push-in', 'pull-out', 'pan', 'focus-zoom', 'punch-in'];
+const TRANSITIONS = ['cut', 'cross-dissolve', 'slide', 'soft-blur', 'light-leak', 'whip'];
+
+// FIRST-RELEASE synchronous-render cap. A single Vercel function has a hard
+// 300s ceiling; measured render cost is ~10-12s/scene at 3009MB, so >18 scenes
+// or >~45s of video risks a timeout that leaves an orphaned job. We enforce the
+// cap HERE (the render endpoint) rather than by raising the per-request limits.
+// Longer stories need the queue/Lambda path — see docs/story-studio.
+const RENDER_MAX_SCENES = 18;
+const RENDER_MAX_DURATION_SEC = 45;
+
+/** Total video seconds = opening + Σ scenes + outro (transitions overlap → net-zero). */
+function totalPlanDuration(plan: any): number {
+  let t = 0;
+  if (plan?.opening?.enabled) t += Number(plan.opening.durationSec) || 0;
+  for (const s of Array.isArray(plan?.scenes) ? plan.scenes : []) t += Number(s?.durationSec) || 0;
+  if (plan?.outro?.enabled) t += Number(plan.outro.durationSec) || 0;
+  return Math.round(t * 100) / 100;
+}
+
+/**
+ * Render-feasibility gate, separate from structural validity. A plan can be a
+ * perfectly valid ScenePlan yet be too long to render synchronously; this returns
+ * a human-readable reason the render endpoint surfaces to the UI (so the user
+ * sees "shorten your story", not a 300s timeout).
+ */
+export function checkRenderFeasibility(plan: any): { ok: boolean; reason?: string } {
+  const n = Array.isArray(plan?.scenes) ? plan.scenes.length : 0;
+  if (n > RENDER_MAX_SCENES) {
+    return { ok: false, reason: `Story has ${n} scenes; the current limit is ${RENDER_MAX_SCENES}. Remove a few photos and try again.` };
+  }
+  const dur = totalPlanDuration(plan);
+  if (dur > RENDER_MAX_DURATION_SEC + 1e-6) {
+    return { ok: false, reason: `Story is ${dur.toFixed(1)}s; the current limit is ${RENDER_MAX_DURATION_SEC}s. Shorten scene durations or remove photos.` };
+  }
+  return { ok: true };
+}
+
+export const RENDER_CAPS = { RENDER_MAX_SCENES, RENDER_MAX_DURATION_SEC };
 
 export interface OwnerImage {
   id: string;

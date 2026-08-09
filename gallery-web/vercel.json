@@ -29,7 +29,8 @@
     { "source": "/((?!stories-bundle/).*)", "destination": "/app.html" }
   ],
   "crons": [
-    { "path": "/api/retry-failed-sends", "schedule": "0 0 * * *" }
+    { "path": "/api/retry-failed-sends", "schedule": "0 0 * * *" },
+    { "path": "/api/stories/sweep-stale", "schedule": "*/15 * * * *" }
   ],
   "functions": {
     "api/stories/render.ts": {
