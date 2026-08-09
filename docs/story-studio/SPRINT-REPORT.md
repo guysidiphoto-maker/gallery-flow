@@ -146,6 +146,21 @@ Built the photographer-facing editor and browser-QA'd it in Chrome.
 
 **Updated statuses:** #12 desktop+RTL ✅ / mobile ✅ · #14 preview=export ✅ (empirically demonstrated in-browser) · editor surfaces (§8 of brief) ✅.
 
+## 9d. PHASE 5 ADDENDUM (server integration) — 2026-08-09
+Wired the editor to the backend, with the security boundary built + tested first.
+
+**New files:**
+- `src/lib/storyStudio/serverPlan.ts` — the **server security choke-point**. `resolveAndValidatePlan(plan, galleryId, ownerImages, resolveSrc)`: pins the plan to the authorized gallery, runs the shared validator against the gallery's real image ids (tenant isolation), **discards client `src`** and re-resolves it server-side, and **overrides dimensions from server records** (client can't skew fit/crop math). `stripForPersistence` removes volatile fields.
+- `src/lib/storyStudio/serverPlan.test.ts` — **7 passing security tests** (foreign-image reject, gallery-id pinning, client-src discarded, server-authoritative dims, injection reject, persistence-strip).
+- `api/stories/draft.ts` — owner-only `GET`/`PUT /api/stories/draft`. Autosave/load; verifies ownership (same chain as `/render`), writes via service-role, validates every submitted plan through `serverPlan` before storing. Typechecked standalone (`api/` is outside the project tsconfig, like all existing functions).
+- `src/lib/storyStudio/storyStudioApi.ts` — client helpers `loadDraft` / `saveDraft` / `makeAutosave` for the editor's `onSave` (JWT-authed).
+
+**Verified:** 0 TS errors project-wide; `draft.ts` typechecks standalone; 25 tests pass (18 planner + 7 server).
+
+**DB dependency (unchanged, non-blocking):** `draft.ts` needs the provisional additive columns (`scene_plan`, `title`, `draft_updated_at`, `'draft'` status, one-draft-per-gallery index). Wired + typechecked but **not live** until that migration lands (see collision proof). No migration applied anywhere.
+
+**Render-via-endpoint — remaining wire (documented, not risked):** the render **engine** already produces MP4s from a ScenePlan (§9b, proven). Exposing it through `/api/stories/render` needs: accept an optional `scenePlan`, run it through `serverPlan.resolveAndValidatePlan`, and render the `StoryStudio` composition — which requires `scripts/bundle-stories.mjs` to also bundle `story-studio-remotion/` at build time. I deliberately did **not** modify the production `render.ts` this session (it's outside the project typecheck and can't be render-verified without a deploy); the exact change is small and additive and is the one remaining step. **No deploy performed.**
+
 ## 10. Recommended next phase (concrete)
 1. Refactor `Clean.tsx` to consume `ScenePlan` directly (locks in preview=export); add cinematic + fast compositions.
 2. Build the editor UI slice (storyboard + per-scene panel + `<Player>` preview + autosave via owner endpoint) — desktop first, RTL-aware.
