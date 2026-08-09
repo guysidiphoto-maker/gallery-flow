@@ -75,7 +75,10 @@ const onSave = (plan: ScenePlan) => {
 // NOTE: no React.StrictMode — it double-invokes render and orphans Remotion
 // <Player> delayRender handles (black preview). The real app must mount the
 // editor outside StrictMode (or gate the Player) for the same reason.
-createRoot(document.getElementById("root")!).render(
+// ?narrow=1 renders the editor inside a phone-width frame to QA the mobile layout
+// (browser-tool window resize can't constrain the CSS viewport here).
+const narrow = new URLSearchParams(location.search).get("narrow") === "1";
+const editor = (
   <StoryStudioEditor
     images={images}
     brand={brand}
@@ -83,4 +86,13 @@ createRoot(document.getElementById("root")!).render(
     galleryId="demo-gallery"
     onSave={onSave}
   />
+);
+createRoot(document.getElementById("root")!).render(
+  narrow ? (
+    <div style={{ width: 390, height: 800, margin: "20px auto", border: "8px solid #222", borderRadius: 28, overflow: "hidden" }}>
+      {editor}
+    </div>
+  ) : (
+    editor
+  )
 );

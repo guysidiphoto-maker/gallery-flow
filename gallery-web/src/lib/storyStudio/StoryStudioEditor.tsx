@@ -5,8 +5,8 @@
 // RTL UI, drag-reorder WITH button fallbacks, per-scene + global controls,
 // undo/redo, debounced autosave, and a guarded destructive reset.
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
-import { Player } from "@remotion/player";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Player, type PlayerRef } from "@remotion/player";
 import { StoryStudioVideo } from "../../../story-studio-remotion/StoryStudioVideo";
 import { planStory, type PlannerImage } from "./planner";
 import {
@@ -267,14 +267,87 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
   const durationInFrames = useMemo(() => totalFrames(plan), [plan]);
   const totalSec = (durationInFrames / plan.fps).toFixed(1);
 
+  // ── Preview: Remotion Player's auto-scale is unreliable in this embed, so we
+  // render at native 1080x1920 and apply our OWN measured scale transform. This
+  // is deterministic and also drives responsive sizing (mobile). Custom controls
+  // keep normal size (scaling the Player would shrink built-in controls).
+  const previewWrapRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<PlayerRef>(null);
+  const [previewW, setPreviewW] = useState(300);
+  const [isNarrow, setIsNarrow] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Container-based responsiveness (works in embeds, not just full viewport).
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w) setIsNarrow(w < 760);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [curFrame, setCurFrame] = useState(0);
+  const scale = previewW / plan.width;
+  const previewWidthCss = isNarrow ? "min(72vw, 340px)" : "min(300px, 44vw)";
+
+  useEffect(() => {
+    const el = previewWrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w) setPreviewW(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const p = playerRef.current;
+    if (!p) return;
+    const onFrame = (e: { detail: { frame: number } }) => setCurFrame(e.detail.frame);
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    p.addEventListener("frameupdate", onFrame);
+    p.addEventListener("play", onPlay);
+    p.addEventListener("pause", onPause);
+    return () => {
+      p.removeEventListener("frameupdate", onFrame);
+      p.removeEventListener("play", onPlay);
+      p.removeEventListener("pause", onPause);
+    };
+  }, []);
+
+  const togglePlay = () => {
+    const p = playerRef.current;
+    if (!p) return;
+    if (p.isPlaying()) p.pause();
+    else p.play();
+  };
+  const seekTo = (frame: number) => {
+    playerRef.current?.seekTo(frame);
+    setCurFrame(frame);
+  };
+  const fmt = (f: number) => {
+    const s = f / plan.fps;
+    return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div
       dir="rtl"
+      ref={rootRef}
       style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(280px, 340px) 1fr",
-        gridTemplateRows: "auto 1fr auto",
+        ...(isNarrow
+          ? { display: "flex", flexDirection: "column", overflowY: "auto" }
+          : {
+              display: "grid",
+              gridTemplateColumns: "minmax(280px, 340px) 1fr",
+              gridTemplateRows: "auto 1fr auto",
+            }),
         gap: 1,
         height: "100vh",
         background: C.bg,
@@ -283,7 +356,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       }}
     >
       {/* Global bar */}
-      <div style={{ gridColumn: "1 / 3", ...bar }}>
+      <div style={{ gridColumn: "1 / 3", order: 0, ...bar }}>
         <strong style={{ fontSize: 18, marginInlineEnd: 16 }}>🎬 סטודיו סטורי</strong>
         <Segment label={HE.template} value={plan.template} options={TEMPLATES} labels={TEMPLATE_HE} onChange={(v) => setGlobal({ template: v })} />
         <Segment label={HE.length} value={plan.length} options={["short", "standard", "extended"] as StoryLength[]} labels={LENGTH_HE} onChange={(v) => setGlobal({ length: v })} />
@@ -299,32 +372,74 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       </div>
 
       {/* Scene controls */}
-      <aside style={{ ...panel, overflowY: "auto" }}>
+      <aside style={{ ...panel, overflowY: "auto", order: isNarrow ? 3 : 0, width: isNarrow ? "100%" : undefined }}>
         <SceneControls scene={selected} onPatch={patchScene} event={event} plan={plan} onGlobalEvent={() => {}} />
       </aside>
 
       {/* Preview */}
-      <main style={{ ...panel, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+      <main
+        style={{
+          ...panel,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          order: isNarrow ? 1 : 0,
+          padding: isNarrow ? "16px 0" : undefined,
+        }}
+      >
         <div style={{ color: C.muted, marginBottom: 8, fontSize: 13 }}>
           {HE.total}: {totalSec} {HE.seconds} · {plan.scenes.length} {HE.scene}ות · 9:16
         </div>
-        <div style={{ boxShadow: "0 8px 40px rgba(0,0,0,0.6)", borderRadius: 12, overflow: "hidden" }}>
-          <Player
-            component={StoryStudioVideo}
-            inputProps={{ plan }}
-            durationInFrames={durationInFrames}
-            fps={plan.fps}
-            compositionWidth={plan.width}
-            compositionHeight={plan.height}
-            style={{ width: 300, height: 533 }}
-            controls
-            loop
+        <div
+          ref={previewWrapRef}
+          style={{
+            width: previewWidthCss,
+            aspectRatio: "9 / 16",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
+            borderRadius: 12,
+            overflow: "hidden",
+            background: "#000",
+          }}
+        >
+          {/* `zoom` (not transform) scales at layout level so Remotion's
+              absolutely-positioned composition stays in-frame. Chrome-only,
+              which is fine: Remotion renders in Chrome too. */}
+          <div style={{ zoom: scale }}>
+            <Player
+              ref={playerRef}
+              component={StoryStudioVideo}
+              inputProps={{ plan }}
+              durationInFrames={durationInFrames}
+              fps={plan.fps}
+              compositionWidth={plan.width}
+              compositionHeight={plan.height}
+              style={{ width: plan.width, height: plan.height }}
+              controls={false}
+              loop
+            />
+          </div>
+        </div>
+        {/* Custom, correctly-sized controls (play/seek/restart) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, width: previewWidthCss }}>
+          <button style={btnGhost} onClick={() => seekTo(0)} title="התחלה">⏮</button>
+          <button style={btn} onClick={togglePlay}>{isPlaying ? "⏸" : "▶"}</button>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(1, durationInFrames - 1)}
+            value={curFrame}
+            onChange={(e) => seekTo(Number(e.target.value))}
+            style={{ flex: 1 }}
           />
+          <span style={{ color: C.muted, fontSize: 12, minWidth: 74, textAlign: "center" }}>
+            {fmt(curFrame)} / {fmt(durationInFrames)}
+          </span>
         </div>
       </main>
 
       {/* Storyboard strip */}
-      <div style={{ gridColumn: "1 / 3", ...strip }}>
+      <div style={{ gridColumn: "1 / 3", order: isNarrow ? 2 : 0, ...strip }}>
         {plan.scenes.map((s, i) => (
           <SceneCard
             key={s.id}
