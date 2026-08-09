@@ -125,6 +125,25 @@ All 1080×1920 H.264 (codec requested `h264`). **Visual QA done** by rendering p
 
 **Still NOT done:** the editor UI (timeline/per-scene panels/autosave/undo + live `<Player>` preview) and wiring `/api/stories/render` to accept + validate a `scene_plan`. These are the next slice.
 
+## 9c. PHASE 3 ADDENDUM (editor UI) — 2026-08-09
+Built the photographer-facing editor and browser-QA'd it in Chrome.
+
+**New files:** `gallery-web/src/lib/storyStudio/StoryStudioEditor.tsx` (editor), `sstudio.html` + `story-studio-demo/main.tsx` (standalone QA mount, synthetic PNG fixtures — no customer data). `sceneplan.ts` gained shared `totalFrames()`; `planner.ts` `PlannerImage.src`; `Root.tsx` reuses `totalFrames()`.
+
+**Proven in-browser (desktop, Chrome, screenshots captured):**
+- Full **Hebrew RTL** editor chrome renders and is interactive.
+- Global controls: template (נקי/קולנועי/מהיר), length (קצר/רגיל/ארוך), pace — changing them re-plans and preserves manual overrides.
+- Per-scene panel: duration slider, motion, transition, fit toggle, **click-to-set focal point**, caption.
+- Storyboard strip: numbered scene cards with thumbnails + durations + ◀ ⧉ 🗑 ▶ (drag-reorder with **button fallbacks**). Auto opener = the top-pick (image 4) correctly promoted to scene 1.
+- Undo/redo + debounced autosave wired (logs the plan; production points `onSave` at an owner endpoint).
+- **0 TypeScript errors** project-wide; runs under `vite dev`.
+
+**KNOWN ISSUE (honest, unresolved):** the live Remotion `<Player>` renders the 9:16 frame, controls, timeline and correct total duration (0:41), but **scene images display black in the interactive player**. The *identical* composition renders images correctly **headless** (§9b MP4s + posters), the images are valid (storyboard thumbnails + focal panel show them), and the console is clean after switching demo fixtures to PNG. Ruled out: SVG-decode (fixed), React StrictMode (removed). This is a Remotion-`<Player>` image-load integration bug, **not** a composition or data bug — root-cause + fix is the immediate next task before the preview can be trusted. Because the render path is correct, **preview=export still holds architecturally** (same composition), but is not yet empirically demonstrable in-browser.
+
+**Also not done:** mobile responsive breakpoints (editor is desktop-first; narrow layout not yet built), wiring `/api/stories/render` to accept+validate a persisted `scene_plan`.
+
+**Updated statuses:** #12 desktop+RTL screenshots ✅ / mobile ❌ · #14 preview=export ◑ (architecture proven; live in-browser image preview blocked by the Player bug above) · editor surfaces (§8 of brief) ✅ except mobile.
+
 ## 10. Recommended next phase (concrete)
 1. Refactor `Clean.tsx` to consume `ScenePlan` directly (locks in preview=export); add cinematic + fast compositions.
 2. Build the editor UI slice (storyboard + per-scene panel + `<Player>` preview + autosave via owner endpoint) — desktop first, RTL-aware.
