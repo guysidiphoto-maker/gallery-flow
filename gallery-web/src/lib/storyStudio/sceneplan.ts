@@ -192,6 +192,21 @@ export function computeTotalDuration(plan: ScenePlan): number {
   return Math.round(total * 100) / 100;
 }
 
+/**
+ * Total frame count of the rendered video. Transitions overlap the previous
+ * scene (net-zero wall-clock), so this = opening + Σ scenes + outro, each in
+ * frames. Shared by the render (Root.calculateMetadata) and the editor's
+ * <Player> so preview length can never drift from export length.
+ */
+export function totalFrames(plan: ScenePlan): number {
+  const f = (s: number) => Math.max(1, Math.round(s * plan.fps));
+  let total = 0;
+  if (plan.opening?.enabled) total += f(plan.opening.durationSec);
+  for (const s of plan.scenes) total += f(s.durationSec);
+  if (plan.outro?.enabled) total += f(plan.outro.durationSec);
+  return Math.max(1, total);
+}
+
 export interface ValidationResult {
   ok: boolean;
   errors: string[];

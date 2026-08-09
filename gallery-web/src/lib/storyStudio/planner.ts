@@ -40,6 +40,9 @@ import {
 
 export interface PlannerImage {
   id: string;
+  /** Resolved preview URL (thumb/web). Ignored by planning; used by the editor
+   *  to fill scene.src for the live <Player> preview + storyboard thumbnails. */
+  src?: string;
   width?: number;
   height?: number;
   sortOrder: number;

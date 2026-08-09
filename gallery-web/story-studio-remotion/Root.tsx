@@ -5,7 +5,7 @@
 import React from "react";
 import { Composition } from "remotion";
 import { StoryStudioVideo } from "./StoryStudioVideo";
-import type { ScenePlan } from "../src/lib/storyStudio/sceneplan";
+import { totalFrames, type ScenePlan } from "../src/lib/storyStudio/sceneplan";
 
 const FALLBACK: ScenePlan = {
   version: 1,
@@ -23,15 +23,6 @@ const FALLBACK: ScenePlan = {
   brand: { accentHex: "#B45309", headingFont: "Georgia", bodyFont: "Helvetica" },
   generatedBy: "auto",
 };
-
-function totalFrames(plan: ScenePlan): number {
-  const f = (s: number) => Math.max(1, Math.round(s * plan.fps));
-  let total = 0;
-  if (plan.opening?.enabled) total += f(plan.opening.durationSec);
-  for (const s of plan.scenes) total += f(s.durationSec); // transitions overlap, net 0
-  if (plan.outro?.enabled) total += f(plan.outro.durationSec);
-  return Math.max(1, total);
-}
 
 export const RemotionRoot: React.FC = () => {
   return (
