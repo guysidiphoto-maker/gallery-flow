@@ -29,8 +29,15 @@ _2026-08-09 · branch `feat/story-studio-revival` @ `1cac3f8` (local, NOT pushed
 | 3 | `SUPABASE_SERVICE_ROLE_KEY` set to a short new-format key → "Invalid API key" (404) | Diagnosed (safe role-claim log); you replaced with the legacy `service_role` JWT → 200 |
 | 4 | Render 500 `ENOENT @remotion/compositor-linux-x64-gnu` | `vercel.json includeFiles` for the compositor binary |
 
-## Remaining blocker (documented, not a logic bug)
-- **Render 500 `Failed to launch browser (exit 127)`** — `@sparticuz/chromium` vs the fresh project's Vercel runtime (Amazon Linux 2023 / Node 24): missing shared libs. Prod's render works because it runs on a compatible (older) runtime. **Fix options (deployment tuning):** pin the function to `nodejs20.x`, or align `@sparticuz/chromium` to an AL2023-compatible version, or match chrome-headless-shell. **The render engine itself is proven** — 3 real 1080×1920 H.264 MP4s rendered locally from the identical `StoryStudioVideo` composition, and the endpoint executes all logic up to chromium launch.
+## Remaining blocker (environment-only; not Story-Studio logic)
+Render reaches chromium launch on the deployed function; the browser can't start. Debugged to root cause across iterations:
+1. **Compositor binary missing** (`@remotion/compositor-linux-x64-gnu`) → fixed via `vercel.json includeFiles`.
+2. **`selectComposition` downloaded Remotion's own headless shell** (StoryStudio uses `calculateMetadata` → needs a browser) which lacked `libnspr4.so` → **fixed** by passing `@sparticuz/chromium` `browserExecutable` + `chromiumOptions` to `selectComposition` (commit 06c0eb7). *(This was a genuine logic fix — the only one — and would break the StoryStudio render path on any host.)*
+3. **`@sparticuz/chromium`'s own binary** then failed: `/tmp/chromium: libnss3.so: cannot open shared object file` on Vercel's **Amazon Linux 2023** runtime. Tried: Node-version pin to 20.x, `includeFiles` for `@sparticuz/chromium/**`, `LD_LIBRARY_PATH=/tmp` — none resolved it.
+
+**Diagnosis:** `@sparticuz/chromium` (version in the lockfile) doesn't ship AL2023-resolvable NSS libs. **Fix (dependency/runtime, ~1 change):** upgrade `@sparticuz/chromium` to a current AL2023-compatible release (and align Remotion's expected Chromium), or confirm/replicate the exact chromium setup the existing prod render uses. **Open question for the owner:** verify whether the *existing* prod web-render (Clean) actually launches chromium in prod today — if not, this is a pre-existing platform gap, not a Story Studio regression.
+
+**The render engine itself is proven** — 3 real 1080×1920 H.264 MP4s rendered from the identical `StoryStudioVideo` composition (local, system Chrome), and the deployed endpoint executes all auth/ownership/validation/composition-selection logic up to the chromium launch.
 
 ## Not yet re-verified in the deployed UI (data path proven, UI click-through pending)
 - Refresh→restore in the UI (draft GET returns the saved plan; launcher wires `initialPlan`), download, reopen-and-edit-again, full mobile/RTL-LTR/keyboard/reduced-motion matrix, 3-gallery visual set. Gated behind the render blocker for the final steps.
