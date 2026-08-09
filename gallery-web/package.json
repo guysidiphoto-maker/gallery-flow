@@ -19,7 +19,7 @@
     "@remotion/bundler": "^4.0.245",
     "@remotion/renderer": "^4.0.245",
     "@sentry/react": "^10.50.0",
-    "@sparticuz/chromium": "^131.0.1",
+    "@sparticuz/chromium": "^149.0.0",
     "@studio-freight/lenis": "^1.0.42",
     "@supabase/supabase-js": "^2.101.1",
     "@types/archiver": "^7.0.0",

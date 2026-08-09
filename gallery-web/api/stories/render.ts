@@ -72,9 +72,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../../server/sentryServer.js'
-import { promises as fs } from 'node:fs'
+import { promises as fs, existsSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { resolveAndValidatePlan, type OwnerImage } from './_scenePlanGuard.js'
 
 const SUPABASE_URL =
@@ -563,6 +564,19 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 function resolveServeUrl(req: VercelRequest): string | null {
   const explicit = process.env.STORIES_BUNDLE_URL
   if (explicit) return explicit.replace(/\/+$/, '') + '/stories-bundle/'
+
+  // Prefer the LOCAL bundled site (included via vercel.json includeFiles).
+  // Remotion serves a local directory over localhost, so Chromium never has to
+  // fetch the deployment's own origin — which matters on protected Preview
+  // deployments (Deployment Protection would return the SSO page to the
+  // server-side browser instead of the bundle).
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url)) // /var/task/api/stories
+    const localBundle = path.resolve(here, '..', '..', 'public', 'stories-bundle')
+    if (existsSync(path.join(localBundle, 'index.html'))) return localBundle
+  } catch {
+    /* fall through to URL-based resolution */
+  }
 
   const vercel = process.env.VERCEL_URL
   if (vercel) return `https://${vercel}/stories-bundle/`
