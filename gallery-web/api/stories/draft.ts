@@ -24,8 +24,7 @@ import {
   resolveAndValidatePlan,
   stripForPersistence,
   type OwnerImage,
-} from '../../src/lib/storyStudio/serverPlan.ts'
-import type { ScenePlan } from '../../src/lib/storyStudio/sceneplan.ts'
+} from './_scenePlanGuard.js'
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
@@ -153,35 +152,32 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     const { images } = await loadOwnerImages(ctx.adminClient, galleryId)
     // Validate + tenant-isolate. src doesn't matter for a draft, but this is
     // where foreign-image / injection / range attacks are rejected.
-    const result = resolveAndValidatePlan(
-      body.scenePlan as ScenePlan,
-      galleryId,
-      images,
-      (id) => id, // src irrelevant for persistence; resolver is a no-op
-    )
+    const result = resolveAndValidatePlan(body.scenePlan, galleryId, images, (id) => id)
     if (!result.ok) {
       res.status(400).json({ error: 'invalid_scene_plan', details: result.errors })
       return
     }
 
-    const toStore = stripForPersistence(result.plan!)
+    const toStore = stripForPersistence(result.plan)
     const title = typeof body.title === 'string' ? body.title.slice(0, 120) : null
 
-    // One draft per gallery (partial-unique on status='draft'): upsert on it.
-    const { error: upErr } = await ctx.adminClient
+    // One draft per gallery. The partial-unique index (WHERE status='draft')
+    // can't back a plain ON CONFLICT, so replace explicitly: delete the existing
+    // draft, then insert. (Owner-scoped; safe under the single-writer endpoint.)
+    await ctx.adminClient
       .from('story_renders')
-      .upsert(
-        {
-          gallery_id: galleryId,
-          status: 'draft',
-          style: toStore.template,
-          scene_plan: toStore,
-          title,
-          requested_by: ctx.userId,
-          draft_updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'gallery_id', ignoreDuplicates: false },
-      )
+      .delete()
+      .eq('gallery_id', galleryId)
+      .eq('status', 'draft')
+    const { error: upErr } = await ctx.adminClient.from('story_renders').insert({
+      gallery_id: galleryId,
+      status: 'draft',
+      style: toStore.template,
+      scene_plan: toStore,
+      title,
+      requested_by: ctx.userId,
+      draft_updated_at: new Date().toISOString(),
+    })
     if (upErr) {
       res.status(500).json({ error: 'draft_write_failed', message: upErr.message })
       return

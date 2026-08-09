@@ -75,8 +75,7 @@ import { withSentry } from '../../server/sentryServer.js'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { resolveAndValidatePlan, type OwnerImage } from '../../src/lib/storyStudio/serverPlan.ts'
-import type { ScenePlan } from '../../src/lib/storyStudio/sceneplan.ts'
+import { resolveAndValidatePlan, type OwnerImage } from './_scenePlanGuard.js'
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
@@ -395,7 +394,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       const owner = await loadOwnerImageRecords(adminClient, galleryId)
       if (owner.records.length === 0) throw new Error('no_images_in_gallery')
       const result = resolveAndValidatePlan(
-        body.scenePlan as ScenePlan,
+        body.scenePlan,
         galleryId,
         owner.records,
         (id) => owner.srcById.get(id) ?? '',

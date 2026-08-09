@@ -33,7 +33,8 @@
   ],
   "functions": {
     "api/stories/render.ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "node_modules/{@remotion/compositor-*,@sparticuz/chromium}/**"
     }
   }
 }
