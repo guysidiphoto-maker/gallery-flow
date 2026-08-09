@@ -31,6 +31,7 @@ import {
   MAX_SCENES,
   MIN_SCENES,
   RENDER_MAX_SCENES,
+  RENDER_MAX_DURATION_SEC,
   SCENE_PLAN_VERSION,
   STORY_FPS,
   STORY_HEIGHT,
@@ -479,7 +480,15 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
 
   // 9. Nudge total toward the length target within clamps (proportional). The
   // template's targetMult keeps the pace difference real: fast finishes shorter.
-  fitToTarget(scenes, lengthTarget.targetSec * profile.targetMult, profile);
+  // Clamp the target to the FIRST-RELEASE render duration cap (minus a rounding
+  // margin) so an auto plan is always renderable synchronously — never orphans
+  // a job by exceeding the 45s ceiling (e.g. extended editorial would be ~63s).
+  const cardsSec = profile.openingSec + profile.outroSec;
+  const cappedTarget = Math.min(
+    lengthTarget.targetSec * profile.targetMult,
+    RENDER_MAX_DURATION_SEC - Math.max(1, cardsSec * 0.1)
+  );
+  fitToTarget(scenes, cappedTarget, profile);
 
   // 10. Title cards from event + brand.
   const opening: TitleCard = {

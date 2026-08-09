@@ -27,9 +27,22 @@
  */
 
 import { bundle } from '@remotion/bundler';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+
+// Recursively delete *.map files — Remotion's default webpack config still emits
+// source maps, which have zero runtime value but ship into the Vercel function
+// bundle via includeFiles (~9MB). Strip them post-bundle to keep the function small.
+function stripSourceMaps(dir) {
+  let removed = 0;
+  for (const name of readdirSync(dir)) {
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) removed += stripSourceMaps(full);
+    else if (name.endsWith('.map')) { unlinkSync(full); removed += 1; }
+  }
+  return removed;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,8 +84,9 @@ try {
     },
   });
   process.stdout.write('\n');
+  const mapsRemoved = stripSourceMaps(outDir);
   console.log(
-    `[bundle-stories] done in ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+    `[bundle-stories] done in ${((Date.now() - t0) / 1000).toFixed(1)}s (stripped ${mapsRemoved} source map(s))`,
   );
 } catch (err) {
   process.stdout.write('\n');

@@ -603,6 +603,10 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       wallSeconds,
     })
   } catch (err) {
+    // The raw message can embed filesystem paths (/var/task, /tmp), missing-lib
+    // names, or storage/DB internals. Log it + persist a truncated copy for the
+    // owner's status view, but NEVER return it to the HTTP client — the client
+    // gets a stable code only. (Security review finding.)
     const message = err instanceof Error ? err.message : 'unknown_render_error'
     console.error('[stories/render] failed', message)
     await adminClient
@@ -615,7 +619,6 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({
       ok: false,
       error: 'render_failed',
-      message,
       renderId,
     })
   } finally {

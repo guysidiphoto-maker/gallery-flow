@@ -30,6 +30,10 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL |
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
+// Edge-validate the gallery id shape, matching render/status/cancel. Downstream
+// checks already reject bad ids, but validating here keeps the endpoints consistent.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 interface OwnerCtx {
   adminClient: SupabaseClient
   userId: string
@@ -111,8 +115,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'GET') {
     const galleryId = String(req.query.galleryId || '')
-    if (!galleryId) {
-      res.status(400).json({ error: 'missing_gallery_id' })
+    if (!galleryId || !UUID_RE.test(galleryId)) {
+      res.status(400).json({ error: 'invalid_gallery_id' })
       return
     }
     const ctx = await authorizeOwner(req, res, galleryId)
@@ -138,8 +142,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'PUT') {
     const body = (req.body || {}) as { galleryId?: unknown; scenePlan?: unknown; title?: unknown }
     const galleryId = typeof body.galleryId === 'string' ? body.galleryId : ''
-    if (!galleryId) {
-      res.status(400).json({ error: 'missing_gallery_id' })
+    if (!galleryId || !UUID_RE.test(galleryId)) {
+      res.status(400).json({ error: 'invalid_gallery_id' })
       return
     }
     if (!body.scenePlan || typeof body.scenePlan !== 'object') {
@@ -179,7 +183,9 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       draft_updated_at: new Date().toISOString(),
     })
     if (upErr) {
-      res.status(500).json({ error: 'draft_write_failed', message: upErr.message })
+      // Log detail server-side; return only a stable code (no raw DB text).
+      console.error('[stories/draft] write failed', upErr.message)
+      res.status(500).json({ error: 'draft_write_failed' })
       return
     }
     res.status(200).json({ ok: true })
