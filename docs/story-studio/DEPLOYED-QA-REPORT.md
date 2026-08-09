@@ -29,7 +29,24 @@ _2026-08-09 · branch `feat/story-studio-revival` @ `1cac3f8` (local, NOT pushed
 | 3 | `SUPABASE_SERVICE_ROLE_KEY` set to a short new-format key → "Invalid API key" (404) | Diagnosed (safe role-claim log); you replaced with the legacy `service_role` JWT → 200 |
 | 4 | Render 500 `ENOENT @remotion/compositor-linux-x64-gnu` | `vercel.json includeFiles` for the compositor binary |
 
-## Remaining blocker (environment-only; not Story-Studio logic)
+## ✅ RENDER BLOCKER CLOSED (2026-08-09) — real MP4 on the deployed isolated QA
+The deployed server now produces a real, playable, visually-verified MP4.
+**Fixes (commits 06c0eb7, f4e93f8):**
+1. `@sparticuz/chromium` 131.0.1 → **149.0.1** (131 lacked Vercel detection → never extracted AL2023 libs → exit 127; 149 has `if(VERCEL && node>=20)` and Chromium 149 matches Remotion 4.0.469's tested Chrome). Requires Node ≥22.17/24 → project `nodeVersion` set to **24.x**.
+2. `selectComposition` + `renderMedia` both use the bundled `@sparticuz/chromium` (StoryStudio uses `calculateMetadata`, so selectComposition launches a browser — previously downloaded a lib-less shell).
+3. Serve the Remotion bundle from the **local included directory** (not the deployment origin) so server-side Chromium isn't blocked by Deployment Protection on the preview.
+4. `vercel.json`: **memory 3009** (1024 was CPU-starved → 300s timeout) + `includeFiles` for compositor, chromium, and `public/stories-bundle`.
+5. qa2 was missing the `gallery-stories` bucket → created (public).
+
+**Validated output** (render `a39e5472`, wedding gallery, Cinematic template, auto plan):
+- status=`ready`, `gallery-stories/dddddddd-…/a39e5472….mp4`, **195s** render at 3009MB.
+- Downloaded (8.0 MB). In-browser `HTMLVideoElement`: **1080×1920**, **34.62s** (scene plan = 34.5s → within tolerance), `readyState=4`, plays; valid H.264 (Chrome plays it).
+- Frame @13.5s: real full-bleed 9:16 scene image + **cinematic vignette**, no black frame.
+
+**Remaining for the strict "3 outputs" gate (§4–7):** validated 1 of 3 template outputs (Cinematic). Editorial + Fast run through the same now-proven pipeline; producing + frame-checking those 2, plus the lifecycle matrix (retry/cancel/duplicate/refresh/cleanup) and an orphaned-`rendering`-row sweeper, remain before the Draft-PR gate is fully met.
+**Perf note:** 16 scenes = 195s at 3009MB (near the 300s ceiling). Longer/`extended` stories need shorter length caps, higher concurrency, or a queue — do not raise per-request limits blindly.
+
+## (history) Remaining blocker (environment-only; not Story-Studio logic)
 Render reaches chromium launch on the deployed function; the browser can't start. Debugged to root cause across iterations:
 1. **Compositor binary missing** (`@remotion/compositor-linux-x64-gnu`) → fixed via `vercel.json includeFiles`.
 2. **`selectComposition` downloaded Remotion's own headless shell** (StoryStudio uses `calculateMetadata` → needs a browser) which lacked `libnspr4.so` → **fixed** by passing `@sparticuz/chromium` `browserExecutable` + `chromiumOptions` to `selectComposition` (commit 06c0eb7). *(This was a genuine logic fix — the only one — and would break the StoryStudio render path on any host.)*
