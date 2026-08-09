@@ -1,0 +1,44 @@
+# Story Studio — Deployed QA Report (isolated Preview, DB-backed)
+_2026-08-09 · branch `feat/story-studio-revival` @ `1cac3f8` (local, NOT pushed)_
+
+## Environment (all synthetic, isolated)
+- **Preview URL:** `https://pixflow-story-studio-qa-preview.vercel.app` (stable alias → latest preview)
+- **Vercel project:** `pixflow-story-studio-qa` (`prj_KFifYyAvWc8aUDnF8zqvmok1xScE`) — isolated, Preview target, no custom domain, behind Deployment Protection (accessed via your bypass cookie).
+- **DB:** `pixflow-cpv2-qa2` (`icxitoczqtcgdkwiaxxc`) — proven synthetic (all emails @qa.test/@example.com). **Deployed client verified to target qa2 only — no prod/staging leak.**
+- **Migration:** additive `story_renders` (scene_plan/title/draft_updated_at/'draft' status/one-draft-per-gallery index) applied to qa2; rollback verified reversible.
+- **Test identity:** synthetic `studioa.owner@example.com` (throwaway QA password), business `qa-studio-a`, gallery `dddddddd-…0001` seeded with 16 synthetic images (4 top-picks).
+
+## Verified end-to-end on the deployed app ✅
+1. Log in (synthetic session) → **real dashboard** loads (studioa.owner).
+2. Open real gallery → editor shows **16 images**.
+3. Stories tab → **"STORY STUDIO" button (integrated in the real dashboard)**.
+4. Click → editor opens with **auto first-cut from the 16 real images** ("16 סצנות · 34.5s · 9:16").
+5. **Top-picks prioritized**, opener promoted.
+6. Real **Brand Kit + event** applied (opening card shows the real gallery name).
+7. **Preview plays real images** (no black frame); cinematic template shows vignette treatment.
+8. **Template switch** (editorial→cinematic) re-plans live.
+9. **Autosave → PERSISTED to qa2** (SQL-verified: story_renders draft row, template=cinematic-energy, 16 scenes, timestamp).
+10. **Draft GET returns the saved plan** (200) — the restore data path for "leave & return".
+11. **Security:** deployed serverPlan guard runs (tenant isolation, client-src discard, dims from server, injection/range checks).
+
+## Defects found via deployed QA — and fixed (commit 1cac3f8)
+| # | Defect | Fix |
+|---|--------|-----|
+| 1 | Draft/render functions 500 `ERR_MODULE_NOT_FOUND` — Vercel keeps `.ts` import specifiers at runtime | Self-contained `api/stories/_scenePlanGuard.ts` (no relative `.ts` imports); api imports it via `.js` |
+| 2 | Draft PUT would fail — `onConflict` can't use a **partial** unique index | Replaced with delete-draft-then-insert |
+| 3 | `SUPABASE_SERVICE_ROLE_KEY` set to a short new-format key → "Invalid API key" (404) | Diagnosed (safe role-claim log); you replaced with the legacy `service_role` JWT → 200 |
+| 4 | Render 500 `ENOENT @remotion/compositor-linux-x64-gnu` | `vercel.json includeFiles` for the compositor binary |
+
+## Remaining blocker (documented, not a logic bug)
+- **Render 500 `Failed to launch browser (exit 127)`** — `@sparticuz/chromium` vs the fresh project's Vercel runtime (Amazon Linux 2023 / Node 24): missing shared libs. Prod's render works because it runs on a compatible (older) runtime. **Fix options (deployment tuning):** pin the function to `nodejs20.x`, or align `@sparticuz/chromium` to an AL2023-compatible version, or match chrome-headless-shell. **The render engine itself is proven** — 3 real 1080×1920 H.264 MP4s rendered locally from the identical `StoryStudioVideo` composition, and the endpoint executes all logic up to chromium launch.
+
+## Not yet re-verified in the deployed UI (data path proven, UI click-through pending)
+- Refresh→restore in the UI (draft GET returns the saved plan; launcher wires `initialPlan`), download, reopen-and-edit-again, full mobile/RTL-LTR/keyboard/reduced-motion matrix, 3-gallery visual set. Gated behind the render blocker for the final steps.
+
+## Cleanup owed (synthetic QA artifacts)
+- **Revoke the Deployment-Protection bypass token** in Vercel when done.
+- Temporary qa2 storage-write policies (`qa_seed_gallery_images_*`) + synthetic login can be dropped/reset (disposable QA).
+
+## GO / NO-GO
+- **Draft PR:** ◑ **CONDITIONAL GO** — the integration + endpoints are proven on a real deployment against a real DB, with defects fixed; open as **Draft** noting the render-runtime tuning as the one open item. Needs your approval to push (not pushed).
+- **Production:** ⛔ **HARD NO-GO** until the render runtime is resolved + you approve.
