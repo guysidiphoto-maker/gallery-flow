@@ -25,8 +25,9 @@ import type {
 
 const isHebrew = (s?: string | null) => !!s && /[֐-׿]/.test(s);
 
-// Ease in-out for tasteful motion.
+// Ease in-out for tasteful (continuous) motion; ease-out for snap-and-settle.
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
 function focalPercent(focal: { x: number; y: number }) {
   return `${(focal.x * 100).toFixed(1)}% ${(focal.y * 100).toFixed(1)}%`;
@@ -59,6 +60,19 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
     case "focus-zoom":
       scale = 1 + (intensity + 0.03) * p;
       break;
+    case "punch-in": {
+      // Snap-and-settle: starts noticeably enlarged, eases back to rest inside
+      // the first ~35% of the scene, then holds. Reads as a percussive hit — the
+      // signature move of the fast-highlights template.
+      const settle = easeOutCubic(
+        interpolate(frame, [0, Math.max(1, durationFrames * 0.35)], [0, 1], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        })
+      );
+      scale = 1 + (intensity + 0.06) * (1 - settle);
+      break;
+    }
     case "pan": {
       const amt = intensity * 100 * p; // px
       if (scene.motionDirection === "left") tx = -amt;
@@ -284,22 +298,73 @@ const Vignette: React.FC = () => (
   />
 );
 
-// Per-template overlay painted over the whole video (letterbox / vignette).
+// Per-template overlay painted over the whole video. The treatment is a primary
+// way the three templates read as different at a glance:
+//   cinematic  -> wide 2.4:1 letterbox bars + heavy vignette (filmic)
+//   fast       -> reel-style segmented progress bars (handled at top level)
+//   editorial  -> nothing; stays clean full-bleed
 const TemplateTreatment: React.FC<{ template: StoryTemplate }> = ({ template }) => {
   if (template === "cinematic-energy") {
     return (
       <>
-        <Vignette />
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 70, background: "#000" }} />
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 70, background: "#000" }} />
+        <AbsoluteFill
+          style={{
+            background:
+              "radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(0,0,0,0.68) 100%)",
+            pointerEvents: "none",
+          }}
+        />
+        {/* ~2.4:1 cinematic bars (140px top+bottom on a 1920 frame) */}
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 140, background: "#000" }} />
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 140, background: "#000" }} />
       </>
     );
   }
-  if (template === "fast-highlights") {
-    // subtle top accent tick bar for a punchy social feel
-    return <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 8, background: "rgba(255,255,255,0.14)" }} />;
-  }
-  return null; // editorial-clean stays clean
+  return null; // editorial-clean + fast-highlights add nothing here
+};
+
+// Reel-style segmented progress bars along the top (Instagram/TikTok Stories
+// idiom). Only fast-highlights uses this — an instantly-recognizable social cue
+// no other template has. Segments = one bar per block (opening, each scene, outro).
+const StoryProgressBars: React.FC<{
+  segments: Array<{ from: number; frames: number }>;
+  accentHex: string;
+}> = ({ segments, accentHex }) => {
+  const frame = useCurrentFrame();
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 22,
+        left: 22,
+        right: 22,
+        display: "flex",
+        gap: 6,
+        height: 6,
+        zIndex: 5,
+      }}
+    >
+      {segments.map((seg, i) => {
+        const fill = interpolate(frame, [seg.from, seg.from + seg.frames], [0, 1], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        });
+        return (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              background: "rgba(255,255,255,0.32)",
+              borderRadius: 3,
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ width: `${fill * 100}%`, height: "100%", background: accentHex }} />
+          </div>
+        );
+      })}
+    </div>
+  );
 };
 
 const Watermark: React.FC<{ brand: BrandResolved }> = ({ brand }) => {
@@ -330,9 +395,11 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
 
   let cursor = 0;
   const blocks: React.ReactNode[] = [];
+  const segments: Array<{ from: number; frames: number }> = [];
 
   if (plan.opening?.enabled) {
     const d = secToFrames(plan.opening.durationSec);
+    segments.push({ from: cursor, frames: d });
     blocks.push(
       <Sequence key="opening" from={cursor} durationInFrames={d}>
         <CardLayer card={plan.opening} brand={plan.brand} template={plan.template} durationFrames={d} />
@@ -346,6 +413,7 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
     const tin = secToFrames(scene.transitionDurationSec);
     // Overlap the incoming scene onto the previous one for the transition.
     const from = i === 0 ? cursor : cursor - tin;
+    segments.push({ from: Math.max(0, from), frames: d + (i === 0 ? 0 : tin) });
     blocks.push(
       <Sequence key={scene.id} from={Math.max(0, from)} durationInFrames={d + (i === 0 ? 0 : tin)}>
         <TransitionWrap type={scene.transitionIn} transitionFrames={i === 0 ? 0 : tin}>
@@ -358,6 +426,7 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
 
   if (plan.outro?.enabled) {
     const d = secToFrames(plan.outro.durationSec);
+    segments.push({ from: cursor, frames: d });
     blocks.push(
       <Sequence key="outro" from={cursor} durationInFrames={d}>
         <CardLayer card={plan.outro} brand={plan.brand} template={plan.template} durationFrames={d} />
@@ -370,6 +439,9 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       {blocks}
       <TemplateTreatment template={plan.template} />
+      {plan.template === "fast-highlights" ? (
+        <StoryProgressBars segments={segments} accentHex={plan.brand.accentHex} />
+      ) : null}
       <Watermark brand={plan.brand} />
     </AbsoluteFill>
   );
@@ -392,5 +464,8 @@ const TransitionWrap: React.FC<{
   if (type === "slide") style = { opacity: 1, transform: `translateX(${(1 - t) * 100}%)` };
   else if (type === "soft-blur") style = { opacity: t, filter: `blur(${(1 - t) * 24}px)` };
   else if (type === "light-leak") style = { opacity: t, filter: `brightness(${1 + (1 - t) * 1.4})` };
+  else if (type === "whip")
+    // Fast horizontal motion-blur slide — a reel-style snap between shots.
+    style = { opacity: 1, transform: `translateX(${(1 - t) * 65}%)`, filter: `blur(${(1 - t) * 14}px)` };
   return <AbsoluteFill style={style}>{children}</AbsoluteFill>;
 };

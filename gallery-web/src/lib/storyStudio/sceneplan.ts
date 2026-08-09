@@ -20,8 +20,11 @@ export const STORY_HEIGHT = 1920;
 export const STORY_FPS = 30;
 
 // Per-scene duration clamps (seconds). Below MIN a photo cannot register; above
-// MAX a single photo drags the pace.
-export const MIN_SCENE_SEC = 1.8;
+// MAX a single photo drags the pace. MIN is deliberately low (1.2s) so the
+// fast-highlights template can cut on the beat like a real reel, while the
+// calmer templates sit far above the floor — the pace gap between templates is
+// itself a differentiator.
+export const MIN_SCENE_SEC = 1.2;
 export const MAX_SCENE_SEC = 6.0;
 export const MIN_TRANSITION_SEC = 0.2;
 export const MAX_TRANSITION_SEC = 1.2;
@@ -39,11 +42,16 @@ export type StoryTemplate = "editorial-clean" | "cinematic-energy" | "fast-highl
 export type StoryLength = "short" | "standard" | "extended";
 export type GlobalPace = "relaxed" | "balanced" | "energetic";
 
-export type MotionEffect = "none" | "push-in" | "pull-out" | "pan" | "focus-zoom";
+// "punch-in" is a fast snap-and-settle zoom (starts slightly enlarged, eases to
+// rest in the first third of the scene) — reads as energetic; used by
+// fast-highlights. The gentler push-in/pull-out are continuous Ken Burns moves.
+export type MotionEffect = "none" | "push-in" | "pull-out" | "pan" | "focus-zoom" | "punch-in";
 export type MotionDirection = "left" | "right" | "up" | "down";
 export type MotionIntensity = "subtle" | "medium" | "strong";
 
-export type TransitionType = "cut" | "cross-dissolve" | "slide" | "soft-blur" | "light-leak";
+// "whip" is a fast motion-blur horizontal slide (reel-style hard-ish cut); the
+// other transitions are slower/softer. Templates pick disjoint vocabularies.
+export type TransitionType = "cut" | "cross-dissolve" | "slide" | "soft-blur" | "light-leak" | "whip";
 export type FitMode = "fill" | "fit";
 export type BackgroundTreatment = "blur" | "color" | "none";
 export type TextPosition = "top" | "center" | "bottom";
@@ -60,6 +68,7 @@ export const MOTION_EFFECTS: readonly MotionEffect[] = [
   "pull-out",
   "pan",
   "focus-zoom",
+  "punch-in",
 ];
 export const TRANSITIONS: readonly TransitionType[] = [
   "cut",
@@ -67,6 +76,7 @@ export const TRANSITIONS: readonly TransitionType[] = [
   "slide",
   "soft-blur",
   "light-leak",
+  "whip",
 ];
 
 // ── Core structures ───────────────────────────────────────────────────────────

@@ -83,39 +83,62 @@ interface TemplateProfile {
   basePaceSec: number; // baseline per-scene hold
   motionVocab: readonly MotionEffect[];
   transitionVocab: readonly TransitionType[];
+  transitionSec: number; // per-scene transition length (0 handled by "cut")
   motionIntensity: "subtle" | "medium" | "strong";
   openingHoldBonus: number; // extra seconds on the opening scene
   outroSec: number;
   openingSec: number;
+  // Multiplies the length's target duration. Keeps the pace gap REAL for a fixed
+  // gallery: fast ends up a shorter, punchier clip; editorial a longer, calmer
+  // one — instead of fitToTarget flattening every template to the same runtime.
+  targetMult: number;
 }
 
+// Three templates that read as three different EDITS, not one edit reskinned.
+// The spread is intentional and large along every axis a viewer notices:
+//   pace          editorial 3.8s  ▸  cinematic 2.8s  ▸  fast 1.35s   (≈3× gap)
+//   motion        gentle/still    ▸  strong pans     ▸  snap punch-ins
+//   transitions   slow dissolves  ▸  dramatic leaks  ▸  hard cuts + whips
+//   composition   clean full-bleed▸  letterbox+vignette ▸ reel progress bars
 const TEMPLATE_PROFILES: Record<StoryTemplate, TemplateProfile> = {
+  // Calm gallery/magazine cut: photos breathe, motion is barely-there, cuts are
+  // slow cross-dissolves. Lots of deliberate stillness ("none").
   "editorial-clean": {
-    basePaceSec: 3.6,
-    motionVocab: ["push-in", "none", "pull-out", "push-in"],
-    transitionVocab: ["cross-dissolve", "cut", "soft-blur"],
+    basePaceSec: 3.8,
+    motionVocab: ["push-in", "none", "pull-out", "none"],
+    transitionVocab: ["cross-dissolve", "soft-blur"],
+    transitionSec: 0.6,
     motionIntensity: "subtle",
     openingHoldBonus: 0.8,
-    openingSec: 2.4,
-    outroSec: 2.6,
+    openingSec: 2.6,
+    outroSec: 2.8,
+    targetMult: 1.15,
   },
+  // Filmic trailer: strong directional motion (pans + big push-ins), dramatic
+  // dissolves/light-leaks, letterbox + vignette treatment. Medium-slow pace.
   "cinematic-energy": {
-    basePaceSec: 3.0,
-    motionVocab: ["push-in", "focus-zoom", "pan", "pull-out"],
-    transitionVocab: ["cross-dissolve", "slide", "soft-blur", "light-leak"],
-    motionIntensity: "medium",
+    basePaceSec: 2.8,
+    motionVocab: ["push-in", "pan", "focus-zoom", "pan"],
+    transitionVocab: ["cross-dissolve", "light-leak", "soft-blur"],
+    transitionSec: 0.5,
+    motionIntensity: "strong",
     openingHoldBonus: 0.6,
     openingSec: 2.2,
     outroSec: 2.8,
+    targetMult: 1.0,
   },
+  // Reel/beat montage: very short holds, snap punch-ins, mostly HARD CUTS with
+  // the occasional whip. Reads as a punchy social highlights clip.
   "fast-highlights": {
-    basePaceSec: 2.2,
-    motionVocab: ["push-in", "focus-zoom", "push-in", "none"],
-    transitionVocab: ["cut", "cross-dissolve", "slide"],
-    motionIntensity: "medium",
-    openingHoldBonus: 0.3,
-    openingSec: 1.8,
-    outroSec: 2.2,
+    basePaceSec: 1.35,
+    motionVocab: ["punch-in", "none", "punch-in", "focus-zoom"],
+    transitionVocab: ["cut", "cut", "whip", "cut"],
+    transitionSec: 0.16,
+    motionIntensity: "strong",
+    openingHoldBonus: 0.2,
+    openingSec: 1.6,
+    outroSec: 2.0,
+    targetMult: 0.72,
   },
 };
 
@@ -355,7 +378,14 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
     if (prev && motion === prev.motion && motion !== "none") {
       motion = profile.motionVocab[(i + 1) % profile.motionVocab.length];
     }
-    if (faceNearEdge(img) && motion !== "none" && motion !== "focus-zoom") {
+    // Motions that settle at (or reveal) rest scale don't crop a near-edge face;
+    // only the continuous inward moves do, so hold static for those.
+    if (
+      faceNearEdge(img) &&
+      motion !== "none" &&
+      motion !== "focus-zoom" &&
+      motion !== "punch-in"
+    ) {
       motion = "none";
     }
 
@@ -373,10 +403,11 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
           ? "up"
           : "down";
 
-    // Transition: cycle template vocab, avoid immediate repeat.
+    // Transition: cycle template vocab, avoid immediate repeat — EXCEPT "cut",
+    // where back-to-back hard cuts are the intended fast-highlights rhythm.
     let transition: TransitionType =
       i === 0 ? "cross-dissolve" : profile.transitionVocab[i % profile.transitionVocab.length];
-    if (prev && transition === prev.transitionIn) {
+    if (prev && transition === prev.transitionIn && transition !== "cut") {
       transition = profile.transitionVocab[(i + 1) % profile.transitionVocab.length];
     }
 
@@ -404,7 +435,7 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       motionDirection: dir,
       motionIntensity: profile.motionIntensity,
       transitionIn: transition,
-      transitionDurationSec: transition === "cut" ? 0 : 0.4,
+      transitionDurationSec: transition === "cut" ? 0 : profile.transitionSec,
       text: null,
       _reason: [
         i === 0 ? "opening(strongest)" : i === ordered.length - 1 ? "closer" : "body",
@@ -416,8 +447,9 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
     });
   }
 
-  // 9. Nudge total toward the length target within clamps (proportional).
-  fitToTarget(scenes, lengthTarget.targetSec, profile);
+  // 9. Nudge total toward the length target within clamps (proportional). The
+  // template's targetMult keeps the pace difference real: fast finishes shorter.
+  fitToTarget(scenes, lengthTarget.targetSec * profile.targetMult, profile);
 
   // 10. Title cards from event + brand.
   const opening: TitleCard = {

@@ -230,6 +230,36 @@ test("template changes motion/transition vocabulary", () => {
   assert.ok(avg(fast) < avg(clean), `fast avg ${avg(fast)} !< clean avg ${avg(clean)}`);
 });
 
+test("templates are categorically different (pace + transitions + motion), not reskins", () => {
+  const g = gallery(16);
+  const clean = planStory(g, baseOpts({ template: "editorial-clean" }));
+  const cine = planStory(g, baseOpts({ template: "cinematic-energy" }));
+  const fast = planStory(g, baseOpts({ template: "fast-highlights" }));
+
+  // 1. PACE: fast is a clearly shorter clip than editorial (not the same runtime
+  //    reskinned). Require a meaningful gap, not a rounding difference.
+  const totClean = computeTotalDuration(clean);
+  const totFast = computeTotalDuration(fast);
+  assert.ok(totFast < totClean * 0.85, `fast ${totFast}s not clearly shorter than clean ${totClean}s`);
+
+  // 2. TRANSITIONS: disjoint feel. Fast is cut-dominated; editorial never cuts.
+  const trans = (p: ScenePlan) => p.scenes.slice(1).map((s) => s.transitionIn);
+  const fastCuts = trans(fast).filter((t) => t === "cut").length;
+  assert.ok(fastCuts >= trans(fast).length * 0.5, "fast-highlights should be cut-dominated");
+  assert.ok(!trans(clean).includes("cut"), "editorial-clean should not use hard cuts");
+  assert.ok(trans(cine).includes("light-leak"), "cinematic should use light-leak transitions");
+
+  // 3. MOTION: fast uses punch-in (its signature); editorial does not.
+  const motions = (p: ScenePlan) => new Set(p.scenes.map((s) => s.motion));
+  assert.ok(motions(fast).has("punch-in"), "fast-highlights should use punch-in");
+  assert.ok(!motions(clean).has("punch-in"), "editorial-clean should not use punch-in");
+  assert.ok(motions(cine).has("pan"), "cinematic should use pans");
+
+  // 4. INTENSITY: editorial subtle vs cinematic/fast strong.
+  assert.equal(clean.scenes[1].motionIntensity, "subtle");
+  assert.equal(cine.scenes[1].motionIntensity, "strong");
+});
+
 test("brand snapshot is carried onto the plan for preview/export parity", () => {
   const plan = planStory(gallery(10), baseOpts());
   assert.equal(plan.brand.accentHex, BRAND.accentHex);

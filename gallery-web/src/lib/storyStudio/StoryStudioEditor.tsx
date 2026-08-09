@@ -70,6 +70,7 @@ const MOTION_HE: Record<MotionEffect, string> = {
   "pull-out": "זום החוצה",
   pan: "תנועה צידית",
   "focus-zoom": "זום למיקוד",
+  "punch-in": "זום נקישה",
 };
 const TRANSITION_HE: Record<TransitionType, string> = {
   cut: "חיתוך חד",
@@ -77,6 +78,7 @@ const TRANSITION_HE: Record<TransitionType, string> = {
   slide: "החלקה",
   "soft-blur": "טשטוש רך",
   "light-leak": "הבזק אור",
+  whip: "החלקה מהירה",
 };
 
 export interface StoryStudioEditorProps {
