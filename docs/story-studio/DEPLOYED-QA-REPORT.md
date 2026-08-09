@@ -29,6 +29,38 @@ _2026-08-09 · branch `feat/story-studio-revival` @ `1cac3f8` (local, NOT pushed
 | 3 | `SUPABASE_SERVICE_ROLE_KEY` set to a short new-format key → "Invalid API key" (404) | Diagnosed (safe role-claim log); you replaced with the legacy `service_role` JWT → 200 |
 | 4 | Render 500 `ENOENT @remotion/compositor-linux-x64-gnu` | `vercel.json includeFiles` for the compositor binary |
 
+## ✅ THREE TEMPLATES RENDERED + VALIDATED on the deployed isolated QA (2026-08-09)
+Same 16-image gallery + deterministic planner (length=standard); template drives pacing/motion/cards. All rendered on `pixflow-story-studio-qa` → qa2, 3009MB, Node 24, @sparticuz/chromium 149.
+
+| Template | renderId | render time | video | file | opening card identity |
+|---|---|---|---|---|---|
+| Cinematic | a39e5472 | 195s | 1080×1920, 34.62s | 8.0 MB | uppercase left + letterbox + vignette |
+| Editorial | 8f7d7967 | 151s | 1080×1920, 34.52s | 3.0 MB | centered elegant serif, thin line, small-caps subtitle |
+| Fast | 56e7318c | 137s | 1080×1920, 33.75s | 2.9 MB | bold UPPERCASE left, block accent, tick-bar |
+
+- All 3: valid H.264, play start-to-finish, correct 9:16, durations match scene plans (within tolerance), real scene content, no black frames, watermark renders, opening cards render with real event data ("Dana & Tom · 20 Jun 2026 · Caesarea").
+- **Templates visibly different:** Editorial (centered serif, calm, push-in/pull-out subtle) vs Fast (bold uppercase left, focus-zoom/push-in medium, slide/cut) vs Cinematic (letterbox+vignette). Honest note: Cinematic and Fast cards are both left/uppercase — distinguished by treatment (letterbox/vignette vs tick-bar) + motion; could be pushed further apart in a polish pass.
+- Public URLs (qa2, synthetic): `…/gallery-stories/dddddddd-…/{a39e5472,8f7d7967,56e7318c}.mp4`.
+
+## Preview = export
+Same canonical ScenePlan drives both, and the editor `<Player>` renders the **identical `StoryStudioVideo` composition** the server renders. Confirmed: the deployed Editorial MP4 opening card ("Dana & Tom", centered serif) matches the editor's editorial rendering; scene order/duration/motion/transition/branding come from the one persisted plan. No second layout model exists.
+
+## Render-job lifecycle (observed on deployed QA)
+- **Idempotency / duplicate:** partial-unique `(gallery_id, style='studio') WHERE status IN(queued,rendering)` → a second studio render while one is in-flight is rejected/short-circuited (no duplicate active job). ✅
+- **Retry after failure:** failed rows don't block; re-fire renders a fresh row. ✅
+- **Completion:** status→ready + output_path; synchronous endpoint also returns outputUrl. ✅
+- **Cleanup gaps (defects to fix before prod):** (1) a render that hits the 300s function timeout leaves an orphaned `rendering` row that **blocks future renders** via the in-flight index — needs a stale-render sweeper (e.g., pg_cron flip `rendering`→`failed` after N min). (2) No true **cancel** (endpoint renders synchronously) — UI "cancel" only stops client polling. (3) No **poster** image generated. These are known limitations, not blockers to the render itself.
+
+## Production feasibility (measured, not guessed)
+Measured: 16 scenes = **137–195s** at 3009MB/300s. Roughly linear in frames.
+- **15 scenes:** ~130–185s — safe margin.
+- **30 scenes:** ~260–370s — **exceeds the 300s function ceiling** (high timeout risk).
+- **45 scenes:** ~390–560s — **not feasible** in one synchronous invocation.
+- **Recommended first-release cap:** ~**16–18 scenes / ≤40s** synchronous; hard-cap `extended` length.
+- **Cost:** ~137–195s × 3009MB ≈ 0.11–0.16 GB-hr per render (Vercel Fluid/function compute) — minor per render, but every render is paid compute.
+- **Concurrency:** each render pins ~2 vCPU for ~3 min; N concurrent renders = N×3GB functions — real cost + concurrency limits. In-flight unique caps to 1 per (gallery,style).
+- **Recommendation:** keep synchronous only for short stories with a strict scene cap; **move to a queue/worker (or Remotion Lambda) before allowing longer stories or higher concurrency.** Do not raise the per-request limits to force long renders.
+
 ## ✅ RENDER BLOCKER CLOSED (2026-08-09) — real MP4 on the deployed isolated QA
 The deployed server now produces a real, playable, visually-verified MP4.
 **Fixes (commits 06c0eb7, f4e93f8):**
