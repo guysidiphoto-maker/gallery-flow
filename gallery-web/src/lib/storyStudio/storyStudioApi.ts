@@ -39,6 +39,45 @@ export async function saveDraft(
   }
 }
 
+export interface RenderStart {
+  ok: boolean;
+  renderId?: string;
+  status?: string;
+  outputUrl?: string;
+  error?: string;
+  details?: string[];
+}
+
+/** Submit an edited ScenePlan to the render endpoint (server validates it). */
+export async function requestStudioRender(
+  galleryId: string,
+  plan: ScenePlan,
+  accessToken: string
+): Promise<RenderStart> {
+  const res = await fetch(`/api/stories/render`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ galleryId, scenePlan: stripForPersistence(plan) }),
+  });
+  const data = (await res.json().catch(() => ({}))) as RenderStart;
+  return { ...data, ok: res.ok && data.ok !== false };
+}
+
+export interface RenderStatus {
+  status: "queued" | "rendering" | "ready" | "failed" | "completed";
+  outputUrl?: string;
+  error?: string;
+}
+
+/** Poll a render's status (used when the POST returns an in-flight renderId). */
+export async function getRenderStatus(renderId: string, accessToken: string): Promise<RenderStatus> {
+  const res = await fetch(`/api/stories/status?renderId=${encodeURIComponent(renderId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`status failed: ${res.status}`);
+  return (await res.json()) as RenderStatus;
+}
+
 /**
  * Wire this into the editor via `onSave`. Debounce lives in the editor; this just
  * fires the request. Example (Dashboard):

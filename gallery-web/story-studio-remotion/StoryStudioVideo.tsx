@@ -18,6 +18,7 @@ import {
 import type {
   Scene,
   ScenePlan,
+  StoryTemplate,
   TitleCard,
   BrandResolved,
 } from "../src/lib/storyStudio/sceneplan";
@@ -148,52 +149,109 @@ const SceneCaption: React.FC<{ text: string; accent: string }> = ({ text }) => {
   );
 };
 
+// ── Per-template art direction ───────────────────────────────────────────────
+// One canonical ScenePlan; three recognizably different visual identities. Each
+// card design is distinct within the first frames (title weight/case/alignment,
+// accent shape, entrance animation) and each template paints a different overall
+// frame treatment (letterbox+vignette / clean / kinetic).
+interface CardDesign {
+  bg: string;
+  titleWeight: number;
+  titleSize: number;
+  titleTransform: "none" | "uppercase";
+  titleLetterSpacing: number;
+  subtitleTransform: "none" | "uppercase";
+  subtitleLetterSpacing: number;
+  align: "center" | "flex-start";
+  textAlign: "center" | "left";
+  accent: "line" | "wide" | "block";
+  // entrance: how the title arrives
+  entrance: "fade" | "rise" | "scale";
+}
+const CARD_DESIGN: Record<StoryTemplate, CardDesign> = {
+  "editorial-clean": {
+    bg: "#0c0c0e", titleWeight: 500, titleSize: 74, titleTransform: "none", titleLetterSpacing: 1,
+    subtitleTransform: "uppercase", subtitleLetterSpacing: 6, align: "center", textAlign: "center",
+    accent: "line", entrance: "fade",
+  },
+  "cinematic-energy": {
+    bg: "#050506", titleWeight: 800, titleSize: 96, titleTransform: "uppercase", titleLetterSpacing: 2,
+    subtitleTransform: "uppercase", subtitleLetterSpacing: 10, align: "flex-start", textAlign: "left",
+    accent: "wide", entrance: "scale",
+  },
+  "fast-highlights": {
+    bg: "#0a0a0c", titleWeight: 900, titleSize: 104, titleTransform: "uppercase", titleLetterSpacing: 0,
+    subtitleTransform: "none", subtitleLetterSpacing: 1, align: "flex-start", textAlign: "left",
+    accent: "block", entrance: "rise",
+  },
+};
+
 // ── Title / outro card ──────────────────────────────────────────────────────
-const CardLayer: React.FC<{ card: TitleCard; brand: BrandResolved; durationFrames: number }> = ({
-  card,
-  brand,
-  durationFrames,
-}) => {
+const CardLayer: React.FC<{
+  card: TitleCard;
+  brand: BrandResolved;
+  template: StoryTemplate;
+  durationFrames: number;
+}> = ({ card, brand, template, durationFrames }) => {
   const frame = useCurrentFrame();
-  const appear = interpolate(frame, [0, 14], [0, 1], { extrapolateRight: "clamp" });
-  const out = interpolate(frame, [durationFrames - 12, durationFrames], [1, 0], {
-    extrapolateLeft: "clamp",
-  });
+  const d = CARD_DESIGN[template];
+  const appearFrames = template === "fast-highlights" ? 8 : template === "cinematic-energy" ? 18 : 14;
+  const appear = interpolate(frame, [0, appearFrames], [0, 1], { extrapolateRight: "clamp" });
+  const out = interpolate(frame, [durationFrames - 12, durationFrames], [1, 0], { extrapolateLeft: "clamp" });
   const opacity = Math.min(appear, out);
   const rtlTitle = isHebrew(card.title);
+
+  // entrance transform for the title
+  let titleTransform = "none";
+  if (d.entrance === "rise") titleTransform = `translateY(${(1 - appear) * 40}px)`;
+  else if (d.entrance === "scale") titleTransform = `scale(${0.82 + appear * 0.18})`;
+
+  const accentEl =
+    d.accent === "block" ? (
+      <div style={{ height: 18, width: interpolate(appear, [0, 1], [0, 120]), backgroundColor: brand.accentHex, marginBottom: 20 }} />
+    ) : (
+      <div
+        style={{
+          width: d.accent === "wide" ? 320 : 200,
+          height: d.accent === "wide" ? 8 : 5,
+          backgroundColor: brand.accentHex,
+          borderRadius: 3,
+          marginBottom: d.align === "center" ? 40 : 26,
+          transform: `scaleX(${appear})`,
+          transformOrigin: d.textAlign === "left" ? "left" : "center",
+        }}
+      />
+    );
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: "#0b0b0d",
-        alignItems: "center",
+        backgroundColor: d.bg,
+        alignItems: d.align,
         justifyContent: "center",
         opacity,
+        padding: d.align === "flex-start" ? "0 90px" : 0,
       }}
     >
-      <div
-        style={{
-          width: 220,
-          height: 6,
-          backgroundColor: brand.accentHex,
-          borderRadius: 3,
-          marginBottom: 40,
-          transform: `scaleX(${interpolate(frame, [0, 20], [0, 1], { extrapolateRight: "clamp" })})`,
-        }}
-      />
+      {template === "cinematic-energy" ? <Vignette /> : null}
+      {accentEl}
       {card.showLogo && brand.logoUrl ? (
-        <Img src={brand.logoUrl} style={{ maxWidth: 340, maxHeight: 180, marginBottom: 36, objectFit: "contain" }} />
+        <Img src={brand.logoUrl} style={{ maxWidth: 300, maxHeight: 150, marginBottom: 30, objectFit: "contain" }} />
       ) : null}
       {card.title ? (
         <div
           style={{
             color: "#fff",
-            fontSize: 78,
-            fontWeight: 700,
+            fontSize: d.titleSize,
+            fontWeight: d.titleWeight,
             fontFamily: `${brand.headingFont}, Georgia, serif`,
-            textAlign: "center",
+            textTransform: d.titleTransform,
+            letterSpacing: d.titleLetterSpacing,
+            lineHeight: 1.02,
+            textAlign: d.textAlign,
             direction: rtlTitle ? "rtl" : "ltr",
-            padding: "0 80px",
+            transform: titleTransform,
+            padding: d.align === "center" ? "0 80px" : 0,
           }}
         >
           {card.title}
@@ -203,11 +261,13 @@ const CardLayer: React.FC<{ card: TitleCard; brand: BrandResolved; durationFrame
         <div
           style={{
             color: brand.accentHex,
-            fontSize: 40,
+            fontSize: 38,
             marginTop: 22,
             fontFamily: `${brand.bodyFont}, Helvetica, sans-serif`,
-            letterSpacing: 1,
-            textAlign: "center",
+            textTransform: d.subtitleTransform,
+            letterSpacing: d.subtitleLetterSpacing,
+            textAlign: d.textAlign,
+            opacity: appear,
           }}
         >
           {card.subtitle}
@@ -215,6 +275,31 @@ const CardLayer: React.FC<{ card: TitleCard; brand: BrandResolved; durationFrame
       ) : null}
     </AbsoluteFill>
   );
+};
+
+// Radial vignette used by the cinematic template (scenes + cards).
+const Vignette: React.FC = () => (
+  <AbsoluteFill
+    style={{ background: "radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%)", pointerEvents: "none" }}
+  />
+);
+
+// Per-template overlay painted over the whole video (letterbox / vignette).
+const TemplateTreatment: React.FC<{ template: StoryTemplate }> = ({ template }) => {
+  if (template === "cinematic-energy") {
+    return (
+      <>
+        <Vignette />
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 70, background: "#000" }} />
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 70, background: "#000" }} />
+      </>
+    );
+  }
+  if (template === "fast-highlights") {
+    // subtle top accent tick bar for a punchy social feel
+    return <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 8, background: "rgba(255,255,255,0.14)" }} />;
+  }
+  return null; // editorial-clean stays clean
 };
 
 const Watermark: React.FC<{ brand: BrandResolved }> = ({ brand }) => {
@@ -250,7 +335,7 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
     const d = secToFrames(plan.opening.durationSec);
     blocks.push(
       <Sequence key="opening" from={cursor} durationInFrames={d}>
-        <CardLayer card={plan.opening} brand={plan.brand} durationFrames={d} />
+        <CardLayer card={plan.opening} brand={plan.brand} template={plan.template} durationFrames={d} />
       </Sequence>
     );
     cursor += d;
@@ -275,7 +360,7 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
     const d = secToFrames(plan.outro.durationSec);
     blocks.push(
       <Sequence key="outro" from={cursor} durationInFrames={d}>
-        <CardLayer card={plan.outro} brand={plan.brand} durationFrames={d} />
+        <CardLayer card={plan.outro} brand={plan.brand} template={plan.template} durationFrames={d} />
       </Sequence>
     );
     cursor += d;
@@ -284,6 +369,7 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       {blocks}
+      <TemplateTreatment template={plan.template} />
       <Watermark brand={plan.brand} />
     </AbsoluteFill>
   );

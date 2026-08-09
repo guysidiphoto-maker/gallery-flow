@@ -42,6 +42,10 @@ import {
   formatStoryDuration,
 } from '../lib/storyRender'
 import { applyBrandKitToGalleryDefaults, getBrandKit } from '../lib/brandKit'
+import { StoryStudioLauncher } from '../lib/storyStudio/StoryStudioLauncher'
+import { toPlannerImages, toBrandResolved, type GalleryImageRow } from '../lib/storyStudio/galleryAdapter'
+import type { PlannerImage } from '../lib/storyStudio/planner'
+import type { BrandResolved } from '../lib/storyStudio/sceneplan'
 import { ClientsManager } from './ClientsManager'
 // Client Portal V2 — wave-2 owner surfaces wired into this dashboard shell.
 import { useOwnerLocale } from '../lib/ownerLocale'
@@ -512,6 +516,12 @@ export function Dashboard() {
   // 4-photo galleries from getting a clip that looks like a slideshow.
   const STORY_GENERATE_MIN_PHOTOS = 12
   const [showStoryStyleModal, setShowStoryStyleModal] = useState(false)
+  // Story Studio (edited-ScenePlan) launcher — real gallery data passed in.
+  const [studioData, setStudioData] = useState<{
+    images: PlannerImage[]
+    brand: BrandResolved
+    event: { title?: string; date?: string; location?: string }
+  } | null>(null)
   const [storyGenStyle, setStoryGenStyle] = useState<StoryStyle>('clean')
   const [storyGenerating, setStoryGenerating] = useState(false)
   // Curated shot list for the story. null = use defaults (favorites if any,
@@ -4931,6 +4941,65 @@ export function Dashboard() {
                             <Icon name="stories" size={13} strokeWidth={2} />
                             צור סטורי אוטומטית
                           </button>
+                        )}
+                        {/* Story Studio: opens the full editor on the real
+                            gallery (auto first cut, then edit → render). */}
+                        {editingGallery && galleryImages.length >= STORY_GENERATE_MIN_PHOTOS && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const ds = (editingGallery.delivery_settings || {}) as Record<string, unknown>
+                                const bk = businessId
+                                  ? ((await getBrandKit(businessId)) as {
+                                      colors?: { accent?: string }
+                                      typography?: { heading_family?: string; body_family?: string }
+                                      logo?: { url?: string }
+                                      voice?: { signature?: string }
+                                      watermark?: { enabled?: boolean; opacity_percent?: number }
+                                    } | null)
+                                  : null
+                                const eg = editingGallery as { name?: string; event_date?: string; event_location?: string }
+                                setStudioData({
+                                  images: toPlannerImages(galleryImages as unknown as GalleryImageRow[]),
+                                  brand: toBrandResolved({
+                                    accentHex: (ds.themeColor as string) || bk?.colors?.accent,
+                                    headingFont: bk?.typography?.heading_family,
+                                    bodyFont: bk?.typography?.body_family,
+                                    studioName: (ds.studioName as string) || bk?.voice?.signature,
+                                    logoUrl: (ds.logoUrl as string) || bk?.logo?.url,
+                                    watermarkEnabled: bk?.watermark?.enabled,
+                                    watermarkOpacityPercent: bk?.watermark?.opacity_percent,
+                                  }),
+                                  event: {
+                                    title: eg.name || (ds.galleryTitle as string) || undefined,
+                                    date: eg.event_date || (ds.eventDate as string) || undefined,
+                                    location: eg.event_location || (ds.eventLocation as string) || undefined,
+                                  },
+                                })
+                              } catch (err) {
+                                console.error('[story-studio] open failed', err)
+                              }
+                            }}
+                            style={{
+                              padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
+                              background: textPrimary, border: `1px solid ${textPrimary}`, color: '#fff',
+                              cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.18em',
+                              textTransform: 'uppercase', display: 'inline-flex', alignItems: 'center', gap: 8,
+                            }}
+                          >
+                            <Icon name="stories" size={13} strokeWidth={2} />
+                            Story Studio
+                          </button>
+                        )}
+                        {studioData && editingGallery && (
+                          <StoryStudioLauncher
+                            galleryId={editingGallery.id}
+                            images={studioData.images}
+                            brand={studioData.brand}
+                            event={studioData.event}
+                            getToken={async () => (await supabase.auth.getSession()).data.session?.access_token ?? null}
+                            onClose={() => setStudioData(null)}
+                          />
                         )}
                         <button
                           onClick={() => storyFileInputRef.current?.click()}

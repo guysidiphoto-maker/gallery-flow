@@ -75,6 +75,8 @@ import { withSentry } from '../../server/sentryServer.js'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { resolveAndValidatePlan, type OwnerImage } from '../../src/lib/storyStudio/serverPlan.ts'
+import type { ScenePlan } from '../../src/lib/storyStudio/sceneplan.ts'
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
@@ -181,21 +183,36 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ── Input validation ───────────────────────────────────────────────────
-  const body = (req.body || {}) as { galleryId?: unknown; style?: unknown; photoIds?: unknown }
+  const body = (req.body || {}) as {
+    galleryId?: unknown
+    style?: unknown
+    photoIds?: unknown
+    scenePlan?: unknown
+  }
   const galleryId = typeof body.galleryId === 'string' ? body.galleryId.trim() : ''
   const styleRaw = body.style
 
   if (!galleryId || !UUID_RE.test(galleryId)) {
     return res.status(400).json({ ok: false, error: 'invalid_gallery_id' })
   }
-  if (!isAllowedStyle(styleRaw)) {
-    return res.status(400).json({
-      ok: false,
-      error: 'invalid_style',
-      allowed: ALLOWED_STYLES,
-    })
+
+  // Story Studio path: an edited ScenePlan is supplied. It is fully validated +
+  // hardened server-side (below) before any render. The in-flight row uses a
+  // dedicated style key so studio renders idempotency-lock per gallery without
+  // colliding with the legacy auto styles.
+  const hasScenePlan = body.scenePlan !== undefined && body.scenePlan !== null
+  let style: string
+  if (hasScenePlan) {
+    if (typeof body.scenePlan !== 'object') {
+      return res.status(400).json({ ok: false, error: 'invalid_scene_plan' })
+    }
+    style = 'studio'
+  } else {
+    if (!isAllowedStyle(styleRaw)) {
+      return res.status(400).json({ ok: false, error: 'invalid_style', allowed: ALLOWED_STYLES })
+    }
+    style = styleRaw
   }
-  const style: AllowedStyle = styleRaw
 
   // photoIds is optional. When the dashboard curates a specific shot list +
   // order we honor it; otherwise the renderer picks the gallery's full
@@ -365,20 +382,40 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       throw new Error('renderer_not_ready: stories-bundle missing or VERCEL_URL not set')
     }
 
-    // Resolve the public image URLs the composition needs. Chromium fetches
-    // these directly from Supabase Smart CDN — no auth churn per request.
-    const images = await loadImageUrlsForRender(adminClient, galleryId, photoIds ?? [])
-    if (images.length === 0) {
-      throw new Error('no_images_in_gallery')
+    // Build render input. Two paths share this function:
+    //   • Story Studio (edited ScenePlan) — validated + hardened server-side.
+    //   • Legacy auto (style + photoIds) — unchanged.
+    let inputProps: Record<string, unknown>
+    let compositionId: string
+    if (hasScenePlan) {
+      // SECURITY BOUNDARY: load the gallery's own image records and run the
+      // client plan through resolveAndValidatePlan — rejects foreign image ids,
+      // discards client src (re-resolved here), overrides dims from our records,
+      // and re-runs the shared structural/injection validator.
+      const owner = await loadOwnerImageRecords(adminClient, galleryId)
+      if (owner.records.length === 0) throw new Error('no_images_in_gallery')
+      const result = resolveAndValidatePlan(
+        body.scenePlan as ScenePlan,
+        galleryId,
+        owner.records,
+        (id) => owner.srcById.get(id) ?? '',
+      )
+      if (!result.ok) {
+        await adminClient
+          .from('story_renders')
+          .update({ status: 'failed', error_message: result.errors.slice(0, 3).join('; ').slice(0, 500) })
+          .eq('id', renderId)
+        return res.status(400).json({ ok: false, error: 'invalid_scene_plan', details: result.errors })
+      }
+      inputProps = { plan: result.plan }
+      compositionId = 'StoryStudio'
+    } else {
+      const images = await loadImageUrlsForRender(adminClient, galleryId, photoIds ?? [])
+      if (images.length === 0) throw new Error('no_images_in_gallery')
+      inputProps = { images, durationSeconds: DEFAULT_STORY_DURATION_SECONDS }
+      if (brandKit) inputProps.brand = brandKit
+      compositionId = COMPOSITION_BY_STYLE[style as AllowedStyle]
     }
-
-    const inputProps: Record<string, unknown> = {
-      images,
-      durationSeconds: DEFAULT_STORY_DURATION_SECONDS,
-    }
-    if (brandKit) inputProps.brand = brandKit
-
-    const compositionId = COMPOSITION_BY_STYLE[style]
     const composition = await selectComposition({
       serveUrl,
       id: compositionId,
@@ -573,6 +610,33 @@ async function loadImageUrlsForRender(
     .map(r => r.web_preview_path || r.original_path || '')
     .filter(p => !!p)
     .map(p => `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${p}`)
+}
+
+// Story Studio: load the gallery's real image rows (source of truth for
+// tenant-isolation) + a server-resolved public URL per image id.
+async function loadOwnerImageRecords(
+  admin: SupabaseClient,
+  galleryId: string,
+): Promise<{ records: OwnerImage[]; srcById: Map<string, string> }> {
+  const { data, error } = await admin
+    .from('images')
+    .select('id, width, height, original_path, web_preview_path')
+    .eq('gallery_id', galleryId)
+  if (error) throw new Error(`image_lookup_failed: ${error.message}`)
+  const rows = (data || []) as Array<{
+    id: string
+    width?: number | null
+    height?: number | null
+    original_path?: string | null
+    web_preview_path?: string | null
+  }>
+  const records: OwnerImage[] = rows.map((r) => ({ id: r.id, width: r.width, height: r.height }))
+  const srcById = new Map<string, string>()
+  for (const r of rows) {
+    const p = r.web_preview_path || r.original_path || ''
+    if (p) srcById.set(r.id, `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${p}`)
+  }
+  return { records, srcById }
 }
 
 export default withSentry('stories/render', handler)

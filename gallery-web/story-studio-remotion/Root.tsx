@@ -24,7 +24,10 @@ const FALLBACK: ScenePlan = {
   generatedBy: "auto",
 };
 
-export const RemotionRoot: React.FC = () => {
+// Exported so the shared stories bundle (stories-remotion/src/Root.tsx) can
+// register this composition alongside Clean — one bundle, both compositions,
+// selectable by id from the render endpoint.
+export const StoryStudioComposition: React.FC = () => {
   return (
     <Composition
       id="StoryStudio"
@@ -47,3 +50,5 @@ export const RemotionRoot: React.FC = () => {
     />
   );
 };
+
+export const RemotionRoot: React.FC = () => <StoryStudioComposition />;

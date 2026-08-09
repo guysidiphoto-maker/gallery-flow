@@ -86,6 +86,8 @@ export interface StoryStudioEditorProps {
   /** Called (debounced) whenever the plan changes. Persist the plan here. */
   onSave?: (plan: ScenePlan) => Promise<void> | void;
   galleryId: string;
+  /** Restore a previously-saved draft instead of generating a fresh auto cut. */
+  initialPlan?: ScenePlan | null;
 }
 
 const C = {
@@ -103,6 +105,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
   event,
   onSave,
   galleryId,
+  initialPlan,
 }) => {
   const srcById = useMemo(() => {
     const m = new Map<string, string>();
@@ -119,7 +122,12 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
     [images, galleryId, brand, event, srcById]
   );
 
-  const [plan, setPlanState] = useState<ScenePlan>(() => buildAuto("editorial-clean", "standard", "balanced"));
+  const [plan, setPlanState] = useState<ScenePlan>(() =>
+    initialPlan
+      ? // Restore a saved draft; re-attach preview src (not persisted).
+        { ...initialPlan, scenes: initialPlan.scenes.map((s) => ({ ...s, src: srcById.get(s.imageId) })) }
+      : buildAuto("editorial-clean", "standard", "balanced")
+  );
   const [selectedId, setSelectedId] = useState<string | null>(() => plan.scenes[0]?.id ?? null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const past = useRef<ScenePlan[]>([]);
