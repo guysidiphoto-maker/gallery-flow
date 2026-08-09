@@ -138,11 +138,13 @@ Built the photographer-facing editor and browser-QA'd it in Chrome.
 - Undo/redo + debounced autosave wired (logs the plan; production points `onSave` at an owner endpoint).
 - **0 TypeScript errors** project-wide; runs under `vite dev`.
 
-**KNOWN ISSUE (honest, unresolved):** the live Remotion `<Player>` renders the 9:16 frame, controls, timeline and correct total duration (0:41), but **scene images display black in the interactive player**. The *identical* composition renders images correctly **headless** (§9b MP4s + posters), the images are valid (storyboard thumbnails + focal panel show them), and the console is clean after switching demo fixtures to PNG. Ruled out: SVG-decode (fixed), React StrictMode (removed). This is a Remotion-`<Player>` image-load integration bug, **not** a composition or data bug — root-cause + fix is the immediate next task before the preview can be trusted. Because the render path is correct, **preview=export still holds architecturally** (same composition), but is not yet empirically demonstrable in-browser.
+**RESOLVED (was: black preview) — 2026-08-09.** The live `<Player>` now renders scene images, brand cards and watermark correctly, and scrubbing works (verified in Chrome; scene image shown full-bleed at 0:28). Root cause (found via DOM inspection): Remotion's `<Player>` auto-scale failed in this embed — it rendered the 1080×1920 composition at `scale(1)` and positioned its absolutely-positioned inner at x:-345, so the composition overflowed the small window (black corner). CSS `transform: scale()` didn't help because the Player's absolute inner escaped the transformed containing block. **Fix:** render the Player at native 1080×1920 and scale the wrapper with **CSS `zoom`** (layout-level, so absolute children stay in-frame — Chrome-only, which is fine since Remotion is Chrome) + **custom, correctly-sized controls** (play/seek/restart) via `PlayerRef`. **preview=export is now empirically demonstrated** (same composition in Player and renderer).
 
-**Also not done:** mobile responsive breakpoints (editor is desktop-first; narrow layout not yet built), wiring `/api/stories/render` to accept+validate a persisted `scene_plan`.
+**Mobile — DONE.** Switched to **container-based** responsiveness (ResizeObserver on the editor root, not viewport `matchMedia`, so it also works in embeds). Below 760px the editor collapses to a single-column stack (bar → preview → storyboard → scene controls); preview + controls widths scale. Verified in a 390px phone frame.
 
-**Updated statuses:** #12 desktop+RTL screenshots ✅ / mobile ❌ · #14 preview=export ◑ (architecture proven; live in-browser image preview blocked by the Player bug above) · editor surfaces (§8 of brief) ✅ except mobile.
+**Still not done:** wiring `/api/stories/render` to accept + validate a persisted `scene_plan` (the last integration step to production).
+
+**Updated statuses:** #12 desktop+RTL ✅ / mobile ✅ · #14 preview=export ✅ (empirically demonstrated in-browser) · editor surfaces (§8 of brief) ✅.
 
 ## 10. Recommended next phase (concrete)
 1. Refactor `Clean.tsx` to consume `ScenePlan` directly (locks in preview=export); add cinematic + fast compositions.
