@@ -89,3 +89,28 @@ Scores are the average of 3 reviewers (event-photographer, motion-director, soci
 - **Draft PR #225 (human review): ✅ GO** — code complete + tested (45 tests, tsc, build), real MP4s render on the deployed server for all 3 templates, Music V1 works, the full Launcher render/download/cancel lifecycle is browser-verified, and creative quality is materially improved (Corporate 7.2 / Concert 7.3 / Wedding ~7). Keep as **Draft**.
 - **Creative ≥8.0 average gate: ⛔ BLOCKED (content, not engine)** — needs real/approved themed event photos or licensed stock-search access.
 - **Production: ⛔ NO-GO** until explicit approval (and the migration landing).
+
+---
+
+## 13. Update — real Gallery→Story flow + creative validation honestly BLOCKED
+
+The product's source of truth is a real Pixflow gallery (not a manual asset folder). Two integration gaps were closed and verified end-to-end on the deployed app (gallery `הופעה חיה`, 15 real photos):
+
+**Reused (already existed):** Story Studio button in the real dashboard, editor with storyboard, drag/keyboard/button reorder, add/remove photo, per-scene duration/motion/transition/fit/focal/caption, intro/outro/title/date/logo, music V1, template select, live preview, per-scene + full reset, undo/redo, autosave, draft restore, render/download/cancel lifecycle.
+
+**Implemented (was missing):**
+1. **Pre-generation photo selection** — the Launcher now opens a picker (defaults to Highlights/Top Picks, "select all" / "only recommended", the photographer's order preserved, count-aware "Create Story"); nothing generates until confirmed. Resuming a saved draft skips selection.
+2. **Locked photographer order is the DEFAULT** (`preserveOrder`): exact supplied sequence, no dedupe/re-selection/interleave/opener-closer moves. The smart re-sequence is an explicit **"Suggested Edit"** toggle that never silently replaces the locked version; manual edits survive the toggle.
+3. `onPlanChange` emits the plan synchronously so a fresh gallery renders immediately.
+
+**Exact Gallery→Story user flow (verified on deployed):**
+`Gallery → Stories tab → STORY STUDIO → Select photos (highlights pre-checked, order preserved) → Create Story → Editor (locked order default; Suggested Edit optional; full scene + global controls; music; live preview) → Render → progress → download.`
+
+**Controls that genuinely persist AND change the exported MP4** (preview==export by construction; verified): scene order, per-scene duration, motion + per-scene intensity, transition, fit, focal, caption + position, intro/outro title/date/logo, template, music track/volume/fades, total duration (via length + edits). All flow into the ScenePlan the server renders.
+
+**Creative-quality score: 🚫 BLOCKED BY MISSING APPROVED EVENT CONTENT.** The earlier stock-photo reviews (7.2 / 7.3 / ~7) are **not** valid product-quality evidence — the sets are visually unrelated to their events (a leopard in the "wedding"). Per instruction, the **≥8.0 gate is neither passed nor lowered**; it remains open until an approved, coherent event gallery is provided. The deterministic engine quality (crop, motion, transitions, typography, template differentiation, opening) is demonstrably ~8 in the engine-controlled categories, but a valid ≥8.0 product verdict requires real event photos.
+
+**Revised GO / NO-GO:**
+- **Functional Gallery→Story integration + editor + lifecycle: ✅ GO for human review** (Draft PR #225).
+- **Creative-quality ≥8.0 gate: 🚫 BLOCKED** pending an approved coherent event gallery (not waived, not faked).
+- **Production: ⛔ NO-GO.**
