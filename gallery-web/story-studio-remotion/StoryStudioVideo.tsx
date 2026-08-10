@@ -291,8 +291,11 @@ const CardLayer: React.FC<{
             style={{
               background:
                 d.align === "center"
-                  ? "radial-gradient(ellipse at center, rgba(0,0,0,0.2) 30%, rgba(0,0,0,0.62) 100%)"
-                  : "linear-gradient(to top, rgba(0,0,0,0.72) 18%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0.45) 100%)",
+                  ? // Centered (editorial) titles need a darker backing behind
+                    // the CENTER — the old 0.2 center let white type vanish over
+                    // a bright sky. Darken the middle band under the title.
+                    "radial-gradient(ellipse 90% 55% at 50% 45%, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.4) 55%, rgba(0,0,0,0.66) 100%)"
+                  : "linear-gradient(to top, rgba(0,0,0,0.72) 18%, rgba(0,0,0,0.28) 55%, rgba(0,0,0,0.5) 100%)",
             }}
           />
         </>
@@ -300,11 +303,18 @@ const CardLayer: React.FC<{
       {template === "cinematic-energy" ? <Vignette /> : null}
       {accentEl}
       {card.showLogo && brand.logoUrl ? (
-        <Img src={brand.logoUrl} style={{ maxWidth: 300, maxHeight: 150, marginBottom: 30, objectFit: "contain" }} />
+        <Img src={brand.logoUrl} style={{ position: "relative", zIndex: 2, maxWidth: 300, maxHeight: 150, marginBottom: 30, objectFit: "contain" }} />
       ) : null}
       {card.title ? (
         <div
           style={{
+            // position:relative lifts the title above the absolutely-positioned
+            // cover image + scrim. Without it, a title whose entrance transform
+            // is "none" (editorial fade) paints BELOW the scrim and vanishes,
+            // while a transformed title (cinematic scale) does not — that mismatch
+            // was the "editorial title/outro not rendering" bug.
+            position: "relative",
+            zIndex: 2,
             color: "#fff",
             fontSize: d.titleSize,
             fontWeight: d.titleWeight,
@@ -316,6 +326,8 @@ const CardLayer: React.FC<{
             direction: rtlTitle ? "rtl" : "ltr",
             transform: titleTransform,
             padding: d.align === "center" ? "0 80px" : 0,
+            // Legible over ANY hero photo (bright skies included).
+            textShadow: "0 2px 28px rgba(0,0,0,0.9), 0 1px 4px rgba(0,0,0,0.75)",
           }}
         >
           {card.title}
@@ -324,6 +336,8 @@ const CardLayer: React.FC<{
       {card.subtitle ? (
         <div
           style={{
+            position: "relative",
+            zIndex: 2,
             color: brand.accentHex,
             fontSize: 38,
             marginTop: 22,
@@ -332,6 +346,7 @@ const CardLayer: React.FC<{
             letterSpacing: d.subtitleLetterSpacing,
             textAlign: d.textAlign,
             opacity: appear,
+            textShadow: "0 2px 18px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.7)",
           }}
         >
           {card.subtitle}

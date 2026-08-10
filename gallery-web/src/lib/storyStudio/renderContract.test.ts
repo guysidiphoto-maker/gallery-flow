@@ -210,6 +210,16 @@ test("music: planHasMusic false when muted / no track / zero volume", () => {
   assert.equal(planHasMusic({ ...base, music: { trackId: "warm", volume: 0, fadeInSec: 0, fadeOutSec: 0, muted: false } }), false);
 });
 
+test("cards: title/subtitle sit above the cover image (stacking-context guard)", () => {
+  // Regression: an in-flow title with transform:none paints BELOW the absolutely
+  // positioned cover image + scrim and vanishes (editorial opening/outro bug).
+  // The title + subtitle must carry position:relative + zIndex to stay on top.
+  const comp = read("story-studio-remotion/StoryStudioVideo.tsx");
+  const titleBlock = comp.slice(comp.indexOf("{card.title ?"), comp.indexOf("{card.subtitle ?"));
+  assert.ok(/position:\s*"relative"/.test(titleBlock) && /zIndex:\s*2/.test(titleBlock), "card title needs position:relative + zIndex");
+  assert.ok(comp.includes("coverSrc") && /textShadow/.test(comp), "cards must have a hero cover + legible text shadow");
+});
+
 test("composition + render honor music (Audio + muted flag)", () => {
   const comp = read("story-studio-remotion/StoryStudioVideo.tsx");
   assert.ok(comp.includes("Audio") && comp.includes("staticFile"), "composition must use <Audio staticFile>");
