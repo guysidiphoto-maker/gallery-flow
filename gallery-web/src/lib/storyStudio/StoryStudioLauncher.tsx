@@ -46,6 +46,9 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
   onClose,
 }) => {
   const [loading, setLoading] = useState(true);
+  // "select" = pre-generation photo picker; "editor" = the storyboard editor.
+  const [phase, setPhase] = useState<"select" | "editor">("select");
+  const [selectedIds, setSelectedIds] = useState<string[] | null>(null);
   const [initialPlan, setInitialPlan] = useState<ScenePlan | null>(null);
   const [renderState, setRenderState] = useState<RenderState>("idle");
   const [outputUrl, setOutputUrl] = useState<string | null>(null);
@@ -71,12 +74,15 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
         if (token) {
           const draft = await loadDraft(galleryId, token);
           if (alive && draft.scenePlan) {
+            // Resume an existing story straight into the editor.
             setInitialPlan(draft.scenePlan);
             setCurrentPlan(draft.scenePlan);
+            setSelectedIds(draft.scenePlan.scenes.map((s) => s.imageId));
+            setPhase("editor");
           }
         }
       } catch {
-        // No draft or endpoint not live yet — start from the auto cut.
+        // No draft or endpoint not live yet — start at photo selection.
       } finally {
         if (alive) setLoading(false);
       }
@@ -182,10 +188,12 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
         event={event}
         galleryId={galleryId}
         initialPlan={initialPlan}
+        selectedIds={selectedIds}
         onSave={handleSave}
+        onPlanChange={(p) => { latestPlan.current = p; setCurrentPlan(p); }}
       />
     ),
-    [images, brand, event, galleryId, initialPlan, handleSave]
+    [images, brand, event, galleryId, initialPlan, selectedIds, handleSave]
   );
 
   return (
@@ -194,7 +202,8 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: C.panel, borderBottom: `1px solid ${C.border}`, color: C.text }}>
         <button onClick={onClose} style={ghost}>✕ סגור</button>
         <div style={{ flex: 1 }} />
-        {renderState === "ready" && outputUrl ? (
+        {phase === "editor" ? (
+          renderState === "ready" && outputUrl ? (
           <>
             {posterUrl ? (
               <img src={posterUrl} alt="" style={{ height: 34, width: 19, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.border}` }} />
@@ -226,18 +235,64 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
             )}
             <button onClick={handleRender} style={primary} disabled={loading || !feasibility.ok}>🎬 הפק סרטון</button>
           </>
+          )
+        ) : (
+          <span style={{ color: C.muted, fontSize: 13 }}>בחרו את התמונות לסטורי</span>
         )}
       </div>
 
-      {/* Editor (or loading) */}
+      {/* Selection → editor (or loading) */}
       <div style={{ flex: 1, minHeight: 0 }}>
         {loading ? (
           <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>
             טוען את הסטורי…
           </div>
+        ) : phase === "select" ? (
+          <SelectionScreen images={images} onCreate={(ids) => { setSelectedIds(ids); setPhase("editor"); }} />
         ) : (
           editor
         )}
+      </div>
+    </div>
+  );
+};
+
+// Pre-generation photo picker: shows the gallery, defaults to Highlights/Top
+// Picks (or all if none are marked), preserves the photographer's order, and
+// hands the selection to the editor. Nothing generates until the photographer
+// confirms which photos are in the story.
+const SelectionScreen: React.FC<{ images: PlannerImage[]; onCreate: (ids: string[]) => void }> = ({ images, onCreate }) => {
+  const hasPicks = images.some((i) => i.isTopPick);
+  const [sel, setSel] = useState<Set<string>>(() => new Set((hasPicks ? images.filter((i) => i.isTopPick) : images).map((i) => i.id)));
+  const toggle = (id: string) => setSel((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const orderedIds = images.filter((i) => sel.has(i.id)).map((i) => i.id); // gallery order preserved
+  const count = orderedIds.length;
+  return (
+    <div dir="rtl" style={{ height: "100%", display: "flex", flexDirection: "column", color: C.text }}>
+      <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+        <strong style={{ fontSize: 15 }}>בחרו תמונות לסטורי</strong>
+        <span style={{ color: C.muted, fontSize: 13 }}>נבחרו {count} · הסדר שלכם נשמר · עד {RENDER_MAX_SCENES} בהפקה</span>
+        <button style={ghost} onClick={() => setSel(new Set(images.map((i) => i.id)))}>בחר הכל</button>
+        {hasPicks ? <button style={ghost} onClick={() => setSel(new Set(images.filter((i) => i.isTopPick).map((i) => i.id)))}>רק מומלצות ★</button> : null}
+        <div style={{ flex: 1 }} />
+        <button style={{ ...primary, opacity: count < 3 ? 0.5 : 1 }} disabled={count < 3} onClick={() => onCreate(orderedIds)}>צור סטורי ({count}) →</button>
+      </div>
+      {count > RENDER_MAX_SCENES ? (
+        <div style={{ padding: "6px 16px", color: "#fbbf24", fontSize: 12 }}>
+          ייכללו {RENDER_MAX_SCENES} התמונות הראשונות בהפקה (אפשר לשנות בעורך).
+        </div>
+      ) : null}
+      <div style={{ flex: 1, overflowY: "auto", padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
+        {images.map((img) => {
+          const on = sel.has(img.id);
+          return (
+            <button key={img.id} onClick={() => toggle(img.id)} aria-pressed={on} style={{ position: "relative", padding: 0, border: `2px solid ${on ? C.accent : C.border}`, borderRadius: 8, overflow: "hidden", aspectRatio: "3/4", background: "#000", cursor: "pointer", opacity: on ? 1 : 0.5 }}>
+              {img.src ? <img src={img.src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
+              <span style={{ position: "absolute", top: 4, insetInlineStart: 4, width: 22, height: 22, borderRadius: "50%", background: on ? C.accent : "rgba(0,0,0,0.55)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>{on ? "✓" : ""}</span>
+              {img.isTopPick ? <span style={{ position: "absolute", top: 4, insetInlineEnd: 4, fontSize: 13, color: "#fbbf24" }}>★</span> : null}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

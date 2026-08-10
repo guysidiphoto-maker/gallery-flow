@@ -77,6 +77,15 @@ export interface PlannerOptions {
   brand: BrandResolved;
   event?: PlannerEvent;
   seed?: number;
+  /**
+   * Keep the photographer's EXACT supplied order (the locked source of truth):
+   * no burst-dedup removal, no strength re-selection, no orientation interleave,
+   * no opener/closer promotion. Just cap to the render budget and apply the
+   * template's pacing/motion/transition/crop. This is the product DEFAULT — the
+   * smart re-sequence (preserveOrder:false) is offered as a separate
+   * "Suggested Edit" variant, never silently.
+   */
+  preserveOrder?: boolean;
 }
 
 // ── Template + length tuning tables ──────────────────────────────────────────
@@ -353,74 +362,78 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
   const seed = opts.seed ?? 1;
   const rng = makeRng(seed);
 
+  const preserveOrder = opts.preserveOrder ?? false;
+
   // 1. Stable base order: photographer's sort order is the source of truth.
   const base = images.slice().sort((a, b) => a.sortOrder - b.sortOrder || (a.id < b.id ? -1 : 1));
+  const usingScores = hasQualityScores(base);
 
-  // 2. Burst de-dup (only when capture time exists).
-  const deduped = dedupeBursts(base);
-
-  // 3. Budget: cap by length target and the FIRST-RELEASE render cap, so an
-  // auto-generated plan is always renderable synchronously (never orphans a job).
-  const budget = Math.min(deduped.length, lengthTarget.maxScenes, RENDER_MAX_SCENES, MAX_SCENES);
-  const usingScores = hasQualityScores(deduped);
-
-  // 4. Selection: if we must trim, keep the strongest while preserving order.
-  let selected: PlannerImage[];
-  if (deduped.length <= budget) {
-    selected = deduped;
-  } else if (usingScores) {
-    // keep top-`budget` by strength, then restore chronological/sort order
-    const ranked = deduped
-      .map((img, i) => ({ img, i, s: strengthOf(img) }))
-      .sort((a, b) => b.s - a.s || a.i - b.i)
-      .slice(0, budget)
-      .sort((a, b) => a.i - b.i)
-      .map((x) => x.img);
-    selected = ranked;
+  let ordered: PlannerImage[];
+  if (preserveOrder) {
+    // LOCKED ORDER: keep the photographer's exact sequence, only cap to budget.
+    // No dedupe removal, no re-selection, no interleave, no opener/closer moves.
+    const budget = Math.min(base.length, lengthTarget.maxScenes, RENDER_MAX_SCENES, MAX_SCENES);
+    ordered = base.slice(0, budget);
   } else {
-    // No scores: keep top-picks first, then evenly sample the rest to span the event.
-    const picks = deduped.filter((i) => i.isTopPick);
-    const rest = deduped.filter((i) => !i.isTopPick);
-    const room = Math.max(0, budget - picks.length);
-    const sampled: PlannerImage[] = [];
-    if (room > 0 && rest.length > 0) {
-      const step = rest.length / room;
-      for (let k = 0; k < room; k++) sampled.push(rest[Math.floor(k * step)]);
+    // SUGGESTED EDIT: the smart re-sequence.
+    // 2. Burst de-dup (only when capture time exists).
+    const deduped = dedupeBursts(base);
+    // 3. Budget cap (first-release render limit).
+    const budget = Math.min(deduped.length, lengthTarget.maxScenes, RENDER_MAX_SCENES, MAX_SCENES);
+    // 4. Selection: if we must trim, keep the strongest while preserving order.
+    let selected: PlannerImage[];
+    if (deduped.length <= budget) {
+      selected = deduped;
+    } else if (usingScores) {
+      const ranked = deduped
+        .map((img, i) => ({ img, i, s: strengthOf(img) }))
+        .sort((a, b) => b.s - a.s || a.i - b.i)
+        .slice(0, budget)
+        .sort((a, b) => a.i - b.i)
+        .map((x) => x.img);
+      selected = ranked;
+    } else {
+      const picks = deduped.filter((i) => i.isTopPick);
+      const rest = deduped.filter((i) => !i.isTopPick);
+      const room = Math.max(0, budget - picks.length);
+      const sampled: PlannerImage[] = [];
+      if (room > 0 && rest.length > 0) {
+        const step = rest.length / room;
+        for (let k = 0; k < room; k++) sampled.push(rest[Math.floor(k * step)]);
+      }
+      const chosen = new Set([...picks, ...sampled].map((i) => i.id));
+      selected = deduped.filter((i) => chosen.has(i.id)).slice(0, budget);
     }
-    const chosen = new Set([...picks, ...sampled].map((i) => i.id));
-    selected = deduped.filter((i) => chosen.has(i.id)).slice(0, budget);
-  }
-
-  // 5. Anti-monotony ordering.
-  let ordered = interleaveByOrientation(selected);
-
-  // 6. Promote the strongest image to the opening slot (respecting Top Picks).
-  if (ordered.length > 1) {
-    let bestIdx = 0;
-    for (let i = 1; i < ordered.length; i++) {
-      if (strengthOf(ordered[i]) > strengthOf(ordered[bestIdx])) bestIdx = i;
+    // 5. Anti-monotony ordering.
+    ordered = interleaveByOrientation(selected);
+    // 6. Promote the strongest image to the opening slot (respecting Top Picks).
+    if (ordered.length > 1) {
+      let bestIdx = 0;
+      for (let i = 1; i < ordered.length; i++) {
+        if (strengthOf(ordered[i]) > strengthOf(ordered[bestIdx])) bestIdx = i;
+      }
+      if (bestIdx !== 0) {
+        const [opener] = ordered.splice(bestIdx, 1);
+        ordered.unshift(opener);
+      }
     }
-    if (bestIdx !== 0) {
-      const [opener] = ordered.splice(bestIdx, 1);
-      ordered.unshift(opener);
+    // 7. Ensure a strong closer: move the 2nd-strongest to the end.
+    if (ordered.length > 3) {
+      let bestIdx = 1;
+      for (let i = 2; i < ordered.length - 1; i++) {
+        if (strengthOf(ordered[i]) > strengthOf(ordered[bestIdx])) bestIdx = i;
+      }
+      const [closer] = ordered.splice(bestIdx, 1);
+      ordered.push(closer);
     }
-  }
-
-  // 7. Ensure a strong closer: move the 2nd-strongest to the end.
-  if (ordered.length > 3) {
-    let bestIdx = 1;
-    for (let i = 2; i < ordered.length - 1; i++) {
-      if (strengthOf(ordered[i]) > strengthOf(ordered[bestIdx])) bestIdx = i;
-    }
-    const [closer] = ordered.splice(bestIdx, 1);
-    ordered.push(closer);
   }
 
   // 7b. Promoting the opener/closer can re-introduce a 3-in-a-row orientation
   // run (esp. once trimming to the render cap skews the portrait/landscape mix).
   // Break any such run with a deterministic interior swap, keeping the pinned
-  // opener (index 0) and closer (last) in place.
-  breakOrientationRuns(ordered);
+  // opener (index 0) and closer (last) in place. Skipped in locked-order mode —
+  // it reorders, which would violate the photographer's locked sequence.
+  if (!preserveOrder) breakOrientationRuns(ordered);
 
   // 8. Build scenes with motion/transition variety + subject-aware crop.
   // Built imperatively (not via .map) so each scene can look back at the

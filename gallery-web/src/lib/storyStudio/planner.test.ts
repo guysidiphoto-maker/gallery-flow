@@ -232,6 +232,21 @@ test("template changes motion/transition vocabulary", () => {
   assert.ok(avg(fast) < avg(clean), `fast avg ${avg(fast)} !< clean avg ${avg(clean)}`);
 });
 
+test("preserveOrder keeps the photographer's EXACT sequence (locked source of truth)", () => {
+  // Distinct sortOrder + orientations so the smart pipeline WOULD reorder.
+  const imgs = gallery(12, (i) => ({ width: i % 2 === 0 ? 1800 : 1200, height: i % 2 === 0 ? 1200 : 1800, isTopPick: i === 7 }));
+  const locked = planStory(imgs, baseOpts({ preserveOrder: true }));
+  // scene imageIds must equal the input order, first-N (no promotion/interleave/dedupe-move).
+  const expected = imgs.slice(0, locked.scenes.length).map((i) => i.id);
+  assert.deepEqual(locked.scenes.map((s) => s.imageId), expected, "locked order must match input order");
+
+  // The Suggested Edit (default) is allowed to reorder — prove they can differ
+  // (the top-pick at index 7 gets promoted toward the opener).
+  const suggested = planStory(imgs, baseOpts({ preserveOrder: false }));
+  const changed = suggested.scenes.map((s) => s.imageId).join() !== expected.join();
+  assert.ok(changed, "suggested edit should be free to re-sequence");
+});
+
 test("templates are categorically different (pace + transitions + motion), not reskins", () => {
   const g = gallery(16);
   const clean = planStory(g, baseOpts({ template: "editorial-clean" }));

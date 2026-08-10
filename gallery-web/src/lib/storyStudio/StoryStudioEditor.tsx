@@ -39,6 +39,9 @@ const HE = {
   template: "סגנון",
   length: "אורך",
   pace: "קצב",
+  order: "סדר",
+  orderLocked: "הסדר שלי",
+  orderSuggested: "עריכה מוצעת",
   regenerate: "צור מחדש אוטומטית",
   reset: "איפוס לעריכה של פיקספלו",
   resetConfirm: "לאפס את כל השינויים ולחזור לעריכה האוטומטית?",
@@ -112,9 +115,16 @@ export interface StoryStudioEditorProps {
   event?: { title?: string; date?: string; location?: string };
   /** Called (debounced) whenever the plan changes. Persist the plan here. */
   onSave?: (plan: ScenePlan) => Promise<void> | void;
+  /** Called SYNCHRONOUSLY on every plan change (incl. the initial auto cut) so
+   *  the host always has the current plan to render, without waiting on save. */
+  onPlanChange?: (plan: ScenePlan) => void;
   galleryId: string;
   /** Restore a previously-saved draft instead of generating a fresh auto cut. */
   initialPlan?: ScenePlan | null;
+  /** Which gallery photos the photographer selected to include (their order is
+   *  the locked source of truth). When omitted, all `images` are used. `images`
+   *  still holds the full gallery so the "add photo" picker can pull the rest. */
+  selectedIds?: string[] | null;
 }
 
 const C = {
@@ -131,8 +141,10 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
   brand,
   event,
   onSave,
+  onPlanChange,
   galleryId,
   initialPlan,
+  selectedIds,
 }) => {
   const srcById = useMemo(() => {
     const m = new Map<string, string>();
@@ -140,13 +152,28 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
     return m;
   }, [images]);
 
+  // The pool the auto-cut draws from = the photographer's selection (their order
+  // is the source of truth); the full `images` still feeds the add-photo picker.
+  const selectedPool = useMemo(() => {
+    if (!selectedIds || selectedIds.length === 0) return images;
+    const order = new Map(selectedIds.map((id, i) => [id, i]));
+    return images.filter((i) => order.has(i.id)).sort((a, b) => (order.get(a.id)! - order.get(b.id)!));
+  }, [images, selectedIds]);
+
+  // "locked" = keep the photographer's exact order (DEFAULT). "suggested" = the
+  // engine's re-sequenced "Suggested Edit" (opt-in, never silent).
+  const [orderMode, setOrderMode] = useState<"locked" | "suggested">("locked");
+
   const buildAuto = useCallback(
-    (template: StoryTemplate, length: StoryLength, pace: "relaxed" | "balanced" | "energetic") => {
-      const p = planStory(images, { galleryId, template, length, pace, brand, event, seed: 7 });
+    (template: StoryTemplate, length: StoryLength, pace: "relaxed" | "balanced" | "energetic", mode: "locked" | "suggested" = orderMode) => {
+      const p = planStory(selectedPool, {
+        galleryId, template, length, pace, brand, event, seed: 7,
+        preserveOrder: mode === "locked",
+      });
       // Attach preview src for the live <Player> + thumbnails (not persisted).
       return { ...p, scenes: p.scenes.map((s) => ({ ...s, src: srcById.get(s.imageId) })) };
     },
-    [images, galleryId, brand, event, srcById]
+    [selectedPool, galleryId, brand, event, srcById, orderMode]
   );
 
   const [plan, setPlanState] = useState<ScenePlan>(() =>
@@ -213,9 +240,10 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       }
       setPlanState(next);
       setHistoryTick((t) => t + 1);
+      onPlanChange?.(next);
       scheduleSave(next);
     },
-    [plan, scheduleSave]
+    [plan, scheduleSave, onPlanChange]
   );
 
   const undo = useCallback(() => {
@@ -224,8 +252,9 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
     future.current.push(plan);
     setPlanState(prev);
     setHistoryTick((t) => t + 1);
+    onPlanChange?.(prev);
     scheduleSave(prev);
-  }, [plan, scheduleSave]);
+  }, [plan, scheduleSave, onPlanChange]);
 
   const redo = useCallback(() => {
     const nxt = future.current.pop();
@@ -233,8 +262,17 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
     past.current.push(plan);
     setPlanState(nxt);
     setHistoryTick((t) => t + 1);
+    onPlanChange?.(nxt);
     scheduleSave(nxt);
-  }, [plan, scheduleSave]);
+  }, [plan, scheduleSave, onPlanChange]);
+
+  // Emit the initial plan once so the host can render immediately, before any edit.
+  const emittedInitial = useRef(false);
+  useEffect(() => {
+    if (emittedInitial.current) return;
+    emittedInitial.current = true;
+    onPlanChange?.(plan);
+  }, [plan, onPlanChange]);
 
   // ── Scene mutations ────────────────────────────────────────────────────────
   const patchScene = useCallback(
@@ -340,6 +378,16 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       commit({ ...applyOverrides(buildAuto(next.template, next.length, next.pace)), generatedBy: "manual" });
     },
     [plan, buildAuto, commit, applyOverrides]
+  );
+
+  // Switch between the photographer's LOCKED order (default) and the engine's
+  // "Suggested Edit" re-sequence — explicit, never silent. Manual edits survive.
+  const switchOrderMode = useCallback(
+    (mode: "locked" | "suggested") => {
+      setOrderMode(mode);
+      commit({ ...applyOverrides(buildAuto(plan.template, plan.length, plan.pace, mode)), generatedBy: "manual" });
+    },
+    [plan.template, plan.length, plan.pace, buildAuto, applyOverrides, commit]
   );
 
   // Edit the opening/outro title cards. Persisted in the plan + survives regenerate.
@@ -496,6 +544,13 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
         <Segment label={HE.template} value={plan.template} options={TEMPLATES} labels={TEMPLATE_HE} onChange={(v) => setGlobal({ template: v })} />
         <Segment label={HE.length} value={plan.length} options={["short", "standard", "extended"] as StoryLength[]} labels={LENGTH_HE} onChange={(v) => setGlobal({ length: v })} />
         <Segment label={HE.pace} value={plan.pace} options={["relaxed", "balanced", "energetic"] as const} labels={PACE_HE} onChange={(v) => setGlobal({ pace: v })} />
+        <Segment
+          label={HE.order}
+          value={orderMode}
+          options={["locked", "suggested"] as const}
+          labels={{ locked: HE.orderLocked, suggested: HE.orderSuggested }}
+          onChange={switchOrderMode}
+        />
         <div style={{ flex: 1 }} />
         <button style={btn} onClick={regenerate}>♻︎ {HE.regenerate}</button>
         <button style={btnGhost} onClick={undo} disabled={past.current.length === 0}>↩︎ {HE.undo}</button>
