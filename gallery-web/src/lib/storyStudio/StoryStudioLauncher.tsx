@@ -91,12 +91,12 @@ export const StoryStudioLauncher: React.FC<StoryStudioLauncherProps> = ({
     async (plan: ScenePlan) => {
       latestPlan.current = plan;
       setCurrentPlan(plan);
-      try {
-        const token = await getToken();
-        if (token) await saveDraft(galleryId, plan, token);
-      } catch {
-        // Autosave failures are non-fatal (endpoint may be pre-migration).
-      }
+      // Let failures propagate so the editor shows an honest "save failed"
+      // state instead of a misleading "saved". (A silently-swallowed error made
+      // the UI claim work was safe when it wasn't.)
+      const token = await getToken();
+      if (!token) throw new Error("not_authenticated");
+      await saveDraft(galleryId, plan, token);
     },
     [galleryId, getToken]
   );

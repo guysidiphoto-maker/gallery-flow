@@ -15,6 +15,8 @@ import {
   MOTION_EFFECTS,
   TEMPLATES,
   TRANSITIONS,
+  clamp,
+  orientationOf,
   totalFrames,
   type BrandResolved,
   type MotionEffect,
@@ -22,6 +24,8 @@ import {
   type ScenePlan,
   type StoryLength,
   type StoryTemplate,
+  type TextPosition,
+  type TitleCard,
   type TransitionType,
 } from "./sceneplan";
 
@@ -46,12 +50,23 @@ const HE = {
   focal: "נקודת מיקוד (לחצו על התמונה)",
   caption: "כותרת על התמונה",
   eventTitle: "שם האירוע",
-  eventDate: "תאריך",
+  eventDate: "תאריך / כיתוב פתיח",
   scene: "סצנה",
   saving: "שומר…",
   saved: "נשמר",
+  failed: "שמירה נכשלה",
   seconds: "שנ׳",
   total: "אורך כולל",
+  storySettings: "כותרת וסיום",
+  showOutro: "כרטיס סיום ממותג",
+  showLogo: "הצג לוגו",
+  captionPos: "מיקום הכיתוב",
+  posTop: "למעלה",
+  posCenter: "מרכז",
+  posBottom: "למטה",
+  addPhotoTitle: "הוספת תמונות מהגלריה",
+  noMorePhotos: "כל התמונות כבר בסטורי",
+  reorderHint: "חצים ← → להזזת הסצנה",
 };
 const TEMPLATE_HE: Record<StoryTemplate, string> = {
   "editorial-clean": "נקי ואלגנטי",
@@ -131,11 +146,16 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       : buildAuto("editorial-clean", "standard", "balanced")
   );
   const [selectedId, setSelectedId] = useState<string | null>(() => plan.scenes[0]?.id ?? null);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  // `historyTick` forces a re-render so undo/redo button disabled states (which
+  // read the history refs) stay accurate.
+  const [, setHistoryTick] = useState(0);
   const past = useRef<ScenePlan[]>([]);
   const future = useRef<ScenePlan[]>([]);
   // Manual per-image overrides, re-applied after an auto-regenerate so edits survive.
   const overrides = useRef<Map<string, Partial<Scene>>>(new Map());
+  // Manual title/outro-card edits, likewise re-applied after regenerate.
+  const cardOverrides = useRef<{ opening?: Partial<TitleCard>; outro?: Partial<TitleCard> }>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleSave = useCallback(
@@ -144,12 +164,32 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       setSaveStatus("saving");
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
-        await onSave(next);
-        setSaveStatus("saved");
+        try {
+          await onSave(next);
+          setSaveStatus("saved");
+        } catch {
+          setSaveStatus("failed");
+        }
       }, 700);
     },
     [onSave]
   );
+
+  // Re-apply manual scene + card overrides onto a freshly auto-generated plan so
+  // edits survive template/length/pace changes and explicit regenerate.
+  const applyOverrides = useCallback((fresh: ScenePlan): ScenePlan => {
+    const scenes = fresh.scenes.map((s) => {
+      const ov = overrides.current.get(s.imageId);
+      return ov ? { ...s, ...ov } : s;
+    });
+    const co = cardOverrides.current;
+    return {
+      ...fresh,
+      scenes,
+      opening: co.opening ? { ...fresh.opening, ...co.opening } : fresh.opening,
+      outro: co.outro ? { ...fresh.outro, ...co.outro } : fresh.outro,
+    };
+  }, []);
 
   const commit = useCallback(
     (next: ScenePlan, recordHistory = true) => {
@@ -159,6 +199,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
         future.current = [];
       }
       setPlanState(next);
+      setHistoryTick((t) => t + 1);
       scheduleSave(next);
     },
     [plan, scheduleSave]
@@ -169,6 +210,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
     if (!prev) return;
     future.current.push(plan);
     setPlanState(prev);
+    setHistoryTick((t) => t + 1);
     scheduleSave(prev);
   }, [plan, scheduleSave]);
 
@@ -177,6 +219,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
     if (!nxt) return;
     past.current.push(plan);
     setPlanState(nxt);
+    setHistoryTick((t) => t + 1);
     scheduleSave(nxt);
   }, [plan, scheduleSave]);
 
@@ -226,12 +269,35 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       const idx = plan.scenes.findIndex((s) => s.id === id);
       if (idx < 0) return;
       const src = plan.scenes[idx];
-      const copy: Scene = { ...src, id: `${src.id}_dup${plan.scenes.length}` };
+      // Guarantee a unique id even after prior removals/duplications (a plain
+      // length-based suffix can collide and the validator rejects duplicate ids).
+      const existing = new Set(plan.scenes.map((s) => s.id));
+      let n = 1;
+      let newId = `${src.imageId.slice(0, 8)}_dup${n}`;
+      while (existing.has(newId)) newId = `${src.imageId.slice(0, 8)}_dup${++n}`;
+      const copy: Scene = { ...src, id: newId };
       const scenes = plan.scenes.slice();
       scenes.splice(idx + 1, 0, copy);
       commit({ ...plan, scenes, generatedBy: "manual" });
     },
     [plan, commit]
+  );
+
+  // Reset a single scene back to what the automatic cut produced for that image.
+  const resetScene = useCallback(
+    (id: string) => {
+      const scene = plan.scenes.find((s) => s.id === id);
+      if (!scene) return;
+      overrides.current.delete(scene.imageId);
+      const auto = buildAuto(plan.template, plan.length, plan.pace);
+      const autoScene = auto.scenes.find((s) => s.imageId === scene.imageId);
+      if (!autoScene) return; // image not in the auto cut (e.g. manually added) — nothing to reset to
+      const scenes = plan.scenes.map((s) =>
+        s.id === id ? { ...autoScene, id: s.id, src: s.src } : s
+      );
+      commit({ ...plan, scenes });
+    },
+    [plan, buildAuto, commit]
   );
 
   const removeScene = useCallback(
@@ -245,33 +311,64 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
   );
 
   const regenerate = useCallback(() => {
-    const fresh = buildAuto(plan.template, plan.length, plan.pace);
-    // Re-apply manual overrides onto matching images so edits survive.
-    const scenes = fresh.scenes.map((s) => {
-      const ov = overrides.current.get(s.imageId);
-      return ov ? { ...s, ...ov } : s;
-    });
-    commit({ ...fresh, scenes, generatedBy: "manual" });
-  }, [buildAuto, plan.template, plan.length, plan.pace, commit]);
+    commit({ ...applyOverrides(buildAuto(plan.template, plan.length, plan.pace)), generatedBy: "manual" });
+  }, [buildAuto, plan.template, plan.length, plan.pace, commit, applyOverrides]);
 
   const resetToAuto = useCallback(() => {
     if (!window.confirm(HE.resetConfirm)) return;
     overrides.current.clear();
+    cardOverrides.current = {};
     commit(buildAuto(plan.template, plan.length, plan.pace));
   }, [buildAuto, plan.template, plan.length, plan.pace, commit]);
 
   const setGlobal = useCallback(
     (patch: Partial<Pick<ScenePlan, "template" | "length" | "pace">>) => {
       const next = { ...plan, ...patch };
-      const fresh = buildAuto(next.template, next.length, next.pace);
-      const scenes = fresh.scenes.map((s) => {
-        const ov = overrides.current.get(s.imageId);
-        return ov ? { ...s, ...ov } : s;
-      });
-      commit({ ...fresh, scenes, generatedBy: "manual" });
+      commit({ ...applyOverrides(buildAuto(next.template, next.length, next.pace)), generatedBy: "manual" });
     },
-    [plan, buildAuto, commit]
+    [plan, buildAuto, commit, applyOverrides]
   );
+
+  // Edit the opening/outro title cards. Persisted in the plan + survives regenerate.
+  const patchCard = useCallback(
+    (kind: "opening" | "outro", patch: Partial<TitleCard>) => {
+      const prev = cardOverrides.current[kind] ?? {};
+      cardOverrides.current = { ...cardOverrides.current, [kind]: { ...prev, ...patch } };
+      commit({ ...plan, [kind]: { ...plan[kind], ...patch } });
+    },
+    [plan, commit]
+  );
+
+  // Append a photo from the authorized gallery that isn't already in the story.
+  const addPhoto = useCallback(
+    (img: PlannerImage) => {
+      const o = orientationOf(img.width, img.height);
+      const landscape = o === "landscape";
+      const scene: Scene = {
+        id: `sc_add_${img.id.slice(0, 8)}_${plan.scenes.length}`,
+        imageId: img.id,
+        src: img.src,
+        width: img.width,
+        height: img.height,
+        durationSec: clamp(3.0, MIN_SCENE_SEC, MAX_SCENE_SEC),
+        fit: landscape ? "fit" : "fill",
+        background: landscape ? "blur" : "none",
+        focal: { x: 0.5, y: 0.5 },
+        motion: "push-in",
+        motionDirection: "up",
+        motionIntensity: "subtle",
+        transitionIn: "cross-dissolve",
+        transitionDurationSec: 0.4,
+        text: null,
+      };
+      commit({ ...plan, scenes: [...plan.scenes, scene], generatedBy: "manual" });
+      setSelectedId(scene.id);
+    },
+    [plan, commit]
+  );
+
+  const usedImageIds = useMemo(() => new Set(plan.scenes.map((s) => s.imageId)), [plan.scenes]);
+  const availableImages = useMemo(() => images.filter((i) => !usedImageIds.has(i.id)), [images, usedImageIds]);
 
   const selected = plan.scenes.find((s) => s.id === selectedId) ?? null;
   const durationInFrames = useMemo(() => totalFrames(plan), [plan]);
@@ -376,14 +473,18 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
         <button style={btnGhost} onClick={undo} disabled={past.current.length === 0}>↩︎ {HE.undo}</button>
         <button style={btnGhost} onClick={redo} disabled={future.current.length === 0}>↪︎ {HE.redo}</button>
         <button style={btnGhost} onClick={resetToAuto}>⟲ {HE.reset}</button>
-        <span style={{ color: C.muted, minWidth: 60, textAlign: "center" }}>
-          {saveStatus === "saving" ? HE.saving : saveStatus === "saved" ? "✓ " + HE.saved : ""}
+        <span
+          aria-live="polite"
+          style={{ minWidth: 90, textAlign: "center", color: saveStatus === "failed" ? "#f87171" : C.muted }}
+        >
+          {saveStatus === "saving" ? HE.saving : saveStatus === "saved" ? "✓ " + HE.saved : saveStatus === "failed" ? "⚠ " + HE.failed : ""}
         </span>
       </div>
 
       {/* Scene controls */}
       <aside style={{ ...panel, overflowY: "auto", order: isNarrow ? 3 : 0, width: isNarrow ? "100%" : undefined }}>
-        <SceneControls scene={selected} onPatch={patchScene} event={event} plan={plan} onGlobalEvent={() => {}} />
+        <StorySettings plan={plan} brand={brand} onPatchCard={patchCard} />
+        <SceneControls scene={selected} onPatch={patchScene} onReset={resetScene} />
       </aside>
 
       {/* Preview */}
@@ -449,12 +550,13 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       </main>
 
       {/* Storyboard strip */}
-      <div style={{ gridColumn: "1 / 3", order: isNarrow ? 2 : 0, ...strip }}>
+      <div style={{ gridColumn: "1 / 3", order: isNarrow ? 2 : 0, ...strip }} role="list" aria-label="סצנות הסטורי">
         {plan.scenes.map((s, i) => (
           <SceneCard
             key={s.id}
             scene={s}
             index={i}
+            total={plan.scenes.length}
             selected={s.id === selectedId}
             first={i === 0}
             last={i === plan.scenes.length - 1}
@@ -465,6 +567,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
             onReorder={reorder}
           />
         ))}
+        <AddPhotoBar available={availableImages} onAdd={addPhoto} />
       </div>
     </div>
   );
@@ -505,12 +608,11 @@ function Segment<T extends string>(props: {
 
 const SceneControls: React.FC<{
   scene: Scene | null;
-  plan: ScenePlan;
-  event?: { title?: string; date?: string };
   onPatch: (id: string, patch: Partial<Scene>) => void;
-  onGlobalEvent: () => void;
-}> = ({ scene, onPatch }) => {
+  onReset: (id: string) => void;
+}> = ({ scene, onPatch, onReset }) => {
   if (!scene) return <div style={{ color: C.muted, padding: 16 }}>בחרו סצנה מלמטה</div>;
+  const pos: TextPosition = scene.text?.position ?? "bottom";
   const setFocalFromClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
@@ -518,8 +620,11 @@ const SceneControls: React.FC<{
     onPatch(scene.id, { focal: { x, y } });
   };
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
-      <h3 style={{ margin: 0, fontSize: 15 }}>עריכת סצנה</h3>
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16, borderTop: `1px solid ${C.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <h3 style={{ margin: 0, fontSize: 15 }}>עריכת סצנה</h3>
+        <button style={btnGhost} onClick={() => onReset(scene.id)} title="אפס סצנה זו לאוטומטי">⟲ אפס סצנה</button>
+      </div>
 
       <label style={lbl}>
         {HE.duration}: {scene.durationSec.toFixed(1)} {HE.seconds}
@@ -577,9 +682,26 @@ const SceneControls: React.FC<{
           maxLength={120}
           value={scene.text?.content ?? ""}
           placeholder="לא חובה"
-          onChange={(e) => onPatch(scene.id, { text: e.target.value ? { content: e.target.value, position: "bottom" } : null })}
+          onChange={(e) => onPatch(scene.id, { text: e.target.value ? { content: e.target.value, position: pos } : null })}
         />
       </label>
+
+      {scene.text?.content ? (
+        <div style={lbl}>
+          {HE.captionPos}
+          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+            {(["top", "center", "bottom"] as TextPosition[]).map((p) => (
+              <button
+                key={p}
+                style={pos === p ? btn : btnGhost}
+                onClick={() => onPatch(scene.id, { text: { content: scene.text!.content, position: p } })}
+              >
+                {p === "top" ? HE.posTop : p === "center" ? HE.posCenter : HE.posBottom}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -587,6 +709,7 @@ const SceneControls: React.FC<{
 const SceneCard: React.FC<{
   scene: Scene;
   index: number;
+  total: number;
   selected: boolean;
   first: boolean;
   last: boolean;
@@ -595,9 +718,13 @@ const SceneCard: React.FC<{
   onDuplicate: (id: string) => void;
   onRemove: (id: string) => void;
   onReorder: (fromId: string, toId: string) => void;
-}> = ({ scene, index, selected, first, last, onSelect, onMove, onDuplicate, onRemove, onReorder }) => {
+}> = ({ scene, index, total, selected, first, last, onSelect, onMove, onDuplicate, onRemove, onReorder }) => {
   return (
     <div
+      role="listitem"
+      tabIndex={0}
+      aria-label={`סצנה ${index + 1} מתוך ${total}. ${HE.reorderHint}`}
+      aria-current={selected ? "true" : undefined}
       draggable
       onDragStart={(e) => e.dataTransfer.setData("text/scene", scene.id)}
       onDragOver={(e) => e.preventDefault()}
@@ -607,6 +734,15 @@ const SceneCard: React.FC<{
         if (from) onReorder(from, scene.id);
       }}
       onClick={onSelect}
+      onFocus={onSelect}
+      onKeyDown={(e) => {
+        // Accessible reorder: Arrow keys move the focused scene along the strip.
+        // (Array-order semantics: Left = earlier, Right = later — direction is
+        // intentionally array-based, not visual, so it's predictable in RTL/LTR.)
+        if (e.key === "ArrowLeft") { e.preventDefault(); if (!first) onMove(scene.id, -1); }
+        else if (e.key === "ArrowRight") { e.preventDefault(); if (!last) onMove(scene.id, 1); }
+        else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); onRemove(scene.id); }
+      }}
       style={{
         flex: "0 0 auto",
         width: 92,
@@ -615,6 +751,7 @@ const SceneCard: React.FC<{
         overflow: "hidden",
         background: C.panel,
         cursor: "grab",
+        outline: selected ? `2px solid ${C.accent}` : undefined,
       }}
     >
       <div style={{ position: "relative", aspectRatio: "9/16", background: "#000" }}>
@@ -630,6 +767,97 @@ const SceneCard: React.FC<{
         <button title={HE.remove} style={mini} onClick={(e) => { e.stopPropagation(); onRemove(scene.id); }}>🗑</button>
         <button title="ימינה" style={mini} disabled={last} onClick={(e) => { e.stopPropagation(); onMove(scene.id, 1); }}>▶</button>
       </div>
+    </div>
+  );
+};
+
+// Story-level settings: intro title/date, outro toggle, logo. Progressive
+// disclosure via <details> so the first screen stays simple.
+const StorySettings: React.FC<{
+  plan: ScenePlan;
+  brand: BrandResolved;
+  onPatchCard: (kind: "opening" | "outro", patch: Partial<TitleCard>) => void;
+}> = ({ plan, brand, onPatchCard }) => {
+  return (
+    <details style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
+      <summary style={{ cursor: "pointer", fontSize: 15, fontWeight: 600 }}>⚙︎ {HE.storySettings}</summary>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+        <label style={{ ...lbl, flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <input type="checkbox" checked={plan.opening.enabled} onChange={(e) => onPatchCard("opening", { enabled: e.target.checked })} />
+          כרטיס פתיחה
+        </label>
+        {plan.opening.enabled ? (
+          <>
+            <label style={lbl}>
+              {HE.eventTitle}
+              <input style={inp} type="text" maxLength={80} value={plan.opening.title ?? ""} placeholder={brand.studioName ?? ""} onChange={(e) => onPatchCard("opening", { title: e.target.value })} />
+            </label>
+            <label style={lbl}>
+              {HE.eventDate}
+              <input style={inp} type="text" maxLength={80} value={plan.opening.subtitle ?? ""} placeholder="לא חובה" onChange={(e) => onPatchCard("opening", { subtitle: e.target.value })} />
+            </label>
+          </>
+        ) : null}
+        <label style={{ ...lbl, flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <input type="checkbox" checked={plan.outro.enabled} onChange={(e) => onPatchCard("outro", { enabled: e.target.checked })} />
+          {HE.showOutro}
+        </label>
+        {plan.outro.enabled ? (
+          <label style={lbl}>
+            {HE.eventTitle}
+            <input style={inp} type="text" maxLength={80} value={plan.outro.title ?? ""} placeholder={brand.studioName ?? ""} onChange={(e) => onPatchCard("outro", { title: e.target.value })} />
+          </label>
+        ) : null}
+        {brand.logoUrl ? (
+          <label style={{ ...lbl, flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={Boolean(plan.opening.showLogo || plan.outro.showLogo)}
+              onChange={(e) => { onPatchCard("opening", { showLogo: e.target.checked }); onPatchCard("outro", { showLogo: e.target.checked }); }}
+            />
+            {HE.showLogo}
+          </label>
+        ) : null}
+      </div>
+    </details>
+  );
+};
+
+// Append photos from the authorized gallery that aren't already in the story.
+const AddPhotoBar: React.FC<{ available: PlannerImage[]; onAdd: (img: PlannerImage) => void }> = ({ available, onAdd }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start" }}>
+      <button
+        style={{ ...btnGhost, width: 92, height: 92 * (16 / 9), display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, borderStyle: "dashed" }}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        title={HE.addPhoto}
+      >
+        <span style={{ fontSize: 24 }}>＋</span>
+        <span style={{ fontSize: 11 }}>{HE.addPhoto}</span>
+      </button>
+      {open ? (
+        <div style={{ position: "absolute", bottom: 120, insetInlineEnd: 12, zIndex: 20, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 10, maxWidth: 360, maxHeight: 260, overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.6)" }}>
+          <div style={{ fontSize: 13, marginBottom: 8, color: C.muted }}>{HE.addPhotoTitle}</div>
+          {available.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.muted }}>{HE.noMorePhotos}</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+              {available.map((img) => (
+                <button
+                  key={img.id}
+                  onClick={() => { onAdd(img); setOpen(false); }}
+                  title={HE.addPhoto}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden", padding: 0, cursor: "pointer", aspectRatio: "9/16", background: "#000" }}
+                >
+                  {img.src ? <img src={img.src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 };
