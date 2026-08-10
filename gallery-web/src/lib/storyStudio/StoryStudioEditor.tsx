@@ -13,6 +13,8 @@ import {
   MAX_SCENE_SEC,
   MIN_SCENE_SEC,
   MOTION_EFFECTS,
+  MUSIC_TRACKS,
+  MUSIC_MAX_FADE_SEC,
   TEMPLATES,
   TRANSITIONS,
   clamp,
@@ -20,6 +22,7 @@ import {
   totalFrames,
   type BrandResolved,
   type MotionEffect,
+  type MusicConfig,
   type Scene,
   type ScenePlan,
   type StoryLength,
@@ -28,6 +31,8 @@ import {
   type TitleCard,
   type TransitionType,
 } from "./sceneplan";
+
+const DEFAULT_MUSIC: MusicConfig = { trackId: null, volume: 0.7, fadeInSec: 1, fadeOutSec: 1.5, muted: false };
 
 // ── Hebrew copy (plain, non-technical) ───────────────────────────────────────
 const HE = {
@@ -67,6 +72,11 @@ const HE = {
   addPhotoTitle: "הוספת תמונות מהגלריה",
   noMorePhotos: "כל התמונות כבר בסטורי",
   reorderHint: "חצים ← → להזזת הסצנה",
+  music: "מוזיקה",
+  noMusic: "ללא מוזיקה",
+  volume: "עוצמה",
+  fadeIn: "עליה הדרגתית",
+  fadeOut: "דעיכה",
 };
 const TEMPLATE_HE: Record<StoryTemplate, string> = {
   "editorial-clean": "נקי ואלגנטי",
@@ -156,6 +166,8 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
   const overrides = useRef<Map<string, Partial<Scene>>>(new Map());
   // Manual title/outro-card edits, likewise re-applied after regenerate.
   const cardOverrides = useRef<{ opening?: Partial<TitleCard>; outro?: Partial<TitleCard> }>({});
+  // User's music choice — survives regenerate/template change.
+  const musicRef = useRef<MusicConfig | null>(initialPlan?.music ?? null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleSave = useCallback(
@@ -188,6 +200,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       scenes,
       opening: co.opening ? { ...fresh.opening, ...co.opening } : fresh.opening,
       outro: co.outro ? { ...fresh.outro, ...co.outro } : fresh.outro,
+      music: musicRef.current ?? fresh.music,
     };
   }, []);
 
@@ -370,6 +383,21 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
   const usedImageIds = useMemo(() => new Set(plan.scenes.map((s) => s.imageId)), [plan.scenes]);
   const availableImages = useMemo(() => images.filter((i) => !usedImageIds.has(i.id)), [images, usedImageIds]);
 
+  // Music selection (bundled tracks). Survives regenerate via musicRef.
+  const setMusic = useCallback(
+    (patch: Partial<MusicConfig> | null) => {
+      if (patch === null) {
+        musicRef.current = { ...DEFAULT_MUSIC, trackId: null };
+        commit({ ...plan, music: musicRef.current });
+        return;
+      }
+      const next = { ...(plan.music ?? DEFAULT_MUSIC), ...patch };
+      musicRef.current = next;
+      commit({ ...plan, music: next });
+    },
+    [plan, commit]
+  );
+
   const selected = plan.scenes.find((s) => s.id === selectedId) ?? null;
   const durationInFrames = useMemo(() => totalFrames(plan), [plan]);
   const totalSec = (durationInFrames / plan.fps).toFixed(1);
@@ -483,7 +511,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
 
       {/* Scene controls */}
       <aside style={{ ...panel, overflowY: "auto", order: isNarrow ? 3 : 0, width: isNarrow ? "100%" : undefined }}>
-        <StorySettings plan={plan} brand={brand} onPatchCard={patchCard} />
+        <StorySettings plan={plan} brand={brand} onPatchCard={patchCard} onSetMusic={setMusic} />
         <SceneControls scene={selected} onPatch={patchScene} onReset={resetScene} />
       </aside>
 
@@ -777,7 +805,10 @@ const StorySettings: React.FC<{
   plan: ScenePlan;
   brand: BrandResolved;
   onPatchCard: (kind: "opening" | "outro", patch: Partial<TitleCard>) => void;
-}> = ({ plan, brand, onPatchCard }) => {
+  onSetMusic: (patch: Partial<MusicConfig> | null) => void;
+}> = ({ plan, brand, onPatchCard, onSetMusic }) => {
+  const music = plan.music;
+  const activeTrack = music && !music.muted && music.trackId ? music.trackId : "";
   return (
     <details style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
       <summary style={{ cursor: "pointer", fontSize: 15, fontWeight: 600 }}>⚙︎ {HE.storySettings}</summary>
@@ -817,6 +848,39 @@ const StorySettings: React.FC<{
             />
             {HE.showLogo}
           </label>
+        ) : null}
+
+        {/* Music V1 */}
+        <label style={lbl}>
+          {HE.music}
+          <select
+            style={sel}
+            value={activeTrack}
+            onChange={(e) => (e.target.value ? onSetMusic({ trackId: e.target.value, muted: false }) : onSetMusic(null))}
+          >
+            <option value="">{HE.noMusic}</option>
+            {MUSIC_TRACKS.map((t) => (
+              <option key={t.id} value={t.id}>{t.labelHe}</option>
+            ))}
+          </select>
+        </label>
+        {activeTrack ? (
+          <>
+            <label style={lbl}>
+              {HE.volume}: {Math.round((music?.volume ?? 0.7) * 100)}%
+              <input type="range" min={0} max={1} step={0.05} value={music?.volume ?? 0.7} onChange={(e) => onSetMusic({ volume: Number(e.target.value) })} />
+            </label>
+            <div style={{ display: "flex", gap: 10 }}>
+              <label style={{ ...lbl, flex: 1 }}>
+                {HE.fadeIn}: {(music?.fadeInSec ?? 1).toFixed(1)}s
+                <input type="range" min={0} max={MUSIC_MAX_FADE_SEC} step={0.5} value={music?.fadeInSec ?? 1} onChange={(e) => onSetMusic({ fadeInSec: Number(e.target.value) })} />
+              </label>
+              <label style={{ ...lbl, flex: 1 }}>
+                {HE.fadeOut}: {(music?.fadeOutSec ?? 1.5).toFixed(1)}s
+                <input type="range" min={0} max={MUSIC_MAX_FADE_SEC} step={0.5} value={music?.fadeOutSec ?? 1.5} onChange={(e) => onSetMusic({ fadeOutSec: Number(e.target.value) })} />
+              </label>
+            </div>
+          </>
         ) : null}
       </div>
     </details>

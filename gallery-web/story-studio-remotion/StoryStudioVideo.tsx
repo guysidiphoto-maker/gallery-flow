@@ -8,9 +8,11 @@
 import React from "react";
 import {
   AbsoluteFill,
+  Audio,
   Img,
   Sequence,
   interpolate,
+  staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
@@ -22,6 +24,7 @@ import type {
   TitleCard,
   BrandResolved,
 } from "../src/lib/storyStudio/sceneplan";
+import { MUSIC_TRACK_IDS, musicTrackFile } from "../src/lib/storyStudio/sceneplan";
 
 const isHebrew = (s?: string | null) => !!s && /[֐-׿]/.test(s);
 
@@ -406,6 +409,37 @@ const Watermark: React.FC<{ brand: BrandResolved }> = ({ brand }) => {
   );
 };
 
+// Music V1: one bundled, allow-listed track with volume + fade-in/out. Loops to
+// fill the (short) story. Rendered identically in the editor <Player> and the
+// server render, so preview == export. Nothing renders when there is no music.
+const MusicLayer: React.FC<{ music: ScenePlan["music"] }> = ({ music }) => {
+  const { fps, durationInFrames } = useVideoConfig();
+  if (
+    !music ||
+    music.muted ||
+    !music.trackId ||
+    !MUSIC_TRACK_IDS.includes(music.trackId) ||
+    (music.volume ?? 0) <= 0
+  ) {
+    return null;
+  }
+  const vol = Math.max(0, Math.min(1, music.volume));
+  const fadeIn = Math.max(0, Math.round((music.fadeInSec ?? 0) * fps));
+  const fadeOut = Math.max(0, Math.round((music.fadeOutSec ?? 0) * fps));
+  return (
+    <Audio
+      src={staticFile(musicTrackFile(music.trackId))}
+      loop
+      volume={(f) => {
+        let g = vol;
+        if (fadeIn > 0) g *= interpolate(f, [0, fadeIn], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+        if (fadeOut > 0) g *= interpolate(f, [durationInFrames - fadeOut, durationInFrames], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+        return Math.max(0, Math.min(1, g));
+      }}
+    />
+  );
+};
+
 // ── Top-level video ─────────────────────────────────────────────────────────
 export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
   const { fps } = useVideoConfig();
@@ -461,6 +495,7 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
         <StoryProgressBars segments={segments} accentHex={plan.brand.accentHex} />
       ) : null}
       <Watermark brand={plan.brand} />
+      <MusicLayer music={plan.music} />
     </AbsoluteFill>
   );
 };

@@ -155,11 +155,43 @@ export interface BrandResolved {
 }
 
 export interface MusicConfig {
+  /** One of MUSIC_TRACK_IDS, or null/undefined for no music. */
   trackId?: string | null;
   volume: number; // 0..1
   fadeInSec: number;
   fadeOutSec: number;
   muted: boolean;
+}
+
+// ── Music V1: a small curated set of BUNDLED test tracks ──────────────────────
+// Authored in-repo (scripts/generate-story-audio.mjs) and shipped as static
+// assets in the Remotion bundle, so there is NO third-party licensing dependency
+// and NO external fetch/SSRF surface — a plan can only reference an allow-listed
+// id, never an arbitrary URL. The composition resolves the id via
+// staticFile(`stories-audio/${id}.wav`).
+export interface MusicTrack {
+  id: string;
+  label: string;
+  labelHe: string;
+  mood: string;
+}
+export const MUSIC_TRACKS: readonly MusicTrack[] = [
+  { id: "calm", label: "Calm", labelHe: "רגוע", mood: "editorial" },
+  { id: "warm", label: "Warm", labelHe: "חמים", mood: "cinematic" },
+  { id: "upbeat", label: "Upbeat", labelHe: "קצבי", mood: "social" },
+];
+export const MUSIC_TRACK_IDS: readonly string[] = MUSIC_TRACKS.map((t) => t.id);
+export const MUSIC_MAX_FADE_SEC = 8;
+
+/** A track's static asset path inside the bundle (and the Vite public dir). */
+export function musicTrackFile(trackId: string): string {
+  return `stories-audio/${trackId}.wav`;
+}
+
+/** True when a plan actually carries audible music. */
+export function planHasMusic(plan: ScenePlan): boolean {
+  const m = plan.music;
+  return Boolean(m && !m.muted && m.trackId && MUSIC_TRACK_IDS.includes(m.trackId) && (m.volume ?? 0) > 0);
 }
 
 export interface ScenePlan {
@@ -318,6 +350,23 @@ export function validateScenePlan(
     errors.push("missing resolved brand snapshot");
   } else if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(plan.brand.accentHex)) {
     errors.push(`brand.accentHex not a hex color: ${plan.brand.accentHex}`);
+  }
+
+  // Music (optional). trackId must be an allow-listed BUNDLED track — never an
+  // arbitrary URL — and volume/fades must be in range.
+  const m = plan.music;
+  if (m) {
+    if (m.trackId != null && !MUSIC_TRACK_IDS.includes(m.trackId)) {
+      errors.push(`music.trackId not allow-listed: ${m.trackId}`);
+    }
+    if (typeof m.volume !== "number" || m.volume < 0 || m.volume > 1) {
+      errors.push("music.volume out of [0,1]");
+    }
+    for (const [k, v] of [["fadeInSec", m.fadeInSec], ["fadeOutSec", m.fadeOutSec]] as const) {
+      if (typeof v !== "number" || v < 0 || v > MUSIC_MAX_FADE_SEC + 1e-6) {
+        errors.push(`music.${k} out of [0,${MUSIC_MAX_FADE_SEC}]`);
+      }
+    }
   }
 
   return { ok: errors.length === 0, errors };

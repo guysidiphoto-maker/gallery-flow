@@ -19,6 +19,9 @@ const MAX_TITLE_LEN = 80;
 const TEMPLATES = ['editorial-clean', 'cinematic-energy', 'fast-highlights'];
 const MOTION = ['none', 'push-in', 'pull-out', 'pan', 'focus-zoom', 'punch-in'];
 const TRANSITIONS = ['cut', 'cross-dissolve', 'slide', 'soft-blur', 'light-leak', 'whip'];
+// Music V1: only these BUNDLED track ids are accepted (never an arbitrary URL).
+const MUSIC_TRACK_IDS = ['calm', 'warm', 'upbeat'];
+const MUSIC_MAX_FADE_SEC = 8;
 
 // FIRST-RELEASE synchronous-render cap. A single Vercel function has a hard
 // 300s ceiling; measured render cost is ~10-12s/scene at 3009MB, so >18 scenes
@@ -117,6 +120,17 @@ export function resolveAndValidatePlan(
   }
   if (!plan.brand || typeof plan.brand.accentHex !== 'string' || !/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(plan.brand.accentHex))
     errors.push('bad brand accent');
+
+  // Music (optional) — allow-listed bundled track id + in-range volume/fades.
+  const mus = plan.music;
+  if (mus) {
+    if (mus.trackId != null && !MUSIC_TRACK_IDS.includes(mus.trackId)) errors.push('music.trackId not allow-listed');
+    if (typeof mus.volume !== 'number' || mus.volume < 0 || mus.volume > 1) errors.push('music.volume out of range');
+    for (const k of ['fadeInSec', 'fadeOutSec'] as const) {
+      const v = mus[k];
+      if (typeof v !== 'number' || v < 0 || v > MUSIC_MAX_FADE_SEC + 1e-6) errors.push(`music.${k} out of range`);
+    }
+  }
 
   if (errors.length) return { ok: false, errors };
 

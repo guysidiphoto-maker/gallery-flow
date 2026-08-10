@@ -415,6 +415,10 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     //   • Legacy auto (style + photoIds) — unchanged.
     let inputProps: Record<string, unknown>
     let compositionId: string
+    // Whether the final mp4 should carry an audio track. Only a plan with an
+    // audible, allow-listed music track gets one; everything else exports with
+    // NO audio track (muted:true) instead of an unnecessary silent one.
+    let renderMuted = true
     if (hasScenePlan) {
       // SECURITY BOUNDARY: load the gallery's own image records and run the
       // client plan through resolveAndValidatePlan — rejects foreign image ids,
@@ -437,6 +441,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       }
       inputProps = { plan: result.plan }
       compositionId = 'StoryStudio'
+      const mus = (result.plan as { music?: { muted?: boolean; trackId?: string | null; volume?: number } }).music
+      renderMuted = !(mus && !mus.muted && !!mus.trackId && (mus.volume ?? 0) > 0)
     } else {
       const images = await loadImageUrlsForRender(adminClient, galleryId, photoIds ?? [])
       if (images.length === 0) throw new Error('no_images_in_gallery')
@@ -483,6 +489,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       codec: 'h264',
       outputLocation: outPath,
       inputProps,
+      // No audio track unless the plan carries music (avoids a misleading silent track).
+      muted: renderMuted,
       // Match desktop bitrate band (~4.5 Mbit/s final for vertical 1080x1920).
       videoBitrate: '4500k',
       // Tell Remotion to drive the bundled Chromium instead of trying to

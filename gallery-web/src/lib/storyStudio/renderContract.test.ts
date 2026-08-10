@@ -20,9 +20,12 @@ import {
   MAX_SCENE_SEC,
   RENDER_MAX_SCENES,
   RENDER_MAX_DURATION_SEC,
+  MUSIC_TRACK_IDS,
   computeTotalDuration,
   totalFrames,
   checkRenderFeasibility,
+  validateScenePlan,
+  planHasMusic,
   type ScenePlan,
 } from "./sceneplan.ts";
 import { planStory, type PlannerImage } from "./planner.ts";
@@ -171,6 +174,47 @@ test("duration: auto plans are always render-feasible (within the first-release 
       assert.ok(checkRenderFeasibility(plan).ok, `${template}/${n} not feasible: ${checkRenderFeasibility(plan).reason}`);
     }
   }
+});
+
+// ── F. Music V1 ───────────────────────────────────────────────────────────────
+test("music: guard track-id allowlist in sync with the contract", () => {
+  const guard = read("api/stories/_scenePlanGuard.ts");
+  for (const id of MUSIC_TRACK_IDS) assert.ok(guard.includes(`'${id}'`), `guard missing track ${id}`);
+});
+
+test("music: bundled test tracks exist in both public dirs", () => {
+  for (const id of MUSIC_TRACK_IDS) {
+    for (const dir of ["public/stories-audio", "story-studio-remotion/public/stories-audio"]) {
+      assert.ok(readFileSync(path.join(WEB_ROOT, dir, `${id}.wav`)).length > 1000, `${dir}/${id}.wav missing/empty`);
+    }
+  }
+});
+
+test("music: validateScenePlan accepts valid music, rejects bad config", () => {
+  const base = planStory(gallery(6), { galleryId: "g", template: "editorial-clean", brand: BRAND });
+  const ok = { ...base, music: { trackId: "warm", volume: 0.7, fadeInSec: 1, fadeOutSec: 1.5, muted: false } };
+  assert.equal(validateScenePlan(ok).ok, true);
+  assert.equal(planHasMusic(ok as ScenePlan), true);
+  const badId = validateScenePlan({ ...base, music: { trackId: "pirated", volume: 0.7, fadeInSec: 1, fadeOutSec: 1, muted: false } } as ScenePlan);
+  assert.ok(!badId.ok && badId.errors.some((e) => /trackId/.test(e)));
+  const badVol = validateScenePlan({ ...base, music: { trackId: "warm", volume: 5, fadeInSec: 1, fadeOutSec: 1, muted: false } } as ScenePlan);
+  assert.ok(!badVol.ok && badVol.errors.some((e) => /volume/.test(e)));
+  const badFade = validateScenePlan({ ...base, music: { trackId: "warm", volume: 0.5, fadeInSec: 99, fadeOutSec: 1, muted: false } } as ScenePlan);
+  assert.ok(!badFade.ok && badFade.errors.some((e) => /fade/.test(e)));
+});
+
+test("music: planHasMusic false when muted / no track / zero volume", () => {
+  const base = planStory(gallery(6), { galleryId: "g", template: "editorial-clean", brand: BRAND }) as ScenePlan;
+  assert.equal(planHasMusic(base), false); // auto plan has music:null
+  assert.equal(planHasMusic({ ...base, music: { trackId: "warm", volume: 0.7, fadeInSec: 0, fadeOutSec: 0, muted: true } }), false);
+  assert.equal(planHasMusic({ ...base, music: { trackId: "warm", volume: 0, fadeInSec: 0, fadeOutSec: 0, muted: false } }), false);
+});
+
+test("composition + render honor music (Audio + muted flag)", () => {
+  const comp = read("story-studio-remotion/StoryStudioVideo.tsx");
+  assert.ok(comp.includes("Audio") && comp.includes("staticFile"), "composition must use <Audio staticFile>");
+  const render = read("api/stories/render.ts");
+  assert.ok(render.includes("muted: renderMuted"), "render must mute when no music");
 });
 
 test("duration: an over-cap plan is rejected by checkRenderFeasibility", () => {
