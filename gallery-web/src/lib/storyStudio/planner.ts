@@ -107,7 +107,9 @@ const TEMPLATE_PROFILES: Record<StoryTemplate, TemplateProfile> = {
   // slow cross-dissolves. Lots of deliberate stillness ("none").
   "editorial-clean": {
     basePaceSec: 3.8,
-    motionVocab: ["push-in", "none", "pull-out", "none"],
+    // Fewer dead-static holds than before (one "none" per 4, not two) so the cut
+    // has gentle continuous drift rather than freeze-then-dissolve.
+    motionVocab: ["push-in", "pull-out", "none", "push-in"],
     transitionVocab: ["cross-dissolve", "soft-blur"],
     transitionSec: 0.6,
     motionIntensity: "subtle",
@@ -208,7 +210,14 @@ function resolveFocal(img: PlannerImage): { focal: FocalPoint; reason: string } 
       reason: "face-centroid",
     };
   }
-  return { focal: { x: 0.5, y: 0.5 }, reason: "center" };
+  // No AI focal / face data: a dead-center crop amputates heads on 9:16 fill,
+  // because in most photography the subject/face sits ABOVE center (rule of
+  // thirds). Bias the vertical focal into the upper band so a center-cropped
+  // portrait keeps the face; landscapes bias a touch less. This is the single
+  // highest-value crop fix when no detection data exists.
+  const o = orientationOf(img.width, img.height);
+  const y = o === "landscape" ? 0.44 : o === "square" ? 0.42 : 0.4;
+  return { focal: { x: 0.5, y }, reason: "thirds-default" };
 }
 
 /**
@@ -312,6 +321,27 @@ function breakOrientationRuns(list: PlannerImage[]): void {
   }
 }
 
+// Per-scene motion intensity, so a template isn't 100% one setting (reviewers:
+// "constant strong reads as a filter, not craft"). Gives motion dynamic range —
+// a gentle peak on the opener + top picks, medium elsewhere. Deterministic
+// (driven by the seeded rng passed in).
+function variedIntensity(
+  base: "subtle" | "medium" | "strong",
+  i: number,
+  isTopPick: boolean,
+  rng: () => number
+): "subtle" | "medium" | "strong" {
+  if (base === "subtle") {
+    if (i === 0 || isTopPick) return "medium";
+    return rng() < 0.22 ? "medium" : "subtle";
+  }
+  if (base === "strong") {
+    if (i === 0 || isTopPick) return "strong";
+    return rng() < 0.5 ? "medium" : "strong"; // ~half medium → not a constant push
+  }
+  return i % 3 === 0 || isTopPick ? "strong" : "medium";
+}
+
 // ── Main entry ────────────────────────────────────────────────────────────────
 
 export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePlan {
@@ -403,11 +433,15 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
     const o = orientationOf(img.width, img.height);
     const { focal, reason: focalReason } = resolveFocal(img);
 
-    // Motion: cycle template vocab, but hold static if motion would crop a face,
-    // and never repeat the exact same motion twice in a row.
-    let motion: MotionEffect = profile.motionVocab[i % profile.motionVocab.length];
-    if (prev && motion === prev.motion && motion !== "none") {
-      motion = profile.motionVocab[(i + 1) % profile.motionVocab.length];
+    // Motion: cycle template vocab with a seeded shift so the pattern isn't a
+    // strict, predictable period; hold static if motion would crop a face, and
+    // never repeat the exact same motion twice in a row.
+    const mShift = rng() < 0.3 ? 1 : 0;
+    let motion: MotionEffect = profile.motionVocab[(i + mShift) % profile.motionVocab.length];
+    // Never repeat the exact same (non-static) motion twice in a row: step
+    // through the vocab until it differs (or we exhaust it).
+    for (let k = 1; k <= profile.motionVocab.length && prev && motion === prev.motion && motion !== "none"; k++) {
+      motion = profile.motionVocab[(i + mShift + k) % profile.motionVocab.length];
     }
     // Motions that settle at (or reveal) rest scale don't crop a near-edge face;
     // only the continuous inward moves do, so hold static for those.
@@ -434,12 +468,14 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
           ? "up"
           : "down";
 
-    // Transition: cycle template vocab, avoid immediate repeat — EXCEPT "cut",
-    // where back-to-back hard cuts are the intended fast-highlights rhythm.
+    // Transition: cycle template vocab with a seeded shift so flashy transitions
+    // (whip / light-leak) don't land on a fixed metronome. Avoid immediate repeat
+    // — EXCEPT "cut", where back-to-back hard cuts are the fast-highlights rhythm.
+    const tShift = rng() < 0.35 ? 1 : 0;
     let transition: TransitionType =
-      i === 0 ? "cross-dissolve" : profile.transitionVocab[i % profile.transitionVocab.length];
+      i === 0 ? "cross-dissolve" : profile.transitionVocab[(i + tShift) % profile.transitionVocab.length];
     if (prev && transition === prev.transitionIn && transition !== "cut") {
-      transition = profile.transitionVocab[(i + 1) % profile.transitionVocab.length];
+      transition = profile.transitionVocab[(i + tShift + 1) % profile.transitionVocab.length];
     }
 
     // Fit: portrait/square fill 9:16 cleanly; landscape uses blurred-fill so we
@@ -464,7 +500,7 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       focal,
       motion,
       motionDirection: dir,
-      motionIntensity: profile.motionIntensity,
+      motionIntensity: variedIntensity(profile.motionIntensity, i, Boolean(img.isTopPick), rng),
       transitionIn: transition,
       transitionDurationSec: transition === "cut" ? 0 : profile.transitionSec,
       text: null,

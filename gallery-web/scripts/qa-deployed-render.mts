@@ -79,6 +79,10 @@ async function main() {
   const imgs = await fetchImages(g.id, token);
   let plan = planStory(imgs, { galleryId: g.id, template: g.template, brand: BRAND, event: g.event });
   if (mode === "edit") plan = applyEdits(plan);
+  if (mode === "music") {
+    const track = g.template === "editorial-clean" ? "calm" : g.template === "cinematic-energy" ? "warm" : "upbeat";
+    plan = { ...plan, music: { trackId: track, volume: 0.75, fadeInSec: 1, fadeOutSec: 2, muted: false } };
+  }
 
   const planned = { scenes: plan.scenes.length, seconds: computeTotalDuration(plan), template: plan.template };
   const t0 = Date.now();

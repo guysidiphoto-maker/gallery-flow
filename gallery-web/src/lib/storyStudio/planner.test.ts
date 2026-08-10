@@ -151,7 +151,9 @@ test("focal point priority: AI focal > face box > center", () => {
 
   const plain = planStory([img("c-plain-000"), ...gallery(4)], baseOpts());
   const plainScene = plain.scenes.find((s) => s.imageId === "c-plain-000")!;
-  assert.deepEqual(plainScene.focal, { x: 0.5, y: 0.5 });
+  // No AI/face data on a portrait -> rule-of-thirds default (upper-biased Y),
+  // so a center-cropped 9:16 keeps faces instead of amputating heads.
+  assert.deepEqual(plainScene.focal, { x: 0.5, y: 0.4 });
 });
 
 test("holds static / uses fit when a face sits near a frame edge", () => {
@@ -174,8 +176,8 @@ test("degrades gracefully with no dimensions and no scores", () => {
   const plan = planStory(imgs, baseOpts());
   const res = validateScenePlan(plan, imgs.map((i) => i.id));
   assert.ok(res.ok, res.errors.join("; "));
-  // all treated as portrait fill, center focal
-  assert.ok(plan.scenes.every((s) => s.focal.x === 0.5 && s.focal.y === 0.5));
+  // all treated as portrait fill, upper-biased rule-of-thirds focal
+  assert.ok(plan.scenes.every((s) => s.focal.x === 0.5 && s.focal.y === 0.4));
 });
 
 test("every scene duration stays within clamps", () => {

@@ -34,7 +34,7 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.44
       },
       "motion": "punch-in",
       "motionDirection": "up",
@@ -42,7 +42,7 @@
       "transitionIn": "cross-dissolve",
       "transitionDurationSec": 0.16,
       "text": null,
-      "_reason": "opening(strongest) orient:landscape focal:center toppick motion:punch-in",
+      "_reason": "opening(strongest) orient:landscape focal:thirds-default toppick motion:punch-in",
       "src": "https://picsum.photos/seed/pixflow-0/1800/1200"
     },
     {
@@ -55,7 +55,7 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.4
       },
       "motion": "none",
       "motionDirection": "down",
@@ -63,7 +63,7 @@
       "transitionIn": "cut",
       "transitionDurationSec": 0,
       "text": null,
-      "_reason": "body orient:portrait focal:center seq motion:none",
+      "_reason": "body orient:portrait focal:thirds-default seq motion:none",
       "src": "https://picsum.photos/seed/pixflow-1/1200/1800"
     },
     {
@@ -76,15 +76,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.44
       },
-      "motion": "punch-in",
+      "motion": "focus-zoom",
       "motionDirection": "up",
       "motionIntensity": "strong",
       "transitionIn": "whip",
       "transitionDurationSec": 0.16,
       "text": null,
-      "_reason": "body orient:landscape focal:center seq motion:punch-in",
+      "_reason": "body orient:landscape focal:thirds-default seq motion:focus-zoom",
       "src": "https://picsum.photos/seed/pixflow-2/1800/1200"
     },
     {
@@ -97,15 +97,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.4
       },
-      "motion": "focus-zoom",
+      "motion": "punch-in",
       "motionDirection": "down",
-      "motionIntensity": "strong",
+      "motionIntensity": "medium",
       "transitionIn": "cut",
       "transitionDurationSec": 0,
       "text": null,
-      "_reason": "body orient:portrait focal:center seq motion:focus-zoom",
+      "_reason": "body orient:portrait focal:thirds-default seq motion:punch-in",
       "src": "https://picsum.photos/seed/pixflow-3/1200/1800"
     },
     {
@@ -118,15 +118,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.44
       },
-      "motion": "punch-in",
+      "motion": "none",
       "motionDirection": "up",
-      "motionIntensity": "strong",
+      "motionIntensity": "medium",
       "transitionIn": "cut",
       "transitionDurationSec": 0,
       "text": null,
-      "_reason": "body orient:landscape focal:center seq motion:punch-in",
+      "_reason": "body orient:landscape focal:thirds-default seq motion:none",
       "src": "https://picsum.photos/seed/pixflow-4/1800/1200"
     },
     {
@@ -139,15 +139,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.4
       },
-      "motion": "none",
+      "motion": "punch-in",
       "motionDirection": "down",
-      "motionIntensity": "strong",
-      "transitionIn": "cut",
-      "transitionDurationSec": 0,
+      "motionIntensity": "medium",
+      "transitionIn": "whip",
+      "transitionDurationSec": 0.16,
       "text": null,
-      "_reason": "body orient:portrait focal:center seq motion:none",
+      "_reason": "body orient:portrait focal:thirds-default seq motion:punch-in",
       "src": "https://picsum.photos/seed/pixflow-5/1200/1800"
     },
     {
@@ -160,15 +160,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.44
       },
-      "motion": "punch-in",
+      "motion": "focus-zoom",
       "motionDirection": "up",
       "motionIntensity": "strong",
-      "transitionIn": "whip",
-      "transitionDurationSec": 0.16,
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
       "text": null,
-      "_reason": "body orient:landscape focal:center seq motion:punch-in",
+      "_reason": "body orient:landscape focal:thirds-default seq motion:focus-zoom",
       "src": "https://picsum.photos/seed/pixflow-6/1800/1200"
     },
     {
@@ -181,15 +181,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.44
       },
-      "motion": "focus-zoom",
+      "motion": "punch-in",
       "motionDirection": "down",
-      "motionIntensity": "strong",
+      "motionIntensity": "medium",
       "transitionIn": "cut",
       "transitionDurationSec": 0,
       "text": null,
-      "_reason": "body orient:landscape focal:center seq motion:focus-zoom",
+      "_reason": "body orient:landscape focal:thirds-default seq motion:punch-in",
       "src": "https://picsum.photos/seed/pixflow-8/1800/1200"
     },
     {
@@ -202,15 +202,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.4
       },
-      "motion": "punch-in",
+      "motion": "none",
       "motionDirection": "up",
       "motionIntensity": "strong",
       "transitionIn": "cut",
       "transitionDurationSec": 0,
       "text": null,
-      "_reason": "body orient:portrait focal:center seq motion:punch-in",
+      "_reason": "body orient:portrait focal:thirds-default seq motion:none",
       "src": "https://picsum.photos/seed/pixflow-9/1200/1800"
     },
     {
@@ -223,15 +223,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.44
       },
-      "motion": "none",
+      "motion": "punch-in",
       "motionDirection": "down",
       "motionIntensity": "strong",
-      "transitionIn": "cut",
-      "transitionDurationSec": 0,
+      "transitionIn": "whip",
+      "transitionDurationSec": 0.16,
       "text": null,
-      "_reason": "body orient:landscape focal:center seq motion:none",
+      "_reason": "body orient:landscape focal:thirds-default seq motion:punch-in",
       "src": "https://picsum.photos/seed/pixflow-10/1800/1200"
     },
     {
@@ -244,15 +244,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.4
       },
-      "motion": "punch-in",
+      "motion": "focus-zoom",
       "motionDirection": "up",
-      "motionIntensity": "strong",
-      "transitionIn": "whip",
-      "transitionDurationSec": 0.16,
+      "motionIntensity": "medium",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
       "text": null,
-      "_reason": "body orient:portrait focal:center seq motion:punch-in",
+      "_reason": "body orient:portrait focal:thirds-default seq motion:focus-zoom",
       "src": "https://picsum.photos/seed/pixflow-11/1200/1800"
     },
     {
@@ -265,15 +265,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.44
       },
-      "motion": "focus-zoom",
+      "motion": "punch-in",
       "motionDirection": "down",
       "motionIntensity": "strong",
       "transitionIn": "cut",
       "transitionDurationSec": 0,
       "text": null,
-      "_reason": "body orient:landscape focal:center seq motion:focus-zoom",
+      "_reason": "body orient:landscape focal:thirds-default seq motion:punch-in",
       "src": "https://picsum.photos/seed/pixflow-12/1800/1200"
     },
     {
@@ -286,15 +286,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.4
       },
-      "motion": "punch-in",
+      "motion": "none",
       "motionDirection": "up",
       "motionIntensity": "strong",
       "transitionIn": "cut",
       "transitionDurationSec": 0,
       "text": null,
-      "_reason": "body orient:portrait focal:center seq motion:punch-in",
+      "_reason": "body orient:portrait focal:thirds-default seq motion:none",
       "src": "https://picsum.photos/seed/pixflow-13/1200/1800"
     },
     {
@@ -307,15 +307,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.44
       },
-      "motion": "none",
+      "motion": "punch-in",
       "motionDirection": "down",
-      "motionIntensity": "strong",
-      "transitionIn": "cut",
-      "transitionDurationSec": 0,
+      "motionIntensity": "medium",
+      "transitionIn": "whip",
+      "transitionDurationSec": 0.16,
       "text": null,
-      "_reason": "body orient:landscape focal:center seq motion:none",
+      "_reason": "body orient:landscape focal:thirds-default seq motion:punch-in",
       "src": "https://picsum.photos/seed/pixflow-14/1800/1200"
     },
     {
@@ -328,15 +328,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.4
       },
-      "motion": "punch-in",
+      "motion": "focus-zoom",
       "motionDirection": "up",
       "motionIntensity": "strong",
-      "transitionIn": "whip",
-      "transitionDurationSec": 0.16,
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
       "text": null,
-      "_reason": "body orient:portrait focal:center toppick motion:punch-in",
+      "_reason": "body orient:portrait focal:thirds-default toppick motion:focus-zoom",
       "src": "https://picsum.photos/seed/pixflow-15/1200/1800"
     },
     {
@@ -349,15 +349,15 @@
       "background": "none",
       "focal": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.4
       },
-      "motion": "focus-zoom",
+      "motion": "punch-in",
       "motionDirection": "down",
       "motionIntensity": "strong",
       "transitionIn": "cut",
       "transitionDurationSec": 0,
       "text": null,
-      "_reason": "closer orient:portrait focal:center toppick motion:focus-zoom",
+      "_reason": "closer orient:portrait focal:thirds-default toppick motion:punch-in",
       "src": "https://picsum.photos/seed/pixflow-7/1200/1800"
     }
   ],

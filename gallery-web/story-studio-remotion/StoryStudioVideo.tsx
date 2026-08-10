@@ -227,7 +227,9 @@ const CardLayer: React.FC<{
   brand: BrandResolved;
   template: StoryTemplate;
   durationFrames: number;
-}> = ({ card, brand, template, durationFrames }) => {
+  /** A hero image shown darkened behind the title (scroll-stopping cover). */
+  coverSrc?: string;
+}> = ({ card, brand, template, durationFrames, coverSrc }) => {
   const frame = useCurrentFrame();
   const d = CARD_DESIGN[template];
   const appearFrames = template === "fast-highlights" ? 8 : template === "cinematic-energy" ? 18 : 14;
@@ -268,6 +270,33 @@ const CardLayer: React.FC<{
         padding: d.align === "flex-start" ? "0 90px" : 0,
       }}
     >
+      {/* Image hook: a darkened hero photo behind the title beats text-on-black
+          for stopping the scroll. A scrim keeps the type fully legible. */}
+      {coverSrc ? (
+        <>
+          <Img
+            src={coverSrc}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: "50% 42%",
+              filter: "brightness(0.5)",
+              transform: `scale(${1.06 + appear * 0.05})`,
+            }}
+          />
+          <AbsoluteFill
+            style={{
+              background:
+                d.align === "center"
+                  ? "radial-gradient(ellipse at center, rgba(0,0,0,0.2) 30%, rgba(0,0,0,0.62) 100%)"
+                  : "linear-gradient(to top, rgba(0,0,0,0.72) 18%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0.45) 100%)",
+            }}
+          />
+        </>
+      ) : null}
       {template === "cinematic-energy" ? <Vignette /> : null}
       {accentEl}
       {card.showLogo && brand.logoUrl ? (
@@ -315,7 +344,7 @@ const CardLayer: React.FC<{
 // Radial vignette used by the cinematic template (scenes + cards).
 const Vignette: React.FC = () => (
   <AbsoluteFill
-    style={{ background: "radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%)", pointerEvents: "none" }}
+    style={{ background: "radial-gradient(ellipse at center, rgba(0,0,0,0) 48%, rgba(0,0,0,0.4) 100%)", pointerEvents: "none" }}
   />
 );
 
@@ -330,8 +359,10 @@ const TemplateTreatment: React.FC<{ template: StoryTemplate }> = ({ template }) 
       <>
         <AbsoluteFill
           style={{
+            // Lighter vignette than before — the old 0.68 crushed shadows on
+            // already-dark frames. Keeps the filmic edge without muddying.
             background:
-              "radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(0,0,0,0.68) 100%)",
+              "radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.42) 100%)",
             pointerEvents: "none",
           }}
         />
@@ -454,7 +485,7 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
     segments.push({ from: cursor, frames: d });
     blocks.push(
       <Sequence key="opening" from={cursor} durationInFrames={d}>
-        <CardLayer card={plan.opening} brand={plan.brand} template={plan.template} durationFrames={d} />
+        <CardLayer card={plan.opening} brand={plan.brand} template={plan.template} durationFrames={d} coverSrc={plan.scenes[0]?.src} />
       </Sequence>
     );
     cursor += d;
@@ -481,7 +512,7 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
     segments.push({ from: cursor, frames: d });
     blocks.push(
       <Sequence key="outro" from={cursor} durationInFrames={d}>
-        <CardLayer card={plan.outro} brand={plan.brand} template={plan.template} durationFrames={d} />
+        <CardLayer card={plan.outro} brand={plan.brand} template={plan.template} durationFrames={d} coverSrc={plan.scenes[plan.scenes.length - 1]?.src} />
       </Sequence>
     );
     cursor += d;
