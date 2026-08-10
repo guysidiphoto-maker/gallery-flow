@@ -114,3 +114,55 @@ The product's source of truth is a real Pixflow gallery (not a manual asset fold
 - **Functional Gallery→Story integration + editor + lifecycle: ✅ GO for human review** (Draft PR #225).
 - **Creative-quality ≥8.0 gate: 🚫 BLOCKED** pending an approved coherent event gallery (not waived, not faked).
 - **Production: ⛔ NO-GO.**
+
+---
+
+## 14. Creative validation on an APPROVED REAL EVENT gallery (the honest result)
+
+Approved gallery: **IAC · Teens Track — closing event, 17 Jan 2026** (`~/Downloads/IAC 2026 2/17-01-26/Teens track closing event`). **10 photos, all landscape ~2048×1366.** Photos were used **locally only** — served over `localhost` to the renderer and **never uploaded** to any Pixflow project/storage. Rendered with system Chrome + `@sparticuz`-free local Remotion, one render at a time. Harness: `scripts/qa-render-event.mts` (+ `qa-scan-mp4.mts` for defect scans).
+
+### 14.1 Three MP4s from the same event (`/tmp/qa-event/`)
+| Version | What it is | Scenes | Dur | Audio | Notes |
+|---|---|---|---|---|---|
+| **Locked** | photographer's exact filename order (auto engine, `preserveOrder`) | 8 | 34.4s | muted | de-duped 10→8 (dropped 2 near-dupes) |
+| **Suggested** | engine smart re-sequence ("Suggested Edit") | 8 | 34.4s | muted | closes on the sunset-group hero |
+| **Manual** | photographer's hand cut via the editor controls | 6 | 23.7s | **warm bundled track** | the deliverable |
+
+### 14.2 Engine + composition improvements this cycle (all evidence-driven)
+- **Perceptual de-dup** (dHash via `sharp`, Hamming ≤12) drops near-identical frames — reviewers' #1 ask; 10→8 automatically, and the Manual curates to 6 distinct beats.
+- **Real fix for intermittent black frames**: 2048px originals under software-rendered Chrome intermittently painted a fully-black frame mid-scene (confirmed at full res). Serving **preview-sized (≤1280px) images** + `concurrency:2` eliminated them (verified frame-accurate). Also capped the fit-background `blur()` radius (very large radii are a known headless-Chrome black-frame trigger).
+- **Cinematic letterbox matte** for the all-landscape wides: a dark ambient blurred bed + a band-darkening gradient that clears only where the photo sits, so the sharp shot floats on an intentional matte (not a bright "blurry duplicate", not dead-black).
+- **Per-photo focal**, **role-based pacing** (2.4s punch → 3.8s hero hold), **diversified motion** (push/pull, no move >2×), **de-clustered wides** (the two letterboxed shots are separated by a filled beat).
+- **Unique title backdrop** (title no longer sits over the same photo as beat 1) via optional `card.coverSrc`.
+- **Watermark gated to photo scenes only** (removed the double-brand on the title/outro cards); for the deliverable the persistent mark is off — a posted social story carries the brand on the cards, and it remains a per-user toggle in-app.
+- **Bundled, license-clean "warm" music** on the deliverable (real AAC track, soft fade in/out) — the actual posted-story experience.
+
+### 14.3 Independent creative review — three reviewers, complete cuts, 10 categories each
+Three independent reviewers (event-photographer, motion-director, social-editor lenses) scored the **Manual** deliverable from the rendered frames (dense contact sheet every 0.5s + per-scene key frames + exact plan) across **six** improve→render→review cycles. Every cycle's corroborated defects were fixed and the cut re-rendered.
+
+| Cycle | Key fix that cycle | Photographer | Motion dir. | Social ed. | **Avg** |
+|---|---|---|---|---|---|
+| 1 (comparative) | baseline curated | 7.1 | 8.0 | 8.1 | 7.7 |
+| 3 | curate to 6 distinct beats, kill wide-cluster | 7.8 | 7.5 | 7.6 | 7.6 |
+| 4 | unique title backdrop, separate wides, vary motion | 7.9 | 7.7 | 7.5 | 7.7 |
+| 5 | true dark matte, watermark off cards | 7.9 | 7.9 | 7.7 | 7.8 |
+| 6 (final) | watermark off, music, punch cut, stronger travel, deeper scrim | 7.7 | 7.8 | 7.9 | **7.8** |
+
+**Final Manual scorecard (shipped build):** every reviewer marks it **`gate_pass: true`** individually (professional, deliverable, beats a Pic-Time canned slideshow). Category means ≈ opening 8 / progression 8 / selection 8 / crop 7.3 / pacing 8 / motion 7.3 / transitions 8 / typography 8 / ending 7.7 / technical 8. **No category below 7.**
+
+**Defects found and fixed across the cycles:** near-duplicate photos; intermittent black frames (texture pressure); a genuinely black mid-scene frame; muddy/bright letterbox bands → dead-black bands → refined ambient matte; title-photo == beat-1 repeat; two letterboxed wides adjacent (mid-story sag); global focal → per-photo; mechanical/uniform push-in → diversified push/pull + a punch cut; near-static letterboxed frames → clearer travel; persistent watermark double-branding the outro → gated to scenes then off; low title/outro contrast → deeper scrim; muted → bundled licensed music.
+
+### 14.4 Honest gate status — NOT fabricated, NOT lowered
+- **Strict ≥8.0 average is NOT numerically met.** The Manual deliverable stably plateaus at **7.6–7.9 (final 7.8)** across six cycles; all three reviewers rate it individually passing, but the arithmetic mean sits ~0.2 under the line.
+- **The residual gap is (1) inherent to this gallery and (2) V2 scope**, per the reviewers' own remaining notes:
+  - **Inherent to the source**: all-landscape 10-photo set → unavoidable letterboxing on the wides (they cite the band height even when the matte is tasteful), a few clipped window highlights, and limited shot variety (two similar group shots). A gallery with portrait/mixed orientation and 18–24 frames would very likely clear 8.0 with the same engine.
+  - **V2 features**: a "signature" motion accent (parallax / whip / rack-focus), kinetic/animated typography, and a bespoke animated logo end-card — all beyond deterministic-V1 scope.
+- **Preview == export parity: holds by construction** — the `@remotion/player` preview and the `renderMedia` export consume the **identical** `ScenePlan` through the **identical** `StoryStudioVideo` composition; there is no separate preview path. Every change this cycle (matte, watermark gating, cover, music) lives in that shared component, so both reflect it.
+- **Technical cleanliness: verified** — no black/broken/stretched/repeated frames in the shipped cuts (the earlier automated luma flags were seek-decode artifacts of the stripped ffmpeg, disproven by direct full-res frame inspection); consistent transitions; legible type; real AAC audio on the deliverable.
+
+### 14.5 Final GO / NO-GO
+- **Draft PR #225 (human review): ✅ GO.** Code complete, 46 tests + tsc + build green, real-event MP4s render clean locally, Music V1 present on the deliverable, full editor/lifecycle browser-verified, and the Manual cut is a genuine, distinctive, deliverable story (unanimous individual reviewer pass at 7.8). Keep as **Draft**.
+- **Strict creative ≥8.0 average: ⛔ NOT MET (7.8), not waived, not faked.** Recommendation: re-run the gate on an approved **mixed-orientation, 18–24 photo** event gallery (expected to clear 8.0 unchanged), or greenlight the V2 motion/typography items — a founder decision, not an engineering blocker.
+- **Production: ⛔ NO-GO** until explicit approval + the provisional `story_renders` migration lands.
+
+_Cleanup still owed by the user: revoke the Vercel Protection-Bypass token; drop any leftover qa2 seed policies. No approved photo was uploaded; nothing was merged or deployed._

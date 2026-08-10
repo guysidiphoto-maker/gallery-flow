@@ -225,7 +225,10 @@ function resolveFocal(img: PlannerImage): { focal: FocalPoint; reason: string } 
   // portrait keeps the face; landscapes bias a touch less. This is the single
   // highest-value crop fix when no detection data exists.
   const o = orientationOf(img.width, img.height);
-  const y = o === "landscape" ? 0.44 : o === "square" ? 0.42 : 0.4;
+  // Faces sit above center in most event photography; bias higher so a 9:16
+  // fill-crop of a landscape frame keeps heads (reviewers: y=0.44 still edged
+  // faces low on group shots). Landscape needs the strongest upward bias.
+  const y = o === "landscape" ? 0.38 : 0.4;
   return { focal: { x: 0.5, y }, reason: "thirds-default" };
 }
 

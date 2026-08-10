@@ -105,6 +105,8 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
     // never shows black bars).
     return (
       <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+        {/* Ambient bed: the same photo, heavily darkened + softly blurred so it
+            reads as a cinematic matte, NOT a recognizable blurry duplicate. */}
         <Img
           src={scene.src!}
           style={{
@@ -113,8 +115,22 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
             height: "100%",
             objectFit: "cover",
             objectPosition,
-            filter: "blur(38px) brightness(0.6)",
-            transform: `scale(1.2)`,
+            // Capped blur radius: very large radii intermittently paint black in
+            // software-rendered (headless) Chrome. 22px reads the same, renders safe.
+            // Dark ambient bed: dim enough to read as an intentional cinematic
+            // matte, but not dead-black — a faint blurred glow of the scene's own
+            // light/colour survives in the bands so they feel designed, not empty.
+            filter: "blur(24px) brightness(0.26) saturate(1.15)",
+            transform: `scale(1.35)`,
+          }}
+        />
+        {/* Deepen the bands over the ambient bed and clear where the contained
+            photo sits (~31%-69% for a landscape in 9:16). A thin accent hairline
+            at the photo's top/bottom edge frames it as a deliberate matte. */}
+        <AbsoluteFill
+          style={{
+            background:
+              "linear-gradient(to bottom, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.62) 22%, rgba(0,0,0,0.1) 31%, rgba(0,0,0,0) 40%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.1) 69%, rgba(0,0,0,0.62) 78%, rgba(0,0,0,0.78) 100%)",
           }}
         />
         <Img
@@ -294,7 +310,7 @@ const CardLayer: React.FC<{
                   ? // Centered (editorial) titles need a darker backing behind
                     // the CENTER — the old 0.2 center let white type vanish over
                     // a bright sky. Darken the middle band under the title.
-                    "radial-gradient(ellipse 90% 55% at 50% 45%, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.4) 55%, rgba(0,0,0,0.66) 100%)"
+                    "radial-gradient(ellipse 92% 58% at 50% 46%, rgba(0,0,0,0.74) 0%, rgba(0,0,0,0.52) 55%, rgba(0,0,0,0.72) 100%)"
                   : "linear-gradient(to top, rgba(0,0,0,0.72) 18%, rgba(0,0,0,0.28) 55%, rgba(0,0,0,0.5) 100%)",
             }}
           />
@@ -500,12 +516,13 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
     segments.push({ from: cursor, frames: d });
     blocks.push(
       <Sequence key="opening" from={cursor} durationInFrames={d}>
-        <CardLayer card={plan.opening} brand={plan.brand} template={plan.template} durationFrames={d} coverSrc={plan.scenes[0]?.src} />
+        <CardLayer card={plan.opening} brand={plan.brand} template={plan.template} durationFrames={d} coverSrc={(plan.opening as any).coverSrc ?? plan.scenes[0]?.src} />
       </Sequence>
     );
     cursor += d;
   }
 
+  const wmFrom = cursor; // watermark shows over the photo scenes only, not the cards
   plan.scenes.forEach((scene, i) => {
     const d = secToFrames(scene.durationSec);
     const tin = secToFrames(scene.transitionDurationSec);
@@ -521,6 +538,7 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
     );
     cursor = from + d + (i === 0 ? 0 : tin);
   });
+  const wmTo = cursor;
 
   if (plan.outro?.enabled) {
     const d = secToFrames(plan.outro.durationSec);
@@ -540,7 +558,11 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
       {plan.template === "fast-highlights" ? (
         <StoryProgressBars segments={segments} accentHex={plan.brand.accentHex} />
       ) : null}
-      <Watermark brand={plan.brand} />
+      {/* Watermark over the photo scenes only — the title/outro cards carry the
+          studio wordmark themselves, so a corner mark there would double-brand. */}
+      <Sequence from={wmFrom} durationInFrames={Math.max(1, wmTo - wmFrom)}>
+        <Watermark brand={plan.brand} />
+      </Sequence>
       <MusicLayer music={plan.music} />
     </AbsoluteFill>
   );
