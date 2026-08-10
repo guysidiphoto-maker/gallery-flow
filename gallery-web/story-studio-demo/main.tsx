@@ -77,19 +77,23 @@ const onSave = (plan: ScenePlan) => {
 // editor outside StrictMode (or gate the Player) for the same reason.
 // ?narrow=1 renders the editor inside a phone-width frame to QA the mobile layout
 // (browser-tool window resize can't constrain the CSS viewport here).
-const narrow = new URLSearchParams(location.search).get("narrow") === "1";
+// ?narrow=1 renders inside a phone frame; ?w=&h= set an explicit device viewport
+// (e.g. iPhone 390x844, Android 412x915, landscape 844x390) for the browser QA
+// matrix. ?lang=en swaps the demo event to English text to QA LTR caption/title.
+const q = new URLSearchParams(location.search);
+const narrow = q.get("narrow") === "1";
+const w = q.get("w") ? Number(q.get("w")) : narrow ? 390 : 0;
+const h = q.get("h") ? Number(q.get("h")) : narrow ? 800 : 0;
+const en = q.get("lang") === "en";
+const event = en
+  ? { title: "Sarah & James", date: "20 Jun 2026 · Napa Valley", location: "Napa Valley" }
+  : { title: "Dana & Tom", date: "20 Jun 2026", location: "Caesarea" };
 const editor = (
-  <StoryStudioEditor
-    images={images}
-    brand={brand}
-    event={{ title: "Dana & Tom", date: "20 Jun 2026", location: "Caesarea" }}
-    galleryId="demo-gallery"
-    onSave={onSave}
-  />
+  <StoryStudioEditor images={images} brand={brand} event={event} galleryId="demo-gallery" onSave={onSave} />
 );
 createRoot(document.getElementById("root")!).render(
-  narrow ? (
-    <div style={{ width: 390, height: 800, margin: "20px auto", border: "8px solid #222", borderRadius: 28, overflow: "hidden" }}>
+  w && h ? (
+    <div style={{ width: w, height: h, margin: "12px auto", border: "8px solid #222", borderRadius: 24, overflow: "hidden" }}>
       {editor}
     </div>
   ) : (
