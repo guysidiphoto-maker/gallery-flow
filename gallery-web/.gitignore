@@ -5,3 +5,4 @@
 # stories-remotion/src/Root.tsx into here, then vite copies it into dist/.
 public/stories-bundle/
 playwright-report/
+.env*

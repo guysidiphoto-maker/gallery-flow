@@ -1,0 +1,423 @@
+{
+  "version": 1,
+  "galleryId": "sample-corporate",
+  "format": "9:16",
+  "template": "cinematic-energy",
+  "length": "standard",
+  "pace": "balanced",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+  "opening": {
+    "kind": "opening",
+    "enabled": true,
+    "title": "Annual Kickoff 2026",
+    "subtitle": "10 May 2026  ·  Tel Aviv",
+    "showLogo": true,
+    "durationSec": 2.2
+  },
+  "outro": {
+    "kind": "outro",
+    "enabled": true,
+    "title": "Eclipse Media",
+    "showLogo": true,
+    "durationSec": 2.8
+  },
+  "scenes": [
+    {
+      "id": "sc_0_corp-001",
+      "imageId": "corp-0011-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 2.27,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_1_corp-000",
+      "imageId": "corp-0001-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "slide",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_2_corp-000",
+      "imageId": "corp-0002-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "pan",
+      "motionDirection": "left",
+      "motionIntensity": "medium",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_3_corp-000",
+      "imageId": "corp-0006-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "pull-out",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "light-leak",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_4_corp-000",
+      "imageId": "corp-0005-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_5_corp-000",
+      "imageId": "corp-0009-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "slide",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_6_corp-001",
+      "imageId": "corp-0010-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "pan",
+      "motionDirection": "left",
+      "motionIntensity": "medium",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_7_corp-001",
+      "imageId": "corp-0018-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "pull-out",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "light-leak",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_8_corp-001",
+      "imageId": "corp-0013-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_9_corp-001",
+      "imageId": "corp-0014-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "slide",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_10_corp-002",
+      "imageId": "corp-0021-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "pan",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_11_corp-001",
+      "imageId": "corp-0017-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "pull-out",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "light-leak",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_12_corp-001",
+      "imageId": "corp-0019-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.92,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_13_corp-002",
+      "imageId": "corp-0027-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.92,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "slide",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_14_corp-002",
+      "imageId": "corp-0022-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "pan",
+      "motionDirection": "left",
+      "motionIntensity": "medium",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_15_corp-002",
+      "imageId": "corp-0025-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "pull-out",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "light-leak",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_16_corp-003",
+      "imageId": "corp-0033-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_17_corp-002",
+      "imageId": "corp-0026-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "slide",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_18_corp-002",
+      "imageId": "corp-0029-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "pan",
+      "motionDirection": "left",
+      "motionIntensity": "medium",
+      "transitionIn": "soft-blur",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_19_corp-000",
+      "imageId": "corp-0004-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.92,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "motion": "pull-out",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "light-leak",
+      "transitionDurationSec": 0.4,
+      "text": null
+    }
+  ],
+  "brand": {
+    "accentHex": "#1E3A8A",
+    "headingFont": "Fraunces",
+    "bodyFont": "Inter",
+    "studioName": "Eclipse Media",
+    "logoUrl": "https://example.test/logo.png",
+    "watermark": {
+      "enabled": true,
+      "opacityPercent": 18,
+      "position": "bottom-right"
+    }
+  },
+  "music": null,
+  "generatedBy": "auto",
+  "planSeed": 11
+}

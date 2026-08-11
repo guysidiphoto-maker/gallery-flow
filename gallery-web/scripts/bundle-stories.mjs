@@ -31,6 +31,12 @@ import { existsSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
+// NOTE: do NOT delete the emitted *.map files. Remotion serves this bundle from
+// a local directory at render time and its static server throws ENOENT (not a
+// soft 404) when a referenced `bundle.js.map` is missing, which crashes the
+// render. The maps are harmless weight; the function bundle stays well under the
+// 250MB limit. (Learned the hard way on the deployed QA — keep the maps.)
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -41,6 +47,10 @@ const __dirname = path.dirname(__filename);
 const webRoot = path.resolve(__dirname, '..');
 const entryPoint = path.resolve(webRoot, 'stories-remotion', 'src', 'Root.tsx');
 const outDir = path.resolve(webRoot, 'public', 'stories-bundle');
+// Static assets (Music V1 test tracks) copied into the bundle so the server
+// render can staticFile() them locally — no external fetch. Mirrors
+// gallery-web/public/stories-audio which the editor <Player> uses.
+const publicDir = path.resolve(webRoot, 'story-studio-remotion', 'public');
 
 if (!existsSync(entryPoint)) {
   console.error(`[bundle-stories] entry point missing: ${entryPoint}`);
@@ -62,6 +72,7 @@ try {
   await bundle({
     entryPoint,
     outDir,
+    publicDir,
     // Production bundle: no source maps, no dev server.
     // Returning the config unchanged keeps Remotion's defaults — which already
     // handle JSX, TS, and image inlining for the composition's local assets.

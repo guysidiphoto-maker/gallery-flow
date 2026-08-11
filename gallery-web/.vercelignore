@@ -1,0 +1,6 @@
+node_modules
+.git
+src/lib/storyStudio/samples/renders
+public/stories-bundle
+sstudio.html
+story-studio-demo

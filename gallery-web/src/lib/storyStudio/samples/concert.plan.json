@@ -1,0 +1,233 @@
+{
+  "version": 1,
+  "galleryId": "sample-concert",
+  "format": "9:16",
+  "template": "fast-highlights",
+  "length": "short",
+  "pace": "energetic",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+  "opening": {
+    "kind": "opening",
+    "enabled": true,
+    "title": "Neon Nights",
+    "subtitle": "02 Aug 2026",
+    "showLogo": true,
+    "durationSec": 1.8
+  },
+  "outro": {
+    "kind": "outro",
+    "enabled": true,
+    "title": "Eclipse Live",
+    "showLogo": true,
+    "durationSec": 2.2
+  },
+  "scenes": [
+    {
+      "id": "sc_0_gig-0001",
+      "imageId": "gig-0001-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 2.22,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_1_gig-0000",
+      "imageId": "gig-0000-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "slide",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_2_gig-0005",
+      "imageId": "gig-0005-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_3_gig-0010",
+      "imageId": "gig-0010-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_4_gig-0014",
+      "imageId": "gig-0014-abcdef",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "slide",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_5_gig-0017",
+      "imageId": "gig-0017-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.94,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_6_gig-0019",
+      "imageId": "gig-0019-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_7_gig-0023",
+      "imageId": "gig-0023-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.8,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "slide",
+      "transitionDurationSec": 0.4,
+      "text": null
+    },
+    {
+      "id": "sc_8_gig-0025",
+      "imageId": "gig-0025-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.94,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "motion": "push-in",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null
+    },
+    {
+      "id": "sc_9_gig-0009",
+      "imageId": "gig-0009-abcdef",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.94,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.4,
+      "text": null
+    }
+  ],
+  "brand": {
+    "accentHex": "#7C3AED",
+    "headingFont": "Fraunces",
+    "bodyFont": "Inter",
+    "studioName": "Eclipse Live",
+    "logoUrl": "https://example.test/logo.png",
+    "watermark": {
+      "enabled": true,
+      "opacityPercent": 18,
+      "position": "bottom-right"
+    }
+  },
+  "music": null,
+  "generatedBy": "auto",
+  "planSeed": 2
+}

@@ -1,0 +1,698 @@
+// StoryStudioVideo.tsx — Remotion composition that renders a canonical ScenePlan.
+// This is the render half of the "one plan drives preview AND export" guarantee:
+// the same ScenePlan object the editor previews is what this composition encodes.
+//
+// Self-contained (only react + remotion + the shared contract). Motion, fit/crop,
+// transitions, brand title cards and watermark are all derived from plan fields.
+
+import React from "react";
+import {
+  AbsoluteFill,
+  Audio,
+  Img,
+  Sequence,
+  interpolate,
+  staticFile,
+  useCurrentFrame,
+  useVideoConfig,
+} from "remotion";
+
+import type {
+  Scene,
+  ScenePlan,
+  StoryTemplate,
+  TitleCard,
+  BrandResolved,
+} from "../src/lib/storyStudio/sceneplan";
+import { MUSIC_TRACK_IDS, musicTrackFile } from "../src/lib/storyStudio/sceneplan";
+
+const isHebrew = (s?: string | null) => !!s && /[֐-׿]/.test(s);
+
+// Ease in-out for tasteful (continuous) motion; ease-out for snap-and-settle.
+const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+function focalPercent(focal: { x: number; y: number }) {
+  return `${(focal.x * 100).toFixed(1)}% ${(focal.y * 100).toFixed(1)}%`;
+}
+
+// ── One image scene: fit + focal crop + motion ──────────────────────────────
+const SceneLayer: React.FC<{ scene: Scene; durationFrames: number; accentHex?: string }> = ({
+  scene,
+  durationFrames,
+  accentHex,
+}) => {
+  const frame = useCurrentFrame();
+  const p = easeInOut(interpolate(frame, [0, durationFrames], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  }));
+
+  const intensity =
+    scene.motionIntensity === "strong" ? 0.14 : scene.motionIntensity === "medium" ? 0.09 : 0.05;
+
+  let scale = 1;
+  let tx = 0;
+  let ty = 0;
+  switch (scene.motion) {
+    case "push-in":
+      scale = 1 + intensity * p;
+      break;
+    case "pull-out":
+      scale = 1 + intensity * (1 - p);
+      break;
+    case "focus-zoom":
+      scale = 1 + (intensity + 0.03) * p;
+      break;
+    case "punch-in": {
+      // Snap-and-settle: starts noticeably enlarged, eases back to rest inside
+      // the first ~35% of the scene, then holds. Reads as a percussive hit — the
+      // signature move of the fast-highlights template.
+      const settle = easeOutCubic(
+        interpolate(frame, [0, Math.max(1, durationFrames * 0.35)], [0, 1], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        })
+      );
+      scale = 1 + (intensity + 0.06) * (1 - settle);
+      break;
+    }
+    case "pan": {
+      const amt = intensity * 100 * p; // px
+      if (scene.motionDirection === "left") tx = -amt;
+      else if (scene.motionDirection === "right") tx = amt;
+      else if (scene.motionDirection === "up") ty = -amt;
+      else ty = amt;
+      scale = 1 + 0.06; // slight overscan so pan never reveals an edge
+      break;
+    }
+    case "parallax": {
+      // Two-plane drift: the sharp foreground glides one way with overscan; the
+      // blurred bed (fit scenes) counter-drifts for depth (see bedTx below).
+      const amt = intensity * 90 * p;
+      tx = scene.motionDirection === "right" ? amt : -amt;
+      scale = 1 + 0.1;
+      break;
+    }
+    case "reveal": {
+      // Directional reveal: the image eases in from an offset over the first ~42%,
+      // then holds. Reads as an intentional entrance for a detail/hero beat.
+      const rp = easeOutCubic(
+        interpolate(frame, [0, Math.max(1, durationFrames * 0.42)], [0, 1], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        })
+      );
+      const off = (1 - rp) * 90;
+      if (scene.motionDirection === "up") ty = off;
+      else if (scene.motionDirection === "down") ty = -off;
+      else if (scene.motionDirection === "right") tx = -off;
+      else tx = off;
+      scale = 1 + intensity * 0.5 * p + 0.05;
+      break;
+    }
+    case "none":
+    default:
+      scale = 1.0;
+  }
+
+  // Blurred-bed counter-drift for a genuine two-plane parallax (fit scenes only).
+  const bedTx = scene.motion === "parallax" ? -tx * 0.55 : 0;
+
+  const objectPosition = focalPercent(scene.focal);
+  const transformOrigin = objectPosition;
+
+  // Caption renders in BOTH fit modes (previously it was dropped on the
+  // fit/landscape branch, so a typed caption silently vanished on landscape
+  // scenes — a preview==export violation). Position honors text.position.
+  const caption = scene.text ? (
+    <SceneCaption text={scene.text.content} position={scene.text.position} style={scene.captionStyle} accentHex={accentHex} />
+  ) : null;
+
+  // COLLAGE: 2-3 landscape photos stacked vertically to fill 9:16 with no crop-to-
+  // nothing and no black bars. Each cell fills its row (a landscape in a wide-short
+  // cell barely crops), a thin accent hairline separates them into a designed grid.
+  if (scene.layout === "collage" && scene.collageSrc && scene.collageSrc.length >= 2) {
+    const cells = scene.collageSrc.slice(0, 3);
+    return (
+      <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            transform: `scale(${scale}) translate(${tx}px, ${ty}px)`,
+            transformOrigin: "center",
+          }}
+        >
+          {cells.map((src, i) => (
+            <div key={i} style={{ flex: 1, overflow: "hidden", position: "relative", background: accentHex ?? "#111" }}>
+              <Img src={src} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "50% 45%" }} />
+            </div>
+          ))}
+        </div>
+        {caption}
+      </AbsoluteFill>
+    );
+  }
+
+  if (scene.fit === "fit") {
+    // Blurred cover background + contained foreground (never crops a face,
+    // never shows black bars).
+    return (
+      <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+        {/* Ambient bed: the same photo, heavily darkened + softly blurred so it
+            reads as a cinematic matte, NOT a recognizable blurry duplicate. */}
+        <Img
+          src={scene.src!}
+          style={{
+            position: "absolute",
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition,
+            // Capped blur radius: very large radii intermittently paint black in
+            // software-rendered (headless) Chrome. 22px reads the same, renders safe.
+            // Dark ambient bed: dim enough to read as an intentional cinematic
+            // matte, but not dead-black — a faint blurred glow of the scene's own
+            // light/colour survives in the bands so they feel designed, not empty.
+            filter: "blur(24px) brightness(0.26) saturate(1.15)",
+            transform: `scale(1.35) translateX(${bedTx}px)`,
+          }}
+        />
+        {/* Deepen the bands over the ambient bed and clear where the contained
+            photo sits (~31%-69% for a landscape in 9:16). A thin accent hairline
+            at the photo's top/bottom edge frames it as a deliberate matte. */}
+        <AbsoluteFill
+          style={{
+            background:
+              "linear-gradient(to bottom, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.62) 22%, rgba(0,0,0,0.1) 31%, rgba(0,0,0,0) 40%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.1) 69%, rgba(0,0,0,0.62) 78%, rgba(0,0,0,0.78) 100%)",
+          }}
+        />
+        <Img
+          src={scene.src!}
+          style={{
+            position: "absolute",
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            transform: `scale(${scale}) translate(${tx}px, ${ty}px)`,
+            transformOrigin,
+          }}
+        />
+        {caption}
+      </AbsoluteFill>
+    );
+  }
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+      <Img
+        src={scene.src!}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          objectPosition,
+          transform: `scale(${scale}) translate(${tx}px, ${ty}px)`,
+          transformOrigin,
+        }}
+      />
+      {caption}
+    </AbsoluteFill>
+  );
+};
+
+const CAPTION_STYLES: Record<string, React.CSSProperties> = {
+  editorial: { fontFamily: "Playfair Display, Georgia, serif", fontWeight: 600, fontSize: 52, letterSpacing: 0 },
+  bold: { fontFamily: "Inter, sans-serif", fontWeight: 800, fontSize: 58, textTransform: "uppercase", letterSpacing: 1.5 },
+  minimal: { fontFamily: "Inter, sans-serif", fontWeight: 400, fontSize: 44, letterSpacing: 3 },
+};
+
+const SceneCaption: React.FC<{
+  text: string;
+  position?: "top" | "center" | "bottom";
+  style?: "editorial" | "bold" | "minimal";
+  accentHex?: string;
+}> = ({ text, position = "bottom", style = "editorial", accentHex = "#ffffff" }) => {
+  const frame = useCurrentFrame();
+  // Gentle animated entrance (rise + fade) so the type SUPPORTS the photo rather
+  // than popping over it. Honours prefers-reduced-motion (still, just fades).
+  const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  const appear = interpolate(frame, [0, 14], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const rtl = isHebrew(text);
+  // Vertical placement honours position; all inside the IG/Reels safe zone.
+  const vertical: React.CSSProperties =
+    position === "top" ? { top: 220 } : position === "center" ? { top: "46%" } : { bottom: 380 };
+  const s = CAPTION_STYLES[style] ?? CAPTION_STYLES.editorial;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 84, // safe left/right margins for Stories UI
+        right: 84,
+        ...vertical,
+        opacity: appear,
+        transform: reduce ? undefined : `translateY(${(1 - appear) * 16}px)`,
+        color: "#fff",
+        lineHeight: 1.2,
+        textAlign: rtl ? "right" : "left",
+        direction: rtl ? "rtl" : "ltr",
+        textShadow: "0 2px 20px rgba(0,0,0,0.6)",
+        ...s,
+      }}
+    >
+      {/* A short accent rule reads as a "chapter/moment" label without a heavy card. */}
+      <div style={{ width: 46 * appear, height: 3, background: accentHex, marginBottom: 14, borderRadius: 2 }} />
+      {text}
+    </div>
+  );
+};
+
+// ── Per-template art direction ───────────────────────────────────────────────
+// One canonical ScenePlan; three recognizably different visual identities. Each
+// card design is distinct within the first frames (title weight/case/alignment,
+// accent shape, entrance animation) and each template paints a different overall
+// frame treatment (letterbox+vignette / clean / kinetic).
+interface CardDesign {
+  bg: string;
+  titleWeight: number;
+  titleSize: number;
+  titleTransform: "none" | "uppercase";
+  titleLetterSpacing: number;
+  subtitleTransform: "none" | "uppercase";
+  subtitleLetterSpacing: number;
+  align: "center" | "flex-start";
+  textAlign: "center" | "left";
+  accent: "line" | "wide" | "block";
+  // entrance: how the title arrives
+  entrance: "fade" | "rise" | "scale";
+}
+const CARD_DESIGN: Record<StoryTemplate, CardDesign> = {
+  "editorial-clean": {
+    bg: "#0c0c0e", titleWeight: 500, titleSize: 74, titleTransform: "none", titleLetterSpacing: 1,
+    subtitleTransform: "uppercase", subtitleLetterSpacing: 6, align: "center", textAlign: "center",
+    accent: "line", entrance: "fade",
+  },
+  "cinematic-energy": {
+    bg: "#050506", titleWeight: 800, titleSize: 96, titleTransform: "uppercase", titleLetterSpacing: 2,
+    subtitleTransform: "uppercase", subtitleLetterSpacing: 10, align: "flex-start", textAlign: "left",
+    accent: "wide", entrance: "scale",
+  },
+  "fast-highlights": {
+    bg: "#0a0a0c", titleWeight: 900, titleSize: 104, titleTransform: "uppercase", titleLetterSpacing: 0,
+    subtitleTransform: "none", subtitleLetterSpacing: 1, align: "flex-start", textAlign: "left",
+    accent: "block", entrance: "rise",
+  },
+};
+
+// ── Title / outro card ──────────────────────────────────────────────────────
+const CardLayer: React.FC<{
+  card: TitleCard;
+  brand: BrandResolved;
+  template: StoryTemplate;
+  durationFrames: number;
+  /** A hero image shown darkened behind the title (scroll-stopping cover). */
+  coverSrc?: string;
+}> = ({ card, brand, template, durationFrames, coverSrc }) => {
+  const frame = useCurrentFrame();
+  const d = CARD_DESIGN[template];
+  const appearFrames = template === "fast-highlights" ? 8 : template === "cinematic-energy" ? 18 : 14;
+  const appear = interpolate(frame, [0, appearFrames], [0, 1], { extrapolateRight: "clamp" });
+  const out = interpolate(frame, [durationFrames - 12, durationFrames], [1, 0], { extrapolateLeft: "clamp" });
+  const opacity = Math.min(appear, out);
+  const rtlTitle = isHebrew(card.title);
+
+  // entrance transform for the title
+  let titleTransform = "none";
+  if (d.entrance === "rise") titleTransform = `translateY(${(1 - appear) * 40}px)`;
+  else if (d.entrance === "scale") titleTransform = `scale(${0.82 + appear * 0.18})`;
+
+  const accentEl =
+    d.accent === "block" ? (
+      <div style={{ height: 18, width: interpolate(appear, [0, 1], [0, 120]), backgroundColor: brand.accentHex, marginBottom: 20 }} />
+    ) : (
+      <div
+        style={{
+          width: d.accent === "wide" ? 320 : 200,
+          height: d.accent === "wide" ? 8 : 5,
+          backgroundColor: brand.accentHex,
+          borderRadius: 3,
+          marginBottom: d.align === "center" ? 40 : 26,
+          transform: `scaleX(${appear})`,
+          transformOrigin: d.textAlign === "left" ? "left" : "center",
+        }}
+      />
+    );
+
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: d.bg,
+        alignItems: d.align,
+        justifyContent: "center",
+        opacity,
+        padding: d.align === "flex-start" ? "0 90px" : 0,
+      }}
+    >
+      {/* Image hook: a darkened hero photo behind the title beats text-on-black
+          for stopping the scroll. A scrim keeps the type fully legible. */}
+      {coverSrc ? (
+        <>
+          <Img
+            src={coverSrc}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: "50% 42%",
+              filter: "brightness(0.5)",
+              transform: `scale(${1.06 + appear * 0.05})`,
+            }}
+          />
+          <AbsoluteFill
+            style={{
+              background:
+                d.align === "center"
+                  ? // Centered (editorial) titles need a darker backing behind
+                    // the CENTER — the old 0.2 center let white type vanish over
+                    // a bright sky. Darken the middle band under the title.
+                    "radial-gradient(ellipse 92% 58% at 50% 46%, rgba(0,0,0,0.74) 0%, rgba(0,0,0,0.52) 55%, rgba(0,0,0,0.72) 100%)"
+                  : "linear-gradient(to top, rgba(0,0,0,0.72) 18%, rgba(0,0,0,0.28) 55%, rgba(0,0,0,0.5) 100%)",
+            }}
+          />
+        </>
+      ) : null}
+      {template === "cinematic-energy" ? <Vignette /> : null}
+      {accentEl}
+      {card.showLogo && brand.logoUrl ? (
+        // Animated logo end-card: a restrained scale-up + fade reveal so the mark
+        // lands deliberately without covering the photo behind it.
+        <Img
+          src={brand.logoUrl}
+          style={{
+            position: "relative",
+            zIndex: 2,
+            maxWidth: 300,
+            maxHeight: 150,
+            marginBottom: 30,
+            objectFit: "contain",
+            opacity: appear,
+            transform: `scale(${0.86 + appear * 0.14})`,
+          }}
+        />
+      ) : null}
+      {card.title ? (
+        <div
+          style={{
+            // position:relative lifts the title above the absolutely-positioned
+            // cover image + scrim. Without it, a title whose entrance transform
+            // is "none" (editorial fade) paints BELOW the scrim and vanishes,
+            // while a transformed title (cinematic scale) does not — that mismatch
+            // was the "editorial title/outro not rendering" bug.
+            position: "relative",
+            zIndex: 2,
+            color: "#fff",
+            fontSize: d.titleSize,
+            fontWeight: d.titleWeight,
+            fontFamily: `${brand.headingFont}, Georgia, serif`,
+            textTransform: d.titleTransform,
+            letterSpacing: d.titleLetterSpacing,
+            lineHeight: 1.02,
+            textAlign: d.textAlign,
+            direction: rtlTitle ? "rtl" : "ltr",
+            transform: titleTransform,
+            padding: d.align === "center" ? "0 80px" : 0,
+            // Legible over ANY hero photo (bright skies included).
+            textShadow: "0 2px 28px rgba(0,0,0,0.9), 0 1px 4px rgba(0,0,0,0.75)",
+          }}
+        >
+          {card.title}
+        </div>
+      ) : null}
+      {card.subtitle ? (
+        <div
+          style={{
+            position: "relative",
+            zIndex: 2,
+            color: brand.accentHex,
+            fontSize: 38,
+            marginTop: 22,
+            fontFamily: `${brand.bodyFont}, Helvetica, sans-serif`,
+            textTransform: d.subtitleTransform,
+            letterSpacing: d.subtitleLetterSpacing,
+            textAlign: d.textAlign,
+            opacity: appear,
+            textShadow: "0 2px 18px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.7)",
+          }}
+        >
+          {card.subtitle}
+        </div>
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+
+// Radial vignette used by the cinematic template (scenes + cards).
+const Vignette: React.FC = () => (
+  <AbsoluteFill
+    style={{ background: "radial-gradient(ellipse at center, rgba(0,0,0,0) 48%, rgba(0,0,0,0.4) 100%)", pointerEvents: "none" }}
+  />
+);
+
+// Per-template overlay painted over the whole video. The treatment is a primary
+// way the three templates read as different at a glance:
+//   cinematic  -> wide 2.4:1 letterbox bars + heavy vignette (filmic)
+//   fast       -> reel-style segmented progress bars (handled at top level)
+//   editorial  -> nothing; stays clean full-bleed
+const TemplateTreatment: React.FC<{ template: StoryTemplate }> = ({ template }) => {
+  if (template === "cinematic-energy") {
+    return (
+      <>
+        <AbsoluteFill
+          style={{
+            // Lighter vignette than before — the old 0.68 crushed shadows on
+            // already-dark frames. Keeps the filmic edge without muddying.
+            background:
+              "radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.42) 100%)",
+            pointerEvents: "none",
+          }}
+        />
+        {/* ~2.4:1 cinematic bars (140px top+bottom on a 1920 frame) */}
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 140, background: "#000" }} />
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 140, background: "#000" }} />
+      </>
+    );
+  }
+  return null; // editorial-clean + fast-highlights add nothing here
+};
+
+// Reel-style segmented progress bars along the top (Instagram/TikTok Stories
+// idiom). Only fast-highlights uses this — an instantly-recognizable social cue
+// no other template has. Segments = one bar per block (opening, each scene, outro).
+const StoryProgressBars: React.FC<{
+  segments: Array<{ from: number; frames: number }>;
+  accentHex: string;
+}> = ({ segments, accentHex }) => {
+  const frame = useCurrentFrame();
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 22,
+        left: 22,
+        right: 22,
+        display: "flex",
+        gap: 6,
+        height: 6,
+        zIndex: 5,
+      }}
+    >
+      {segments.map((seg, i) => {
+        const fill = interpolate(frame, [seg.from, seg.from + seg.frames], [0, 1], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        });
+        return (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              background: "rgba(255,255,255,0.32)",
+              borderRadius: 3,
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ width: `${fill * 100}%`, height: "100%", background: accentHex }} />
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const Watermark: React.FC<{ brand: BrandResolved }> = ({ brand }) => {
+  if (!brand.watermark?.enabled || !brand.studioName) return null;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        right: 40,
+        bottom: 60,
+        color: "#fff",
+        opacity: (brand.watermark.opacityPercent ?? 20) / 100,
+        fontSize: 30,
+        fontWeight: 600,
+        textShadow: "0 1px 8px rgba(0,0,0,0.6)",
+        fontFamily: `${brand.bodyFont}, sans-serif`,
+      }}
+    >
+      {brand.studioName}
+    </div>
+  );
+};
+
+// Music V1: one bundled, allow-listed track with volume + fade-in/out. Loops to
+// fill the (short) story. Rendered identically in the editor <Player> and the
+// server render, so preview == export. Nothing renders when there is no music.
+const MusicLayer: React.FC<{ music: ScenePlan["music"] }> = ({ music }) => {
+  const { fps, durationInFrames } = useVideoConfig();
+  if (
+    !music ||
+    music.muted ||
+    !music.trackId ||
+    !MUSIC_TRACK_IDS.includes(music.trackId) ||
+    (music.volume ?? 0) <= 0
+  ) {
+    return null;
+  }
+  const vol = Math.max(0, Math.min(1, music.volume));
+  const fadeIn = Math.max(0, Math.round((music.fadeInSec ?? 0) * fps));
+  const fadeOut = Math.max(0, Math.round((music.fadeOutSec ?? 0) * fps));
+  return (
+    <Audio
+      src={staticFile(musicTrackFile(music.trackId))}
+      loop
+      volume={(f) => {
+        let g = vol;
+        if (fadeIn > 0) g *= interpolate(f, [0, fadeIn], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+        if (fadeOut > 0) g *= interpolate(f, [durationInFrames - fadeOut, durationInFrames], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+        return Math.max(0, Math.min(1, g));
+      }}
+    />
+  );
+};
+
+// ── Top-level video ─────────────────────────────────────────────────────────
+export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
+  const { fps } = useVideoConfig();
+  const secToFrames = (s: number) => Math.max(1, Math.round(s * fps));
+
+  let cursor = 0;
+  const blocks: React.ReactNode[] = [];
+  const segments: Array<{ from: number; frames: number }> = [];
+
+  if (plan.opening?.enabled) {
+    const d = secToFrames(plan.opening.durationSec);
+    segments.push({ from: cursor, frames: d });
+    blocks.push(
+      <Sequence key="opening" from={cursor} durationInFrames={d}>
+        <CardLayer card={plan.opening} brand={plan.brand} template={plan.template} durationFrames={d} coverSrc={(plan.opening as any).coverSrc ?? plan.scenes[0]?.src} />
+      </Sequence>
+    );
+    cursor += d;
+  }
+
+  const wmFrom = cursor; // watermark shows over the photo scenes only, not the cards
+  plan.scenes.forEach((scene, i) => {
+    const d = secToFrames(scene.durationSec);
+    const tin = secToFrames(scene.transitionDurationSec);
+    // Overlap the incoming scene onto the previous one for the transition.
+    const from = i === 0 ? cursor : cursor - tin;
+    segments.push({ from: Math.max(0, from), frames: d + (i === 0 ? 0 : tin) });
+    blocks.push(
+      <Sequence key={scene.id} from={Math.max(0, from)} durationInFrames={d + (i === 0 ? 0 : tin)}>
+        <TransitionWrap type={scene.transitionIn} transitionFrames={i === 0 ? 0 : tin}>
+          <SceneLayer scene={scene} durationFrames={d + (i === 0 ? 0 : tin)} accentHex={plan.brand.accentHex} />
+        </TransitionWrap>
+      </Sequence>
+    );
+    cursor = from + d + (i === 0 ? 0 : tin);
+  });
+  const wmTo = cursor;
+
+  if (plan.outro?.enabled) {
+    const d = secToFrames(plan.outro.durationSec);
+    segments.push({ from: cursor, frames: d });
+    blocks.push(
+      <Sequence key="outro" from={cursor} durationInFrames={d}>
+        <CardLayer card={plan.outro} brand={plan.brand} template={plan.template} durationFrames={d} coverSrc={plan.scenes[plan.scenes.length - 1]?.src} />
+      </Sequence>
+    );
+    cursor += d;
+  }
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#000" }}>
+      {blocks}
+      <TemplateTreatment template={plan.template} />
+      {plan.template === "fast-highlights" ? (
+        <StoryProgressBars segments={segments} accentHex={plan.brand.accentHex} />
+      ) : null}
+      {/* Watermark over the photo scenes only — the title/outro cards carry the
+          studio wordmark themselves, so a corner mark there would double-brand. */}
+      <Sequence from={wmFrom} durationInFrames={Math.max(1, wmTo - wmFrom)}>
+        <Watermark brand={plan.brand} />
+      </Sequence>
+      <MusicLayer music={plan.music} />
+    </AbsoluteFill>
+  );
+};
+
+// Applies the entering transition over its first `transitionFrames`.
+const TransitionWrap: React.FC<{
+  type: string;
+  transitionFrames: number;
+  children: React.ReactNode;
+}> = ({ type, transitionFrames, children }) => {
+  const frame = useCurrentFrame();
+  if (transitionFrames <= 0 || type === "cut") return <>{children}</>;
+
+  const t = interpolate(frame, [0, transitionFrames], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  let style: React.CSSProperties = { opacity: t }; // cross-dissolve (and match-cut, short)
+  let veil: React.ReactNode = null;
+  if (type === "slide") style = { opacity: 1, transform: `translateX(${(1 - t) * 100}%)` };
+  else if (type === "soft-blur") style = { opacity: t, filter: `blur(${(1 - t) * 24}px)` };
+  else if (type === "light-leak") style = { opacity: t, filter: `brightness(${1 + (1 - t) * 1.4})` };
+  else if (type === "whip")
+    // Fast horizontal motion-blur slide — a reel-style snap between shots.
+    style = { opacity: 1, transform: `translateX(${(1 - t) * 65}%)`, filter: `blur(${(1 - t) * 14}px)` };
+  else if (type === "match-cut")
+    // A fast blend implying a compositional match; the planner gives it a short
+    // duration so it lands almost as a cut but without a jarring pop.
+    style = { opacity: Math.min(1, t * 1.8) };
+  else if (type === "fade-color") {
+    // Fade through a deep charcoal (NOT pure black, so it never reads as a broken
+    // frame). The incoming clears the veil as t -> 1.
+    style = { opacity: 1 };
+    veil = <AbsoluteFill style={{ backgroundColor: "#0b0b0d", opacity: (1 - t) * 0.9 }} />;
+  } else if (type === "masked-reveal") {
+    // Soft directional wipe: a moving gradient mask reveals the incoming scene.
+    const edge = Math.min(100, t * 100 + 14);
+    const mask = `linear-gradient(to right, #000 ${t * 100}%, transparent ${edge}%)`;
+    style = { opacity: 1, WebkitMaskImage: mask, maskImage: mask } as React.CSSProperties;
+  }
+  return (
+    <AbsoluteFill style={style}>
+      {children}
+      {veil}
+    </AbsoluteFill>
+  );
+};

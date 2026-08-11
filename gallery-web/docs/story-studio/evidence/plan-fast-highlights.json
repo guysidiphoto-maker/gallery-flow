@@ -1,0 +1,379 @@
+{
+  "version": 1,
+  "galleryId": "00000000-0000-0000-0000-000000000000",
+  "format": "9:16",
+  "template": "fast-highlights",
+  "length": "standard",
+  "pace": "balanced",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+  "opening": {
+    "kind": "opening",
+    "enabled": true,
+    "title": "Dana & Tom",
+    "subtitle": "20 Jun 2026  ·  Caesarea",
+    "showLogo": false,
+    "durationSec": 1.6
+  },
+  "outro": {
+    "kind": "outro",
+    "enabled": true,
+    "title": "Guy Sidi Photography",
+    "showLogo": false,
+    "durationSec": 2
+  },
+  "scenes": [
+    {
+      "id": "sc_0_img-0000",
+      "imageId": "img-0000-eeeeee",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.56,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.44
+      },
+      "motion": "punch-in",
+      "motionDirection": "up",
+      "motionIntensity": "strong",
+      "transitionIn": "cross-dissolve",
+      "transitionDurationSec": 0.16,
+      "text": null,
+      "_reason": "opening(strongest) orient:landscape focal:thirds-default toppick motion:punch-in",
+      "src": "https://picsum.photos/seed/pixflow-0/1800/1200"
+    },
+    {
+      "id": "sc_1_img-0001",
+      "imageId": "img-0001-eeeeee",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.4
+      },
+      "motion": "none",
+      "motionDirection": "down",
+      "motionIntensity": "strong",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "body orient:portrait focal:thirds-default seq motion:none",
+      "src": "https://picsum.photos/seed/pixflow-1/1200/1800"
+    },
+    {
+      "id": "sc_2_img-0002",
+      "imageId": "img-0002-eeeeee",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.44
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "up",
+      "motionIntensity": "strong",
+      "transitionIn": "whip",
+      "transitionDurationSec": 0.16,
+      "text": null,
+      "_reason": "body orient:landscape focal:thirds-default seq motion:focus-zoom",
+      "src": "https://picsum.photos/seed/pixflow-2/1800/1200"
+    },
+    {
+      "id": "sc_3_img-0003",
+      "imageId": "img-0003-eeeeee",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.4
+      },
+      "motion": "punch-in",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "body orient:portrait focal:thirds-default seq motion:punch-in",
+      "src": "https://picsum.photos/seed/pixflow-3/1200/1800"
+    },
+    {
+      "id": "sc_4_img-0004",
+      "imageId": "img-0004-eeeeee",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.44
+      },
+      "motion": "none",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "body orient:landscape focal:thirds-default seq motion:none",
+      "src": "https://picsum.photos/seed/pixflow-4/1800/1200"
+    },
+    {
+      "id": "sc_5_img-0005",
+      "imageId": "img-0005-eeeeee",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.4
+      },
+      "motion": "punch-in",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "whip",
+      "transitionDurationSec": 0.16,
+      "text": null,
+      "_reason": "body orient:portrait focal:thirds-default seq motion:punch-in",
+      "src": "https://picsum.photos/seed/pixflow-5/1200/1800"
+    },
+    {
+      "id": "sc_6_img-0006",
+      "imageId": "img-0006-eeeeee",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.44
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "up",
+      "motionIntensity": "strong",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "body orient:landscape focal:thirds-default seq motion:focus-zoom",
+      "src": "https://picsum.photos/seed/pixflow-6/1800/1200"
+    },
+    {
+      "id": "sc_7_img-0008",
+      "imageId": "img-0008-eeeeee",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.44
+      },
+      "motion": "punch-in",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "body orient:landscape focal:thirds-default seq motion:punch-in",
+      "src": "https://picsum.photos/seed/pixflow-8/1800/1200"
+    },
+    {
+      "id": "sc_8_img-0009",
+      "imageId": "img-0009-eeeeee",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.4
+      },
+      "motion": "none",
+      "motionDirection": "up",
+      "motionIntensity": "strong",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "body orient:portrait focal:thirds-default seq motion:none",
+      "src": "https://picsum.photos/seed/pixflow-9/1200/1800"
+    },
+    {
+      "id": "sc_9_img-0010",
+      "imageId": "img-0010-eeeeee",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.44
+      },
+      "motion": "punch-in",
+      "motionDirection": "down",
+      "motionIntensity": "strong",
+      "transitionIn": "whip",
+      "transitionDurationSec": 0.16,
+      "text": null,
+      "_reason": "body orient:landscape focal:thirds-default seq motion:punch-in",
+      "src": "https://picsum.photos/seed/pixflow-10/1800/1200"
+    },
+    {
+      "id": "sc_10_img-0011",
+      "imageId": "img-0011-eeeeee",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.4
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "up",
+      "motionIntensity": "medium",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "body orient:portrait focal:thirds-default seq motion:focus-zoom",
+      "src": "https://picsum.photos/seed/pixflow-11/1200/1800"
+    },
+    {
+      "id": "sc_11_img-0012",
+      "imageId": "img-0012-eeeeee",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.44
+      },
+      "motion": "punch-in",
+      "motionDirection": "down",
+      "motionIntensity": "strong",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "body orient:landscape focal:thirds-default seq motion:punch-in",
+      "src": "https://picsum.photos/seed/pixflow-12/1800/1200"
+    },
+    {
+      "id": "sc_12_img-0013",
+      "imageId": "img-0013-eeeeee",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.4
+      },
+      "motion": "none",
+      "motionDirection": "up",
+      "motionIntensity": "strong",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "body orient:portrait focal:thirds-default seq motion:none",
+      "src": "https://picsum.photos/seed/pixflow-13/1200/1800"
+    },
+    {
+      "id": "sc_13_img-0014",
+      "imageId": "img-0014-eeeeee",
+      "width": 1800,
+      "height": 1200,
+      "durationSec": 1.2,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.44
+      },
+      "motion": "punch-in",
+      "motionDirection": "down",
+      "motionIntensity": "medium",
+      "transitionIn": "whip",
+      "transitionDurationSec": 0.16,
+      "text": null,
+      "_reason": "body orient:landscape focal:thirds-default seq motion:punch-in",
+      "src": "https://picsum.photos/seed/pixflow-14/1800/1200"
+    },
+    {
+      "id": "sc_14_img-0015",
+      "imageId": "img-0015-eeeeee",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.4,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.4
+      },
+      "motion": "focus-zoom",
+      "motionDirection": "up",
+      "motionIntensity": "strong",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "body orient:portrait focal:thirds-default toppick motion:focus-zoom",
+      "src": "https://picsum.photos/seed/pixflow-15/1200/1800"
+    },
+    {
+      "id": "sc_15_img-0007",
+      "imageId": "img-0007-eeeeee",
+      "width": 1200,
+      "height": 1800,
+      "durationSec": 1.4,
+      "fit": "fill",
+      "background": "none",
+      "focal": {
+        "x": 0.5,
+        "y": 0.4
+      },
+      "motion": "punch-in",
+      "motionDirection": "down",
+      "motionIntensity": "strong",
+      "transitionIn": "cut",
+      "transitionDurationSec": 0,
+      "text": null,
+      "_reason": "closer orient:portrait focal:thirds-default toppick motion:punch-in",
+      "src": "https://picsum.photos/seed/pixflow-7/1200/1800"
+    }
+  ],
+  "brand": {
+    "accentHex": "#B45309",
+    "headingFont": "Playfair Display, Georgia, serif",
+    "bodyFont": "Inter, sans-serif",
+    "studioName": "Guy Sidi Photography",
+    "logoUrl": null,
+    "watermark": {
+      "enabled": true,
+      "opacityPercent": 18,
+      "position": "bottom-right"
+    }
+  },
+  "music": null,
+  "generatedBy": "auto",
+  "planSeed": 1
+}
