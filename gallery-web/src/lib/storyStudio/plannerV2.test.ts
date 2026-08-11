@@ -66,6 +66,26 @@ test("fit classification: the establishing room letterboxes, people/portrait fil
   assert.equal(byImg.get("portrait")!.fit, "fill", "portrait fills");
 });
 
+test("reel templates are full-bleed (no letterbox); editorial keeps the matte", () => {
+  const build2 = (template: any) => {
+    const imgs: PlannerImage[] = [
+      sig("room", { faceCount: 1, maxFaceArea: 0.001, sortOrder: 0 }),
+      sig("g1", { faceCount: 20, maxFaceArea: 0.003, sortOrder: 1 }),
+      sig("g2", { faceCount: 14, maxFaceArea: 0.003, sortOrder: 2, warmth: 0.04 }),
+      sig("g3", { faceCount: 10, maxFaceArea: 0.003, sortOrder: 3 }),
+    ];
+    return planStory(imgs, { galleryId: "g", brand: { accentHex: "#000", headingFont: "x", bodyFont: "y", studioName: "S" }, template, length: "standard", seed: 7, preserveOrder: false });
+  };
+  // editorial letterboxes the establishing room...
+  const ed = build2("editorial-clean");
+  assert.equal(ed.scenes.find((s) => s.imageId === "room")!.fit, "fit");
+  // ...but cinematic + fast reels fill every landscape scene (no black bars).
+  for (const t of ["cinematic-energy", "fast-highlights"]) {
+    const p = build2(t);
+    assert.ok(p.scenes.every((s) => s.fit === "fill"), `${t} should be full-bleed`);
+  }
+});
+
 test("arc: hook is the biggest group; closer is the strongest warm payoff", () => {
   const plan = build();
   assert.equal(plan.scenes[0].imageId, "hook-huge", "opens on the biggest crowd");

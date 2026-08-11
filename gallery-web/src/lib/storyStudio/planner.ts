@@ -272,9 +272,14 @@ function faceNearEdge(img: PlannerImage): boolean {
  * people beat fills the 9:16 frame and is framed on the detected faces. Falls
  * back to the prior orientation rule when no detection data exists.
  */
-function classifyFit(img: PlannerImage): "fit" | "fill" {
+function classifyFit(img: PlannerImage, template: StoryTemplate): "fit" | "fill" {
   const o = orientationOf(img.width, img.height);
   if (o !== "landscape") return "fill"; // portrait/square already fills 9:16 cleanly
+  // Reel-style templates are FULL-BLEED: a letterbox matte breaks their edge-to-
+  // edge rhythm (reviewers flagged a single boxed scene in a concert reel). The
+  // calm editorial template keeps the cinematic letterbox to preserve a wide
+  // establishing composition.
+  if (template !== "editorial-clean") return "fill";
   const faces = Array.isArray(img.faceBoxes) ? img.faceBoxes : null;
   if (faces) {
     let maxA = 0;
@@ -389,16 +394,20 @@ function motionForScene(
   img: PlannerImage,
   i: number,
   n: number,
-  rng: () => number
+  rng: () => number,
+  template: StoryTemplate
 ): { motion: MotionEffect; intensity: MotionIntensity; direction: MotionDirection } {
   const role = roleOf(img);
   const isCloser = i === n - 1;
+  const energetic = template !== "editorial-clean"; // reel-style: keep everything moving
   if (role === "atmosphere") {
-    // Wide establishing shot on the matte: a slow cinematic push or two-plane drift.
-    return { motion: rng() < 0.5 ? "push-in" : "parallax", intensity: "subtle", direction: panDirTowardSubject(img) };
+    // Wide establishing shot: a slow cinematic push or two-plane drift.
+    return { motion: rng() < 0.5 ? "push-in" : "parallax", intensity: energetic ? "medium" : "subtle", direction: panDirTowardSubject(img) };
   }
   if (role === "peak") {
-    // Intimate portrait: hold still or a barely-there push; never pan across a face.
+    // Intimate portrait. Calm editorial holds it still; an energetic reel keeps a
+    // gentle move (a dead-still frame flattens a concert's mid-run against the beat).
+    if (energetic) return { motion: i % 2 === 0 ? "push-in" : "pull-out", intensity: "medium", direction: "up" };
     return { motion: rng() < 0.5 ? "none" : "push-in", intensity: "subtle", direction: "up" };
   }
   if (isCloser) {
@@ -434,17 +443,18 @@ export function recommendTemplate(images: PlannerImage[]): StoryTemplate {
 function transitionForScene(
   prev: PlannerImage | null,
   cur: PlannerImage,
-  profile: TemplateProfile
+  template: StoryTemplate
 ): TransitionType {
   if (!prev) return "cross-dissolve";
   const rPrev = roleOf(prev);
   const rCur = roleOf(cur);
-  const fast = profile.motionIntensity === "strong"; // fast-highlights template
+  const veryFast = template === "fast-highlights";
+  const energetic = template !== "editorial-clean"; // cinematic + fast reels
   if (rPrev === "atmosphere" && rCur === "atmosphere") return "match-cut"; // two similar wides
-  if (rCur === "energy") return fast ? "whip" : "slide"; // stepping up energy
+  if (rCur === "energy") return energetic ? "whip" : "slide"; // stepping up energy -> whip on reels
   if (rCur === "atmosphere") return "soft-blur"; // settle into an establishing shot
-  if (rCur === "peak") return "cross-dissolve"; // gentle into the portrait
-  return fast ? "cut" : "cross-dissolve";
+  if (rCur === "peak") return energetic ? (veryFast ? "cut" : "whip") : "cross-dissolve"; // reels punch into peaks
+  return veryFast ? "cut" : "cross-dissolve";
 }
 
 // ── Burst de-duplication ──────────────────────────────────────────────────────
@@ -710,7 +720,8 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
     let intensity: MotionIntensity = variedIntensity(profile.motionIntensity, i, Boolean(img.isTopPick), rng);
     let role: SceneRole | undefined;
     if (hasContentSignals(ordered)) {
-      const m = motionForScene(img, i, ordered.length, rng);
+      const energetic = template !== "editorial-clean";
+      const m = motionForScene(img, i, ordered.length, rng, template);
       motion = m.motion;
       dir = m.direction;
       intensity = m.intensity;
@@ -719,10 +730,12 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       // Motion-diversity budget: never repeat the SAME visual family two scenes
       // in a row (a run of push-ins reads canned). The closer keeps its pull-out.
       if (prev && role !== "closer" && motionFamily(motion) === motionFamily(prev.motion)) {
-        if (role === "peak") {
-          motion = "none"; // hold the portrait still — a nicer contrast than repeating
+        if (role === "peak" && !energetic) {
+          motion = "none"; // calm editorial: hold the portrait still
         } else {
-          const alts: MotionEffect[] = role === "atmosphere" ? ["parallax", "pull-out", "push-in"] : ["pan", "pull-out", "push-in", "parallax"];
+          // Peaks avoid a pan across a face; wides/people may pan/parallax.
+          const alts: MotionEffect[] =
+            role === "peak" ? ["push-in", "pull-out", "parallax"] : role === "atmosphere" ? ["parallax", "pull-out", "push-in"] : ["pan", "pull-out", "push-in", "parallax"];
           const alt = alts.find((a) => motionFamily(a) !== motionFamily(prev.motion));
           if (alt) {
             motion = alt;
@@ -730,7 +743,7 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
           }
         }
       }
-      transition = i === 0 ? "cross-dissolve" : transitionForScene(ordered[i - 1], img, profile);
+      transition = i === 0 ? "cross-dissolve" : transitionForScene(ordered[i - 1], img, template);
       // Break a run of 3 identical transitions (a long portrait block would else
       // be all cross-dissolves) with a restrained alternate from the template.
       const prev2 = i >= 2 ? scenes[i - 2] : null;
@@ -741,7 +754,7 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
 
     // Fit: face-aware — letterbox establishing/room wides so the venue reads,
     // fill people beats and frame them on the detected faces.
-    const fit = classifyFit(img);
+    const fit = classifyFit(img, template);
     const background = fit === "fit" ? "blur" : "none";
 
     // Duration: base pace, longer hold on the opener, slight lift for top picks.
