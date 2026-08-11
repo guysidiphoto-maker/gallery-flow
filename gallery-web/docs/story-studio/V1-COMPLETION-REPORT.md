@@ -196,3 +196,29 @@ Built in the user's ordered brief; validated on the SAME hard Track A gallery (I
 - Item 9: further tests (motion/transition selection, framing fallbacks, undo/redo, locked preservation in re-edit).
 
 **Tests:** 50 passing; tsc + production build clean. **Client media:** the approved photos were used locally only (served over localhost), never uploaded or committed; the rendered MP4s live in /tmp and `~/Downloads/Pixflow-Story-Studio-QA/` only. **Safety:** completed on the Draft branch; not merged, pushed, or deployed; no migration. **Owed:** revoke the Vercel Protection-Bypass token before final delivery (not present in code/history/artifacts; a dashboard setting).
+
+---
+
+## 16. V2 completion pass — editor, auto-cut, typography, tests, Track A rescore
+
+**Item 2 — automatic cut improved + rescored.** Two reviewer-flagged weaknesses fixed: (a) ending selector now closes on the strongest emotional payoff (crowd size + warmth + sharpness) so the auto cut lands on the sunset hero, not a generic group; (b) a motion-diversity budget forbids two consecutive scenes sharing a movement family (portraits hold, closer keeps pull-out), killing the push-in monotony; (c) the arc keeps a single establishing room (near-duplicate wides dropped). Real signals only.
+
+**Track A rescore (3 independent reviewers, complete MP4s):**
+| Cut | Photographer | Motion dir. | Social ed. | Avg |
+|---|---|---|---|---|
+| V1 AUTO | — | — | — | ~6.5 |
+| V2 AUTO | 7.9 | 7.9 | 8.1 | **7.97** |
+| V1 REFINED | 7.7 | 7.8 | 7.9 | 7.8 |
+| V2 REFINED | 8.7 | 8.0 | 8.7 | **8.47** |
+
+V2 REFINED clears Track A (8.47, no category <8). V2 AUTO reaches 7.97 (was 6.5) — a genuinely strong fully-automatic cut, just under the pro bar.
+
+**Item 1 — real editor controls (browser-verified on the local demo).** Added per-scene: LOCK toggle, motion intensity, transition-in + transition-OUT, transition-duration slider, caption typography style. Added global: "request another variation" (fresh seed, preserves manual edits + locks) and a beat-sync strength slider (attaches the track's real analysis, snaps unlocked cuts to the beat — changes preview AND export). All wired to the ONE canonical ScenePlan. Browser QA confirmed: controls render in RTL, the lock toggles and PERSISTS through a re-variation (locked-scene preservation), the live preview renders the new composition (preview==export), autosave shows ✓ נשמר.
+
+**Item 3 — typography/branding.** Caption styles (editorial/bold/minimal), restrained animated entrance (honours prefers-reduced-motion), brand-accent chapter rule, safe Stories/Reels margins, RTL/LTR; animated logo end-card (scale+fade) when a Brand Kit logo exists.
+
+**Item 4 — tests.** plannerV2.test.ts (fit classification, arc hook/closer, ending selector, motion-diversity, portrait-holds-still, role+lock flags) + scenePlanContract.test.ts (version upgrade, per-scene field round-trip, beat-sync + locked preservation). 56 automated tests, tsc + build clean; editor lock/variation browser-verified.
+
+**Still open (media-independent, minor):** a "duplicate version" Launcher feature (save a copy of a whole draft as a separate version) and a few more edge tests (undo/redo unit, render-failure/cancel already covered by V1 lifecycle). **Track B** (showcase gate, 8.5) is the primary remaining INPUT: it needs an approved richer gallery.
+
+**Guardrails honoured:** client media local only (never uploaded/committed); rendered MP4s live in /tmp + ~/Downloads only; completed on the Draft branch, nothing merged/pushed/deployed; no migration; existing gallery/face-recognition behaviour untouched. Owed: revoke the Vercel Protection-Bypass token before final delivery.
