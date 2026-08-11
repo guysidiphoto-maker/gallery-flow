@@ -166,3 +166,33 @@ Three independent reviewers (event-photographer, motion-director, social-editor 
 - **Production: ⛔ NO-GO** until explicit approval + the provisional `story_renders` migration lands.
 
 _Cleanup still owed by the user: revoke the Vercel Protection-Bypass token; drop any leftover qa2 seed policies. No approved photo was uploaded; nothing was merged or deployed._
+
+---
+
+## 15. V2 build — engine upgrade + Track A PASS (in progress)
+
+Built in the user's ordered brief; validated on the SAME hard Track A gallery (IAC Teens Track, 10 photos, all landscape). Nothing deployed; Draft branch only.
+
+**Done + tested:**
+1. **Canonical scene plan v2** — added per-scene `transitionOut`, `captionStyle`, `role`, `locked`, `beatAlignedSec`; plan-level `audio` analysis + `beatSyncStrength`; version 2 with lossless `upgradeScenePlan()`; guard + differentiation vocab synced. New serialization/versioning + beat-sync tests.
+3. **Curated motion system** — new `parallax` (two-plane counter-drift bed) and `reveal` (directional entrance) motions in the composition; role-based selection in the planner (portraits hold still, wides drift cinematically, people beats pan toward the crowd, close breathes out).
+4. **Curated transition system** — new `fade-color` (through charcoal, never pure black), `masked-reveal` (soft gradient wipe), `match-cut` (fast composition-match); content/role-based selection.
+6. **Genuine music beat analysis** — `scripts/analyze-audio.py` (scipy/numpy spectral-flux onset + autocorrelation tempo + peak-pick) on the bundled tracks -> `musicAnalysis.json` (warm 107.7bpm/52 beats). `applyBeatSync()` aligns unlocked cuts to beats; locked scenes keep their duration. License provenance carried on every export.
+7. **Automatic first cut** — real face detection (`scripts/detect-faces.py`, OpenCV, offline) + per-image sharpness/brightness/warmth drive a real event arc: hook on the strongest group, establishing rooms letterboxed, people beats face-framed, the portrait held still, a warm close. Face-aware fill/letterbox classification and crowd-centroid focal (degrade gracefully with no face data; never invent a signal).
+
+**Track A gate result (3 independent reviewers, complete MP4s):**
+
+| Cut | Photographer | Motion dir. | Social ed. | Avg |
+|---|---|---|---|---|
+| AUTO (fully automatic) | 7.2 | 7.6 | 7.0 | 7.3 |
+| REFINED (deliverable) | 8.2 | 8.3 | 8.3 | **8.27** |
+
+**REFINED clears Track A** (avg 8.27 >= 8.0, no category < 8, no black frames, no duplicate/near-dup scene, no face-crop, preview==export by construction). Up from V1's 7.8. The fully AUTOMATIC cut reaches 7.3 (up from V1's mechanical auto ~6.5): the face arc, still-held portrait and cinematic letterbox all land; remaining weaknesses are push-in-heavy motion and a soft auto ending (warmth heuristic closed on a standing group, not the sunset hero — a real limitation without scene/colour understanding).
+
+**Remaining before V2 is complete (NOT yet done — do not call V2 shipped):**
+- Item 2: deeper editor-control browser audit + new controls (lock toggle, beat-sync slider, request-another-variation, duplicate-version).
+- Item 5: animated typography + animated logo end-card + chapter/moment labels.
+- Item 8: Track B showcase gate — BLOCKED on an approved richer (18-24 photo, mixed-orientation) gallery.
+- Item 9: further tests (motion/transition selection, framing fallbacks, undo/redo, locked preservation in re-edit).
+
+**Tests:** 50 passing; tsc + production build clean. **Client media:** the approved photos were used locally only (served over localhost), never uploaded or committed; the rendered MP4s live in /tmp and `~/Downloads/Pixflow-Story-Studio-QA/` only. **Safety:** completed on the Draft branch; not merged, pushed, or deployed; no migration. **Owed:** revoke the Vercel Protection-Bypass token before final delivery (not present in code/history/artifacts; a dashboard setting).
