@@ -112,6 +112,12 @@ export function resolveAndValidatePlan(
       if (typeof s.text.content !== 'string' || s.text.content.length > MAX_TEXT_LEN) errors.push(`scene[${i}] bad text`);
       if (hasMarkup(s.text.content)) errors.push(`scene[${i}] text contains disallowed characters`);
     }
+    // Collage cells are FKs — tenant-isolate them like imageId (2-3, all owned).
+    if (s.layout === 'collage') {
+      const ids = s.collageImageIds;
+      if (!Array.isArray(ids) || ids.length < 2 || ids.length > 3) errors.push(`scene[${i}] collage must reference 2-3 image ids`);
+      else for (const cid of ids) { if (typeof cid !== 'string' || !byId.has(cid)) errors.push(`scene[${i}] collage references foreign imageId ${cid}`); }
+    }
   }
   for (const card of [plan.opening, plan.outro]) {
     if (!card) continue;
@@ -138,7 +144,8 @@ export function resolveAndValidatePlan(
   const safeScenes = scenes.map((s: any) => {
     const rec = byId.get(s.imageId)!;
     const { _reason, ...rest } = s;
-    return { ...rest, src: resolveSrc(s.imageId), width: rec.width ?? s.width, height: rec.height ?? s.height };
+    const collageSrc = s.layout === 'collage' && Array.isArray(s.collageImageIds) ? s.collageImageIds.map((id: string) => resolveSrc(id)) : undefined;
+    return { ...rest, src: resolveSrc(s.imageId), collageSrc, width: rec.width ?? s.width, height: rec.height ?? s.height };
   });
   return { ok: true, errors: [], plan: { ...plan, galleryId, scenes: safeScenes } };
 }

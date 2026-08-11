@@ -76,6 +76,10 @@ export function resolveAndValidatePlan(
     return {
       ...s,
       src: resolveSrc(s.imageId),
+      // Collage cells are ALSO server-resolved (client collageSrc discarded);
+      // every collage image id was tenant-validated above, so this can't leak
+      // another gallery's photo into a collage.
+      collageSrc: s.layout === "collage" && s.collageImageIds ? s.collageImageIds.map((id) => resolveSrc(id)) : undefined,
       width: rec.width ?? s.width,
       height: rec.height ?? s.height,
     };

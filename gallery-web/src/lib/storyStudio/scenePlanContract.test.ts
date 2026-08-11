@@ -4,6 +4,7 @@ import {
   SCENE_PLAN_VERSION,
   upgradeScenePlan,
   applyBeatSync,
+  validateScenePlan,
   MOTION_EFFECTS,
   TRANSITIONS,
   CAPTION_STYLES,
@@ -58,6 +59,33 @@ test("new per-scene v2 fields round-trip through JSON serialization", () => {
   assert.equal(round.captionStyle, "bold");
   assert.equal(round.role, "peak");
   assert.equal(round.beatAlignedSec, 12.5);
+});
+
+test("collage cells are tenant-isolated: a foreign collage image id is rejected", () => {
+  const mk = (over: Partial<Scene>): Scene => ({
+    id: "s", imageId: "img-a", durationSec: 3, fit: "fill", background: "none",
+    focal: { x: 0.5, y: 0.4 }, motion: "push-in", motionDirection: "up",
+    motionIntensity: "medium", transitionIn: "cross-dissolve", transitionDurationSec: 0.4, ...over,
+  });
+  const plan = (scene: Scene) => ({
+    version: SCENE_PLAN_VERSION, galleryId: "g", format: "9:16", template: "editorial-clean",
+    length: "standard", pace: "balanced", fps: 30, width: 1080, height: 1920,
+    opening: { kind: "opening", enabled: false, showLogo: false, durationSec: 0 },
+    outro: { kind: "outro", enabled: false, showLogo: false, durationSec: 0 },
+    scenes: [mk({ id: "a", imageId: "img-a" }), mk({ id: "b", imageId: "img-b" }), scene],
+    brand: { accentHex: "#000", headingFont: "x", bodyFont: "y" }, generatedBy: "manual",
+  } as unknown as ScenePlan);
+  const allowed = new Set(["img-a", "img-b", "img-c"]);
+  // a collage of owned images passes
+  const ok = validateScenePlan(plan(mk({ id: "c", imageId: "img-a", layout: "collage", collageImageIds: ["img-a", "img-b", "img-c"] })), allowed);
+  assert.ok(ok.ok, ok.errors.join("; "));
+  // a collage that smuggles a FOREIGN id is rejected
+  const bad = validateScenePlan(plan(mk({ id: "c", imageId: "img-a", layout: "collage", collageImageIds: ["img-a", "img-XXX"] })), allowed);
+  assert.equal(bad.ok, false);
+  assert.ok(bad.errors.some((e) => /foreign imageId img-XXX/.test(e)), bad.errors.join("; "));
+  // a collage with the wrong cell count is rejected
+  const wrongCount = validateScenePlan(plan(mk({ id: "c", imageId: "img-a", layout: "collage", collageImageIds: ["img-a"] })), allowed);
+  assert.equal(wrongCount.ok, false);
 });
 
 test("applyBeatSync snaps unlocked cuts toward beats and preserves locked scenes", () => {

@@ -182,7 +182,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
         preserveOrder: mode === "locked",
       });
       // Attach preview src for the live <Player> + thumbnails (not persisted).
-      return { ...p, scenes: p.scenes.map((s) => ({ ...s, src: srcById.get(s.imageId) })) };
+      return { ...p, scenes: p.scenes.map((s) => ({ ...s, src: srcById.get(s.imageId), collageSrc: s.collageImageIds?.map((i) => srcById.get(i)!).filter(Boolean) })) };
     },
     [selectedPool, galleryId, brand, event, srcById, orderMode]
   );
@@ -190,7 +190,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
   const [plan, setPlanState] = useState<ScenePlan>(() =>
     initialPlan
       ? // Restore a saved draft; re-attach preview src (not persisted).
-        { ...initialPlan, scenes: initialPlan.scenes.map((s) => ({ ...s, src: srcById.get(s.imageId) })) }
+        { ...initialPlan, scenes: initialPlan.scenes.map((s) => ({ ...s, src: srcById.get(s.imageId), collageSrc: s.collageImageIds?.map((i) => srcById.get(i)!).filter(Boolean) })) }
       : buildAuto("editorial-clean", "standard", "balanced")
   );
   const [selectedId, setSelectedId] = useState<string | null>(() => plan.scenes[0]?.id ?? null);
@@ -370,6 +370,43 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       if (selectedId === id) setSelectedId(scenes[0]?.id ?? null);
     },
     [plan, commit, selectedId]
+  );
+
+  // Collage toggle: a landscape scene merges with the next 1-2 consecutive
+  // landscape scenes into a 2-3-up vertical collage (no crop, no black bars); a
+  // collage splits back into single scenes. Landscape-only.
+  const toggleCollage = useCallback(
+    (id: string) => {
+      const idx = plan.scenes.findIndex((s) => s.id === id);
+      if (idx < 0) return;
+      const s = plan.scenes[idx];
+      const scenes = plan.scenes.slice();
+      if (s.layout === "collage" && s.collageImageIds?.length) {
+        const existing = new Set(plan.scenes.map((x) => x.id));
+        const singles: Scene[] = s.collageImageIds.map((imgId, k) => {
+          let nid = k === 0 ? s.id : `${imgId.slice(0, 8)}_c${k}`;
+          while (k !== 0 && existing.has(nid)) nid = `${imgId.slice(0, 8)}_c${k}_${Math.floor(k * 7 + 1)}`;
+          existing.add(nid);
+          return { ...s, id: nid, imageId: imgId, src: srcById.get(imgId), layout: "single", collageImageIds: undefined, collageSrc: undefined };
+        });
+        scenes.splice(idx, 1, ...singles);
+      } else if (orientationOf(s.width, s.height) === "landscape") {
+        const group = [s];
+        let j = idx + 1;
+        while (j < plan.scenes.length && group.length < 3 && plan.scenes[j].layout !== "collage" && orientationOf(plan.scenes[j].width, plan.scenes[j].height) === "landscape") {
+          group.push(plan.scenes[j]);
+          j++;
+        }
+        if (group.length < 2) return; // nothing adjacent to combine with
+        const ids = group.map((g) => g.imageId);
+        const collage: Scene = { ...s, layout: "collage", collageImageIds: ids, collageSrc: ids.map((i) => srcById.get(i)).filter((x): x is string => Boolean(x)), motion: "push-in", motionIntensity: "subtle" };
+        scenes.splice(idx, group.length, collage);
+      } else {
+        return; // portrait/square can't collage
+      }
+      commit({ ...plan, scenes, generatedBy: "manual" });
+    },
+    [plan, commit, srcById]
   );
 
   const regenerate = useCallback(() => {
@@ -597,7 +634,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       {/* Scene controls */}
       <aside style={{ ...panel, overflowY: "auto", order: isNarrow ? 3 : 0, width: isNarrow ? "100%" : undefined }}>
         <StorySettings plan={plan} brand={brand} onPatchCard={patchCard} onSetMusic={setMusic} onSetBeatSync={setBeatSync} />
-        <SceneControls scene={selected} onPatch={patchScene} onReset={resetScene} />
+        <SceneControls scene={selected} onPatch={patchScene} onReset={resetScene} onToggleCollage={toggleCollage} />
       </aside>
 
       {/* Preview */}
@@ -723,7 +760,8 @@ const SceneControls: React.FC<{
   scene: Scene | null;
   onPatch: (id: string, patch: Partial<Scene>) => void;
   onReset: (id: string) => void;
-}> = ({ scene, onPatch, onReset }) => {
+  onToggleCollage?: (id: string) => void;
+}> = ({ scene, onPatch, onReset, onToggleCollage }) => {
   if (!scene) return <div style={{ color: C.muted, padding: 16 }}>בחרו סצנה מלמטה</div>;
   const pos: TextPosition = scene.text?.position ?? "bottom";
   const setFocalFromClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -806,9 +844,18 @@ const SceneControls: React.FC<{
 
       <div style={lbl}>
         תצוגה
-        <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-          <button style={scene.fit === "fill" ? btn : btnGhost} onClick={() => onPatch(scene.id, { fit: "fill", background: "none" })}>{HE.fitFull}</button>
-          <button style={scene.fit === "fit" ? btn : btnGhost} onClick={() => onPatch(scene.id, { fit: "fit", background: "blur" })}>{HE.fitContain}</button>
+        <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+          <button style={scene.layout !== "collage" && scene.fit === "fill" ? btn : btnGhost} onClick={() => onPatch(scene.id, { fit: "fill", background: "none" })}>{HE.fitFull}</button>
+          <button style={scene.layout !== "collage" && scene.fit === "fit" ? btn : btnGhost} onClick={() => onPatch(scene.id, { fit: "fit", background: "blur" })}>{HE.fitContain}</button>
+          {onToggleCollage ? (
+            <button
+              style={scene.layout === "collage" ? btn : btnGhost}
+              title="קולאז': 2-3 תמונות רוחביות זו מעל זו, ממלא את המסך בלי פסים שחורים"
+              onClick={() => onToggleCollage(scene.id)}
+            >
+              ▦ קולאז'{scene.layout === "collage" && scene.collageImageIds ? ` (${scene.collageImageIds.length})` : ""}
+            </button>
+          ) : null}
         </div>
       </div>
 

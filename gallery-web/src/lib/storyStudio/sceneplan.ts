@@ -429,6 +429,20 @@ export function validateScenePlan(
       errors.push(`scene[${i}] references foreign imageId ${s.imageId}`);
     }
 
+    // Collage cells are FKs too — tenant-isolate them exactly like imageId so a
+    // collage can never smuggle in another gallery's photo.
+    if (s.layout === "collage") {
+      const ids = s.collageImageIds;
+      if (!Array.isArray(ids) || ids.length < 2 || ids.length > 3) {
+        errors.push(`scene[${i}] collage must reference 2-3 image ids`);
+      } else {
+        for (const cid of ids) {
+          if (typeof cid !== "string" || !cid) errors.push(`scene[${i}] collage has an invalid image id`);
+          else if (allow && !allow.has(cid)) errors.push(`scene[${i}] collage references foreign imageId ${cid}`);
+        }
+      }
+    }
+
     if (s.durationSec < MIN_SCENE_SEC - 1e-6 || s.durationSec > MAX_SCENE_SEC + 1e-6) {
       errors.push(`scene[${i}] duration ${s.durationSec} out of [${MIN_SCENE_SEC},${MAX_SCENE_SEC}]`);
     }
