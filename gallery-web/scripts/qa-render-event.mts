@@ -48,9 +48,15 @@ function dims(f: string): { w: number; h: number } {
   const h = Number(out.match(/pixelHeight:\s*(\d+)/)?.[1]);
   return { w, h };
 }
+// Real face boxes from scripts/detect-faces.py (OpenCV Haar). Same shape the
+// production Rekognition pipeline feeds the planner — not invented data.
+const FACES: Record<string, { faces: Array<{ x: number; y: number; w: number; h: number }> }> = (() => {
+  try { return JSON.parse(readFileSync("/tmp/qa-event-faces.json", "utf8")); } catch { return {}; }
+})();
 const images: PlannerImage[] = files.map((f, i) => {
   const { w, h } = dims(f);
-  return { id: `img-${String(i).padStart(2, "0")}`, src: `http://localhost:${PORT}/${f}`, width: w, height: h, sortOrder: i, isTopPick: /-hero/i.test(f) };
+  const faceBoxes = FACES[f]?.faces?.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h })) ?? null;
+  return { id: `img-${String(i).padStart(2, "0")}`, src: `http://localhost:${PORT}/${f}`, width: w, height: h, sortOrder: i, isTopPick: /-hero/i.test(f), faceBoxes };
 });
 const fileById = new Map(images.map((im, i) => [im.id, files[i]]));
 

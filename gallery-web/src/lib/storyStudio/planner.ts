@@ -212,10 +212,18 @@ function resolveFocal(img: PlannerImage): { focal: FocalPoint; reason: string } 
     return { focal: { x: img.focalX, y: img.focalY }, reason: "ai-focal" };
   }
   if (img.faceBoxes && img.faceBoxes.length > 0) {
-    let best = img.faceBoxes[0];
-    for (const b of img.faceBoxes) if (b.w * b.h > best.w * best.h) best = b;
+    // Area-weighted centroid of ALL faces: a single portrait resolves to that
+    // face, and a group resolves to the centre of the crowd (bigger/closer faces
+    // pull the frame), which keeps the people-mass in frame on a 9:16 crop.
+    let sx = 0, sy = 0, sw = 0;
+    for (const b of img.faceBoxes) {
+      const a = Math.max(b.w * b.h, 1e-6);
+      sx += (b.x + b.w / 2) * a;
+      sy += (b.y + b.h / 2) * a;
+      sw += a;
+    }
     return {
-      focal: { x: clamp(best.x + best.w / 2, 0, 1), y: clamp(best.y + best.h / 2, 0, 1) },
+      focal: { x: clamp(sx / sw, 0, 1), y: clamp(sy / sw, 0, 1) },
       reason: "face-centroid",
     };
   }
@@ -242,6 +250,33 @@ function faceNearEdge(img: PlannerImage): boolean {
   return img.faceBoxes.some(
     (b) => b.x < M || b.y < M || b.x + b.w > 1 - M || b.y + b.h > 1 - M
   );
+}
+
+/**
+ * Face-aware fit: an establishing/room shot (detection ran and found only a
+ * couple of tiny distant faces, or none) letterboxes so the venue reads; a
+ * people beat fills the 9:16 frame and is framed on the detected faces. Falls
+ * back to the prior orientation rule when no detection data exists.
+ */
+function classifyFit(img: PlannerImage): "fit" | "fill" {
+  const o = orientationOf(img.width, img.height);
+  if (o !== "landscape") return "fill"; // portrait/square already fills 9:16 cleanly
+  const faces = Array.isArray(img.faceBoxes) ? img.faceBoxes : null;
+  if (faces) {
+    let maxA = 0;
+    for (const b of faces) maxA = Math.max(maxA, b.w * b.h);
+    // Few, tiny (or no) faces => a room/establishing wide => letterbox on the matte.
+    if (faces.length <= 2 && maxA < 0.008) return "fit";
+    // A 9:16 FILL of a landscape crops WIDTH (height is preserved), so only a
+    // face pinned to the LEFT/RIGHT edge risks being cut. With just a subject or
+    // two, letterbox to keep it; a crowd tolerates losing an edge face.
+    const M = 0.1;
+    const horizEdge = faces.some((b) => b.x < M || b.x + b.w > 1 - M);
+    if (faces.length <= 4 && horizEdge) return "fit";
+    return "fill"; // people beat: fill and frame on the crowd centroid
+  }
+  // No detection data: keep the prior conservative edge rule.
+  return faceNearEdge(img) ? "fit" : "fill";
 }
 
 // ── Burst de-duplication ──────────────────────────────────────────────────────
@@ -494,9 +529,9 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       transition = profile.transitionVocab[(i + tShift + 1) % profile.transitionVocab.length];
     }
 
-    // Fit: portrait/square fill 9:16 cleanly; landscape uses blurred-fill so we
-    // never show black bars and never hard-crop a face out.
-    const fit = o === "landscape" ? (faceNearEdge(img) ? "fit" : "fill") : "fill";
+    // Fit: face-aware — letterbox establishing/room wides so the venue reads,
+    // fill people beats and frame them on the detected faces.
+    const fit = classifyFit(img);
     const background = fit === "fit" ? "blur" : "none";
 
     // Duration: base pace, longer hold on the opener, slight lift for top picks.
