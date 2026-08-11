@@ -4,7 +4,8 @@
 // system Chrome, and extracts a dense frame set per version for review.
 //   node --experimental-strip-types scripts/qa-render-event.mts [template]
 import { planStory, type PlannerImage } from "../src/lib/storyStudio/planner.ts";
-import { computeTotalDuration, MIN_SCENE_SEC, MAX_SCENE_SEC, type ScenePlan } from "../src/lib/storyStudio/sceneplan.ts";
+import { computeTotalDuration, applyBeatSync, MIN_SCENE_SEC, MAX_SCENE_SEC, type ScenePlan, type AudioAnalysis } from "../src/lib/storyStudio/sceneplan.ts";
+import MUSIC_ANALYSIS from "../src/lib/storyStudio/musicAnalysis.json" with { type: "json" };
 import { bundle } from "@remotion/bundler";
 import { selectComposition, renderMedia } from "@remotion/renderer";
 import { execFileSync } from "node:child_process";
@@ -178,10 +179,23 @@ async function render(label: string, plan: ScenePlan) {
 const opts = { galleryId: "00000000-0000-0000-0000-000000000000", template: TEMPLATE, brand: BRAND, event: EVENT } as const;
 const unique = await dedupe(images);
 console.log(`De-dup: ${images.length} -> ${unique.length} unique (dropped ${images.filter((im) => !unique.includes(im)).map((im) => fileById.get(im.id)).join(", ") || "none"})`);
+// Attach the chosen bundled track's real beat analysis + license and align cuts
+// to the beat (beatSyncStrength). Preview == export by construction.
+function withMusic(plan: ScenePlan, trackId: "calm" | "warm" | "upbeat", strength: number): ScenePlan {
+  const analysis = (MUSIC_ANALYSIS as Record<string, AudioAnalysis>)[trackId] ?? null;
+  const withAudio: ScenePlan = {
+    ...plan,
+    music: { trackId, volume: 0.72, fadeInSec: 1.5, fadeOutSec: 2.5, muted: false, license: "Bundled, synthesized in-repo (scripts/generate-story-audio.mjs); no third-party license." },
+    audio: analysis,
+    beatSyncStrength: strength,
+  };
+  return applyBeatSync(withAudio);
+}
 const locked = planStory(unique, { ...opts, preserveOrder: true });
-const suggested = planStory(unique, { ...opts, preserveOrder: false });
+const suggested = withMusic(planStory(unique, { ...opts, preserveOrder: false }), "warm", 0.5);
+const manual = withMusic(buildManual(unique), "warm", 0.45);
 await render("locked", locked);
 await render("suggested", suggested);
-await render("manual", buildManual(unique));
+await render("manual", manual);
 server.close();
 console.log(`\nInventory: ${images.length} photos (${images.filter((i) => i.width! > i.height!).length} landscape / ${images.filter((i) => i.width! <= i.height!).length} portrait). Template: ${TEMPLATE}. MP4s -> ${OUT}, frames -> ${FR}`);

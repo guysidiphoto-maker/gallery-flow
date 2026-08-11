@@ -289,6 +289,39 @@ export function upgradeScenePlan<T extends { version: number }>(plan: T): T {
   return { ...plan, version: SCENE_PLAN_VERSION };
 }
 
+/**
+ * Align scene cuts to the music: nudge each scene's END boundary toward the
+ * nearest analysed beat by `beatSyncStrength` (0 = off, 1 = snap fully), keeping
+ * every duration within [MIN,MAX]. LOCKED scenes keep their exact duration (the
+ * photographer's override wins). Deterministic; preview and export share it.
+ * Records the aligned cut time on each scene as `beatAlignedSec`.
+ */
+export function applyBeatSync(plan: ScenePlan): ScenePlan {
+  const audio = plan.audio;
+  const strength = plan.beatSyncStrength ?? 0;
+  if (!audio || !audio.beatsSec || audio.beatsSec.length < 2 || strength <= 0) return plan;
+  const beats = audio.beatsSec;
+  const nearestBeat = (t: number): number => {
+    let nb = beats[0];
+    for (const b of beats) if (Math.abs(b - t) < Math.abs(nb - t)) nb = b;
+    return nb;
+  };
+  let cursor = plan.opening?.enabled ? plan.opening.durationSec : 0;
+  const scenes = plan.scenes.map((s) => {
+    if (s.locked) {
+      cursor += s.durationSec;
+      return s;
+    }
+    const rawEnd = cursor + s.durationSec;
+    const nb = nearestBeat(rawEnd);
+    const snappedEnd = rawEnd + (nb - rawEnd) * clamp(strength, 0, 1);
+    const dur = clamp(Math.round((snappedEnd - cursor) * 100) / 100, MIN_SCENE_SEC, MAX_SCENE_SEC);
+    cursor += dur;
+    return { ...s, durationSec: dur, beatAlignedSec: Math.round(cursor * 1000) / 1000 };
+  });
+  return { ...plan, scenes };
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 export function clamp(n: number, lo: number, hi: number): number {

@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import {
   SCENE_PLAN_VERSION,
   upgradeScenePlan,
+  applyBeatSync,
   MOTION_EFFECTS,
   TRANSITIONS,
   CAPTION_STYLES,
   type Scene,
+  type ScenePlan,
 } from "./sceneplan.ts";
 
 test("scene plan version is 2 (v2 vocabulary present)", () => {
@@ -56,4 +58,34 @@ test("new per-scene v2 fields round-trip through JSON serialization", () => {
   assert.equal(round.captionStyle, "bold");
   assert.equal(round.role, "peak");
   assert.equal(round.beatAlignedSec, 12.5);
+});
+
+test("applyBeatSync snaps unlocked cuts toward beats and preserves locked scenes", () => {
+  const mkScene = (id: string, dur: number, locked = false): Scene => ({
+    id, imageId: id, durationSec: dur, fit: "fill", background: "none",
+    focal: { x: 0.5, y: 0.4 }, motion: "push-in", motionDirection: "up",
+    motionIntensity: "medium", transitionIn: "cross-dissolve", transitionDurationSec: 0.4, locked,
+  });
+  const plan = {
+    version: SCENE_PLAN_VERSION, galleryId: "g", format: "9:16", template: "editorial-clean",
+    length: "standard", pace: "balanced", fps: 30, width: 1080, height: 1920,
+    opening: { kind: "opening", enabled: false, showLogo: false, durationSec: 0 },
+    outro: { kind: "outro", enabled: false, showLogo: false, durationSec: 0 },
+    scenes: [mkScene("a", 2.9), mkScene("b", 3.2, true), mkScene("c", 2.7)],
+    brand: { accentHex: "#000", headingFont: "x", bodyFont: "y" },
+    audio: { trackId: "warm", durationSec: 32, beatsSec: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], phrasesSec: [] },
+    beatSyncStrength: 1,
+    generatedBy: "auto",
+  } as unknown as ScenePlan;
+
+  const out = applyBeatSync(plan);
+  // Scene A (2.9s, unlocked, strength 1) snaps its end to beat 3.0 -> dur 3.0.
+  assert.ok(Math.abs(out.scenes[0].durationSec - 3.0) < 1e-6, `A dur ${out.scenes[0].durationSec}`);
+  // Scene B is LOCKED -> duration unchanged (3.2).
+  assert.equal(out.scenes[1].durationSec, 3.2);
+  // Cut times recorded on the unlocked scenes.
+  assert.equal(out.scenes[0].beatAlignedSec, 3.0);
+  // With strength 0 the plan is returned unchanged (same reference).
+  const off = { ...plan, beatSyncStrength: 0 } as ScenePlan;
+  assert.equal(applyBeatSync(off), off);
 });
