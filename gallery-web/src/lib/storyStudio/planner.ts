@@ -272,30 +272,13 @@ function faceNearEdge(img: PlannerImage): boolean {
  * people beat fills the 9:16 frame and is framed on the detected faces. Falls
  * back to the prior orientation rule when no detection data exists.
  */
-function classifyFit(img: PlannerImage, template: StoryTemplate): "fit" | "fill" {
-  const o = orientationOf(img.width, img.height);
-  if (o !== "landscape") return "fill"; // portrait/square already fills 9:16 cleanly
-  // Reel-style templates are FULL-BLEED: a letterbox matte breaks their edge-to-
-  // edge rhythm (reviewers flagged a single boxed scene in a concert reel). The
-  // calm editorial template keeps the cinematic letterbox to preserve a wide
-  // establishing composition.
-  if (template !== "editorial-clean") return "fill";
-  const faces = Array.isArray(img.faceBoxes) ? img.faceBoxes : null;
-  if (faces) {
-    let maxA = 0;
-    for (const b of faces) maxA = Math.max(maxA, b.w * b.h);
-    // Few, tiny (or no) faces => a room/establishing wide => letterbox on the matte.
-    if (faces.length <= 2 && maxA < 0.008) return "fit";
-    // A 9:16 FILL of a landscape crops WIDTH (height is preserved), so only a
-    // face pinned to the LEFT/RIGHT edge risks being cut. With just a subject or
-    // two, letterbox to keep it; a crowd tolerates losing an edge face.
-    const M = 0.1;
-    const horizEdge = faces.some((b) => b.x < M || b.x + b.w > 1 - M);
-    if (faces.length <= 4 && horizEdge) return "fit";
-    return "fill"; // people beat: fill and frame on the crowd centroid
-  }
-  // No detection data: keep the prior conservative edge rule.
-  return faceNearEdge(img) ? "fit" : "fill";
+function classifyFit(_img: PlannerImage, _template: StoryTemplate): "fit" | "fill" {
+  // AUTOMATIC cuts are ALWAYS full-bleed: every scene fills the 9:16 frame
+  // (cropped to its focal point). A letterbox matte on an auto scene reads as
+  // "black bars / broken" to a client (all three reviewers flagged this on a
+  // thin outdoor set). Letterbox stays available as a DELIBERATE per-scene choice
+  // in the editor (the fit toggle sets fit:"fit"); the planner never picks it.
+  return "fill";
 }
 
 // ── Content signals -> narrative role, arc, motion & transitions ──────────────

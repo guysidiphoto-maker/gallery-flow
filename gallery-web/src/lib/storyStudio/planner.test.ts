@@ -156,16 +156,19 @@ test("focal point priority: AI focal > face box > center", () => {
   assert.deepEqual(plainScene.focal, { x: 0.5, y: 0.4 });
 });
 
-test("holds static / uses fit when a face sits near a frame edge", () => {
+test("automatic cuts fill landscape (letterbox is a manual-only choice)", () => {
+  // A landscape frame with an edge face still FILLS in the auto cut — the planner
+  // never letterboxes (black bars read as broken); the focal point frames the
+  // face, and the editor's fit toggle remains available for a deliberate matte.
   const edgy = img("edge-face-01", {
     width: 1800,
     height: 1200, // landscape
-    faceBoxes: [{ x: 0.02, y: 0.4, w: 0.15, h: 0.2 }], // hard against left edge
+    faceBoxes: [{ x: 0.02, y: 0.4, w: 0.15, h: 0.2 }],
   });
   const plan = planStory([edgy, ...gallery(6)], baseOpts());
   const s = plan.scenes.find((x) => x.imageId === "edge-face-01")!;
-  assert.equal(s.fit, "fit");
-  assert.equal(s.background, "blur");
+  assert.equal(s.fit, "fill");
+  assert.equal(s.background, "none");
 });
 
 test("degrades gracefully with no dimensions and no scores", () => {

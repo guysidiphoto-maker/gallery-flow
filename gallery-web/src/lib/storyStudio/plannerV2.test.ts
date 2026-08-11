@@ -54,16 +54,9 @@ const MOTION_FAMILY: Record<string, string> = {
   "pull-out": "out", pan: "lat", parallax: "lat", reveal: "rev", none: "still",
 };
 
-test("fit classification: the establishing room letterboxes, people/portrait fill", () => {
+test("automatic cuts are full-bleed: every scene fills 9:16 (no auto letterbox)", () => {
   const plan = build();
-  const byImg = new Map(plan.scenes.map((s) => [s.imageId, s]));
-  // Only one establishing room is kept (near-duplicate rooms are dropped); the
-  // room that appears must be letterboxed.
-  const roomScene = plan.scenes.find((s) => s.imageId === "room-a" || s.imageId === "room-b");
-  assert.ok(roomScene, "an establishing room is present");
-  assert.equal(roomScene!.fit, "fit", "the establishing room letterboxes");
-  assert.equal(byImg.get("hook-huge")!.fit, "fill", "big group fills");
-  assert.equal(byImg.get("portrait")!.fit, "fill", "portrait fills");
+  assert.ok(plan.scenes.every((s) => s.fit === "fill"), "no auto scene should letterbox (black-bar reads as broken)");
 });
 
 test("reel templates are full-bleed (no letterbox); editorial keeps the matte", () => {
@@ -76,13 +69,10 @@ test("reel templates are full-bleed (no letterbox); editorial keeps the matte", 
     ];
     return planStory(imgs, { galleryId: "g", brand: { accentHex: "#000", headingFont: "x", bodyFont: "y", studioName: "S" }, template, length: "standard", seed: 7, preserveOrder: false });
   };
-  // editorial letterboxes the establishing room...
-  const ed = build2("editorial-clean");
-  assert.equal(ed.scenes.find((s) => s.imageId === "room")!.fit, "fit");
-  // ...but cinematic + fast reels fill every landscape scene (no black bars).
-  for (const t of ["cinematic-energy", "fast-highlights"]) {
+  // Every template's automatic cut is full-bleed (no letterbox on any scene).
+  for (const t of ["editorial-clean", "cinematic-energy", "fast-highlights"]) {
     const p = build2(t);
-    assert.ok(p.scenes.every((s) => s.fit === "fill"), `${t} should be full-bleed`);
+    assert.ok(p.scenes.every((s) => s.fit === "fill"), `${t} auto should be full-bleed`);
   }
 });
 

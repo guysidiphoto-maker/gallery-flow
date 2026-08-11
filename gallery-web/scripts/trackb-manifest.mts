@@ -13,9 +13,10 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const SRC = process.argv[2];
+const TAG = process.argv[3] || "trackb"; // reuse for any event: serves /tmp/<tag>-serve + faces
 const PORT = 8802;
-const SERVE = "/tmp/trackb-serve";
-const FACES = JSON.parse(readFileSync("/tmp/trackb-faces.json", "utf8")) as Record<string, any>;
+const SERVE = `/tmp/${TAG}-serve`;
+const FACES = JSON.parse(readFileSync(`/tmp/${TAG}-faces.json`, "utf8")) as Record<string, any>;
 const BRAND = { accentHex: "#C9A227", headingFont: "Playfair Display, Georgia, serif", bodyFont: "Inter, sans-serif", studioName: "Guy Sidi Photography", logoUrl: null, watermark: { enabled: false, opacityPercent: 9, position: "bottom-right" } };
 const EVENT = { title: "Live Performance", date: "", location: "" };
 
