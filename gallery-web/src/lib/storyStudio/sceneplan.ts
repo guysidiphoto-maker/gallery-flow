@@ -166,6 +166,15 @@ export interface Scene {
   locked?: boolean;
   /** Audio timing: the beat time (s from music start) this scene's cut aligns to. */
   beatAlignedSec?: number;
+  /** Scene layout. "single" (default) = one photo. "collage" = 2-3 LANDSCAPE
+   *  photos stacked vertically to fill 9:16 with no crop and no black bars —
+   *  the right treatment for landscape shots in a vertical story. */
+  layout?: "single" | "collage";
+  /** For a collage: the 2-3 image ids (incl. imageId) stacked top-to-bottom.
+   *  Each cell also needs a resolved src at render time (collageSrc). */
+  collageImageIds?: string[];
+  /** Resolved image URLs for a collage's cells (filled at render time). */
+  collageSrc?: string[];
   /** Dev-only diagnostic explaining an automatic choice. Stripped before render. */
   _reason?: string;
 }

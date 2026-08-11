@@ -357,6 +357,51 @@ function buildArc(imgs: PlannerImage[]): PlannerImage[] {
   return out;
 }
 
+/**
+ * Merge runs of collage-eligible LANDSCAPE scenes into 2-3-up vertical collages.
+ * A landscape photo alone in 9:16 crops hard or shows black bars; stacking 2-3
+ * fills the frame cleanly. Keeps the hook, closer and intimate portraits single
+ * (they deserve the whole frame), and never collages more than 3 at once. Mutates
+ * `scenes` in place. Deterministic.
+ */
+function mergeLandscapeCollages(scenes: Scene[]): void {
+  const eligible = (s: Scene) =>
+    s.layout !== "collage" &&
+    orientationOf(s.width, s.height) === "landscape" &&
+    s.role !== "hook" &&
+    s.role !== "closer" &&
+    s.role !== "peak"; // portraits/intimate beats stay full-frame
+  let i = 0;
+  while (i < scenes.length) {
+    if (!eligible(scenes[i])) { i++; continue; }
+    // Greedily take up to 3 consecutive eligible landscapes.
+    let j = i;
+    const group: Scene[] = [];
+    while (j < scenes.length && group.length < 3 && eligible(scenes[j])) {
+      group.push(scenes[j]);
+      j++;
+    }
+    if (group.length >= 2) {
+      const first = group[0];
+      const avg = group.reduce((a, s) => a + s.durationSec, 0) / group.length;
+      const collage: Scene = {
+        ...first,
+        layout: "collage",
+        collageImageIds: group.map((s) => s.imageId),
+        // A collage shows 2-3 photos, so hold a touch longer than a single beat.
+        durationSec: clamp(Math.round(avg * 1.35 * 100) / 100, MIN_SCENE_SEC, MAX_SCENE_SEC),
+        motion: "push-in",
+        motionIntensity: "subtle",
+        _reason: `collage(${group.length} landscapes)`,
+      };
+      scenes.splice(i, group.length, collage);
+      i++; // move past the new collage
+    } else {
+      i = j; // a lone eligible landscape stays single
+    }
+  }
+}
+
 /** Visual family of a motion — used to stop consecutive similar-looking moves. */
 function motionFamily(m: MotionEffect): "in" | "out" | "lateral" | "reveal" | "still" {
   if (m === "push-in" || m === "focus-zoom" || m === "punch-in") return "in";
@@ -772,6 +817,12 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       ].join(" "),
     });
   }
+
+  // 8b. Landscape collages: a landscape photo alone in a 9:16 story either crops
+  // hard or shows black bars. Group runs of collage-eligible landscape scenes
+  // (not the hook/closer/portrait beats) into 2-3-up vertical collages that fill
+  // the frame with no crop and no bars. Reduces the scene list in place.
+  mergeLandscapeCollages(scenes);
 
   // 9. Nudge total toward the length target within clamps (proportional). The
   // template's targetMult keeps the pace difference real: fast finishes shorter.

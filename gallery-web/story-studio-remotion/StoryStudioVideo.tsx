@@ -129,6 +129,35 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number; accentHex?: s
     <SceneCaption text={scene.text.content} position={scene.text.position} style={scene.captionStyle} accentHex={accentHex} />
   ) : null;
 
+  // COLLAGE: 2-3 landscape photos stacked vertically to fill 9:16 with no crop-to-
+  // nothing and no black bars. Each cell fills its row (a landscape in a wide-short
+  // cell barely crops), a thin accent hairline separates them into a designed grid.
+  if (scene.layout === "collage" && scene.collageSrc && scene.collageSrc.length >= 2) {
+    const cells = scene.collageSrc.slice(0, 3);
+    return (
+      <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            transform: `scale(${scale}) translate(${tx}px, ${ty}px)`,
+            transformOrigin: "center",
+          }}
+        >
+          {cells.map((src, i) => (
+            <div key={i} style={{ flex: 1, overflow: "hidden", position: "relative", background: accentHex ?? "#111" }}>
+              <Img src={src} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "50% 45%" }} />
+            </div>
+          ))}
+        </div>
+        {caption}
+      </AbsoluteFill>
+    );
+  }
+
   if (scene.fit === "fit") {
     // Blurred cover background + contained foreground (never crops a face,
     // never shows black bars).

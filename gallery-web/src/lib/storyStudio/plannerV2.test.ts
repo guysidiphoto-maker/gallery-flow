@@ -93,6 +93,9 @@ test("ending selector prefers the bigger/warmer hero over a generic group", () =
 test("motion-diversity budget: no two consecutive scenes share a motion family", () => {
   const plan = build();
   for (let i = 1; i < plan.scenes.length; i++) {
+    // A collage is a completely different LAYOUT, so its motion never reads as a
+    // repeat of an adjacent single-photo move — exempt it from the family check.
+    if (plan.scenes[i].layout === "collage" || plan.scenes[i - 1].layout === "collage") continue;
     const a = MOTION_FAMILY[plan.scenes[i - 1].motion];
     const b = MOTION_FAMILY[plan.scenes[i].motion];
     // A held portrait ("still") or the pull-out close are allowed next to anything;
@@ -108,6 +111,21 @@ test("portrait (single prominent face) is held still, not panned across", () => 
   const portrait = plan.scenes.find((s) => s.imageId === "portrait")!;
   assert.ok(portrait.motion === "none" || portrait.motion === "push-in", `portrait motion ${portrait.motion}`);
   assert.equal(portrait.role, "peak");
+});
+
+test("landscape runs become collages; hook/closer/portrait stay single", () => {
+  const plan = build();
+  const collages = plan.scenes.filter((s) => s.layout === "collage");
+  assert.ok(collages.length >= 1, "at least one landscape collage");
+  for (const c of collages) {
+    assert.ok(c.collageImageIds && c.collageImageIds.length >= 2 && c.collageImageIds.length <= 3, "2-3 photos per collage");
+    assert.notEqual(c.role, "hook");
+    assert.notEqual(c.role, "closer");
+    assert.notEqual(c.role, "peak");
+  }
+  // The hook and closer are never collaged (they deserve the full frame).
+  assert.notEqual(plan.scenes[0].layout, "collage");
+  assert.notEqual(plan.scenes[plan.scenes.length - 1].layout, "collage");
 });
 
 test("scenes carry an arc role and a lock flag when built from signals", () => {

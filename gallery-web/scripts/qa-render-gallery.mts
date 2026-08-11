@@ -93,7 +93,8 @@ function withMusic(plan: ScenePlan, trackId: "calm" | "warm" | "upbeat", strengt
 }
 
 async function render(label: string, plan: ScenePlan) {
-  const withSrc = { ...plan, scenes: plan.scenes.map((s) => ({ ...s, src: images.find((im) => im.id === s.imageId)?.src })) };
+  const srcOf = (id: string) => images.find((im) => im.id === id)?.src;
+  const withSrc = { ...plan, scenes: plan.scenes.map((s) => ({ ...s, src: srcOf(s.imageId), collageSrc: s.collageImageIds?.map(srcOf).filter(Boolean) })) };
   const comp = await selectComposition({ serveUrl, id: "StoryStudio", inputProps: { plan: withSrc }, browserExecutable: CHROME });
   const mp4 = path.join(OUT, `${label}.mp4`);
   const hasMusic = !!plan.music && !plan.music.muted;
