@@ -22,6 +22,7 @@ import {
   totalFrames,
   type BrandResolved,
   type MotionEffect,
+  type MotionIntensity,
   type MusicConfig,
   type Scene,
   type ScenePlan,
@@ -30,7 +31,10 @@ import {
   type TextPosition,
   type TitleCard,
   type TransitionType,
+  applyBeatSync,
+  type AudioAnalysis,
 } from "./sceneplan";
+import MUSIC_ANALYSIS from "./musicAnalysis.json";
 
 const DEFAULT_MUSIC: MusicConfig = { trackId: null, volume: 0.7, fadeInSec: 1, fadeOutSec: 1.5, muted: false };
 
@@ -169,10 +173,12 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
   // engine's re-sequenced "Suggested Edit" (opt-in, never silent).
   const [orderMode, setOrderMode] = useState<"locked" | "suggested">("locked");
 
+  // Bumped by "request another variation" to get a fresh deterministic auto cut.
+  const variationSeed = useRef(7);
   const buildAuto = useCallback(
     (template: StoryTemplate, length: StoryLength, pace: "relaxed" | "balanced" | "energetic", mode: "locked" | "suggested" = orderMode) => {
       const p = planStory(selectedPool, {
-        galleryId, template, length, pace, brand, event, seed: 7,
+        galleryId, template, length, pace, brand, event, seed: variationSeed.current,
         preserveOrder: mode === "locked",
       });
       // Attach preview src for the live <Player> + thumbnails (not persisted).
@@ -370,6 +376,13 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
     commit({ ...applyOverrides(buildAuto(plan.template, plan.length, plan.pace)), generatedBy: "manual" });
   }, [buildAuto, plan.template, plan.length, plan.pace, commit, applyOverrides]);
 
+  // "Request another variation": a fresh deterministic auto cut (new seed) while
+  // keeping the photographer's manual overrides + locked scenes.
+  const anotherVariation = useCallback(() => {
+    variationSeed.current += 1;
+    commit({ ...applyOverrides(buildAuto(plan.template, plan.length, plan.pace)), generatedBy: "manual" });
+  }, [buildAuto, plan.template, plan.length, plan.pace, commit, applyOverrides]);
+
   const resetToAuto = useCallback(() => {
     if (!window.confirm(HE.resetConfirm)) return;
     overrides.current.clear();
@@ -447,6 +460,17 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
       const next = { ...(plan.music ?? DEFAULT_MUSIC), ...patch };
       musicRef.current = next;
       commit({ ...plan, music: next });
+    },
+    [plan, commit]
+  );
+
+  // Beat-sync strength: attach the chosen track's real beat analysis and snap
+  // unlocked cuts to the beat. Changes BOTH the live preview and the export.
+  const setBeatSync = useCallback(
+    (strength: number) => {
+      const trackId = plan.music?.trackId;
+      const analysis = (trackId ? (MUSIC_ANALYSIS as Record<string, AudioAnalysis>)[trackId] : null) ?? null;
+      commit(applyBeatSync({ ...plan, audio: analysis, beatSyncStrength: strength }));
     },
     [plan, commit]
   );
@@ -558,6 +582,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
         />
         <div style={{ flex: 1 }} />
         <button style={btn} onClick={regenerate}>♻︎ {HE.regenerate}</button>
+        <button style={btnGhost} onClick={anotherVariation} title="גרסה אוטומטית אחרת (שומר על עריכות ידניות ונעילות)">🎲 גרסה אחרת</button>
         <button style={btnGhost} onClick={undo} disabled={past.current.length === 0}>↩︎ {HE.undo}</button>
         <button style={btnGhost} onClick={redo} disabled={future.current.length === 0}>↪︎ {HE.redo}</button>
         <button style={btnGhost} onClick={resetToAuto}>⟲ {HE.reset}</button>
@@ -571,7 +596,7 @@ export const StoryStudioEditor: React.FC<StoryStudioEditorProps> = ({
 
       {/* Scene controls */}
       <aside style={{ ...panel, overflowY: "auto", order: isNarrow ? 3 : 0, width: isNarrow ? "100%" : undefined }}>
-        <StorySettings plan={plan} brand={brand} onPatchCard={patchCard} onSetMusic={setMusic} />
+        <StorySettings plan={plan} brand={brand} onPatchCard={patchCard} onSetMusic={setMusic} onSetBeatSync={setBeatSync} />
         <SceneControls scene={selected} onPatch={patchScene} onReset={resetScene} />
       </aside>
 
@@ -711,7 +736,16 @@ const SceneControls: React.FC<{
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16, borderTop: `1px solid ${C.border}` }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <h3 style={{ margin: 0, fontSize: 15 }}>עריכת סצנה</h3>
-        <button style={btnGhost} onClick={() => onReset(scene.id)} title="אפס סצנה זו לאוטומטי">⟲ אפס סצנה</button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            style={scene.locked ? btn : btnGhost}
+            onClick={() => onPatch(scene.id, { locked: !scene.locked })}
+            title="נעל סצנה: עריכה אוטומטית מחדש תשמור עליה"
+          >
+            {scene.locked ? "🔒 נעול" : "🔓 נעל"}
+          </button>
+          <button style={btnGhost} onClick={() => onReset(scene.id)} title="אפס סצנה זו לאוטומטי">⟲ אפס סצנה</button>
+        </div>
       </div>
 
       <label style={lbl}>
@@ -736,13 +770,39 @@ const SceneControls: React.FC<{
       </label>
 
       <label style={lbl}>
-        {HE.transition}
-        <select style={sel} value={scene.transitionIn} onChange={(e) => onPatch(scene.id, { transitionIn: e.target.value as TransitionType, transitionDurationSec: e.target.value === "cut" ? 0 : 0.4 })}>
+        עוצמת תנועה
+        <select style={sel} value={scene.motionIntensity} onChange={(e) => onPatch(scene.id, { motionIntensity: e.target.value as MotionIntensity })}>
+          {(["subtle", "medium", "strong"] as MotionIntensity[]).map((m) => (
+            <option key={m} value={m}>{m === "subtle" ? "עדינה" : m === "medium" ? "בינונית" : "חזקה"}</option>
+          ))}
+        </select>
+      </label>
+
+      <label style={lbl}>
+        {HE.transition} (כניסה)
+        <select style={sel} value={scene.transitionIn} onChange={(e) => onPatch(scene.id, { transitionIn: e.target.value as TransitionType, transitionDurationSec: e.target.value === "cut" ? 0 : scene.transitionDurationSec || 0.4 })}>
           {TRANSITIONS.map((t) => (
             <option key={t} value={t}>{TRANSITION_HE[t]}</option>
           ))}
         </select>
       </label>
+
+      <label style={lbl}>
+        {HE.transition} (יציאה)
+        <select style={sel} value={scene.transitionOut ?? ""} onChange={(e) => onPatch(scene.id, { transitionOut: (e.target.value || undefined) as TransitionType | undefined, transitionOutDurationSec: e.target.value && e.target.value !== "cut" ? scene.transitionOutDurationSec || 0.4 : e.target.value === "cut" ? 0 : undefined })}>
+          <option value="">(אוטומטי)</option>
+          {TRANSITIONS.map((t) => (
+            <option key={t} value={t}>{TRANSITION_HE[t]}</option>
+          ))}
+        </select>
+      </label>
+
+      {scene.transitionIn !== "cut" ? (
+        <label style={lbl}>
+          משך מעבר: {scene.transitionDurationSec.toFixed(2)} {HE.seconds}
+          <input type="range" min={0.15} max={1.2} step={0.05} value={scene.transitionDurationSec} onChange={(e) => onPatch(scene.id, { transitionDurationSec: Number(e.target.value) })} />
+        </label>
+      ) : null}
 
       <div style={lbl}>
         תצוגה
@@ -775,20 +835,36 @@ const SceneControls: React.FC<{
       </label>
 
       {scene.text?.content ? (
-        <div style={lbl}>
-          {HE.captionPos}
-          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-            {(["top", "center", "bottom"] as TextPosition[]).map((p) => (
-              <button
-                key={p}
-                style={pos === p ? btn : btnGhost}
-                onClick={() => onPatch(scene.id, { text: { content: scene.text!.content, position: p } })}
-              >
-                {p === "top" ? HE.posTop : p === "center" ? HE.posCenter : HE.posBottom}
-              </button>
-            ))}
+        <>
+          <div style={lbl}>
+            {HE.captionPos}
+            <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+              {(["top", "center", "bottom"] as TextPosition[]).map((p) => (
+                <button
+                  key={p}
+                  style={pos === p ? btn : btnGhost}
+                  onClick={() => onPatch(scene.id, { text: { content: scene.text!.content, position: p } })}
+                >
+                  {p === "top" ? HE.posTop : p === "center" ? HE.posCenter : HE.posBottom}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+          <div style={lbl}>
+            סגנון כיתוב
+            <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+              {(["editorial", "bold", "minimal"] as const).map((cs) => (
+                <button
+                  key={cs}
+                  style={(scene.captionStyle ?? "editorial") === cs ? btn : btnGhost}
+                  onClick={() => onPatch(scene.id, { captionStyle: cs })}
+                >
+                  {cs === "editorial" ? "אלגנטי" : cs === "bold" ? "מודגש" : "מינימלי"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       ) : null}
     </div>
   );
@@ -866,7 +942,8 @@ const StorySettings: React.FC<{
   brand: BrandResolved;
   onPatchCard: (kind: "opening" | "outro", patch: Partial<TitleCard>) => void;
   onSetMusic: (patch: Partial<MusicConfig> | null) => void;
-}> = ({ plan, brand, onPatchCard, onSetMusic }) => {
+  onSetBeatSync: (strength: number) => void;
+}> = ({ plan, brand, onPatchCard, onSetMusic, onSetBeatSync }) => {
   const music = plan.music;
   const activeTrack = music && !music.muted && music.trackId ? music.trackId : "";
   return (
@@ -940,6 +1017,10 @@ const StorySettings: React.FC<{
                 <input type="range" min={0} max={MUSIC_MAX_FADE_SEC} step={0.5} value={music?.fadeOutSec ?? 1.5} onChange={(e) => onSetMusic({ fadeOutSec: Number(e.target.value) })} />
               </label>
             </div>
+            <label style={lbl}>
+              יישור לקצב: {Math.round((plan.beatSyncStrength ?? 0) * 100)}%
+              <input type="range" min={0} max={1} step={0.05} value={plan.beatSyncStrength ?? 0} onChange={(e) => onSetBeatSync(Number(e.target.value))} />
+            </label>
           </>
         ) : null}
       </div>
