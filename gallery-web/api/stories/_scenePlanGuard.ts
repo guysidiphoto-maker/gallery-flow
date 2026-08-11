@@ -74,6 +74,13 @@ export interface GuardResult {
 
 const hasMarkup = (s: unknown): boolean => typeof s === 'string' && /[<>]/.test(s);
 
+// Only an http(s) URL is a loadable image for the renderer. A logo stored as a
+// local filesystem path (e.g. "/Users/.../logo.png", a long-standing data bug in
+// the gallery editor) resolves against the render server's own origin, 404s, and
+// crashes Chromium ("EncodingError → Page crashed!"). Treat any non-http(s) logo
+// as absent so the render proceeds without it instead of dying.
+const isHttpUrl = (s: unknown): s is string => typeof s === 'string' && /^https?:\/\//i.test(s);
+
 export function resolveAndValidatePlan(
   plan: any,
   galleryId: string,
@@ -147,7 +154,12 @@ export function resolveAndValidatePlan(
     const collageSrc = s.layout === 'collage' && Array.isArray(s.collageImageIds) ? s.collageImageIds.map((id: string) => resolveSrc(id)) : undefined;
     return { ...rest, src: resolveSrc(s.imageId), collageSrc, width: rec.width ?? s.width, height: rec.height ?? s.height };
   });
-  return { ok: true, errors: [], plan: { ...plan, galleryId, scenes: safeScenes } };
+  // Drop a non-http(s) brand logo (local path / junk) so it can never crash the
+  // renderer. The composition already skips the logo when it's absent.
+  const brand = plan.brand && typeof plan.brand === 'object'
+    ? { ...plan.brand, logoUrl: isHttpUrl(plan.brand.logoUrl) ? plan.brand.logoUrl : null }
+    : plan.brand;
+  return { ok: true, errors: [], plan: { ...plan, galleryId, brand, scenes: safeScenes } };
 }
 
 export function stripForPersistence(plan: any): any {

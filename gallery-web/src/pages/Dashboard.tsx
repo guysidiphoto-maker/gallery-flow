@@ -4966,7 +4966,12 @@ export function Dashboard() {
                                     headingFont: bk?.typography?.heading_family,
                                     bodyFont: bk?.typography?.body_family,
                                     studioName: (ds.studioName as string) || bk?.voice?.signature,
-                                    logoUrl: (ds.logoUrl as string) || bk?.logo?.url,
+                                    // Prefer a VALID (http) logo. The gallery override (ds.logoUrl) is
+                                    // often a stale local file path (editor data bug) that 404s and
+                                    // crashes the render — fall back to the brand-kit logo in that case.
+                                    logoUrl: [ds.logoUrl as string | undefined, bk?.logo?.url].find(
+                                      (u) => typeof u === 'string' && /^https?:\/\//i.test(u),
+                                    ) || null,
                                     watermarkEnabled: bk?.watermark?.enabled,
                                     watermarkOpacityPercent: bk?.watermark?.opacity_percent,
                                   }),
