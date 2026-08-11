@@ -12,7 +12,11 @@
 //   3. No imports. This module must be loadable from the web app, the Vercel API
 //      function, the Remotion bundle and a bare `node --test` worktree alike.
 
-export const SCENE_PLAN_VERSION = 1 as const;
+// v2 adds: transitionOut, captionStyle, role, locked, beatAlignedSec per scene;
+// audio analysis + beatSyncStrength on the plan; parallax/reveal motions and
+// fade-color/masked-reveal/match-cut transitions. All new fields are OPTIONAL so
+// a v1 plan upgrades losslessly (see upgradeScenePlan).
+export const SCENE_PLAN_VERSION = 2 as const;
 
 // ── Output geometry ─────────────────────────────────────────────────────────
 export const STORY_WIDTH = 1080;
@@ -53,13 +57,34 @@ export type GlobalPace = "relaxed" | "balanced" | "energetic";
 // "punch-in" is a fast snap-and-settle zoom (starts slightly enlarged, eases to
 // rest in the first third of the scene) — reads as energetic; used by
 // fast-highlights. The gentler push-in/pull-out are continuous Ken Burns moves.
-export type MotionEffect = "none" | "push-in" | "pull-out" | "pan" | "focus-zoom" | "punch-in";
+export type MotionEffect =
+  | "none" // still hold (important portraits)
+  | "push-in"
+  | "pull-out"
+  | "pan" // face-aware pan (direction chosen toward the subject)
+  | "focus-zoom"
+  | "punch-in"
+  | "parallax" // controlled two-plane drift (foreground vs blurred bed)
+  | "reveal"; // directional reveal (image slides in behind a soft wipe)
 export type MotionDirection = "left" | "right" | "up" | "down";
 export type MotionIntensity = "subtle" | "medium" | "strong";
+/** Per-scene caption/title typography style. */
+export type CaptionStyle = "editorial" | "bold" | "minimal";
+/** The scene's narrative role in the event arc (drives motion/transition/pace). */
+export type SceneRole = "hook" | "atmosphere" | "people" | "energy" | "peak" | "closer" | "body";
 
 // "whip" is a fast motion-blur horizontal slide (reel-style hard-ish cut); the
 // other transitions are slower/softer. Templates pick disjoint vocabularies.
-export type TransitionType = "cut" | "cross-dissolve" | "slide" | "soft-blur" | "light-leak" | "whip";
+export type TransitionType =
+  | "cut" // hard cut
+  | "cross-dissolve" // dissolve
+  | "slide" // directional slide
+  | "soft-blur"
+  | "light-leak"
+  | "whip" // controlled whip
+  | "fade-color" // fade through a brand/black colour
+  | "masked-reveal" // wipe reveal behind a moving soft mask
+  | "match-cut"; // match-style cut between compositionally similar shots
 export type FitMode = "fill" | "fit";
 export type BackgroundTreatment = "blur" | "color" | "none";
 export type TextPosition = "top" | "center" | "bottom";
@@ -77,6 +102,8 @@ export const MOTION_EFFECTS: readonly MotionEffect[] = [
   "pan",
   "focus-zoom",
   "punch-in",
+  "parallax",
+  "reveal",
 ];
 export const TRANSITIONS: readonly TransitionType[] = [
   "cut",
@@ -85,7 +112,11 @@ export const TRANSITIONS: readonly TransitionType[] = [
   "soft-blur",
   "light-leak",
   "whip",
+  "fade-color",
+  "masked-reveal",
+  "match-cut",
 ];
+export const CAPTION_STYLES: readonly CaptionStyle[] = ["editorial", "bold", "minimal"];
 
 // ── Core structures ───────────────────────────────────────────────────────────
 
@@ -122,7 +153,19 @@ export interface Scene {
   motionIntensity: MotionIntensity;
   transitionIn: TransitionType;
   transitionDurationSec: number;
+  /** Transition OUT of this scene. Optional; when omitted the next scene's
+   *  transitionIn governs the boundary (they describe the same overlap). */
+  transitionOut?: TransitionType;
+  transitionOutDurationSec?: number;
   text?: SceneText | null;
+  /** Per-scene caption/title typography style. Defaults to the template style. */
+  captionStyle?: CaptionStyle;
+  /** Narrative role in the event arc (auto-assigned; drives motion/pace). */
+  role?: SceneRole;
+  /** When true, automatic re-editing must preserve this scene's edits + position. */
+  locked?: boolean;
+  /** Audio timing: the beat time (s from music start) this scene's cut aligns to. */
+  beatAlignedSec?: number;
   /** Dev-only diagnostic explaining an automatic choice. Stripped before render. */
   _reason?: string;
 }
@@ -161,6 +204,23 @@ export interface MusicConfig {
   fadeInSec: number;
   fadeOutSec: number;
   muted: boolean;
+  /** License provenance kept WITH the export (never use unlicensed audio). */
+  license?: string | null;
+}
+
+/**
+ * Genuine audio analysis of the chosen track (from scripts/analyze-audio.py).
+ * Times are seconds from the music start. Absent => no beat-sync available.
+ */
+export interface AudioAnalysis {
+  trackId: string;
+  durationSec: number;
+  bpm?: number | null;
+  beatsSec: number[];
+  /** Phrase / section boundaries (stronger structural cuts). */
+  phrasesSec: number[];
+  /** Onset-strength envelope samples (0..1) at ~10Hz, for energy cues. */
+  energy?: number[] | null;
 }
 
 // ── Music V1: a small curated set of BUNDLED test tracks ──────────────────────
@@ -209,9 +269,24 @@ export interface ScenePlan {
   scenes: Scene[];
   brand: BrandResolved;
   music?: MusicConfig | null;
+  /** Analysis of the chosen track; enables beat-aligned auto cuts. */
+  audio?: AudioAnalysis | null;
+  /** 0 = ignore beats, 1 = snap every cut to the nearest beat. */
+  beatSyncStrength?: number;
   generatedBy: "auto" | "manual";
   /** Deterministic seed so an auto-plan is reproducible. */
   planSeed?: number;
+}
+
+/**
+ * Upgrade an older plan to the current version losslessly. v1 -> v2 only sets
+ * the new version tag (every v2 field is optional and defaults are applied at
+ * render time), so a saved v1 draft keeps working.
+ */
+export function upgradeScenePlan<T extends { version: number }>(plan: T): T {
+  if (!plan || typeof plan !== "object") return plan;
+  if (plan.version === SCENE_PLAN_VERSION) return plan;
+  return { ...plan, version: SCENE_PLAN_VERSION };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

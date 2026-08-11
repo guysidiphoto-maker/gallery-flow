@@ -19,8 +19,10 @@ import {
   type GlobalPace,
   type MotionDirection,
   type MotionEffect,
+  type MotionIntensity,
   type Orientation,
   type Scene,
+  type SceneRole,
   type ScenePlan,
   type StoryLength,
   type StoryTemplate,
@@ -61,6 +63,18 @@ export interface PlannerImage {
   /** Normalized Rekognition face boxes {x,y,w,h} in 0..1. Optional. */
   faceBoxes?: Array<{ x: number; y: number; w: number; h: number }> | null;
   sectionId?: string | null;
+  // ── Real content signals (from the image pipeline / detector). All optional;
+  //    when present they drive the auto arc, motion and transition choices. ──
+  /** Detected face count (0 => room/empty; 1 large => portrait; many => group). */
+  faceCount?: number | null;
+  /** Largest face area as a share of frame (portraits are high, crowds low). */
+  maxFaceArea?: number | null;
+  /** Focus/detail, ~0..1 (variance of Laplacian). Low => soft/intentional or blur. */
+  sharpness?: number | null;
+  /** Mean luma 0..1 (a dark, moody frame reads as an intimate beat). */
+  brightness?: number | null;
+  /** mean(R)-mean(B) normalized; >0 warm/golden (a good emotional closer). */
+  warmth?: number | null;
 }
 
 export interface PlannerEvent {
@@ -279,6 +293,116 @@ function classifyFit(img: PlannerImage): "fit" | "fill" {
   return faceNearEdge(img) ? "fit" : "fill";
 }
 
+// ── Content signals -> narrative role, arc, motion & transitions ──────────────
+// All gated on real detection signals being present; with none, the planner
+// keeps its prior template-vocabulary behaviour (see planStory).
+
+/** True once any real content signal (faces) is attached to the set. */
+function hasContentSignals(imgs: PlannerImage[]): boolean {
+  return imgs.some((im) => typeof im.faceCount === "number" || Array.isArray(im.faceBoxes));
+}
+function faceCountOf(img: PlannerImage): number {
+  return typeof img.faceCount === "number" ? img.faceCount : Array.isArray(img.faceBoxes) ? img.faceBoxes.length : 0;
+}
+/** Intrinsic role from the signals (position-based hook/closer is set in buildArc). */
+function roleOf(img: PlannerImage): "atmosphere" | "people" | "energy" | "peak" {
+  const n = faceCountOf(img);
+  const maxA = img.maxFaceArea ?? 0;
+  if (n <= 2 && maxA < 0.008) return "atmosphere"; // room / establishing wide
+  if (n <= 2 || maxA >= 0.011) return "peak"; // a single prominent subject -> intimate portrait
+  if (n >= 12) return "people"; // big group
+  return "energy"; // medium group / activity
+}
+function groupStrength(img: PlannerImage): number {
+  return faceCountOf(img) * (0.5 + 0.5 * (img.sharpness ?? 0.5));
+}
+
+/**
+ * Order a selected set into an event arc using real signals:
+ *   hook (strongest group) -> establishing room -> people/energy build ->
+ *   intimate portrait (peak) -> warm group (closer).
+ * Deterministic; falls back silently when a bucket is empty.
+ */
+function buildArc(imgs: PlannerImage[]): PlannerImage[] {
+  const rooms = imgs.filter((i) => roleOf(i) === "atmosphere");
+  const portraits = imgs.filter((i) => roleOf(i) === "peak");
+  const groups = imgs.filter((i) => roleOf(i) === "people" || roleOf(i) === "energy");
+
+  // hook = strongest group; closer = warmest OTHER group.
+  const groupsByStrength = [...groups].sort((a, b) => groupStrength(b) - groupStrength(a));
+  const hook = groupsByStrength[0];
+  const closer =
+    [...groups].filter((g) => g !== hook).sort((a, b) => (b.warmth ?? 0) - (a.warmth ?? 0))[0] ?? null;
+  const midGroups = groups.filter((g) => g !== hook && g !== closer);
+
+  const out: PlannerImage[] = [];
+  if (hook) out.push(hook);
+  if (rooms[0]) out.push(rooms[0]); // establishing beat after the hook
+  // Interleave the remaining groups with any second room so two mattes never stack.
+  const restRooms = rooms.slice(1);
+  midGroups.forEach((g, k) => {
+    out.push(g);
+    if (k === 0 && restRooms[0]) out.push(restRooms[0]);
+  });
+  restRooms.slice(1).forEach((r) => out.push(r));
+  portraits.forEach((p) => out.push(p)); // intimate beat before the close
+  if (closer) out.push(closer);
+  // Any image not placed (safety) appended in original order.
+  for (const im of imgs) if (!out.includes(im)) out.push(im);
+  return out;
+}
+
+/** Face-aware pan direction: pan toward the side the subject sits on. */
+function panDirTowardSubject(img: PlannerImage): "left" | "right" {
+  const { focal } = resolveFocal(img);
+  return focal.x < 0.5 ? "left" : "right";
+}
+
+/** Role- and position-aware motion (used when signals are present). */
+function motionForScene(
+  img: PlannerImage,
+  i: number,
+  n: number,
+  rng: () => number
+): { motion: MotionEffect; intensity: MotionIntensity; direction: MotionDirection } {
+  const role = roleOf(img);
+  const isCloser = i === n - 1;
+  if (role === "atmosphere") {
+    // Wide establishing shot on the matte: a slow cinematic push or two-plane drift.
+    return { motion: rng() < 0.5 ? "push-in" : "parallax", intensity: "subtle", direction: panDirTowardSubject(img) };
+  }
+  if (role === "peak") {
+    // Intimate portrait: hold still or a barely-there push; never pan across a face.
+    return { motion: rng() < 0.5 ? "none" : "push-in", intensity: "subtle", direction: "up" };
+  }
+  if (isCloser) {
+    return { motion: "pull-out", intensity: "medium", direction: "down" }; // breathe out on the close
+  }
+  // People / energy beat: alternate a push with a face-aware pan for life.
+  return {
+    motion: i % 2 === 0 ? "push-in" : "pan",
+    intensity: "medium",
+    direction: panDirTowardSubject(img),
+  };
+}
+
+/** Content-aware transition INTO scene i (used when signals are present). */
+function transitionForScene(
+  prev: PlannerImage | null,
+  cur: PlannerImage,
+  profile: TemplateProfile
+): TransitionType {
+  if (!prev) return "cross-dissolve";
+  const rPrev = roleOf(prev);
+  const rCur = roleOf(cur);
+  const fast = profile.motionIntensity === "strong"; // fast-highlights template
+  if (rPrev === "atmosphere" && rCur === "atmosphere") return "match-cut"; // two similar wides
+  if (rCur === "energy") return fast ? "whip" : "slide"; // stepping up energy
+  if (rCur === "atmosphere") return "soft-blur"; // settle into an establishing shot
+  if (rCur === "peak") return "cross-dissolve"; // gentle into the portrait
+  return fast ? "cut" : "cross-dissolve";
+}
+
 // ── Burst de-duplication ──────────────────────────────────────────────────────
 // Photos captured within BURST_SEC of each other with the same orientation are
 // treated as one "moment"; we keep only the strongest so the story doesn't show
@@ -442,7 +566,12 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       const chosen = new Set([...picks, ...sampled].map((i) => i.id));
       selected = deduped.filter((i) => chosen.has(i.id)).slice(0, budget);
     }
-    // 5. Anti-monotony ordering.
+    // 5. Ordering. With real content signals, build a proper event arc
+    // (hook -> establishing -> build -> portrait -> warm close); otherwise fall
+    // back to orientation interleave + strongest opener/closer promotion.
+    if (hasContentSignals(selected)) {
+      ordered = buildArc(selected);
+    } else {
     ordered = interleaveByOrientation(selected);
     // 6. Promote the strongest image to the opening slot (respecting Top Picks).
     if (ordered.length > 1) {
@@ -463,6 +592,7 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       }
       const [closer] = ordered.splice(bestIdx, 1);
       ordered.push(closer);
+    }
     }
   }
 
@@ -506,7 +636,7 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
     }
 
     // Direction: landscape leans horizontal pan, portrait leans vertical.
-    const dir: MotionDirection =
+    let dir: MotionDirection =
       motion === "pan"
         ? o === "landscape"
           ? i % 2 === 0
@@ -527,6 +657,22 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       i === 0 ? "cross-dissolve" : profile.transitionVocab[(i + tShift) % profile.transitionVocab.length];
     if (prev && transition === prev.transitionIn && transition !== "cut") {
       transition = profile.transitionVocab[(i + tShift + 1) % profile.transitionVocab.length];
+    }
+
+    // V2 intelligence: with real content signals, choose motion + transition by
+    // the scene's narrative role (portraits hold, wides drift cinematically,
+    // people beats pan toward the crowd, the close breathes out) and mark the
+    // arc role. Without signals, keep the template-vocab behaviour computed above.
+    let intensity: MotionIntensity = variedIntensity(profile.motionIntensity, i, Boolean(img.isTopPick), rng);
+    let role: SceneRole | undefined;
+    if (hasContentSignals(ordered)) {
+      const m = motionForScene(img, i, ordered.length, rng);
+      motion = m.motion;
+      dir = m.direction;
+      intensity = m.intensity;
+      transition = i === 0 ? "cross-dissolve" : transitionForScene(ordered[i - 1], img, profile);
+      const intrinsic = roleOf(img);
+      role = i === 0 ? "hook" : i === ordered.length - 1 ? "closer" : intrinsic;
     }
 
     // Fit: face-aware — letterbox establishing/room wides so the venue reads,
@@ -551,9 +697,11 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       focal,
       motion,
       motionDirection: dir,
-      motionIntensity: variedIntensity(profile.motionIntensity, i, Boolean(img.isTopPick), rng),
+      motionIntensity: intensity,
       transitionIn: transition,
-      transitionDurationSec: transition === "cut" ? 0 : profile.transitionSec,
+      transitionDurationSec: transition === "cut" ? 0 : transition === "match-cut" ? Math.min(0.25, profile.transitionSec) : profile.transitionSec,
+      role,
+      locked: false,
       text: null,
       _reason: [
         i === 0 ? "opening(strongest)" : i === ordered.length - 1 ? "closer" : "body",

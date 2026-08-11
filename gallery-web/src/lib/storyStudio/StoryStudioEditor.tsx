@@ -99,6 +99,8 @@ const MOTION_HE: Record<MotionEffect, string> = {
   pan: "תנועה צידית",
   "focus-zoom": "זום למיקוד",
   "punch-in": "זום נקישה",
+  parallax: "פרלקס (עומק)",
+  reveal: "חשיפה מכיוון",
 };
 const TRANSITION_HE: Record<TransitionType, string> = {
   cut: "חיתוך חד",
@@ -107,6 +109,9 @@ const TRANSITION_HE: Record<TransitionType, string> = {
   "soft-blur": "טשטוש רך",
   "light-leak": "הבזק אור",
   whip: "החלקה מהירה",
+  "fade-color": "עמעום דרך צבע",
+  "masked-reveal": "חשיפה במסכה",
+  "match-cut": "חיתוך תואם",
 };
 
 export interface StoryStudioEditorProps {

@@ -60,9 +60,20 @@ for f in files:
         nx, ny, nw, nh = x / w, y / h, bw / w, bh / h
         boxes.append({"x": round(nx, 4), "y": round(ny, 4), "w": round(nw, 4), "h": round(nh, 4), "area": round(nw * nh, 5)})
     boxes.sort(key=lambda d: d["area"], reverse=True)
+    # Real per-image signals for the planner's arc/motion/transition choices:
+    #  sharpness = variance of the Laplacian (focus/detail), normalized to ~0..1
+    #  brightness = mean luma 0..1
+    #  warmth = mean(R) - mean(B) normalized (>0 warm/golden, <0 cool)
+    lap = cv2.Laplacian(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var()
+    sharpness = round(min(1.0, lap / 800.0), 4)
+    meanB, meanG, meanR = [float(x) for x in cv2.mean(img)[:3]]
+    brightness = round((0.114 * meanB + 0.587 * meanG + 0.299 * meanR) / 255.0, 4)
+    warmth = round((meanR - meanB) / 255.0, 4)
     name = os.path.basename(f)
-    result[name] = {"width": w, "height": h, "faces": boxes, "faceCount": len(boxes), "maxFaceArea": boxes[0]["area"] if boxes else 0.0}
-    print(f"{name}: {len(boxes)} faces, largest area {result[name]['maxFaceArea']:.4f}")
+    result[name] = {"width": w, "height": h, "faces": boxes, "faceCount": len(boxes),
+                    "maxFaceArea": boxes[0]["area"] if boxes else 0.0,
+                    "sharpness": sharpness, "brightness": brightness, "warmth": warmth}
+    print(f"{name}: {len(boxes)} faces, maxArea {result[name]['maxFaceArea']:.4f}, sharp {sharpness:.2f}, bright {brightness:.2f}, warm {warmth:+.3f}")
 
 with open(out_path, "w") as fp:
     json.dump(result, fp, indent=2)

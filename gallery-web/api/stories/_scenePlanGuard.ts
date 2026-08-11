@@ -17,8 +17,8 @@ const MAX_SCENES = 40;
 const MAX_TEXT_LEN = 120;
 const MAX_TITLE_LEN = 80;
 const TEMPLATES = ['editorial-clean', 'cinematic-energy', 'fast-highlights'];
-const MOTION = ['none', 'push-in', 'pull-out', 'pan', 'focus-zoom', 'punch-in'];
-const TRANSITIONS = ['cut', 'cross-dissolve', 'slide', 'soft-blur', 'light-leak', 'whip'];
+const MOTION = ['none', 'push-in', 'pull-out', 'pan', 'focus-zoom', 'punch-in', 'parallax', 'reveal'];
+const TRANSITIONS = ['cut', 'cross-dissolve', 'slide', 'soft-blur', 'light-leak', 'whip', 'fade-color', 'masked-reveal', 'match-cut'];
 // Music V1: only these BUNDLED track ids are accepted (never an arbitrary URL).
 const MUSIC_TRACK_IDS = ['calm', 'warm', 'upbeat'];
 const MUSIC_MAX_FADE_SEC = 8;

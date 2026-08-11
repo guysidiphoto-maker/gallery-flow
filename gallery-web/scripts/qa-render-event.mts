@@ -50,13 +50,20 @@ function dims(f: string): { w: number; h: number } {
 }
 // Real face boxes from scripts/detect-faces.py (OpenCV Haar). Same shape the
 // production Rekognition pipeline feeds the planner — not invented data.
-const FACES: Record<string, { faces: Array<{ x: number; y: number; w: number; h: number }> }> = (() => {
+type FaceRec = { faces: Array<{ x: number; y: number; w: number; h: number }>; faceCount: number; maxFaceArea: number; sharpness: number; brightness: number; warmth: number };
+const FACES: Record<string, FaceRec> = (() => {
   try { return JSON.parse(readFileSync("/tmp/qa-event-faces.json", "utf8")); } catch { return {}; }
 })();
 const images: PlannerImage[] = files.map((f, i) => {
   const { w, h } = dims(f);
-  const faceBoxes = FACES[f]?.faces?.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h })) ?? null;
-  return { id: `img-${String(i).padStart(2, "0")}`, src: `http://localhost:${PORT}/${f}`, width: w, height: h, sortOrder: i, isTopPick: /-hero/i.test(f), faceBoxes };
+  const r = FACES[f];
+  const faceBoxes = r?.faces?.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h })) ?? null;
+  return {
+    id: `img-${String(i).padStart(2, "0")}`, src: `http://localhost:${PORT}/${f}`, width: w, height: h,
+    sortOrder: i, isTopPick: /-hero/i.test(f), faceBoxes,
+    faceCount: r?.faceCount ?? null, maxFaceArea: r?.maxFaceArea ?? null,
+    sharpness: r?.sharpness ?? null, brightness: r?.brightness ?? null, warmth: r?.warmth ?? null,
+  };
 });
 const fileById = new Map(images.map((im, i) => [im.id, files[i]]));
 

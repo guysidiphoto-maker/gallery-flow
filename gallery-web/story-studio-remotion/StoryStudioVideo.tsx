@@ -85,10 +85,38 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
       scale = 1 + 0.06; // slight overscan so pan never reveals an edge
       break;
     }
+    case "parallax": {
+      // Two-plane drift: the sharp foreground glides one way with overscan; the
+      // blurred bed (fit scenes) counter-drifts for depth (see bedTx below).
+      const amt = intensity * 90 * p;
+      tx = scene.motionDirection === "right" ? amt : -amt;
+      scale = 1 + 0.1;
+      break;
+    }
+    case "reveal": {
+      // Directional reveal: the image eases in from an offset over the first ~42%,
+      // then holds. Reads as an intentional entrance for a detail/hero beat.
+      const rp = easeOutCubic(
+        interpolate(frame, [0, Math.max(1, durationFrames * 0.42)], [0, 1], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        })
+      );
+      const off = (1 - rp) * 90;
+      if (scene.motionDirection === "up") ty = off;
+      else if (scene.motionDirection === "down") ty = -off;
+      else if (scene.motionDirection === "right") tx = -off;
+      else tx = off;
+      scale = 1 + intensity * 0.5 * p + 0.05;
+      break;
+    }
     case "none":
     default:
       scale = 1.0;
   }
+
+  // Blurred-bed counter-drift for a genuine two-plane parallax (fit scenes only).
+  const bedTx = scene.motion === "parallax" ? -tx * 0.55 : 0;
 
   const objectPosition = focalPercent(scene.focal);
   const transformOrigin = objectPosition;
@@ -121,7 +149,7 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
             // matte, but not dead-black — a faint blurred glow of the scene's own
             // light/colour survives in the bands so they feel designed, not empty.
             filter: "blur(24px) brightness(0.26) saturate(1.15)",
-            transform: `scale(1.35)`,
+            transform: `scale(1.35) translateX(${bedTx}px)`,
           }}
         />
         {/* Deepen the bands over the ambient bed and clear where the contained
@@ -581,12 +609,33 @@ const TransitionWrap: React.FC<{
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
-  let style: React.CSSProperties = { opacity: t };
+  let style: React.CSSProperties = { opacity: t }; // cross-dissolve (and match-cut, short)
+  let veil: React.ReactNode = null;
   if (type === "slide") style = { opacity: 1, transform: `translateX(${(1 - t) * 100}%)` };
   else if (type === "soft-blur") style = { opacity: t, filter: `blur(${(1 - t) * 24}px)` };
   else if (type === "light-leak") style = { opacity: t, filter: `brightness(${1 + (1 - t) * 1.4})` };
   else if (type === "whip")
     // Fast horizontal motion-blur slide — a reel-style snap between shots.
     style = { opacity: 1, transform: `translateX(${(1 - t) * 65}%)`, filter: `blur(${(1 - t) * 14}px)` };
-  return <AbsoluteFill style={style}>{children}</AbsoluteFill>;
+  else if (type === "match-cut")
+    // A fast blend implying a compositional match; the planner gives it a short
+    // duration so it lands almost as a cut but without a jarring pop.
+    style = { opacity: Math.min(1, t * 1.8) };
+  else if (type === "fade-color") {
+    // Fade through a deep charcoal (NOT pure black, so it never reads as a broken
+    // frame). The incoming clears the veil as t -> 1.
+    style = { opacity: 1 };
+    veil = <AbsoluteFill style={{ backgroundColor: "#0b0b0d", opacity: (1 - t) * 0.9 }} />;
+  } else if (type === "masked-reveal") {
+    // Soft directional wipe: a moving gradient mask reveals the incoming scene.
+    const edge = Math.min(100, t * 100 + 14);
+    const mask = `linear-gradient(to right, #000 ${t * 100}%, transparent ${edge}%)`;
+    style = { opacity: 1, WebkitMaskImage: mask, maskImage: mask } as React.CSSProperties;
+  }
+  return (
+    <AbsoluteFill style={style}>
+      {children}
+      {veil}
+    </AbsoluteFill>
+  );
 };
