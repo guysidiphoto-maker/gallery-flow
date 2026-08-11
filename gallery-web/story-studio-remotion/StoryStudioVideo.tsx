@@ -37,9 +37,10 @@ function focalPercent(focal: { x: number; y: number }) {
 }
 
 // ── One image scene: fit + focal crop + motion ──────────────────────────────
-const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
+const SceneLayer: React.FC<{ scene: Scene; durationFrames: number; accentHex?: string }> = ({
   scene,
   durationFrames,
+  accentHex,
 }) => {
   const frame = useCurrentFrame();
   const p = easeInOut(interpolate(frame, [0, durationFrames], [0, 1], {
@@ -125,7 +126,7 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
   // fit/landscape branch, so a typed caption silently vanished on landscape
   // scenes — a preview==export violation). Position honors text.position.
   const caption = scene.text ? (
-    <SceneCaption text={scene.text.content} position={scene.text.position} />
+    <SceneCaption text={scene.text.content} position={scene.text.position} style={scene.captionStyle} accentHex={accentHex} />
   ) : null;
 
   if (scene.fit === "fit") {
@@ -195,34 +196,47 @@ const SceneLayer: React.FC<{ scene: Scene; durationFrames: number }> = ({
   );
 };
 
-const SceneCaption: React.FC<{ text: string; position?: "top" | "center" | "bottom" }> = ({
-  text,
-  position = "bottom",
-}) => {
+const CAPTION_STYLES: Record<string, React.CSSProperties> = {
+  editorial: { fontFamily: "Playfair Display, Georgia, serif", fontWeight: 600, fontSize: 52, letterSpacing: 0 },
+  bold: { fontFamily: "Inter, sans-serif", fontWeight: 800, fontSize: 58, textTransform: "uppercase", letterSpacing: 1.5 },
+  minimal: { fontFamily: "Inter, sans-serif", fontWeight: 400, fontSize: 44, letterSpacing: 3 },
+};
+
+const SceneCaption: React.FC<{
+  text: string;
+  position?: "top" | "center" | "bottom";
+  style?: "editorial" | "bold" | "minimal";
+  accentHex?: string;
+}> = ({ text, position = "bottom", style = "editorial", accentHex = "#ffffff" }) => {
+  const frame = useCurrentFrame();
+  // Gentle animated entrance (rise + fade) so the type SUPPORTS the photo rather
+  // than popping over it. Honours prefers-reduced-motion (still, just fades).
+  const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  const appear = interpolate(frame, [0, 14], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const rtl = isHebrew(text);
-  // Vertical placement honors text.position; bottom stays inside the IG safe zone.
+  // Vertical placement honours position; all inside the IG/Reels safe zone.
   const vertical: React.CSSProperties =
-    position === "top"
-      ? { top: 200 }
-      : position === "center"
-        ? { top: "50%", transform: "translateY(-50%)" }
-        : { bottom: 360 };
+    position === "top" ? { top: 220 } : position === "center" ? { top: "46%" } : { bottom: 380 };
+  const s = CAPTION_STYLES[style] ?? CAPTION_STYLES.editorial;
   return (
     <div
       style={{
         position: "absolute",
-        left: 60,
-        right: 60,
+        left: 84, // safe left/right margins for Stories UI
+        right: 84,
         ...vertical,
+        opacity: appear,
+        transform: reduce ? undefined : `translateY(${(1 - appear) * 16}px)`,
         color: "#fff",
-        fontSize: 52,
         lineHeight: 1.2,
-        fontWeight: 600,
         textAlign: rtl ? "right" : "left",
         direction: rtl ? "rtl" : "ltr",
-        textShadow: "0 2px 18px rgba(0,0,0,0.55)",
+        textShadow: "0 2px 20px rgba(0,0,0,0.6)",
+        ...s,
       }}
     >
+      {/* A short accent rule reads as a "chapter/moment" label without a heavy card. */}
+      <div style={{ width: 46 * appear, height: 3, background: accentHex, marginBottom: 14, borderRadius: 2 }} />
       {text}
     </div>
   );
@@ -347,7 +361,21 @@ const CardLayer: React.FC<{
       {template === "cinematic-energy" ? <Vignette /> : null}
       {accentEl}
       {card.showLogo && brand.logoUrl ? (
-        <Img src={brand.logoUrl} style={{ position: "relative", zIndex: 2, maxWidth: 300, maxHeight: 150, marginBottom: 30, objectFit: "contain" }} />
+        // Animated logo end-card: a restrained scale-up + fade reveal so the mark
+        // lands deliberately without covering the photo behind it.
+        <Img
+          src={brand.logoUrl}
+          style={{
+            position: "relative",
+            zIndex: 2,
+            maxWidth: 300,
+            maxHeight: 150,
+            marginBottom: 30,
+            objectFit: "contain",
+            opacity: appear,
+            transform: `scale(${0.86 + appear * 0.14})`,
+          }}
+        />
       ) : null}
       {card.title ? (
         <div
@@ -560,7 +588,7 @@ export const StoryStudioVideo: React.FC<{ plan: ScenePlan }> = ({ plan }) => {
     blocks.push(
       <Sequence key={scene.id} from={Math.max(0, from)} durationInFrames={d + (i === 0 ? 0 : tin)}>
         <TransitionWrap type={scene.transitionIn} transitionFrames={i === 0 ? 0 : tin}>
-          <SceneLayer scene={scene} durationFrames={d + (i === 0 ? 0 : tin)} />
+          <SceneLayer scene={scene} durationFrames={d + (i === 0 ? 0 : tin)} accentHex={plan.brand.accentHex} />
         </TransitionWrap>
       </Sequence>
     );

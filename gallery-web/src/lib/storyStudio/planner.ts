@@ -687,14 +687,17 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       const intrinsic = roleOf(img);
       role = i === 0 ? "hook" : i === ordered.length - 1 ? "closer" : intrinsic;
       // Motion-diversity budget: never repeat the SAME visual family two scenes
-      // in a row (a run of push-ins reads canned). Portraits may still hold; the
-      // closer keeps its pull-out. Rotate to a role-appropriate alternative.
-      if (prev && role !== "peak" && role !== "closer" && motionFamily(motion) === motionFamily(prev.motion)) {
-        const alts: MotionEffect[] = role === "atmosphere" ? ["parallax", "pull-out", "push-in"] : ["pan", "pull-out", "push-in", "parallax"];
-        const alt = alts.find((a) => motionFamily(a) !== motionFamily(prev.motion));
-        if (alt) {
-          motion = alt;
-          if (alt === "pan" || alt === "parallax") dir = panDirTowardSubject(img);
+      // in a row (a run of push-ins reads canned). The closer keeps its pull-out.
+      if (prev && role !== "closer" && motionFamily(motion) === motionFamily(prev.motion)) {
+        if (role === "peak") {
+          motion = "none"; // hold the portrait still — a nicer contrast than repeating
+        } else {
+          const alts: MotionEffect[] = role === "atmosphere" ? ["parallax", "pull-out", "push-in"] : ["pan", "pull-out", "push-in", "parallax"];
+          const alt = alts.find((a) => motionFamily(a) !== motionFamily(prev.motion));
+          if (alt) {
+            motion = alt;
+            if (alt === "pan" || alt === "parallax") dir = panDirTowardSubject(img);
+          }
         }
       }
       transition = i === 0 ? "cross-dissolve" : transitionForScene(ordered[i - 1], img, profile);
