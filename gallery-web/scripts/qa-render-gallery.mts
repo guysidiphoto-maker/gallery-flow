@@ -35,7 +35,7 @@ const BRAND = {
   studioName: "Guy Sidi Photography", logoUrl: null,
   watermark: { enabled: false, opacityPercent: 9, position: "bottom-right" },
 };
-const EVENT = { title: "Live · Ivri Lider", date: "17 Jan 2026", location: "IAC" };
+const EVENT = { title: "Live Performance", date: "", location: "" };
 
 type FaceRec = { faces: Array<{ x: number; y: number; w: number; h: number }>; faceCount: number; maxFaceArea: number; sharpness: number; brightness: number; warmth: number };
 const FACES: Record<string, FaceRec> = (() => { try { return JSON.parse(readFileSync(FACES_JSON, "utf8")); } catch { return {}; } })();

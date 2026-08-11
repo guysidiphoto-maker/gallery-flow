@@ -222,3 +222,21 @@ V2 REFINED clears Track A (8.47, no category <8). V2 AUTO reaches 7.97 (was 6.5)
 **Still open (media-independent, minor):** a "duplicate version" Launcher feature (save a copy of a whole draft as a separate version) and a few more edge tests (undo/redo unit, render-failure/cancel already covered by V1 lifecycle). **Track B** (showcase gate, 8.5) is the primary remaining INPUT: it needs an approved richer gallery.
 
 **Guardrails honoured:** client media local only (never uploaded/committed); rendered MP4s live in /tmp + ~/Downloads only; completed on the Draft branch, nothing merged/pushed/deployed; no migration; existing gallery/face-recognition behaviour untouched. Owed: revoke the Vercel Protection-Bypass token before final delivery.
+
+---
+
+## 17. Track B — showcase gate on an approved rich event (honest NO-GO on strict gates)
+
+Approved source: a coherent real event (live music performance, 65 photos) picked automatically from the approved local root as the strongest candidate (predominantly landscape — flagged). Read-only; no source renamed/moved/deleted/uploaded/committed. Five real MP4s produced locally: AUTO (fully automatic), REFINED (via the ACTUAL editor UI — deletions + autosave + plan export, no JSON edits), + Editorial/Cinematic/Fast template variants.
+
+**Engine features exercised (all reusable product logic):** auto photo-selection from 64 by a real-signal story-score proxy (sharpness + face presence); `recommendTemplate()` auto-choosing the template from event energy (dark + crowd-dense -> cinematic); face-driven arc with round-robin interleave; template-aware full-bleed vs letterbox; energetic motion + whip/cut transitions on reel templates; beat-synced cuts; the editor loaded a real gallery and produced the refined cut through the UI.
+
+**Three independent reviewers, 12 categories, four improve-render-review cycles.** Scores oscillated within reviewer noise (unchanged AUTO scored 8.12 then 7.78 on identical footage). Plateau: **AUTO ~7.9** (7.8-8.1), **REFINED ~8.3** (8.1-8.4). Defects fixed across cycles: single-letterbox-scene (-> full-bleed reels), static peak clusters (-> motion on every scene), dissolve-heavy transitions (-> whip accents), weak candid frames (-> editor tightening 18->15).
+
+**Gate result (honest):**
+- Automatic V2 >= 8.0: **NOT reliably met** (~7.9, borderline).
+- Refined V2 >= 8.5: **NOT met** (~8.3) — but consistently rated a strong professional deliverable that "clearly beats a Pic-Time/Pixieset auto-slideshow" and is "the one to ship."
+- No rendering defect / preview==export mismatch: **met** (no black frames, cut faces, distortion, repeats; the letterbox defect was fixed).
+- Remaining ceiling (reviewer-named): whip-transition over-use (needs selective whips), uniform motion intensity (needs dynamic contrast), some mid-tier source frames, and a landscape-dominant source that doesn't stress mixed orientation.
+
+**Verdict: strict numeric gates NO-GO (honest near-miss, not hidden); qualitative GO for founder review of the actual videos.** Local package: `~/Downloads/Pixflow-Story-Studio-QA/TrackB/` (5 MP4s + plans + contact sheets + README). 57 tests pass; Draft branch only; nothing merged/pushed/deployed; no migration; source read-only; no client media committed. Owed: revoke the Vercel Protection-Bypass token.

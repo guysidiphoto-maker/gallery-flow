@@ -17,7 +17,7 @@ const PORT = 8802;
 const SERVE = "/tmp/trackb-serve";
 const FACES = JSON.parse(readFileSync("/tmp/trackb-faces.json", "utf8")) as Record<string, any>;
 const BRAND = { accentHex: "#C9A227", headingFont: "Playfair Display, Georgia, serif", bodyFont: "Inter, sans-serif", studioName: "Guy Sidi Photography", logoUrl: null, watermark: { enabled: false, opacityPercent: 9, position: "bottom-right" } };
-const EVENT = { title: "Live · Ivri Lider", date: "17 Jan 2026", location: "IAC" };
+const EVENT = { title: "Live Performance", date: "", location: "" };
 
 const files = readdirSync(SRC).filter((f) => /\.jpe?g$/i.test(f)).sort();
 function dims(f: string) { const o = execFileSync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", path.join(SRC, f)], { encoding: "utf8" }); return { w: +o.match(/pixelWidth:\s*(\d+)/)![1], h: +o.match(/pixelHeight:\s*(\d+)/)![1] }; }
