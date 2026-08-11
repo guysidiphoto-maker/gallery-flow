@@ -85,7 +85,16 @@ export function resolveAndValidatePlan(
     };
   });
 
-  const safe = sanitizeForRender({ ...plan, galleryId, scenes });
+  // Drop a non-http(s) brand logo (e.g. a local filesystem path from the editor's
+  // logo-picker data bug) so it can never crash the renderer — a logo URL that
+  // isn't http(s) resolves against the render origin, 404s, and kills Chromium.
+  // The composition already renders no logo when it's absent.
+  const isHttpUrl = (s: unknown): s is string => typeof s === "string" && /^https?:\/\//i.test(s);
+  const brand = plan.brand
+    ? { ...plan.brand, logoUrl: isHttpUrl(plan.brand.logoUrl) ? plan.brand.logoUrl : null }
+    : plan.brand;
+
+  const safe = sanitizeForRender({ ...plan, galleryId, brand, scenes });
   return { ok: true, errors: [], plan: safe };
 }
 

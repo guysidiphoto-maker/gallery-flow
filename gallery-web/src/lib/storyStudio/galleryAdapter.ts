@@ -51,12 +51,16 @@ export interface BrandInputs {
  *  safe, readable defaults (guarantees a valid hex accent for the validator). */
 export function toBrandResolved(b: BrandInputs): BrandResolved {
   const accent = b.accentHex && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(b.accentHex) ? b.accentHex : "#B45309";
+  // Only an http(s) logo is loadable by the preview <Player> and the renderer. A
+  // local filesystem path (a long-standing gallery-editor data bug) 404s and
+  // crashes the render, so treat it as no logo.
+  const logoUrl = typeof b.logoUrl === "string" && /^https?:\/\//i.test(b.logoUrl) ? b.logoUrl : null;
   return {
     accentHex: accent,
     headingFont: b.headingFont || "Playfair Display, Georgia, serif",
     bodyFont: b.bodyFont || "Inter, -apple-system, sans-serif",
     studioName: b.studioName || null,
-    logoUrl: b.logoUrl || null,
+    logoUrl,
     watermark: {
       enabled: b.watermarkEnabled ?? true,
       opacityPercent: b.watermarkOpacityPercent ?? 18,

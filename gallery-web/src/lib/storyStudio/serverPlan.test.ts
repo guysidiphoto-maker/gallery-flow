@@ -74,3 +74,21 @@ test("stripForPersistence removes volatile src + _reason", () => {
   const persisted = stripForPersistence(plan);
   assert.ok(persisted.scenes.every((s) => s.src === undefined && s._reason === undefined));
 });
+
+test("SECURITY: drops a non-http brand logo so it can't crash the renderer", () => {
+  // A local filesystem path (editor data bug) must never reach the renderer.
+  const plan = buildPlan();
+  plan.brand = { ...plan.brand, logoUrl: "/Users/guy/Desktop/logo.png" };
+  const res = resolveAndValidatePlan(plan, "gal-1", ownerImages(16), resolver);
+  assert.ok(res.ok, res.errors.join("; "));
+  assert.equal(res.plan!.brand.logoUrl, null);
+});
+
+test("keeps a valid http(s) brand logo untouched", () => {
+  const plan = buildPlan();
+  const good = "https://cdn.example.test/logo-primary.png";
+  plan.brand = { ...plan.brand, logoUrl: good };
+  const res = resolveAndValidatePlan(plan, "gal-1", ownerImages(16), resolver);
+  assert.ok(res.ok, res.errors.join("; "));
+  assert.equal(res.plan!.brand.logoUrl, good);
+});
