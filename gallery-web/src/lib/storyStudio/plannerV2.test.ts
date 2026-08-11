@@ -54,11 +54,14 @@ const MOTION_FAMILY: Record<string, string> = {
   "pull-out": "out", pan: "lat", parallax: "lat", reveal: "rev", none: "still",
 };
 
-test("fit classification: rooms letterbox, people/portrait fill", () => {
+test("fit classification: the establishing room letterboxes, people/portrait fill", () => {
   const plan = build();
   const byImg = new Map(plan.scenes.map((s) => [s.imageId, s]));
-  assert.equal(byImg.get("room-a")!.fit, "fit", "empty room letterboxes");
-  assert.equal(byImg.get("room-b")!.fit, "fit", "empty room letterboxes");
+  // Only one establishing room is kept (near-duplicate rooms are dropped); the
+  // room that appears must be letterboxed.
+  const roomScene = plan.scenes.find((s) => s.imageId === "room-a" || s.imageId === "room-b");
+  assert.ok(roomScene, "an establishing room is present");
+  assert.equal(roomScene!.fit, "fit", "the establishing room letterboxes");
   assert.equal(byImg.get("hook-huge")!.fit, "fill", "big group fills");
   assert.equal(byImg.get("portrait")!.fit, "fill", "portrait fills");
 });

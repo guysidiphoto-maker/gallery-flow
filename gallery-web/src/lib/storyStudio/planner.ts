@@ -340,20 +340,22 @@ function buildArc(imgs: PlannerImage[]): PlannerImage[] {
     [...groups].filter((g) => g !== hook).sort((a, b) => payoff(b) - payoff(a))[0] ?? null;
   const midGroups = groups.filter((g) => g !== hook && g !== closer);
 
+  // One strong establishing shot is enough; extra near-identical room wides read
+  // as redundant (and pad the runtime). Keep only the sharpest room and let the
+  // photographer add more via the editor if a venue truly needs it.
+  const bestRoom = rooms.length ? [...rooms].sort((a, b) => (b.sharpness ?? 0) - (a.sharpness ?? 0))[0] : null;
+
   const out: PlannerImage[] = [];
   if (hook) out.push(hook);
-  if (rooms[0]) out.push(rooms[0]); // establishing beat after the hook
-  // Interleave the remaining groups with any second room so two mattes never stack.
-  const restRooms = rooms.slice(1);
-  midGroups.forEach((g, k) => {
-    out.push(g);
-    if (k === 0 && restRooms[0]) out.push(restRooms[0]);
-  });
-  restRooms.slice(1).forEach((r) => out.push(r));
+  if (bestRoom) out.push(bestRoom); // establishing beat after the hook
+  midGroups.forEach((g) => out.push(g));
   portraits.forEach((p) => out.push(p)); // intimate beat before the close
   if (closer) out.push(closer);
-  // Any image not placed (safety) appended in original order.
-  for (const im of imgs) if (!out.includes(im)) out.push(im);
+  // Safety: append any group/portrait not yet placed (NOT the dropped extra
+  // rooms — those are intentionally omitted). Keeps the close last.
+  const tail = out.length ? out.pop()! : null;
+  for (const im of imgs) if (!out.includes(im) && im !== tail && roleOf(im) !== "atmosphere") out.push(im);
+  if (tail) out.push(tail);
   return out;
 }
 
