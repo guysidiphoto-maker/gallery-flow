@@ -345,11 +345,21 @@ function buildArc(imgs: PlannerImage[]): PlannerImage[] {
   // photographer add more via the editor if a venue truly needs it.
   const bestRoom = rooms.length ? [...rooms].sort((a, b) => (b.sharpness ?? 0) - (a.sharpness ?? 0))[0] : null;
 
+  // Interleave the middle beats (people/energy round-robin with intimate
+  // portraits) so close-ups never clump into one long block — that kills the
+  // rhythm on people-dense events like concerts. Portraits lean slightly later
+  // (toward the emotional close) by feeding groups first each pair.
+  const mid: PlannerImage[] = [];
+  const a = [...midGroups];
+  const b = [...portraits];
+  while (a.length || b.length) {
+    if (a.length) mid.push(a.shift()!);
+    if (b.length) mid.push(b.shift()!);
+  }
   const out: PlannerImage[] = [];
   if (hook) out.push(hook);
   if (bestRoom) out.push(bestRoom); // establishing beat after the hook
-  midGroups.forEach((g) => out.push(g));
-  portraits.forEach((p) => out.push(p)); // intimate beat before the close
+  mid.forEach((m) => out.push(m));
   if (closer) out.push(closer);
   // Safety: append any group/portrait not yet placed (NOT the dropped extra
   // rooms — those are intentionally omitted). Keeps the close last.
@@ -394,12 +404,30 @@ function motionForScene(
   if (isCloser) {
     return { motion: "pull-out", intensity: "medium", direction: "down" }; // breathe out on the close
   }
-  // People / energy beat: alternate a push with a face-aware pan for life.
+  // People / energy beat: cycle push-in / face-aware pan / two-plane parallax so
+  // the movement stays dynamic across a people-dense event (concerts, parties).
+  const cycle: MotionEffect[] = ["push-in", "pan", "parallax"];
+  const m = cycle[i % cycle.length];
   return {
-    motion: i % 2 === 0 ? "push-in" : "pan",
+    motion: m,
     intensity: "medium",
-    direction: panDirTowardSubject(img),
+    direction: m === "pan" || m === "parallax" ? panDirTowardSubject(img) : "up",
   };
+}
+
+/**
+ * Recommend a template from real gallery signals: a dark, crowd-dense event
+ * (concert / party) wants the energetic cinematic grade + faster pace; a calmer,
+ * brighter event stays editorial. Used as the automatic default so the first cut
+ * matches the event's energy instead of always opening slow.
+ */
+export function recommendTemplate(images: PlannerImage[]): StoryTemplate {
+  if (!hasContentSignals(images)) return "editorial-clean";
+  const withB = images.filter((i) => typeof i.brightness === "number");
+  const avgBright = withB.length ? withB.reduce((s, i) => s + (i.brightness ?? 0.5), 0) / withB.length : 0.5;
+  const crowdFrac = images.filter((i) => faceCountOf(i) >= 10).length / Math.max(1, images.length);
+  const energy = (1 - avgBright) * 0.5 + crowdFrac * 0.6;
+  return energy >= 0.42 ? "cinematic-energy" : "editorial-clean";
 }
 
 /** Content-aware transition INTO scene i (used when signals are present). */
@@ -703,6 +731,12 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
         }
       }
       transition = i === 0 ? "cross-dissolve" : transitionForScene(ordered[i - 1], img, profile);
+      // Break a run of 3 identical transitions (a long portrait block would else
+      // be all cross-dissolves) with a restrained alternate from the template.
+      const prev2 = i >= 2 ? scenes[i - 2] : null;
+      if (prev && prev2 && prev.transitionIn === transition && prev2.transitionIn === transition && transition !== "cut") {
+        transition = transition === "cross-dissolve" ? "soft-blur" : "cross-dissolve";
+      }
     }
 
     // Fit: face-aware — letterbox establishing/room wides so the venue reads,
