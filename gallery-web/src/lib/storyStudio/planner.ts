@@ -328,11 +328,16 @@ function buildArc(imgs: PlannerImage[]): PlannerImage[] {
   const portraits = imgs.filter((i) => roleOf(i) === "peak");
   const groups = imgs.filter((i) => roleOf(i) === "people" || roleOf(i) === "energy");
 
-  // hook = strongest group; closer = warmest OTHER group.
+  // hook = strongest group (biggest, sharpest crowd — an immediate scale hook).
   const groupsByStrength = [...groups].sort((a, b) => groupStrength(b) - groupStrength(a));
   const hook = groupsByStrength[0];
+  // closer = the strongest EMOTIONAL PAYOFF among the remaining groups: a large
+  // crowd carries weight, warmth (golden-hour) breaks ties, and sharpness adds a
+  // touch. A generic standing group should not beat a bigger or warmer hero shot.
+  const payoff = (g: PlannerImage) =>
+    faceCountOf(g) + (g.warmth ?? 0) * 40 + (g.sharpness ?? 0.5) * 1.5;
   const closer =
-    [...groups].filter((g) => g !== hook).sort((a, b) => (b.warmth ?? 0) - (a.warmth ?? 0))[0] ?? null;
+    [...groups].filter((g) => g !== hook).sort((a, b) => payoff(b) - payoff(a))[0] ?? null;
   const midGroups = groups.filter((g) => g !== hook && g !== closer);
 
   const out: PlannerImage[] = [];
@@ -350,6 +355,15 @@ function buildArc(imgs: PlannerImage[]): PlannerImage[] {
   // Any image not placed (safety) appended in original order.
   for (const im of imgs) if (!out.includes(im)) out.push(im);
   return out;
+}
+
+/** Visual family of a motion — used to stop consecutive similar-looking moves. */
+function motionFamily(m: MotionEffect): "in" | "out" | "lateral" | "reveal" | "still" {
+  if (m === "push-in" || m === "focus-zoom" || m === "punch-in") return "in";
+  if (m === "pull-out") return "out";
+  if (m === "pan" || m === "parallax") return "lateral";
+  if (m === "reveal") return "reveal";
+  return "still";
 }
 
 /** Face-aware pan direction: pan toward the side the subject sits on. */
@@ -670,9 +684,20 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       motion = m.motion;
       dir = m.direction;
       intensity = m.intensity;
-      transition = i === 0 ? "cross-dissolve" : transitionForScene(ordered[i - 1], img, profile);
       const intrinsic = roleOf(img);
       role = i === 0 ? "hook" : i === ordered.length - 1 ? "closer" : intrinsic;
+      // Motion-diversity budget: never repeat the SAME visual family two scenes
+      // in a row (a run of push-ins reads canned). Portraits may still hold; the
+      // closer keeps its pull-out. Rotate to a role-appropriate alternative.
+      if (prev && role !== "peak" && role !== "closer" && motionFamily(motion) === motionFamily(prev.motion)) {
+        const alts: MotionEffect[] = role === "atmosphere" ? ["parallax", "pull-out", "push-in"] : ["pan", "pull-out", "push-in", "parallax"];
+        const alt = alts.find((a) => motionFamily(a) !== motionFamily(prev.motion));
+        if (alt) {
+          motion = alt;
+          if (alt === "pan" || alt === "parallax") dir = panDirTowardSubject(img);
+        }
+      }
+      transition = i === 0 ? "cross-dissolve" : transitionForScene(ordered[i - 1], img, profile);
     }
 
     // Fit: face-aware — letterbox establishing/room wides so the venue reads,
