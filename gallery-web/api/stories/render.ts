@@ -102,8 +102,32 @@ const COMPOSITION_BY_STYLE: Record<AllowedStyle, string> = {
 }
 
 const STORAGE_BUCKET = 'gallery-stories'
+const GALLERY_IMAGES_BUCKET = 'gallery-images'
 const DEFAULT_STORY_DURATION_SECONDS = 30
 const STORY_MAX_PHOTOS = 60
+
+// The render runs Remotion inside a memory-constrained Vercel Function. Feeding
+// Chromium the raw 2048px / 4-5MB gallery originals makes its image decoder run
+// out of memory: the first frame throws "EncodingError: The source image cannot
+// be decoded." and then the tab dies with "Page crashed!" — the render never
+// leaves 0%. (Observed in prod on gallery originals; NOT reproduced by the local
+// QA harness precisely because that harness downscales every photo to <=1280px
+// long-edge before serving it.)
+//
+// Fix: never hand the renderer an original. Pull a downscaled variant through
+// Supabase Storage's on-the-fly image-transformation endpoint
+// (/render/image/public/...), bounded to <=1280x1920 (contain, no crop). Each
+// frame drops from ~4.6MB to ~150-250KB, so the decoder stays well within the
+// function's memory. Matches the QA downscale that renders cleanly end-to-end.
+const RENDER_IMAGE_MAX_W = 1280
+const RENDER_IMAGE_MAX_H = 1920
+const RENDER_IMAGE_QUALITY = 78
+
+/** Build a render-safe (downscaled) URL for a gallery-images storage path. */
+function renderImageUrl(storagePath: string): string {
+  const q = `width=${RENDER_IMAGE_MAX_W}&height=${RENDER_IMAGE_MAX_H}&resize=contain&quality=${RENDER_IMAGE_QUALITY}`
+  return `${SUPABASE_URL}/storage/v1/render/image/public/${GALLERY_IMAGES_BUCKET}/${storagePath}?${q}`
+}
 
 // A synchronous render is bounded by vercel.json maxDuration (300s). Any row
 // still 'queued'/'rendering' beyond this window is an orphan from a function
@@ -719,7 +743,7 @@ async function loadImageUrlsForRender(
   return rows
     .map(r => r.web_preview_path || r.original_path || '')
     .filter(p => !!p)
-    .map(p => `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${p}`)
+    .map(p => renderImageUrl(p))
 }
 
 // Story Studio: load the gallery's real image rows (source of truth for
@@ -744,7 +768,7 @@ async function loadOwnerImageRecords(
   const srcById = new Map<string, string>()
   for (const r of rows) {
     const p = r.web_preview_path || r.original_path || ''
-    if (p) srcById.set(r.id, `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${p}`)
+    if (p) srcById.set(r.id, renderImageUrl(p))
   }
   return { records, srcById }
 }
