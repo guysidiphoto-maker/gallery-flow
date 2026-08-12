@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { FixedSizeGrid, type GridChildComponentProps } from 'react-window'
 import { useDismiss } from '../components/portal/useDismiss'
 import { useAuth, signInWithGoogle, signOut } from '../lib/auth'
-import { supabase, storageUrl } from '../supabase'
+import { supabase, storageUrl, displayUrl } from '../supabase'
 import { uploadMany, partitionUploadFiles, MAX_UPLOAD_BATCH, type UploadRejectReason } from '../lib/uploadPipeline'
 import { uploadCoverImage, deleteCoverObject, CoverUploadError, type CoverUploadPhase } from '../lib/coverUpload'
 import { replacePhoto, ReplacePhotoError } from '../lib/replacePhoto'
@@ -233,6 +233,23 @@ function exportProgressLabel(p: ExportProgress): string {
     default:
       return 'מייצא...'
   }
+}
+
+// Dashboard grid covers render into ~280px cards, so ~640px is plenty. Covers
+// can point at an ORIGINAL (desktop uploads set thumbnail_path/web_preview_path
+// to the multi-MB original until the derivative backfill runs), which would
+// otherwise download full-res × up to 101 galleries — the cause of the slow,
+// 54MB dashboard load. Route the object URL back through displayUrl so an
+// original is fetched via the bounded, CDN-cached render/image transform while
+// pre-baked derivatives are still served directly (free). Non-gallery-images
+// URLs (already-transformed or external) pass through untouched.
+const CARD_COVER_WIDTH = 640
+function cardCoverUrl(url: string): string {
+  const marker = '/storage/v1/object/public/gallery-images/'
+  const i = url.indexOf(marker)
+  if (i === -1) return url
+  const path = url.slice(i + marker.length) // keep URL-encoding + slashes intact
+  return displayUrl('gallery-images', path, CARD_COVER_WIDTH)
 }
 
 export function Dashboard() {
@@ -3354,8 +3371,10 @@ export function Dashboard() {
                   }}>
                     {cover && (
                       <img
-                        src={cover}
+                        src={cardCoverUrl(cover)}
                         alt=""
+                        loading="lazy"
+                        decoding="async"
                         style={{
                           width: '100%', height: '100%', objectFit: 'cover', display: 'block',
                           transform: isHovered ? 'scale(1.02)' : 'scale(1)',
