@@ -201,6 +201,47 @@ function projectBrandKit(raw: unknown): RenderBrandKit | undefined {
   return { studio_name, logo, colors, voice, social }
 }
 
+// Story compositions load the brand logo as an <Img> inside headless Chromium.
+// A logo whose pixel dimensions exceed the decoder's limit (Skia's max bitmap /
+// ~2^14 px per side) throws "The source image cannot be decoded" and crashes
+// the entire render page — one real brand kit shipped a 19913×7983 PNG. Neither
+// Chromium NOR Supabase's on-the-fly transform can process a source that large
+// (the transform returns "resolution too large to process"), so we downscale it
+// here, server-side, with sharp — which streams via libvips and handles it — and
+// inline the result as a small data URL that Chromium decodes trivially. On ANY
+// failure we return undefined so the render proceeds logo-less (typography /
+// other brand surfaces still show) rather than crashing. Fail-open, mirroring
+// the non-http logo drop in _scenePlanGuard.
+const LOGO_MAX_EDGE = 1080
+const LOGO_FETCH_TIMEOUT_MS = 15_000
+async function safeLogoDataUrl(rawUrl: unknown): Promise<string | undefined> {
+  if (typeof rawUrl !== 'string' || !/^https?:\/\//i.test(rawUrl)) return undefined
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), LOGO_FETCH_TIMEOUT_MS)
+    let bytes: Buffer
+    try {
+      const resp = await fetch(rawUrl, { signal: ctrl.signal })
+      if (!resp.ok) return undefined
+      bytes = Buffer.from(await resp.arrayBuffer())
+    } finally {
+      clearTimeout(timer)
+    }
+    const sharp = (await import('sharp')).default
+    const out = await sharp(bytes, { limitInputPixels: false })
+      .resize({ width: LOGO_MAX_EDGE, height: LOGO_MAX_EDGE, fit: 'inside', withoutEnlargement: true })
+      .png({ compressionLevel: 9 })
+      .toBuffer()
+    return `data:image/png;base64,${out.toString('base64')}`
+  } catch (err) {
+    console.warn(
+      '[stories/render] logo downscale failed; rendering without logo:',
+      err instanceof Error ? err.message : String(err),
+    )
+    return undefined
+  }
+}
+
 async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST')
@@ -463,7 +504,15 @@ async function handler(req: VercelRequest, res: VercelResponse) {
           .eq('id', renderId)
         return res.status(400).json({ ok: false, error: 'invalid_scene_plan', details: result.errors })
       }
-      inputProps = { plan: result.plan }
+      // Downscale the resolved brand logo so an oversized source can't crash
+      // Chromium mid-render (see safeLogoDataUrl). null on failure — the
+      // composition already renders logo-less when logoUrl is absent.
+      let scenePlan = result.plan as { brand?: { logoUrl?: unknown } } & Record<string, unknown>
+      if (scenePlan.brand && typeof scenePlan.brand === 'object') {
+        const safeLogo = await safeLogoDataUrl(scenePlan.brand.logoUrl)
+        scenePlan = { ...scenePlan, brand: { ...scenePlan.brand, logoUrl: safeLogo ?? null } }
+      }
+      inputProps = { plan: scenePlan }
       compositionId = 'StoryStudio'
       const mus = (result.plan as { music?: { muted?: boolean; trackId?: string | null; volume?: number } }).music
       renderMuted = !(mus && !mus.muted && !!mus.trackId && (mus.volume ?? 0) > 0)
@@ -471,7 +520,14 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       const images = await loadImageUrlsForRender(adminClient, galleryId, photoIds ?? [])
       if (images.length === 0) throw new Error('no_images_in_gallery')
       inputProps = { images, durationSeconds: DEFAULT_STORY_DURATION_SECONDS }
-      if (brandKit) inputProps.brand = brandKit
+      if (brandKit) {
+        // Downscale the logo to a decode-safe data URL (or drop it) so an
+        // oversized brand PNG can't crash the render (see safeLogoDataUrl).
+        const safeLogo = await safeLogoDataUrl(brandKit.logo?.url)
+        inputProps.brand = safeLogo
+          ? { ...brandKit, logo: { url: safeLogo } }
+          : { ...brandKit, logo: undefined }
+      }
       compositionId = COMPOSITION_BY_STYLE[style as AllowedStyle]
     }
     // Resolve the @sparticuz/chromium executable BEFORE selectComposition.
