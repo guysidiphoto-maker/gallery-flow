@@ -653,30 +653,30 @@ export function Dashboard() {
     )
     if (targets.length === 0) return
     void (async () => {
-      const results = await Promise.all(targets.map(async g => {
-        // The images table only has thumbnail_path + web_preview_path. The
-        // dashboard's gallery editor reads `storage_path:web_preview_path`
-        // as an alias; if we ask for the unaliased column the query 400s
-        // with "column images.storage_path does not exist".
-        const { data: img, error } = await supabase
-          .from('images')
-          .select('thumbnail_path, web_preview_path')
-          .eq('gallery_id', g.id)
-          .order('sort_order', { ascending: true })
-          .limit(1)
-          .maybeSingle()
-        if (error) {
-          console.warn('[cover-fallback] fetch failed for', g.id, error)
-          return null
-        }
-        if (!img) return null
-        const path = img.thumbnail_path || img.web_preview_path
-        if (!path) return null
-        return { id: g.id, url: storageUrl('gallery-images', path) }
-      }))
+      // ONE round-trip for every missing cover. The previous version fired a
+      // separate /images query per gallery — ~100+ concurrent requests that
+      // saturated the connection pool and each stalled ~8s (the dashboard's
+      // real load bottleneck). gallery_cover_thumbs returns the first image
+      // (by sort_order) per gallery in a single indexed query, RLS-scoped to
+      // the caller's own galleries.
+      const { data, error } = await supabase.rpc('gallery_cover_thumbs', {
+        p_gallery_ids: targets.map(g => g.id),
+      })
       if (cancelled) return
+      if (error) {
+        console.warn('[cover-fallback] batch fetch failed', error)
+        return
+      }
+      const rows = (data ?? []) as Array<{
+        gallery_id: string
+        thumbnail_path: string | null
+        web_preview_path: string | null
+      }>
       const next: Record<string, string> = {}
-      for (const r of results) if (r) next[r.id] = r.url
+      for (const r of rows) {
+        const path = r.thumbnail_path || r.web_preview_path
+        if (path) next[r.gallery_id] = storageUrl('gallery-images', path)
+      }
       if (Object.keys(next).length > 0) {
         setCoverFallback(prev => ({ ...prev, ...next }))
       }
