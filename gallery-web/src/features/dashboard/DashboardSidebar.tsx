@@ -1,9 +1,9 @@
 import { signOut } from '@/shared/lib/auth'
 import type { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import { Icon, type IconName } from '@/shared/ui/Icon'
+import { cn, Eyebrow } from '@/shared/ui'
 import RestartTourButton from './tour/RestartTourButton'
 import { TokenBalanceCard } from './TokenBalanceCard'
-import { bg, border, textMuted, textPrimary, textSecondary } from './styles'
 import type { DashboardView } from './types'
 
 type OwnerT = ReturnType<typeof useOwnerLocale>['t']
@@ -17,7 +17,7 @@ interface NavItem {
   tour: string | undefined
 }
 
-// Sticky 240px column; below 900px an off-canvas drawer (see styles.ts).
+// Sticky 240px column; below 900px an off-canvas drawer from the inline end.
 export function DashboardSidebar({
   open, onClose, activeView, onSelectView, tokenBalance, onBuyTokens, avatar, displayName, ownerT,
 }: {
@@ -45,40 +45,23 @@ export function DashboardSidebar({
       {open && (
         <div
           onClick={onClose}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 199,
-            background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(4px)',
-            display: 'none',
-          }}
-          className="dash-sidebar-backdrop"
+          className="fixed inset-0 z-[199] hidden bg-black/65 backdrop-blur-[4px] max-[900px]:block"
         />
       )}
 
       <aside
-        className={`dash-sidebar ${open ? 'dash-sidebar--open' : ''}`}
-        style={{
-          width: 240, flexShrink: 0,
-          background: bg,
-          borderInlineStart: `1px solid ${border}`,
-          display: 'flex', flexDirection: 'column',
-          padding: '28px 20px',
-          position: 'sticky', top: 0, height: '100vh',
-          zIndex: 200,
-        }}
+        className={cn(
+          'sticky top-0 z-[200] flex h-screen w-60 shrink-0 flex-col border-s border-line bg-canvas px-5 py-7',
+          'max-[900px]:fixed max-[900px]:end-0 max-[900px]:shadow-[-8px_0_32px] max-[900px]:shadow-black/40',
+          'max-[900px]:transition-transform max-[900px]:duration-250 max-[900px]:ease-in-out',
+          open ? 'max-[900px]:translate-x-0' : 'max-[900px]:translate-x-full max-[900px]:rtl:-translate-x-full',
+        )}
       >
-        {/* Mobile close X — shown only via the .dash-hamburger media query */}
+        {/* Mobile close X — only shown in drawer mode. */}
         <button
           onClick={onClose}
-          className="dash-hamburger"
           aria-label="Close menu"
-          style={{
-            display: 'none', alignItems: 'center', justifyContent: 'center',
-            position: 'absolute', top: 14, left: 14,
-            width: 32, height: 32, borderRadius: 8,
-            background: 'rgba(0,0,0,.03)',
-            border: `1px solid ${border}`,
-            color: textPrimary, cursor: 'pointer', padding: 0,
-          }}
+          className="absolute top-3.5 left-3.5 hidden size-8 cursor-pointer items-center justify-center rounded-[8px] border border-line bg-black/3 p-0 text-ink max-[900px]:flex"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="18" y1="6" x2="6" y2="18"/>
@@ -86,28 +69,13 @@ export function DashboardSidebar({
           </svg>
         </button>
 
-        <a href="/" style={{
-          display: 'flex', alignItems: 'baseline', gap: 4,
-          padding: '4px 6px 32px',
-          textDecoration: 'none', color: textPrimary,
-          fontSize: 22, fontWeight: 500, letterSpacing: '-0.02em',
-        }}>
+        <a href="/" className="flex items-baseline gap-1 px-1.5 pt-1 pb-8 text-[22px] font-medium tracking-[-0.02em] text-ink no-underline">
           <span>Pixflow</span>
-          <span style={{
-            width: 5, height: 5, borderRadius: '50%',
-            background: textPrimary, marginInlineStart: 4,
-            transform: 'translateY(-1px)',
-          }} />
+          <span className="ms-1 size-[5px] -translate-y-px rounded-full bg-ink" />
         </a>
 
-        <div style={{
-          fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-          color: textMuted, textTransform: 'uppercase',
-          padding: '0 12px 12px',
-        }}>
-          Workspace
-        </div>
-        <nav data-tour="overview" style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+        <Eyebrow className="block px-3 pb-3 text-[9px] font-medium">Workspace</Eyebrow>
+        <nav data-tour="overview" className="flex flex-1 flex-col gap-0.5">
           {items.map(item => (
             <button
               key={item.label}
@@ -121,73 +89,38 @@ export function DashboardSidebar({
                 if (!item.href) return
                 window.location.pathname = item.href
               }}
-              style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '11px 12px', borderRadius: 4,
-              background: 'transparent',
-              border: 'none',
-              color: item.active ? textPrimary : textSecondary,
-              fontSize: 13, fontWeight: item.active ? 600 : 400,
-              cursor: 'pointer',
-              fontFamily: 'inherit', textAlign: 'right' as const,
-              opacity: 1,
-              transition: 'color .15s',
-              position: 'relative',
-            }}>
-              {item.active && (
-                <span style={{
-                  position: 'absolute', insetInlineEnd: -20, top: '50%',
-                  transform: 'translateY(-50%)',
-                  width: 2, height: 18,
-                  background: textPrimary,
-                }} />
+              className={cn(
+                'relative flex cursor-pointer items-center gap-3 rounded-[4px] border-none bg-transparent px-3 py-[11px] text-right text-[13px] transition-colors duration-150',
+                item.active ? 'font-semibold text-ink' : 'font-normal text-ink-soft',
               )}
-              <Icon name={item.icon} size={16} strokeWidth={1.6} style={{ opacity: item.active ? 1 : 0.7 }} />
+            >
+              {item.active && (
+                <span className="absolute -end-5 top-1/2 h-[18px] w-0.5 -translate-y-1/2 bg-ink" />
+              )}
+              <Icon name={item.icon} size={16} strokeWidth={1.6} className={item.active ? 'opacity-100' : 'opacity-70'} />
               <span>{item.label}</span>
             </button>
           ))}
         </nav>
 
-        <div style={{
-          fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-          color: textMuted, textTransform: 'uppercase',
-          padding: '20px 12px 12px',
-        }}>
-          Account
-        </div>
+        <Eyebrow className="block px-3 pt-5 pb-3 text-[9px] font-medium">Account</Eyebrow>
         <TokenBalanceCard tokenBalance={tokenBalance} onBuyTokens={onBuyTokens} />
 
         <RestartTourButton
           surface="owner_tour"
-          className="dash-restart-tour"
-          style={{
-            background: 'none', border: 'none', padding: '2px 4px 14px',
-            fontFamily: 'inherit', fontSize: 11, color: textMuted,
-            cursor: 'pointer', textAlign: 'start', letterSpacing: '0.02em',
-          }}
+          className="cursor-pointer border-none bg-transparent px-1 pt-0.5 pb-3.5 text-start text-[11px] tracking-[0.02em] text-muted"
         />
 
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '12px 8px', borderTop: `1px solid ${border}`,
-          marginInline: -6, paddingInline: 14,
-        }}>
+        <div className="-mx-1.5 flex items-center gap-2.5 border-t border-line px-3.5 py-3">
           {avatar && (
-            <img src={avatar} alt="" style={{
-              width: 32, height: 32, borderRadius: '50%',
-              border: `1.5px solid ${border}`,
-            }} />
+            <img src={avatar} alt="" className="size-8 rounded-full border-[1.5px] border-line" />
           )}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontSize: 12, fontWeight: 600, color: textPrimary,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>{displayName}</div>
-            <button onClick={signOut} style={{
-              background: 'none', border: 'none', padding: 0, marginTop: 2,
-              fontSize: 10, color: '#fca5a5', fontFamily: 'inherit',
-              cursor: 'pointer', letterSpacing: '.04em',
-            }}>התנתקות ↩</button>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-semibold text-ink">{displayName}</div>
+            <button
+              onClick={signOut}
+              className="mt-0.5 cursor-pointer border-none bg-transparent p-0 text-[10px] tracking-[.04em] text-danger"
+            >התנתקות ↩</button>
           </div>
         </div>
       </aside>

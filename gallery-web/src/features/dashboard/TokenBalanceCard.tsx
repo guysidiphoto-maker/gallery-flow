@@ -1,5 +1,5 @@
 import { TOKEN_BILLING_ON } from './lib/billing'
-import { bgSubtle, border, textMuted, textPrimary, textSecondary } from './styles'
+import { cn } from '@/shared/ui'
 
 // Sidebar token balance. Clickable (opens the buy modal) only when checkout is live.
 export function TokenBalanceCard({ tokenBalance, onBuyTokens }: { tokenBalance: number; onBuyTokens: () => void }) {
@@ -7,41 +7,22 @@ export function TokenBalanceCard({ tokenBalance, onBuyTokens }: { tokenBalance: 
   return (
     <button
       onClick={TOKEN_BILLING_ON ? onBuyTokens : undefined}
-      style={{
-        background: bgSubtle,
-        border: `1px solid ${border}`,
-        borderRadius: 4, padding: '16px 18px',
-        cursor: TOKEN_BILLING_ON ? 'pointer' : 'default', fontFamily: 'inherit',
-        color: textPrimary, textAlign: 'right' as const,
-        transition: 'border-color .2s, background .2s',
-        marginBottom: 16,
-      }}
-      onMouseEnter={TOKEN_BILLING_ON ? (e => { e.currentTarget.style.borderColor = textPrimary }) : undefined}
-      onMouseLeave={TOKEN_BILLING_ON ? (e => { e.currentTarget.style.borderColor = border }) : undefined}
+      className={cn(
+        'mb-4 rounded-[4px] border border-line bg-surface px-[18px] py-4 text-right text-ink transition-[border-color,background-color] duration-200',
+        TOKEN_BILLING_ON ? 'cursor-pointer hover:border-ink' : 'cursor-default',
+      )}
     >
-      <div style={{
-        fontSize: 10, color: textMuted, marginBottom: 8,
-        fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-      }}>
+      <div className="mb-2 flex items-center justify-between gap-2 text-[10px] font-medium tracking-label text-muted uppercase">
         <span>Tokens</span>
-        {low && <span style={{ color: '#A67C52', letterSpacing: '0.14em' }}>Low</span>}
+        {low && <span className="tracking-[0.14em] text-warning">Low</span>}
       </div>
-      <div style={{
-        fontSize: 26, fontWeight: 500, color: textPrimary,
-        marginBottom: 10, letterSpacing: '-0.02em', lineHeight: 1,
-      }}>
+      <div className="mb-2.5 text-[26px] leading-none font-medium tracking-[-0.02em] text-ink">
         {tokenBalance.toLocaleString('he-IL')}
       </div>
       {TOKEN_BILLING_ON && (
-        <div style={{
-          fontSize: 11, fontWeight: 500, color: textSecondary,
-          letterSpacing: '0.14em', textTransform: 'uppercase',
-          display: 'flex', alignItems: 'center', gap: 6,
-          paddingTop: 10, borderTop: `1px solid ${border}`,
-        }}>
+        <div className="flex items-center gap-1.5 border-t border-line pt-2.5 text-[11px] font-medium tracking-[0.14em] text-ink-soft uppercase">
           Buy more
-          <span style={{ marginInlineStart: 'auto' }}>→</span>
+          <span className="ms-auto">→</span>
         </div>
       )}
     </button>

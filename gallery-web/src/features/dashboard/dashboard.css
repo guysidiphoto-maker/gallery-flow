@@ -1,0 +1,39 @@
+/* Dashboard-wide rules: entrance/skeleton keyframes used via animate-[…],
+   the keyboard focus ring and the reduced-motion override. */
+
+@keyframes dash-fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes dash-modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes dash-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dash-shimmer {
+  from { background-position: -400px 0; }
+  to { background-position: 400px 0; }
+}
+@keyframes dash-skeleton {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* Keyboard-only focus ring (WCAG-AA). */
+.dash :is(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

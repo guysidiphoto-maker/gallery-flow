@@ -1,7 +1,5 @@
-// RestartTourButton: a small help-menu entry that resets tour progress and
-// reopens the mounted <FirstRunTour /> for the same surface. Safe to place in
-// any owner-side menu; it renders a plain button (style it via className or
-// let the default subtle style stand).
+// Help-menu entry that resets tour progress and reopens the mounted
+// <FirstRunTour /> for the same surface. Pass className to restyle it.
 
 import { useCallback } from 'react'
 import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
@@ -29,13 +27,8 @@ export function RestartTourButton({ surface = 'owner_tour', className, style }: 
     <button
       type="button"
       onClick={onClick}
-      className={className}
-      style={className ? style : {
-        font: 'inherit', fontSize: 14, color: '#334155',
-        background: 'transparent', border: 'none', cursor: 'pointer',
-        padding: '6px 10px', borderRadius: 8, textAlign: 'start',
-        ...style,
-      }}
+      className={className ?? 'cursor-pointer rounded-[8px] border-none bg-transparent px-2.5 py-1.5 text-start text-sm text-ink-soft'}
+      style={style}
     >
       {t('tour.restart')}
     </button>
