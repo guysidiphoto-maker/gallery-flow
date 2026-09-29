@@ -1,24 +1,6 @@
-// import-center.ts — owner-side Import Center write surface (contract C7).
-// ONE multi-action endpoint (Vercel function-count discipline) orchestrating
-// migrations from Pixieset/generic-CSV/local-folder into piXflow galleries.
-//
-// TRUTHFUL scope: there is NO Pixieset API and no scraping here. The owner
-// exports CSVs + per-collection ZIPs from their own Pixieset account via the
-// official UI; this endpoint only manages job state, dry-runs the CSV, and
-// records per-file bookkeeping. Photos are uploaded by the BROWSER through the
-// existing upload pipeline (uploadPipeline.ts) — no server storage path.
-//
-// Security contract (same as client-admin.ts, enforced for EVERY action):
-//   1. valid Supabase JWT (Bearer)                    → requireOwnerBusiness
-//   2. business resolved from auth.uid() (never body) → requireOwnerBusiness
-//   3. target job/collection belongs to that business (re-checked per action)
-//   4. writes via service-role only (tables have NO client write policies)
-//   5. audited to client_access_audit (import_* actions, added in 097)
-//   6. idempotent state transitions (start on running = no-op success)
-//   7. CSV password-looking columns are DROPPED server-side, never stored
-//
-// cancel_job is SAFE: it marks the job cancelled; it NEVER deletes uploaded
-// images or galleries.
+// Owner-side Import Center (one multi-action endpoint). No Pixieset API: the owner
+// exports CSVs/ZIPs themselves and the browser uploads photos; this only manages
+// job state, CSV dry-runs and bookkeeping. Owner-scoped, service-role writes, audited.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
@@ -37,10 +19,7 @@ export const maxDuration = 30
 
 const supabase = serviceClient()
 
-// import_* audit actions are added to the DB CHECK in migration 097 (owner:
-// Agent-DB) and to the shared AuditAction TS union in wave 2. Until that merge,
-// this local union + cast keeps the audit calls typed without editing
-// server/clientAdmin.ts (owned by Agent-ASSIGN in this sprint).
+// import_* actions aren't in the shared AuditAction union, hence this local union + cast.
 type ImportAuditAction =
   | 'import_job_created' | 'import_job_started' | 'import_job_completed'
   | 'import_job_cancelled' | 'import_collection_imported'
@@ -256,11 +235,8 @@ async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
           .in('client_match_status', ['ambiguous', 'unmatched']).limit(1)
         if ((unresolved?.length ?? 0) > 0) return void bad(res, 409, 'mappings_unresolved')
 
-        // Quota: token/plan enforcement stays where it already lives — inside
-        // record_image_upload() during the actual uploads. Here we only RECORD
-        // the client-computed estimate (files/bytes from the ZIP listing) into
-        // totals for the report; no cheap server-side balance read exists on
-        // this surface (documented in PIXIESET-MIGRATION-FEASIBILITY.md).
+        // Quota is enforced by record_image_upload() during uploads; here the
+        // client's estimate is only recorded for the report.
         const est = (body.estimate ?? null) as Json | null
         const totals = est && typeof est === 'object'
           ? { ...(job.totals ?? {}), estimated_files: Number(est.files ?? 0) || 0, estimated_bytes: Number(est.bytes ?? 0) || 0 }
@@ -324,10 +300,8 @@ async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
         return void res.status(200).json({ ok: true, job_id: jobId, status: r.status })
       }
 
-      // ── update_collection_progress (checkpointing; browser-driven runs) ──
-      // Not in the original C7 action list; required for resumable, per-
-      // collection checkpoints since uploads run in the BROWSER. Documented in
-      // src/components/importer/INTEGRATION.md.
+      // ── update_collection_progress ──
+      // Per-collection checkpoints so browser-driven imports can resume.
       case 'update_collection_progress': {
         const jobId = String(body.jobId ?? '')
         const collectionId = String(body.collectionId ?? '')

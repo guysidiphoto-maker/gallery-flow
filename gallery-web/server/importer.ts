@@ -1,21 +1,11 @@
-// importer.ts — PURE logic for the Import Center (Pixieset-first migrations).
-//
-// Everything in this module is offline-testable: CSV parsing, header aliasing,
-// client matching, filename sanitization, ZIP-entry validation, content
-// hashing, and the job state machine. NO supabase, NO network, NO fs.
-// The API endpoint (api/import-center.ts) and the browser wizard both consume
-// these helpers so validation rules exist in exactly one place.
-//
-// Threat model: the CSV and ZIPs come from the photographer's OWN Pixieset
-// export, but we still treat them as untrusted input — path traversal entries,
-// ZIP bombs, control characters, and password columns are all handled here.
+// Pure Import Center logic (CSV, matching, filename/ZIP validation, job state
+// machine) — no supabase, network or fs. Exports come from the owner's own
+// Pixieset account but are still treated as untrusted input.
 
 import { createHash } from 'node:crypto'
 
-// ── Limits (single source of truth for the Import Center) ──────────────────
-
 export const CSV_MAX_BYTES = 2 * 1024 * 1024        // 2 MB of CSV text
-export const CSV_MAX_ROWS = 5000                     // data rows per CSV
+const CSV_MAX_ROWS = 5000                            // data rows per CSV
 export const ZIP_ENTRY_MAX_BYTES = 200 * 1024 * 1024  // mirrors MAX_UPLOAD_BYTES (200 MB)
 export const JOB_UNCOMPRESSED_MAX_BYTES = 10 * 1024 * 1024 * 1024 // 10 GB / job
 export const ZIP_BOMB_RATIO = 100                    // uncompressed/compressed > 100x → reject
@@ -23,7 +13,7 @@ export const ZIP_MAX_DEPTH = 3                       // folder levels inside the
 export const ZIP_FILE_MAX_BYTES = 2 * 1024 * 1024 * 1024 // 2 GB per ZIP (jszip is in-memory)
 export const FILENAME_MAX_LEN = 200
 
-export const ALLOWED_IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp'] as const
+const ALLOWED_IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp'] as const
 const EXT_TO_MIME: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
 }
@@ -37,9 +27,7 @@ export function extOf(filename: string): string {
   return dot > 0 ? filename.slice(dot + 1).toLowerCase() : ''
 }
 
-// ── CSV parsing (RFC 4180-ish) ──────────────────────────────────────────────
-// Handles: UTF-8 BOM, CRLF/LF/CR, quoted fields with "" escapes, embedded
-// commas/newlines inside quotes. Rejects oversized input and row floods.
+// RFC 4180-ish: BOM, any newline style, quoted fields with "" escapes.
 
 export type CsvParseResult =
   | { ok: true; headers: string[]; rows: string[][] }
@@ -47,8 +35,7 @@ export type CsvParseResult =
 
 export function parseCsv(text: string): CsvParseResult {
   if (typeof text !== 'string') return { ok: false, error: 'csv_empty' }
-  // Byte-length check (a UTF-8 char can be up to 4 bytes; length*4 short-circuit
-  // avoids encoding huge strings just to reject them).
+  // length*4 short-circuit avoids encoding huge strings just to reject them.
   if (text.length > CSV_MAX_BYTES) return { ok: false, error: 'csv_too_large' }
   let src = text
   if (src.charCodeAt(0) === 0xfeff) src = src.slice(1) // strip BOM
@@ -105,10 +92,7 @@ export function parseCsv(text: string): CsvParseResult {
   return { ok: true, headers, rows: dataRows }
 }
 
-// ── Header aliasing ─────────────────────────────────────────────────────────
-// Case-insensitive, whitespace/punctuation-tolerant matching so exports from
-// Pixieset (documented Contacts CSV columns) and hand-made "collections" CSVs
-// both map cleanly.
+// Tolerant header matching so Pixieset exports and hand-made CSVs both map.
 
 function normHeader(h: string): string {
   return h.toLowerCase().replace(/[\s_\-./]+/g, ' ').trim()
@@ -130,9 +114,7 @@ const COLLECTION_ALIASES: Record<string, string[]> = {
   eventDate: ['date', 'event date', 'shoot date', 'session date', 'created', 'created at'],
 }
 
-// Pixieset Studio Manager Contacts CSV documented columns
-// (help.pixieset.com article 35343762224141): First Name, Last Name, Company,
-// Email, Type, Address fields, Notes.
+// Pixieset Studio Manager's documented Contacts CSV columns.
 const CONTACT_ALIASES: Record<string, string[]> = {
   firstName: ['first name', 'firstname', 'given name'],
   lastName: ['last name', 'lastname', 'surname', 'family name'],
@@ -262,17 +244,15 @@ export function mapContactsCsv(headers: string[], rows: string[][]): MappedCsv<C
   }
 }
 
-// ── Client matching ─────────────────────────────────────────────────────────
-// Policy (contract C7): normalized-email EXACT match → 'matched'.
-// Name-only match → 'ambiguous' (NEVER auto-merged; the owner decides).
-// Nothing → 'unmatched'.
+// Exact normalized email → 'matched'; name-only → 'ambiguous' (never auto-merged,
+// the owner decides); otherwise 'unmatched'.
 
-export function normalizeEmailForMatch(raw: string | null | undefined): string | null {
+function normalizeEmailForMatch(raw: string | null | undefined): string | null {
   const t = String(raw ?? '').trim().toLowerCase()
   return t === '' ? null : t
 }
 
-export function normalizeNameForMatch(raw: string | null | undefined): string {
+function normalizeNameForMatch(raw: string | null | undefined): string {
   return String(raw ?? '').toLowerCase().normalize('NFKC').replace(/\s+/g, ' ').trim()
 }
 
@@ -305,15 +285,12 @@ export function matchClient(
   const name = normalizeNameForMatch(row.clientName)
   if (name) {
     const byName = clients.filter(c => normalizeNameForMatch(c.name) === name)
-    // Name-only is NEVER auto-merged — always requires owner confirmation.
     if (byName.length > 0) return { status: 'ambiguous', clientId: null, candidates: byName.map(c => c.id) }
   }
   return { status: 'unmatched', clientId: null, candidates: [] }
 }
 
-// ── Filename sanitization ───────────────────────────────────────────────────
-// ZIP entries and CSV-supplied names are untrusted. We strip path components
-// and refuse anything that smells like traversal or binary garbage.
+// ZIP/CSV names are untrusted: strip path components, refuse traversal/garbage.
 
 export type SanitizeResult =
   | { ok: true; name: string }
@@ -354,9 +331,7 @@ export function dedupeFilename(name: string, used: Set<string>): string {
   }
 }
 
-// ── ZIP entry validation ────────────────────────────────────────────────────
-// Runs on entry METADATA (path + sizes) before any bytes are inflated, so a
-// ZIP bomb is rejected without paying its decompression cost.
+// Runs on entry metadata before inflating, so a ZIP bomb costs nothing to reject.
 
 export interface ZipEntryMeta {
   path: string
@@ -380,9 +355,8 @@ export function validateZipEntry(entry: ZipEntryMeta): ZipEntryVerdict {
   const sanitized = sanitizeImportFilename(entry.path)
   if (!sanitized.ok) return { verdict: 'reject', reason: sanitized.reason }
 
-  // Depth: number of FOLDER levels above the file. Pixieset's internal ZIP
-  // layout is undocumented — sets may appear as one-level subfolders — so we
-  // accept up to ZIP_MAX_DEPTH levels and reject deeper nesting.
+  // Pixieset's ZIP layout is undocumented (sets may be subfolders), so allow a
+  // few folder levels.
   const depth = parts.length - 1
   if (depth > ZIP_MAX_DEPTH) return { verdict: 'reject', reason: 'too_deep' }
 
@@ -431,19 +405,15 @@ export function summarizeZipEntries(entries: ZipEntryMeta[]): ZipSummary {
   return { accepted, skipped, rejected, totalUncompressedBytes: total, overJobCap: total > JOB_UNCOMPRESSED_MAX_BYTES }
 }
 
-// ── Content hashing (duplicate detection) ───────────────────────────────────
-// SHA-256 over the file bytes. The browser computes the same digest via
-// crypto.subtle; identical hex output lets import_files.content_hash act as a
+// Same digest as the browser's crypto.subtle, so content_hash works as a
 // cross-run duplicate ledger.
 
 export function sha256HexBytes(bytes: Uint8Array | Buffer): string {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
-// ── Job state machine ───────────────────────────────────────────────────────
-// Statuses (migration 099): draft → dry_run → ready → running ⇄ paused →
-// completed | failed | cancelled. Transitions are IDEMPOTENT: re-issuing the
-// action that produced the current state is a no-op success, never an error.
+// draft → dry_run → ready → running ⇄ paused → completed | failed | cancelled.
+// Re-issuing the action that produced the current state is a no-op success.
 
 export type JobStatus =
   | 'draft' | 'dry_run' | 'ready' | 'running' | 'paused'
@@ -494,10 +464,8 @@ export function isTerminalStatus(s: JobStatus): boolean {
   return s === 'completed' || s === 'cancelled'
 }
 
-// ── ZIP ↔ collection auto-matching ──────────────────────────────────────────
-// Pixieset per-collection ZIPs are typically named after the collection (and
-// large collections split into "Name-1.zip", "Name-2.zip"). Match on a
-// normalized stem; the owner can always re-map manually in the wizard.
+// Per-collection ZIPs are named after the collection (big ones split into
+// "Name-1.zip", "Name-2.zip"); the owner can re-map manually.
 
 export function normalizeZipStem(zipFilename: string): string {
   return zipFilename

@@ -1,22 +1,6 @@
-// gallery-zip.ts — Phase 4.6
-//
-// Streams a ZIP of selected images for an anonymous gallery viewer. Replaces
-// the JSZip client-side bundling that today fetches each photo via public
-// URL. After the bucket flip, the public URL won't work; this endpoint uses
-// the service-role key to fetch from the (private) bucket and streams the
-// ZIP back to the browser.
-//
-// Auth model:
-//   1. Origin allowlist (existing guard, mirrors gallery-access).
-//   2. Public-viewer token (pvt) — must be alive, scoped to the galleryId
-//      passed in the request. Verified via the same RPC the signed_url
-//      action uses (verify_public_gallery_session).
-//   3. The image_ids in the request must all belong to the gallery — we
-//      validate via a single SELECT before pulling any bytes.
-//
-// Cost: ~$0.50 per 1000-photo download on Vercel Pro at 300s timeout (per
-// the Phase 4 master plan estimate). Galleries >2GB risk timeout; for those
-// the frontend can fall back to client-side fetches over signed URLs.
+// Streams a ZIP of selected images to an anonymous viewer from the private bucket.
+// Requires an allowed origin, a live pvt scoped to the gallery, and every image
+// id belonging to that gallery. Very large galleries (>2GB) risk the 300s timeout.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
@@ -94,7 +78,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(401).json({ ok: false, error: 'invalid_pvt' }); return
   }
 
-  // P2.2: password galleries additionally require a valid unlock token.
+  // Password galleries additionally require a valid unlock token.
   // gallery_token_is_valid returns true unconditionally for non-password
   // galleries, so this is a no-op there and an enforced gate for password ones.
   const unlockToken = String(body.unlockToken ?? '').trim()

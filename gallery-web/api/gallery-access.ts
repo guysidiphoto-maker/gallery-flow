@@ -27,12 +27,10 @@ interface SignedUrlBody {
   action: 'signed_url'
   bucket?: string
   path?: string
-  /** P4.5.C: public-viewer token, gallery-scoped. Verified against the
-   *  gallery_id extracted from `path`'s second segment. */
+  /** Public-viewer token, verified against the gallery id in `path`'s second segment. */
   pvt?: string
-  /** P2.2: password-gallery unlock token (gallery_unlock_tokens). Required
-   *  (when SIGNED_URL_ENFORCE_ORIGINALS=1) before signing an /originals/
-   *  path of a password-protected gallery. No-op for non-password galleries. */
+  /** Password-gallery unlock token; required for /originals/ paths when
+   *  SIGNED_URL_ENFORCE_ORIGINALS=1. */
   unlockToken?: string
 }
 interface PublicGallerySessionBody {
@@ -46,7 +44,7 @@ type ActionBody =
   | SignedUrlBody
   | PublicGallerySessionBody
 
-// ── Action: verify_code (Phase 3 hashed-PIN login) ──────────────────────
+// ── Action: verify_code (hashed-PIN login) ──────────────────────────────
 
 async function handleVerifyCode(
   body: VerifyCodeBody,
@@ -62,8 +60,7 @@ async function handleVerifyCode(
     res.status(400).json({ ok: false, error: 'invalid_code_format' }); return
   }
 
-  // Extract IP. x-forwarded-for may be a comma-separated list — first entry
-  // is the original client.
+  // The first x-forwarded-for entry is the original client.
   const xff = req.headers['x-forwarded-for']
   const xffStr = Array.isArray(xff) ? xff[0] : xff
   const xRealIp = req.headers['x-real-ip']
@@ -101,9 +98,8 @@ async function handleVerifyCode(
     res.status(429).json({ ok: false, error: 'cooldown_active', cooldown_until: cooldownUntil }); return
   }
 
-  // All-NULL response can mean either "wrong code" OR "client not migrated
-  // (access_code_hash IS NULL)". Distinguish so the caller can fall back to
-  // legacy plain-text PIN compare during rollout.
+  // An empty result is either a wrong code or a client with no hashed code yet;
+  // the latter may fall back to the legacy plaintext PIN.
   const { data: cli } = await supabase
     .from('clients')
     .select('access_code_hash')
@@ -111,10 +107,8 @@ async function handleVerifyCode(
     .maybeSingle()
   const hash = (cli as { access_code_hash?: string | null } | null)?.access_code_hash ?? null
   if (cli && hash === null) {
-    // Fail-closed (Client Portal V2): only offer the legacy plaintext PIN path
-    // when a real legacy code is ACTUALLY configured on a live gallery. A client
-    // with neither a hashed code nor a non-empty `clientCode` must be denied —
-    // never invite a fallback compare against an empty/absent code.
+    // Fail closed: only offer the legacy fallback when a live gallery actually
+    // has a non-empty clientCode — never compare against an absent code.
     const { data: coded } = await supabase
       .from('galleries')
       .select('id')
@@ -132,7 +126,7 @@ async function handleVerifyCode(
   res.status(401).json({ ok: false, error: 'invalid_code' })
 }
 
-// ── Action: redeem_token (Phase 3 session-token verification) ───────────
+// ── Action: redeem_token (session-token verification) ───────────────────
 
 async function handleRedeemToken(
   body: RedeemTokenBody,
@@ -153,13 +147,12 @@ async function handleRedeemToken(
   res.status(200).json({ ok: true, client_id: clientId })
 }
 
-// ── Action: signed_url (Phase 4 prep) ───────────────────────────────────
+// ── Action: signed_url ──────────────────────────────────────────────────
 
 const ALLOWED_BUCKETS = new Set(['gallery-images', 'gallery-stories', 'demo-uploads'])
 
-// P2.2: when '1', signing an /originals/ path requires a valid gallery-scoped
-// public-viewer token AND (for password galleries) a valid unlock token.
-// Default off → legacy advisory behavior, so this is a safe, reversible flip.
+// When '1', signing an /originals/ path requires a public-viewer token and, for
+// password galleries, an unlock token. Off = legacy advisory behavior.
 const SIGNED_URL_ENFORCE_ORIGINALS = process.env.SIGNED_URL_ENFORCE_ORIGINALS === '1'
 
 async function handleSignedUrl(
@@ -173,10 +166,7 @@ async function handleSignedUrl(
   const path = String(body.path ?? '').trim()
   if (!bucket || !path) { res.status(400).json({ ok: false, error: 'bucket_and_path_required' }); return }
   if (!ALLOWED_BUCKETS.has(bucket)) { res.status(400).json({ ok: false, error: 'bucket_not_allowed' }); return }
-  // Path-traversal guard: reject only when '..' appears as a complete path
-  // segment. The original `path.includes('..')` was over-aggressive — real
-  // production filenames like `b270cdd8_11..jpg` contain consecutive dots
-  // inside the filename and aren't traversal attempts.
+  // Only a whole '..' segment is traversal; real filenames like `x_11..jpg` exist.
   if (path.split('/').some(seg => seg === '..')) {
     res.status(400).json({ ok: false, error: 'invalid_path' }); return
   }
@@ -184,10 +174,7 @@ async function handleSignedUrl(
     res.status(400).json({ ok: false, error: 'invalid_path' }); return
   }
 
-  // Phase 3 token check (advisory): if a token is present, verify and log.
-  // For Phase 4.1 we issue signed URLs WITHOUT requiring a token, so the bucket
-  // can stay public during prep. When the bucket flips private, token will
-  // become required — but that's a later phase's enforcement flag flip.
+  // Advisory only: a client session token is verified when present but not required.
   const headerToken = String(req.headers['x-client-session'] ?? '').trim()
   let tokenClientId: string | null = null
   if (headerToken) {
@@ -195,11 +182,8 @@ async function handleSignedUrl(
     tokenClientId = (data as string | null) ?? null
   }
 
-  // Phase 4.5.C — public-viewer token. Path scheme is
-  // `<biz_slug>/<gallery_id>/<thumbs|web|originals>/<file>`. Extract the
-  // gallery_id (second segment) and verify the pvt is alive + gallery-scoped.
-  // Advisory only for now: log on mismatch but still issue. P4.5.E will flip
-  // this to enforcing when the bucket goes private.
+  // Paths are `<biz_slug>/<gallery_id>/<thumbs|web|originals>/<file>`. Outside
+  // the originals gate below, a pvt mismatch is only logged.
   const pvt = String(body.pvt ?? '').trim()
   const segments = path.split('/')
   const galleryIdGuess = segments[1] // <slug>/<gallery_id>/...
@@ -222,16 +206,9 @@ async function handleSignedUrl(
     }
   }
 
-  // ── P2.2: enforce authorization for ORIGINAL downloads ──────────────────
-  // Originals live at `<slug>/<gallery_id>/originals/<file>`. Once the bucket
-  // flips private (P2.4), the public URL dies and this signed URL becomes the
-  // ONLY way to fetch an original — so it must prove the caller is authorized:
-  //   1. a live, gallery-scoped public-viewer token (anti-abuse + scope), and
-  //   2. for PASSWORD galleries, a valid unlock token (gallery_token_is_valid
-  //      returns true unconditionally for non-password galleries, so this is a
-  //      no-op there and an enforced gate for password galleries).
-  // Flag-gated (SIGNED_URL_ENFORCE_ORIGINALS) so rollout is reversible; when
-  // off, behavior is the legacy advisory path (issues without requiring PVT).
+  // With a private bucket this signed URL is the only way to an original, so it
+  // needs a pvt plus, for password galleries, an unlock token
+  // (gallery_token_is_valid is always true for non-password galleries).
   const isOriginalPath = bucket === 'gallery-images' && segments.includes('originals')
   if (SIGNED_URL_ENFORCE_ORIGINALS && isOriginalPath) {
     if (!galleryIdValid) {
@@ -250,7 +227,6 @@ async function handleSignedUrl(
     }
   }
 
-  // Issue a 60-minute signed URL via Supabase storage API.
   const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60)
   if (error || !data?.signedUrl) {
     res.status(500).json({ ok: false, error: 'sign_failed', detail: error?.message?.slice(0, 200) })
@@ -261,38 +237,15 @@ async function handleSignedUrl(
     ok: true,
     url: data.signedUrl,
     expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    // Echo whether token was present (helps observability when we flip the
-    // bucket and need to know if any clients are still calling without one).
+    // Observability: shows whether clients still call without a token.
     token_present: tokenClientId !== null,
     pvt_validated: pvtValidated,
   })
 }
 
-// ── Phase 4.5.A/B — public_gallery_session ──────────────────────────────
-//
-// Issues a 60-min opaque token (43-char base64url) scoped to one gallery,
-// one IP. Used by the anonymous viewer at /<biz>/<gallery> to call
-// signed_url after the bucket flip. NOT to be confused with Phase 3
-// `verify_code`/`redeem_token` which authenticate PIN-protected client
-// dashboards.
-//
-// Anti-abuse:
-//   - 30 sessions/IP/hour soft (P4.5.B requires a valid Cloudflare
-//     Turnstile token past this point)
-//   - 100 sessions/IP/hour hard ceiling
-//   - Origin allowlist (existing guard)
-//
-// Idempotent on (ip, galleryId): a same-IP request that lands within 5 min
-// of an existing un-expired token reuses it (issue_public_gallery_session
-// RPC handles this).
-//
-// Env (P4.5.B):
-//   CF_TURNSTILE_SECRET — Cloudflare Turnstile secret key (server-side)
-//   VITE_CF_TURNSTILE_SITE_KEY — public site key (read here for the 429
-//     response; the frontend reads it from import.meta.env at build time)
-// If the secret is unset we fail-open: soft limit logs a warning but
-// allows the request through. Once the env is configured the soft limit
-// becomes enforcing.
+// ── Action: public_gallery_session ──────────────────────────────────────
+// 60-min token scoped to one gallery + IP for the anonymous viewer. Past the soft
+// limit a Turnstile token is required (fail-open when the secret is unset).
 
 const SOFT_LIMIT_PER_HOUR = 30
 const HARD_LIMIT_PER_HOUR = 100
@@ -301,9 +254,7 @@ const CF_TURNSTILE_SECRET = process.env.CF_TURNSTILE_SECRET ?? ''
 const CF_TURNSTILE_SITE_KEY = process.env.VITE_CF_TURNSTILE_SITE_KEY ?? ''
 const CF_TURNSTILE_SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 
-// Verify a Cloudflare Turnstile token via siteverify. Returns true iff
-// Cloudflare confirms it. Fails closed on network errors so a flaky
-// Cloudflare doesn't open the soft limit.
+// Fails closed on network errors so a flaky Cloudflare doesn't open the soft limit.
 async function verifyTurnstileToken(token: string, ip: string): Promise<boolean> {
   if (!CF_TURNSTILE_SECRET) return false
   if (!token) return false
@@ -315,7 +266,6 @@ async function verifyTurnstileToken(token: string, ip: string): Promise<boolean>
     const r = await fetch(CF_TURNSTILE_SITEVERIFY_URL, {
       method: 'POST',
       body: form,
-      // Cloudflare expects application/x-www-form-urlencoded
     })
     if (!r.ok) return false
     const j = await r.json() as { success?: boolean; 'error-codes'?: string[] }
@@ -333,7 +283,6 @@ async function verifyTurnstileToken(token: string, ip: string): Promise<boolean>
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function getClientIp(req: VercelRequest): string {
-  // Vercel forwards x-forwarded-for. First entry is the real client.
   const xff = req.headers['x-forwarded-for']
   const xffStr = Array.isArray(xff) ? xff[0] : xff
   if (xffStr) return xffStr.split(',')[0].trim()
@@ -377,15 +326,8 @@ async function handlePublicGallerySession(
     res.status(429).json({ ok: false, error: 'hard_limit_exceeded', retry_after_seconds: 3600 }); return
   }
 
-  // Phase 4.5.B — Turnstile enforcement past the soft limit.
-  // 1. If a token was sent, verify it via Cloudflare siteverify regardless of
-  //    rate. A valid token boosts trust on the row (turnstile_validated=true).
-  // 2. If recent >= soft limit AND no valid token AND the secret is
-  //    configured → reject with 429 turnstile_required + the public site key
-  //    so the frontend can render the widget and retry.
-  // 3. If the secret is NOT configured (e.g., dev or pre-rollout), fail-open:
-  //    log a warning and proceed. This keeps the endpoint useful before
-  //    Cloudflare is wired up.
+  // A sent token is always verified (recorded as turnstile_validated). Past the
+  // soft limit without one → 429 with the site key so the viewer can show the widget.
   let turnstileValidated = false
   if (turnstileToken && CF_TURNSTILE_SECRET) {
     turnstileValidated = await verifyTurnstileToken(turnstileToken, ip)

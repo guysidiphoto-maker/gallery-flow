@@ -1,22 +1,5 @@
-// sitemap.xml — public sitemap for Pixflow's marketing surfaces + every
-// published gallery. Lets Google / Bing / DuckDuckGo crawl gallery URLs
-// directly without relying on per-gallery share links being indexed
-// individually.
-//
-// Why: today a photographer publishes a gallery, the only link discovery
-// path is paste-into-WhatsApp → eventual crawl. With a sitemap, Google
-// indexes the gallery URL the next crawl cycle, so the studio's slug
-// becomes discoverable for "{studio name} portfolio" / "{event name}"
-// queries.
-//
-// Privacy: only galleries with status='live' AND access_type='public'
-// (no password / no client-code gate) are listed. Password-gated and
-// code-gated galleries stay private — they should never appear in a
-// public crawl.
-//
-// Cache: 1 hour. The gallery list mutates slowly enough that hourly
-// freshness is plenty, and we don't want to hit Supabase on every
-// crawler ping.
+// Public sitemap: indexable marketing routes from seo/registry.ts plus every live,
+// public (non-password, non-code) gallery. Cached for an hour.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { allRoutes } from '../seo/registry.js'
@@ -28,19 +11,13 @@ const SITE_ORIGIN =
   process.env.NEXT_PUBLIC_SITE_URL ||
   'https://pixflow-ai.com'
 
-// Marketing pages come from the SEO registry (seo/registry.ts) — the single
-// source of truth shared with api/page.ts, so a new SEO/landing route appears
-// in the sitemap automatically (indexable routes only; admin URLs never live
-// in the registry).
-
 interface GalleryRow {
   slug: string | null
   published_at: string | null
   businesses: { slug?: string | null } | Array<{ slug?: string | null }> | null
 }
 
-// XML escape — every text node we emit goes through this. URLs in
-// our system are safe (slug regex) but defence-in-depth costs nothing.
+// Slugs are already safe; escaping every text node is defence in depth.
 function xmlEscape(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -51,13 +28,8 @@ function xmlEscape(s: string): string {
 }
 
 async function fetchPublicGalleries(): Promise<Array<{ url: string; lastmod?: string }>> {
-  // Inner join `businesses` so we can construct /{business-slug}/{gallery-slug}
-  // — the canonical short-link form. Filter:
-  //   - status = 'live' (only published)
-  //   - access_type column (Phase 6 step 2) is 'public' OR null (legacy)
-  //   - delivery_settings -> requireGalleryCode is not true
-  // The double filter belt-and-braces against drift between the typed
-  // column and the legacy JSONB key.
+  // Live galleries with access_type public/null AND no requireGalleryCode: both
+  // filters guard against drift between the column and the legacy JSONB key.
   const url =
     `${SUPABASE_URL}/rest/v1/galleries` +
     `?select=slug,published_at,businesses(slug)` +

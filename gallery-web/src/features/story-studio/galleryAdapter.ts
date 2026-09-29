@@ -1,5 +1,4 @@
-// galleryAdapter.ts — map real Dashboard gallery data into the editor's inputs.
-// Keeps the (large) Dashboard wiring to a couple of calls and is unit-testable.
+// Maps Dashboard gallery data into the editor's inputs.
 
 import { displayUrl } from "@/shared/lib/supabase";
 import type { PlannerImage } from "./planner";
@@ -47,13 +46,10 @@ export interface BrandInputs {
   watermarkOpacityPercent?: number | null;
 }
 
-/** Resolve BrandResolved from whatever brand data the Dashboard has, with
- *  safe, readable defaults (guarantees a valid hex accent for the validator). */
+/** Defaults guarantee a valid hex accent for the validator. */
 export function toBrandResolved(b: BrandInputs): BrandResolved {
   const accent = b.accentHex && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(b.accentHex) ? b.accentHex : "#B45309";
-  // Only an http(s) logo is loadable by the preview <Player> and the renderer. A
-  // local filesystem path (a long-standing gallery-editor data bug) 404s and
-  // crashes the render, so treat it as no logo.
+  // A non-http(s) logo (legacy local-path data) 404s and crashes the render; treat it as none.
   const logoUrl = typeof b.logoUrl === "string" && /^https?:\/\//i.test(b.logoUrl) ? b.logoUrl : null;
   return {
     accentHex: accent,

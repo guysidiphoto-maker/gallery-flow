@@ -1,90 +1,26 @@
-// Open Graph image generator for shared gallery links.
-//
-// When a guest pastes /gallery/:id in WhatsApp/iMessage/Telegram/Slack/etc, the
-// crawler hits /api/share (which serves bot-flavoured HTML) and the og:image
-// in that HTML points here. We compose a 1200x630 branded card with the
-// gallery name + studio + a soft-blurred cover photo as backdrop. Pixshare
-// can't do this because their app is hosted on raw S3 — this is the kind of
-// detail that makes our shared links feel polished.
-//
-// Edge runtime for fast cold-starts; ImageResponse comes from @vercel/og.
-//
-// Inputs (any of):
-//   ?gallery=<uuid>
-//   ?id=<uuid>            (legacy alias from earlier og.ts)
-//   ?business=<slug>&slug=<gallery-slug>
-//
-// Behavior:
-//   - Fetches gallery row via Supabase REST (anon key) directly — avoids the
-//     ~200kb @supabase-js bundle on edge.
-//   - Now ALSO pulls the owning business's `brand_kit` JSONB in the same call
-//     via PostgREST embedded select `businesses(name,brand_kit)`. One extra
-//     join, zero extra round-trips.
-//   - Picks cover from delivery_settings.coverImageUrl, otherwise the first
-//     image's web preview.
-//   - Renders the card with system fonts. Hebrew falls back to OS default;
-//     readable on every platform we care about.
-//   - On ANY failure, returns a branded fallback image (never a 500). A
-//     half-broken share preview is worse for the brand than a bare logo.
-//
-// Brand Kit support (added in feat/web-og-image-brand-kit):
-//   When the studio has a Brand Kit set up on their business row, the card
-//   reads from it and re-skins the share preview to the studio (not Pixflow):
-//     - brand_kit.logo.url | brand_kit.logo.square_url  → rendered top-left
-//       at 28px tall. If missing OR fetch fails, falls back to studio name
-//       rendered in uppercase tracked type (the previous wordmark slot).
-//     - brand_kit.colors.ink     → dark base background (else editorial #0a0a0f)
-//     - brand_kit.colors.primary → title accent + hairline divider tint
-//                                  (else the editorial cream tone)
-//     - brand_kit.voice.tagline  → rendered as a small italic line between
-//                                  studio name and gallery title.
-//   Logo fetch is bounded: @vercel/og fetches absolute <img src> URLs while
-//   rendering. We pre-flight the logo with a 1s AbortController; on timeout
-//   or non-2xx we drop the <img> entirely and use the text wordmark. A
-//   broken logo URL must NEVER kill the OG response — the share preview
-//   itself is more valuable than any one element of it.
-//
-//   When brand_kit is absent / `{}` / partially populated, the card degrades
-//   to the prior editorial card exactly — zero regression for galleries
-//   without a Brand Kit.
-//
-// Caching: 1 hour public CDN cache.
+// 1200x630 Open Graph card for shared gallery links (og:image of /api/share),
+// re-skinned from the studio's brand_kit when present. Edge runtime, plain REST
+// instead of supabase-js; any failure returns a branded fallback, never a 500.
 
 import { ImageResponse } from '@vercel/og'
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../server/env.js'
 
 export const config = { runtime: 'edge' }
 
-
-// Centralized public-storage URL builder. Mirrors the SPA's storageUrl() in
-// gallery-web/src/supabase.ts but reads SUPABASE_URL from env (edge runtime).
-// Single line so a future signed-URL swap is a one-file change.
-function buildPublicUrl(path: string): string {
-  return `${SUPABASE_URL}/storage/v1/object/public/gallery-images/${path}`
-}
-
-// Server-side transform — the OG card is 1200×630, and in the originals-only
-// model web_preview_path points at the multi-MB original. Pull a small
-// resized copy so the edge function never fetches a 10MB file.
+// web_preview_path may point at a multi-MB original; fetch a resized copy.
 function buildRenderUrl(path: string, width = 1200, quality = 70): string {
   return `${SUPABASE_URL}/storage/v1/render/image/public/gallery-images/${path}?width=${width}&quality=${quality}&resize=contain`
 }
 
-// Editorial defaults — used when brand_kit is missing or partial. Keep these
-// in sync with the previous editorial polish PR so unbranded galleries look
-// identical to before.
+// Editorial defaults for galleries without (or with a partial) brand_kit.
 const ACCENT = '#6366f1'
 const ACCENT_LIGHT = '#818cf8'
 const DEFAULT_INK = '#0a0a0f'
-const DEFAULT_PRIMARY = '#e8e4d8' // cream accent from the editorial polish PR
+const DEFAULT_PRIMARY = '#e8e4d8' // cream accent
 const TEXT = '#f1f1f4'
 const TEXT_MUTED = 'rgba(241,241,244,0.6)'
 
-// ──────────────────────────────────────────────────────────────────────────
-// Brand Kit shape (matches what the studio's settings UI writes into
-// businesses.brand_kit JSONB). Everything is optional — we treat the column
-// as untrusted shape and read defensively.
-// ──────────────────────────────────────────────────────────────────────────
+// businesses.brand_kit as written by the settings UI; untrusted, read defensively.
 interface BrandKit {
   logo?: {
     url?: string | null         // wide / horizontal variant (preferred)
@@ -203,14 +139,8 @@ async function pickCoverUrl(g: GalleryLite): Promise<string | null> {
   return buildRenderUrl(path)
 }
 
-// Pre-flight the brand logo with a hard 1s timeout. We don't actually use the
-// response body — we just need to know whether to include the <img> tag in
-// the rendered JSX (because @vercel/og itself will fetch the URL again while
-// rastering). A HEAD request + AbortController is enough to confirm the asset
-// resolves quickly; if it doesn't, we degrade to the text wordmark.
-//
-// Critically: this MUST NEVER throw out of handler() — a flaky logo CDN
-// shouldn't be able to take down the share preview for an entire gallery.
+// @vercel/og fetches the logo itself while rastering; this 1s probe only decides
+// whether to include the <img> or fall back to the text wordmark. Never throws.
 async function probeLogo(url: string): Promise<string | null> {
   // SSRF guard: brand_kit.logo_url is photographer-controlled JSONB. A
   // poisoned row with file://, internal IPs, or non-http schemes must not be

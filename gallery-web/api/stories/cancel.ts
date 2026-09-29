@@ -1,26 +1,12 @@
-// stories/cancel.ts — cooperative cancel for an in-flight Story Studio render.
-//
-// The render runs synchronously inside a single Vercel Function and cannot be
-// killed from outside. Cancel is therefore COOPERATIVE: this endpoint flips the
-// in-flight row out of 'rendering' (to 'failed' with a 'cancelled by user'
-// message — the status enum has no dedicated 'cancelled' value). The render
-// function re-reads the row right before it promotes to 'ready'; seeing the row
-// is no longer 'rendering', it discards the uploaded artifacts instead of
-// completing. The client stops polling immediately.
-//
-// POST /api/stories/cancel  { galleryId: uuid, renderId?: uuid }
-//   → 200 { ok: true, cancelled: boolean, status }
-//   → 400/401/403/404/405/500 mirrors /api/stories/render
-//
-// Auth: Bearer token + service-role read + manual owner check (same as render).
+// Cooperative cancel: a synchronous render can't be killed, so this flips the
+// row to 'failed' ('cancelled by user'; there is no 'cancelled' status) and the
+// render discards its output when it sees the row is no longer 'rendering'.
 
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../../server/sentryServer.js'
-
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../../server/env.js'
+import { serviceClient } from '../../server/supabase.js'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const STUDIO_STYLE = 'studio'
@@ -30,7 +16,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Allow', 'POST')
     return res.status(405).json({ ok: false, error: 'method_not_allowed' })
   }
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+  const adminClient = serviceClient()
+  if (!adminClient) {
     return res.status(500).json({ ok: false, error: 'server_misconfigured' })
   }
 
@@ -55,11 +42,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   if (userErr || !userData?.user) return res.status(401).json({ ok: false, error: 'unauthenticated' })
   const userId = userData.user.id
 
-  const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
 
-  // Verify the caller owns the gallery.
   const { data: gallery, error: galleryErr } = await adminClient
     .from('galleries')
     .select('id, businesses!inner(user_id)')
@@ -73,10 +56,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).json({ ok: false, error: 'not_owner' })
   }
 
-  // Flip the in-flight row(s) out of the active states. Scope to the specific
-  // renderId when provided; otherwise cancel whatever studio render is in flight
-  // for this gallery. The `.in(status,...)` guard makes this idempotent — a
-  // finished/failed row is left untouched.
+  // Without a renderId, cancel whatever studio render is in flight. The status
+  // guard leaves finished rows untouched, so this is idempotent.
   let update = adminClient
     .from('story_renders')
     .update({ status: 'failed', error_message: 'cancelled by user' })

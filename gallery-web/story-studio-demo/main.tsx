@@ -2,6 +2,7 @@
 // Synthetic images only (SVG data-URIs) — no customer data.
 import React from "react";
 import { createRoot } from "react-dom/client";
+import "../src/styles/index.css"; // the editor is styled with Tailwind utilities
 import { StoryStudioEditor } from "../src/features/story-studio/StoryStudioEditor";
 import type { PlannerImage } from "../src/features/story-studio/planner";
 import type { ScenePlan } from "../src/features/story-studio/sceneplan";

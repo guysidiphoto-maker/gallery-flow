@@ -1,5 +1,4 @@
-// ownerAuth.ts — server-side JWT gate for owner endpoints.
-// Validates the Supabase Bearer token with the service-role client.
+// JWT gate for owner endpoints: validates the Supabase Bearer token.
 
 import type { VercelRequest } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'

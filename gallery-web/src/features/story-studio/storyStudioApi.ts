@@ -1,6 +1,5 @@
-// storyStudioApi.ts — client helpers the editor/Dashboard use to talk to the
-// Story Studio endpoints. The access token is the Supabase session JWT
-// (supabase.auth.getSession()); the server verifies gallery ownership from it.
+// Client helpers for the Story Studio endpoints. The token is the Supabase session JWT; the
+// server verifies gallery ownership from it.
 
 import { stripForPersistence } from "./serverPlan";
 import type { ScenePlan } from "./sceneplan";
@@ -30,7 +29,6 @@ export async function saveDraft(
   const res = await fetch(`/api/stories/draft`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-    // Send a persistence-clean plan (no volatile src / dev _reason).
     body: JSON.stringify({ galleryId, scenePlan: stripForPersistence(plan), title }),
   });
   if (!res.ok) {
@@ -66,9 +64,8 @@ export async function requestStudioRender(
 }
 
 /**
- * Cancel the in-flight studio render for a gallery (cooperative — the running
- * render discards its artifacts when it sees the row is no longer 'rendering').
- * Safe to call even if nothing is in flight (returns cancelled:false).
+ * Cooperative cancel: the running render discards its output once the row leaves 'rendering'.
+ * Safe to call when nothing is in flight (cancelled:false).
  */
 export async function cancelRender(
   galleryId: string,
@@ -99,16 +96,3 @@ export async function getRenderStatus(renderId: string, accessToken: string): Pr
   return (await res.json()) as RenderStatus;
 }
 
-/**
- * Wire this into the editor via `onSave`. Debounce lives in the editor; this just
- * fires the request. Example (Dashboard):
- *   const token = (await supabase.auth.getSession()).data.session?.access_token
- *   <StoryStudioEditor onSave={(plan) => saveDraft(galleryId, plan, token!)} ... />
- */
-export function makeAutosave(galleryId: string, getToken: () => Promise<string | null>) {
-  return async (plan: ScenePlan) => {
-    const token = await getToken();
-    if (!token) return;
-    await saveDraft(galleryId, plan, token);
-  };
-}

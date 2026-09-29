@@ -40,6 +40,17 @@
   --color-night-muted: rgb(255 255 255 / 0.65);
   --color-scrim: rgb(0 0 0 / 0.72);
 
+  /* ── Story Studio video editor (dark, amber accent) ── */
+  --color-studio: #0d0d10;
+  --color-studio-panel: #17171c;
+  --color-studio-line: #2a2a32;
+  --color-studio-text: #e9e9ee;
+  --color-studio-muted: #9a9aa6;
+  --color-studio-accent: #b45309;
+  --color-studio-ok: #4ade80;
+  --color-studio-warn: #fbbf24;
+  --color-studio-error: #f87171;
+
   /* ── Marketing site ── */
   --color-brand: #6366f1;         /* indigo — marketing CTAs */
   --color-brand-soft: #818cf8;
@@ -50,6 +61,7 @@
   --font-sans: 'Inter Tight', 'Noto Sans Hebrew', 'Heebo', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Playfair Display', 'Frank Ruhl Libre', Georgia, serif;
   --font-serif: Georgia, 'Times New Roman', 'Frank Ruhl Libre', serif;
+  --font-studio: system-ui, 'Segoe UI', Arial, sans-serif;
 
   --text-eyebrow: 11px;           /* uppercase wide-tracked labels */
   --text-eyebrow--letter-spacing: 0.18em;
@@ -69,6 +81,8 @@
   --shadow-soft: 0 1px 2px rgb(20 20 19 / 0.06);
   --shadow-card: 0 8px 24px rgb(20 20 19 / 0.1);
   --shadow-pop: 0 24px 64px rgb(20 20 19 / 0.16);
+  --shadow-studio: 0 8px 40px rgb(0 0 0 / 0.6);
+  --text-shadow-studio: 0 1px 3px #000;
 
   /* ── Motion ── */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);

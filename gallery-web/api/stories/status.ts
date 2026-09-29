@@ -1,38 +1,16 @@
-// stories/status.ts — Polled by the Dashboard while a render is in flight.
-//
-// GET /api/stories/status?renderId=<uuid>
-//   → 200 { ok: true, status: 'queued'|'rendering'|'ready'|'failed',
-//           renderId, output_path?, error_message? }
-//   → 400 { ok: false, error: 'invalid_render_id' }
-//   → 401 { ok: false, error: 'unauthenticated' }
-//   → 403 { ok: false, error: 'not_owner' }
-//   → 404 { ok: false, error: 'render_not_found' }
-//   → 500 { ok: false, error: 'server_misconfigured' | 'lookup_failed' }
-//
-// Side-effect on `status='ready'`:
-//   When the Lambda completion path writes back output_path on the
-//   story_renders row, this endpoint inserts a matching row into the public
-//   `stories` table (idempotent — ON CONFLICT DO NOTHING via a unique check)
-//   so the public viewer surfaces the mp4 with zero client writes.
-//
-// Auth model mirrors /api/stories/render: Bearer token + service-role read
-// + manual owner check (deterministic 403 over an empty 404).
+// Polled while a render is in flight. When a render is 'ready' it also bridges
+// the row into the public `stories` table (idempotent on storage_path) so the
+// viewer picks up the mp4 without any client writes.
 
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../../server/sentryServer.js'
-
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-const SUPABASE_ANON_KEY =
-  process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../../server/env.js'
+import { serviceClient } from '../../server/supabase.js'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// Story length defaults to 30s in the Phase 0 Clean composition. We persist
-// the same default in the public `stories.duration` column so the viewer's
-// progress bar matches what the renderer produced.
+// Matches the Clean composition's default length so the viewer's progress bar lines up.
 const DEFAULT_STORY_DURATION_SECONDS = 30
 
 async function handler(req: VercelRequest, res: VercelResponse) {
@@ -41,11 +19,11 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ ok: false, error: 'method_not_allowed' })
   }
 
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+  const adminClient = serviceClient()
+  if (!adminClient) {
     return res.status(500).json({ ok: false, error: 'server_misconfigured' })
   }
 
-  // ── Input validation ───────────────────────────────────────────────────
   const renderIdRaw = typeof req.query.renderId === 'string'
     ? req.query.renderId.trim()
     : ''
@@ -53,7 +31,6 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ ok: false, error: 'invalid_render_id' })
   }
 
-  // ── Auth ───────────────────────────────────────────────────────────────
   const authHeader = req.headers.authorization || ''
   const accessToken = authHeader.startsWith('Bearer ')
     ? authHeader.slice('Bearer '.length).trim()
@@ -72,13 +49,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const userId = userData.user.id
 
-  const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
 
-  // ── Fetch render row + owning gallery in one shot ─────────────────────
-  // The join shape mirrors /api/stories/render so the owner check is
-  // identical across the two endpoints.
   const { data: row, error: rowErr } = await adminClient
     .from('story_renders')
     .select('id, gallery_id, style, status, lambda_render_id, error_message, output_path, galleries!inner(id, business_id, businesses!inner(user_id))')
@@ -92,8 +63,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(404).json({ ok: false, error: 'render_not_found' })
   }
 
-  // Walk the join to the owning user. The Supabase types sometimes union
-  // nested joins with arrays — cast defensively (same pattern as render.ts).
+  // Nested joins may come back as arrays; cast defensively.
   const gj = (row as { galleries?: unknown }).galleries
   const galleryObj = Array.isArray(gj) ? gj[0] : gj
   const bizObj = (galleryObj as { businesses?: unknown } | undefined)?.businesses
@@ -103,11 +73,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).json({ ok: false, error: 'not_owner' })
   }
 
-  // ── Side-effect: surface a 'ready' render to the public stories table ─
-  // The Lambda completion path writes output_path + status='ready' onto
-  // story_renders. The viewer reads from the public `stories` table, so we
-  // bridge the two here. We key on storage_path so retries of this endpoint
-  // (or multiple browser tabs polling) don't create duplicate rows.
+  // Keyed on storage_path so repeated polls (or several tabs) don't duplicate rows.
   if (row.status === 'ready' && row.output_path) {
     try {
       const { data: existingStory } = await adminClient
@@ -124,8 +90,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
         })
       }
     } catch (err) {
-      // Best-effort — if the public row already exists or the insert races,
-      // we still return the underlying render status so the UI moves on.
+      // Best-effort: still return the render status so the UI moves on.
       const msg = err instanceof Error ? err.message : 'unknown'
       console.error('[stories/status] stories upsert soft-failed', msg)
     }

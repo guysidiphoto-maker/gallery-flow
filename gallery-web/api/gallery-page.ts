@@ -52,14 +52,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
 </html>`)
   }
 
-  // Bots: serve OG tags.
-  //
-  // Resolution prefers the query params the vercel.json rewrite injects
-  // (?biz=&gallery=&section= / ?biz=&legacyId=) — a Vercel rewrite to
-  // /api/gallery-page does NOT preserve the original path in req.url, so the
-  // old path-parsing branch silently failed for every clean/legacy share link
-  // (only /gallery/:id worked, because share.ts gets ?id= explicitly). We fall
-  // back to parsing req.url so a direct hit still resolves.
+  // Bots: OG tags. Prefer the query params the vercel.json rewrite injects (a
+  // rewrite doesn't preserve the original path); parse req.url for direct hits.
   const q = req.query as Record<string, string | string[] | undefined>
   const qStr = (v: string | string[] | undefined): string | null =>
     Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
@@ -121,10 +115,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     sectionName = (sec?.name as string) ?? null
   }
 
-  // Escape every photographer-controlled value before it lands in HTML
-  // attributes — a gallery/studio/section name (or a crafted coverImageUrl)
-  // containing `"` or `<` would otherwise break out of the attribute and
-  // inject tags into the crawler-facing markup. (share.ts already does this.)
+  // Photographer-controlled values would otherwise break out of HTML attributes.
   const escapeHtml = (str: string): string =>
     str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
        .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -133,10 +124,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   const baseTitle = (s.galleryTitle as string) || (gallery.name as string) || 'Gallery'
   const title = sectionName ? `${baseTitle} — ${sectionName}` : baseTitle
   const studioName = (s.studioName as string) || ''
-  // Prefer the photographer's own text (welcome message / gallery description)
-  // for the share card. The old "{title} — {N} photos" format repeated the
-  // gallery name (already the og:title) and leaned on gallery.image_count — a
-  // cached, frequently-stale counter that under-reports the real photo count.
+  // Prefer the photographer's own text; image_count is a stale cached counter.
   const welcomeText = (
     (s.welcomeMessage as string) || (s.galleryDescription as string) || ''
   ).trim()
@@ -146,10 +134,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       ? `${title} by ${studioName}`
       : title
 
-  // Wrap a storage object path in a bounded Supabase image transform. In the
-  // originals-only model web_preview_path points at the multi-MB original;
-  // WhatsApp/Facebook reject preview images over ~300KB, so serving the raw
-  // original means NO link preview. A 1200×630 cover transform is ~130KB.
+  // web_preview_path may be a multi-MB original and WhatsApp/Facebook reject
+  // previews over ~300KB, so serve a 1200x630 transform (~130KB).
   const ogTransform = (path: string): string =>
     `${SUPABASE_URL}/storage/v1/render/image/public/gallery-images/${path}?width=1200&height=630&resize=cover&quality=70`
 

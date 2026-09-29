@@ -1,37 +1,18 @@
-// api/stories/draft.ts — Story Studio draft persistence (owner-only).
-//
-//   GET  /api/stories/draft?galleryId=<uuid>   -> { scenePlan | null, title }
-//   PUT  /api/stories/draft { galleryId, scenePlan, title? } -> { ok, savedAt }
-//
-// Autosave from the editor lands here. Writes go through the SERVICE ROLE after
-// verifying the caller owns the gallery — identical trust model to
-// /api/stories/render (no anon/authenticated UPDATE policy exists on
-// story_renders; only this verified endpoint mutates rows). The submitted plan
-// is validated + hardened by resolveAndValidatePlan (tenant isolation, no
-// foreign images, no markup injection) before it is stored.
-//
-// DB DEPENDENCY (unresolved by design): needs the additive columns
-//   story_renders.scene_plan (jsonb), .title (text), .draft_updated_at (tstz),
-//   the 'draft' status value, and the one-draft-per-gallery partial-unique index
-// from docs/story-studio/provisional-migration/. That migration is NOT applied
-// to any shared environment yet, so this endpoint is wired + typechecked but not
-// live until the migration lands (see MIGRATION-INVENTORY-AND-COLLISION-PROOF).
+// Story Studio draft autosave (GET/PUT, owner-only). Writes go through the
+// service role after an owner check, and the plan is re-validated by
+// resolveAndValidatePlan before storage (tenant isolation, no injection).
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../../server/sentryServer.js'
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../../server/env.js'
+import { serviceClient } from '../../server/supabase.js'
 import {
   resolveAndValidatePlan,
   stripForPersistence,
   type OwnerImage,
 } from './_scenePlanGuard.js'
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-
-// Edge-validate the gallery id shape, matching render/status/cancel. Downstream
-// checks already reject bad ids, but validating here keeps the endpoints consistent.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 interface OwnerCtx {
@@ -44,6 +25,7 @@ interface OwnerCtx {
 async function authorizeOwner(
   req: VercelRequest,
   res: VercelResponse,
+  adminClient: SupabaseClient,
   galleryId: string,
 ): Promise<OwnerCtx | null> {
   const authHeader = req.headers.authorization || ''
@@ -61,9 +43,6 @@ async function authorizeOwner(
     res.status(401).json({ error: 'unauthorized' })
     return null
   }
-  const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
   const { data: gallery, error: gErr } = await adminClient
     .from('galleries')
     .select('id, business_id, businesses!inner(user_id)')
@@ -108,7 +87,8 @@ async function loadOwnerImages(admin: SupabaseClient, galleryId: string): Promis
 }
 
 async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+  const adminClient = serviceClient()
+  if (!adminClient) {
     res.status(500).json({ error: 'server_misconfigured' })
     return
   }
@@ -119,7 +99,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       res.status(400).json({ error: 'invalid_gallery_id' })
       return
     }
-    const ctx = await authorizeOwner(req, res, galleryId)
+    const ctx = await authorizeOwner(req, res, adminClient, galleryId)
     if (!ctx) return
     const { data, error } = await ctx.adminClient
       .from('story_renders')
@@ -150,7 +130,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       res.status(400).json({ error: 'missing_scene_plan' })
       return
     }
-    const ctx = await authorizeOwner(req, res, galleryId)
+    const ctx = await authorizeOwner(req, res, adminClient, galleryId)
     if (!ctx) return
 
     const { images } = await loadOwnerImages(ctx.adminClient, galleryId)
@@ -165,9 +145,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     const toStore = stripForPersistence(result.plan)
     const title = typeof body.title === 'string' ? body.title.slice(0, 120) : null
 
-    // One draft per gallery. The partial-unique index (WHERE status='draft')
-    // can't back a plain ON CONFLICT, so replace explicitly: delete the existing
-    // draft, then insert. (Owner-scoped; safe under the single-writer endpoint.)
+    // One draft per gallery; a partial-unique index can't back ON CONFLICT,
+    // so delete then insert.
     await ctx.adminClient
       .from('story_renders')
       .delete()
@@ -183,7 +162,6 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       draft_updated_at: new Date().toISOString(),
     })
     if (upErr) {
-      // Log detail server-side; return only a stable code (no raw DB text).
       console.error('[stories/draft] write failed', upErr.message)
       res.status(500).json({ error: 'draft_write_failed' })
       return

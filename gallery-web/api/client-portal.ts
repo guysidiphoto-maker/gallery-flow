@@ -1,18 +1,6 @@
-// client-portal.ts — client-facing Client Portal V2 endpoint (service-role).
-//
-// Two actions:
-//   • validate_invitation — resolve an invite token (its sha256 hash) to the
-//     invited email + client name + validity, so the accept page can render
-//     without leaking anything. Returns { valid:false } for unknown/expired.
-//   • accept_invitation — bind a Supabase Auth user to the membership. If the
-//     email is NEW, create the account with the chosen password (email_confirm).
-//     If the email ALREADY has an account (person belongs to another client),
-//     bind to it WITHOUT changing its password (no account hijack) and tell the
-//     client to log in with their existing credentials. On any binding failure
-//     a just-created user is rolled back.
-//
-// The portal DATA path is NOT here — the authenticated client calls the
-// self-scoped `client_portal_bootstrap()` RPC directly with its session.
+// Client-facing invitation endpoint: validate_invitation and accept_invitation.
+// Accepting with an email that already has an account binds to it without
+// touching its password (no hijack); a just-created user is rolled back on failure.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
