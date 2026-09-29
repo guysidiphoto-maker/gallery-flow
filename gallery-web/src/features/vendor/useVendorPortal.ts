@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { listGalleryNames } from '@/shared/data/galleries'
+import { listImagesByIds } from '@/shared/data/images'
+import { getVendorByCode, listVendorImageTags } from '@/shared/data/vendors'
 
 export interface VendorInfo {
   id: string; name: string; category: string; logo_url: string | null
@@ -35,7 +37,7 @@ export function useVendorPortal() {
     if (!code) { setError('No vendor code in URL'); setLoading(false); return }
     load()
     async function load() {
-      const { data: vData } = await supabase.rpc('get_vendor_by_code', { p_code: code })
+      const { data: vData } = await getVendorByCode(code)
       if (!vData || (Array.isArray(vData) && vData.length === 0)) {
         setError('Invalid vendor code')
         setLoading(false)
@@ -44,10 +46,7 @@ export function useVendorPortal() {
       const v = Array.isArray(vData) ? vData[0] : vData
       setVendor(v)
 
-      const { data: tags } = await supabase
-        .from('image_vendor_tags')
-        .select('image_id, gallery_id')
-        .eq('vendor_id', v.id)
+      const { data: tags } = await listVendorImageTags(v.id)
 
       if (!tags || tags.length === 0) {
         setError('No photos tagged for you yet')
@@ -59,13 +58,8 @@ export function useVendorPortal() {
       const galleryIds = [...new Set(tags.map(t => t.gallery_id))]
 
       const [imgsRes, galsRes] = await Promise.all([
-        supabase.from('images')
-          .select('id, gallery_id, filename, storage_path:web_preview_path, thumbnail_path')
-          .in('id', imageIds)
-          .order('sort_order', { ascending: true }),
-        supabase.from('galleries')
-          .select('id, name, published_at')
-          .in('id', galleryIds),
+        listImagesByIds(imageIds),
+        listGalleryNames(galleryIds),
       ])
 
       if (imgsRes.data) {

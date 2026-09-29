@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { claimCustomDomain, clearCustomDomain, getCustomDomain, getMyPlan } from '@/shared/data/businesses'
 
 export type CustomDomainStatus = 'unverified' | 'pending_dns' | 'verified' | 'error'
 
@@ -8,8 +8,6 @@ type DomainRow = {
   custom_domain_status?: CustomDomainStatus | null
   custom_domain_verification_token?: string | null
 } | null
-
-const DOMAIN_COLUMNS = 'custom_domain, custom_domain_status, custom_domain_verification_token'
 
 function domainErrorToHebrew(code: string | undefined): string {
   switch (code) {
@@ -45,9 +43,7 @@ export function useCustomDomain(businessId: string | null) {
     if (!businessId) return
     let cancelled = false
     void (async () => {
-      const planPromise = supabase.rpc('get_my_plan')
-      const bizPromise = supabase.from('businesses').select(DOMAIN_COLUMNS).eq('id', businessId).maybeSingle()
-      const [{ data: planRows }, { data: bizRow }] = await Promise.all([planPromise, bizPromise])
+      const [{ data: planRows }, { data: bizRow }] = await Promise.all([getMyPlan(), getCustomDomain(businessId)])
       if (cancelled) return
       const plan = Array.isArray(planRows) ? planRows[0] : planRows
       setEnabled(Boolean((plan as { custom_domain_enabled?: boolean } | null)?.custom_domain_enabled))
@@ -70,7 +66,7 @@ export function useCustomDomain(businessId: string | null) {
     setSaving(true)
     setError(null)
     try {
-      const { data, error: rpcError } = await supabase.rpc('set_business_custom_domain', { p_domain: candidate })
+      const { data, error: rpcError } = await claimCustomDomain(candidate)
       if (rpcError) {
         setError('שגיאה בשמירה — נסו שוב')
         return
@@ -91,7 +87,7 @@ export function useCustomDomain(businessId: string | null) {
 
   async function recheck() {
     if (!businessId) return
-    const { data } = await supabase.from('businesses').select(DOMAIN_COLUMNS).eq('id', businessId).maybeSingle()
+    const { data } = await getCustomDomain(businessId)
     if (data) applyRow(data as DomainRow)
   }
 
@@ -99,16 +95,7 @@ export function useCustomDomain(businessId: string | null) {
     if (!businessId) return
     setSaving(true)
     try {
-      await supabase
-        .from('businesses')
-        .update({
-          custom_domain: null,
-          custom_domain_status: 'unverified',
-          custom_domain_verification_token: null,
-          custom_domain_added_at: null,
-          custom_domain_verified_at: null,
-        })
-        .eq('id', businessId)
+      await clearCustomDomain(businessId)
       applyRow(null)
       setError(null)
     } finally {

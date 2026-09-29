@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { getActiveEvent } from '@/shared/data/events'
 import type { EventConfig } from '@/shared/types'
 import { cleanPhone, flushQueue, isValidPhone, queueLead } from './leadQueue'
 
@@ -30,12 +30,7 @@ export function useEventCapture() {
   useEffect(() => {
     if (!eventId) { setPhase('error'); return }
 
-    supabase
-      .from('events')
-      .select('id, business_id, gallery_id, name, gallery_url, welcome_text, logo_url, is_active, created_at')
-      .eq('id', eventId)
-      .eq('is_active', true)
-      .maybeSingle()
+    getActiveEvent(eventId)
       .then(({ data, error }) => {
         if (error || !data) { setPhase('error'); return }
         setEvent(data as EventConfig)

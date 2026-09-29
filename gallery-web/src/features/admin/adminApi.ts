@@ -1,5 +1,3 @@
-import { supabase } from '@/shared/lib/supabase'
-
 export type UserRow = {
   business_id: string
   email: string | null
@@ -22,21 +20,6 @@ export type GrantRow = {
   reason: string | null
   request_id: string | null
   created_at: string
-}
-
-/** Call the `admin` edge function; surfaces the HTTP status + JSON body of a FunctionsHttpError. */
-export async function invokeAdmin(action: string, payload: Record<string, unknown> = {}) {
-  const { data, error } = await supabase.functions.invoke('admin', { body: { action, ...payload } })
-  if (error) {
-    let status = 0, detail = ''
-    const ctx = (error as { context?: Response }).context
-    if (ctx && typeof ctx.status === 'number') {
-      status = ctx.status
-      try { detail = JSON.stringify(await ctx.json()) } catch { /* ignore */ }
-    }
-    return { data: null, status, detail, error }
-  }
-  return { data, status: 200, detail: '', error: null }
 }
 
 export const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString('he-IL') : '—')

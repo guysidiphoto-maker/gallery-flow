@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { getActiveQuestionnaire } from '@/shared/data/questionnaires'
 import type { QuestionnaireConfig } from '@/shared/types'
 
 export type Phase = 'loading' | 'form' | 'submitting' | 'done' | 'error'
@@ -30,16 +30,7 @@ export function useQuestionnaire() {
   useEffect(() => {
     if (!idOrSlug) { setPhase('error'); return }
 
-    const query = supabase
-      .from('questionnaires')
-      .select('*')
-      .eq('is_active', true)
-
-    const fetcher = UUID_RE.test(idOrSlug)
-      ? query.eq('id', idOrSlug)
-      : query.eq('slug', idOrSlug)
-
-    fetcher.maybeSingle().then(({ data, error }) => {
+    getActiveQuestionnaire(UUID_RE.test(idOrSlug) ? { id: idOrSlug } : { slug: idOrSlug }).then(({ data, error }) => {
       if (error || !data) { setPhase('error'); return }
       setConfig(data as QuestionnaireConfig)
       setPhase('form')

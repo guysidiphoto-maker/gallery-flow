@@ -1,4 +1,5 @@
-import { supabase } from '@/shared/lib/supabase'
+import { getBusinessSlug } from '@/shared/data/businesses'
+import { getClientPortalBootstrap } from '@/shared/data/clientPortal'
 
 export interface PortalMembership {
   membership_id: string
@@ -35,14 +36,13 @@ function hasMemberships(v: unknown): v is Pick<PortalBootstrap, 'authenticated' 
  * when both slugs are known, else the legacy UUID form.
  */
 export async function resolveDashboardUrl(): Promise<string | null> {
-  const { data, error } = await supabase.rpc('client_portal_bootstrap')
+  const { data, error } = await getClientPortalBootstrap()
   if (error || !hasMemberships(data)) return null
   if (!data.authenticated || data.memberships.length === 0) return null
   const m = data.memberships[0]
   if (m.client_slug) {
     // The bootstrap payload doesn't carry the business slug.
-    const { data: biz } = await supabase
-      .from('businesses').select('slug').eq('id', m.business_id).maybeSingle()
+    const { data: biz } = await getBusinessSlug(m.business_id)
     const bizSlug = (biz?.slug as string | undefined) ?? null
     if (bizSlug) return `/${bizSlug}/c/${m.client_slug}`
   }
