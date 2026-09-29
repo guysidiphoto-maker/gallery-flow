@@ -1,14 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { deleteImage, deleteImages, updateImage, updateImages } from '@/shared/data/images'
 import { updateGallery } from '@/shared/data/galleries'
-import { clearSignedUrlCache } from '@/shared/lib/signedStorage'
 import { readCoverConfig } from '@/shared/gallery/coverImage'
-import { replacePhoto, ReplacePhotoError } from '../../lib/replacePhoto'
 import { purgeStorageForImages } from '../../lib/purgeStorage'
 import { moveItem, persistSortOrder } from '../../lib/reorder'
 import { downloadImage } from '../../lib/download'
 import { orderedSectionImages, sectionImages, type PhotoSort } from '../../lib/photoOrder'
-import { imgUrl } from '../useCover'
+import { usePhotoReplace } from './usePhotoReplace'
 import type { Confirm, GalleryImage, Toast } from '../../types'
 import type { EditorSession } from '../useEditorSession'
 
@@ -32,10 +30,8 @@ export function usePhotoActions(deps: {
   // Lightbox images are snapshotted at open so next/prev stays in that grid.
   const [viewerImages, setViewerImages] = useState<GalleryImage[] | null>(null)
   const [viewerIndex, setViewerIndex] = useState<number>(0)
-  // Non-null while a replace is in flight (tile spinner + double-fire guard).
-  const [replacingImageId, setReplacingImageId] = useState<string | null>(null)
-  const replaceInputRef = useRef<HTMLInputElement>(null)
-  const replaceTargetRef = useRef<string | null>(null)
+  const { replacingImageId, replaceInputRef, openReplacePicker, handleReplaceFile } =
+    usePhotoReplace({ session, businessSlug, updateGallerySettings, showToast })
 
   function exitSelectMode() {
     setSelectMode(false)
@@ -196,55 +192,6 @@ export function usePhotoActions(deps: {
       showToast({ kind: 'success', text: 'שם הקובץ הועתק' })
     } catch {
       showToast({ kind: 'error', text: 'ההעתקה נכשלה' })
-    }
-  }
-
-  function openReplacePicker(imageId: string) {
-    if (replacingImageId) return
-    replaceTargetRef.current = imageId
-    replaceInputRef.current?.click()
-  }
-
-  // Swaps the pixels but keeps the photo's identity (section, order, picks,
-  // favourites, cover role). The lib uploads first and deletes the old object
-  // last, so any failure leaves the original usable.
-  async function handleReplaceFile(file: File) {
-    const imageId = replaceTargetRef.current
-    replaceTargetRef.current = null
-    if (!file || !imageId || !editingGallery || !businessSlug) return
-    setReplacingImageId(imageId)
-    try {
-      const res = await replacePhoto({
-        galleryId: editingGallery.id,
-        imageId,
-        businessSlug,
-        file,
-        // Re-point a cover to the new pixels before the old object is deleted.
-        onRepointCover: async (newPath) => {
-          await updateGallerySettings({
-            coverImagePath: newPath,
-            coverImageUrl: imgUrl(newPath),
-          })
-        },
-      })
-      setGalleryImages(prev => prev.map(i =>
-        i.id === imageId
-          ? { ...i, storage_path: res.newPath, thumbnail_path: res.newPath, original_path: res.newPath, filename: res.filename }
-          : i,
-      ))
-      clearSignedUrlCache()
-      markDirty()
-      showToast({ kind: 'success', text: 'התמונה הוחלפה' })
-    } catch (e) {
-      const reason = e instanceof ReplacePhotoError ? e.reason : undefined
-      const msg = reason === 'heic' ? 'HEIC אינו נתמך. המירו ל-JPEG'
-        : reason === 'too_large' ? 'הקובץ גדול מדי'
-        : reason === 'unsupported' ? 'פורמט לא נתמך (JPEG / PNG / WebP בלבד)'
-        : 'החלפת התמונה נכשלה. התמונה המקורית נשמרה'
-      showToast({ kind: 'error', text: msg })
-      console.warn('[handleReplaceFile] replace failed', e)
-    } finally {
-      setReplacingImageId(null)
     }
   }
 
