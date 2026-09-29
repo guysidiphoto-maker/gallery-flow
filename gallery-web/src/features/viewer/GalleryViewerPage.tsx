@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { storageUrl, displayUrl } from '@/shared/lib/supabase'
 import { gateCoverBackgroundUrl } from '@/shared/gallery/coverImage'
 import { t } from '@/shared/i18n/viewerStrings'
@@ -19,10 +19,8 @@ import { usePreloadThumbs, useVisibleImages } from './hooks/useVisibleImages'
 import { GalleryLoading, GalleryNotFound } from './components/GalleryStatus'
 import { PasswordGate } from './components/PasswordGate'
 import { WelcomeScreen } from './components/welcome/WelcomeScreen'
-import { RoleSelectScreen } from './components/RoleSelectScreen'
 import { FaceSearchOverlay } from './components/FaceSearchOverlay'
 import { SkipLink } from './components/SkipLink'
-import { TurnstileOverlay } from './components/TurnstileOverlay'
 import { FeedHeader } from './components/FeedHeader'
 import { Hero } from './components/hero/Hero'
 import { DefaultHeroContent } from './components/hero/DefaultHeroContent'
@@ -32,16 +30,11 @@ import { SectionNav } from './components/SectionNav'
 import { GalleryToolbar } from './components/toolbar/GalleryToolbar'
 import { GalleryGrids, type SharedGridProps } from './components/GalleryGrids'
 import { GalleryFooter } from './components/GalleryFooter'
-import { Viewer } from './components/Lightbox'
 import { DownloadToasts } from './components/downloads/DownloadToasts'
-import { DownloadEmailGate } from './components/DownloadEmailGate'
 import { DownloadProgress } from './components/downloads/DownloadProgress'
 import { MobileDownloadBar } from './components/downloads/MobileDownloadBar'
+import { DownloadEmailGate, loadLightbox, RoleSelectScreen, StoryPlayer, TurnstileOverlay, Viewer } from './components/lazyViews'
 
-// Opened only on a story tap, so the autoplay player stays out of the initial bundle.
-const StoryPlayer = lazy(() =>
-  import('./components/StoryPlayer').then(m => ({ default: m.StoryPlayer })),
-)
 
 const storyUrl = (st: Story) => storageUrl('gallery-stories', st.storage_path)
 
@@ -74,6 +67,14 @@ export function GalleryViewerPage() {
     images, sections, hiddenImageIds: client.hiddenImageIds, viewerRole: client.viewerRole,
     faceMatchIds: face.faceMatchIds, faceFilterActive: face.faceFilterActive,
   })
+
+  // Warm the lightbox chunk once the grid is up so the first tap opens instantly.
+  const gridShown = !!gallery && !showWelcome
+  useEffect(() => {
+    if (!gridShown) return
+    const id = setTimeout(() => { void loadLightbox() }, 1500)
+    return () => clearTimeout(id)
+  }, [gridShown])
 
   if (error) return <GalleryNotFound />
   if (!gallery) return <GalleryLoading />
@@ -139,16 +140,18 @@ export function GalleryViewerPage() {
 
   if (settings.clientSelectionEnabled && client.viewerRole === 'none') {
     return (
-      <RoleSelectScreen
-        txt={txt}
-        studioName={studioName}
-        galleryTitle={galleryTitle}
-        codeInput={client.clientCodeInput}
-        codeError={client.clientCodeError}
-        onGuest={client.chooseGuest}
-        onCodeChange={client.changeClientCode}
-        onCodeSubmit={client.submitClientCode}
-      />
+      <Suspense fallback={null}>
+        <RoleSelectScreen
+          txt={txt}
+          studioName={studioName}
+          galleryTitle={galleryTitle}
+          codeInput={client.clientCodeInput}
+          codeError={client.clientCodeError}
+          onGuest={client.chooseGuest}
+          onCodeChange={client.changeClientCode}
+          onCodeSubmit={client.submitClientCode}
+        />
+      </Suspense>
     )
   }
 
@@ -190,7 +193,11 @@ export function GalleryViewerPage() {
   return (
     <>
       <SkipLink label={lang === 'he' ? 'דלג לגלריה' : 'Skip to gallery'} />
-      {session.turnstileSiteKey && <TurnstileOverlay siteKey={session.turnstileSiteKey} onToken={session.onTurnstileToken} />}
+      {session.turnstileSiteKey && (
+        <Suspense fallback={null}>
+          <TurnstileOverlay siteKey={session.turnstileSiteKey} onToken={session.onTurnstileToken} />
+        </Suspense>
+      )}
       {settings.isFeedMode && <FeedHeader galleryTitle={galleryTitle} studioName={studioName} />}
 
       <Hero bgUrl={heroBgUrl} hasCustomCover={!!(covers.resolvedCoverUrl || covers.coverUrl)} hidden={settings.isFeedMode}>
@@ -289,16 +296,18 @@ export function GalleryViewerPage() {
       )}
 
       {viewerIndex !== null && (
-        <Viewer
-          images={viewerList ?? images}
-          index={viewerIndex}
-          imgBucket={imgBucket}
-          allowDownloads={downloadsEnabled}
-          downloadLabel={downloadLabel}
-          onClose={() => { setViewerIndex(null); setViewerList(null) }}
-          onNavigate={setViewerIndex}
-          onDownload={downloads.handleImageDownload}
-        />
+        <Suspense fallback={null}>
+          <Viewer
+            images={viewerList ?? images}
+            index={viewerIndex}
+            imgBucket={imgBucket}
+            allowDownloads={downloadsEnabled}
+            downloadLabel={downloadLabel}
+            onClose={() => { setViewerIndex(null); setViewerList(null) }}
+            onNavigate={setViewerIndex}
+            onDownload={downloads.handleImageDownload}
+          />
+        </Suspense>
       )}
 
       {face.showFaceSearch && (
@@ -316,7 +325,9 @@ export function GalleryViewerPage() {
       />
 
       {downloads.emailGateOpen && (
-        <DownloadEmailGate lang={lang} onSubmit={downloads.submitEmail} onClose={downloads.closeEmailGate} />
+        <Suspense fallback={null}>
+          <DownloadEmailGate lang={lang} onSubmit={downloads.submitEmail} onClose={downloads.closeEmailGate} />
+        </Suspense>
       )}
 
       {downloads.downloadProgress && (

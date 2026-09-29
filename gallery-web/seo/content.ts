@@ -428,7 +428,6 @@ export const LANDING_PAGES: LandingContent[] = [
 const LANDING_BY_PATH: Record<string, LandingContent> = Object.fromEntries(
   LANDING_PAGES.map(p => [p.path, p]),
 )
-export const LANDING_PATHS: Set<string> = new Set(LANDING_PAGES.map(p => p.path))
 
 export function getLandingByPath(path: string): LandingContent | undefined {
   const clean = path !== '/' ? path.replace(/\/+$/, '') : path

@@ -1,6 +1,8 @@
 // routes.test.ts — locks URL → page matching (incl. legacy URLs) during refactors.
 // Run:  npx tsx tests/routes.test.ts
 import { resolveRoute, isMarketingRoute } from '../src/app/routes.ts'
+import { LANDING_PAGES } from '../seo/content.ts'
+import { LANDING_PATHS } from '../seo/landingPaths.ts'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {
@@ -52,6 +54,9 @@ for (const [path, want] of CASES) {
   const got = resolveRoute(path)
   ok(`${path} → ${want}`, got === want, `got ${got}`)
 }
+
+for (const { path } of LANDING_PAGES) ok(`landing ${path} → seo-landing`, resolveRoute(path) === 'seo-landing')
+ok('landing path list matches content', LANDING_PATHS.size === LANDING_PAGES.length)
 
 ok('pixel on marketing', isMarketingRoute('home') && isMarketingRoute('blog-post') && isMarketingRoute('seo-landing'))
 ok('no pixel on product pages', !isMarketingRoute('gallery') && !isMarketingRoute('dashboard') && !isMarketingRoute(null))

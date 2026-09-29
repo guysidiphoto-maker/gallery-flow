@@ -1,7 +1,7 @@
 // Sentry user/action context. Every helper is a safe no-op when Sentry isn't
 // initialized, so feature code can call them unconditionally.
 
-import * as Sentry from '@sentry/react'
+import { loadedSentry, withSentry } from './sentry'
 
 interface SentryUser {
   id: string
@@ -10,11 +10,7 @@ interface SentryUser {
 }
 
 export function setSentryUser(user: SentryUser): void {
-  try {
-    Sentry.setUser({ id: user.id, email: user.email })
-  } catch {
-    /* observability never throws */
-  }
+  withSentry(S => S.setUser({ id: user.id, email: user.email }))
 }
 
 /** Breadcrumb for a user action; `data` passes through the PII redactor. */
@@ -23,17 +19,8 @@ export function trackAction(
   action: string,
   data?: Record<string, unknown>,
 ): void {
-  try {
-    Sentry.addBreadcrumb({
-      category,
-      message: action,
-      level: 'info',
-      data,
-      timestamp: Date.now() / 1000,
-    })
-  } catch {
-    /* observability never throws */
-  }
+  const timestamp = Date.now() / 1000
+  withSentry(S => S.addBreadcrumb({ category, message: action, level: 'info', data, timestamp }))
 }
 
 interface SentryReportContext {
@@ -53,7 +40,8 @@ export function getSentryReportContext(): SentryReportContext {
   let galleryId: string | null = null
   let gallerySlug: string | null = null
   let galleryStatus: string | null = null
-  try {
+  const Sentry = loadedSentry()
+  if (Sentry) try {
     eventId = Sentry.lastEventId() ?? null
     const scope = Sentry.getCurrentScope()
     const scopeUser = scope.getUser?.()
