@@ -1,5 +1,5 @@
 import { Icon } from '@/shared/ui/Icon'
-import { bgSubtle, border, textMuted, textPrimary, textSecondary } from '../../styles'
+import { Eyebrow } from '@/shared/ui'
 import { useEditor } from '../EditorContext'
 import { ActivityStats } from './ActivityStats'
 import { DownloadersList } from './DownloadersList'
@@ -14,44 +14,22 @@ export function ActivityTab() {
 
   return (
     <div>
-      <div style={{
-        fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-        color: textMuted, textTransform: 'uppercase',
-        marginBottom: 10,
-      }}>
-        Activity
-      </div>
-      <h3 style={{
-        fontSize: 22, fontWeight: 500, margin: '0 0 28px',
-        letterSpacing: '-0.015em', color: textPrimary,
-      }}>
+      <Eyebrow className="mb-2.5 block">Activity</Eyebrow>
+      <h3 className="mb-7 text-[22px] font-medium tracking-[-0.015em] text-ink">
         פעילות בגלריה
       </h3>
 
       {activityLoading && !activitySummary ? (
-        <div style={{
-          textAlign: 'center', padding: '60px 0',
-          color: textMuted, fontSize: 11, fontWeight: 500,
-          letterSpacing: '0.18em', textTransform: 'uppercase',
-        }}>
+        <div className="py-[60px] text-center text-[11px] font-medium tracking-label text-muted uppercase">
           Loading
         </div>
       ) : !activitySummary || (activitySummary.downloads_total === 0 && activitySummary.favorites_total === 0 && activitySummary.emails_total === 0) ? (
-        <div style={{
-          textAlign: 'center', padding: '80px 24px',
-          background: bgSubtle, border: `1px dashed ${border}`,
-        }}>
-          <Icon name="activity" size={36} strokeWidth={1.2} style={{ opacity: 0.4 }} />
-          <p style={{
-            marginTop: 16, color: textSecondary, fontSize: 14,
-            fontWeight: 500,
-          }}>
+        <div className="border border-dashed border-line bg-surface px-6 py-20 text-center">
+          <Icon name="activity" size={36} strokeWidth={1.2} className="opacity-40" />
+          <p className="mt-4 text-[14px] font-medium text-ink-soft">
             עדיין אין פעילות
           </p>
-          <p style={{
-            marginTop: 6, color: textMuted, fontSize: 11,
-            fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
-          }}>
+          <p className="mt-1.5 text-[11px] font-medium tracking-label text-muted uppercase">
             Share gallery · activity will appear here
           </p>
         </div>
