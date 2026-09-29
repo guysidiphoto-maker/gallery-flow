@@ -9,7 +9,7 @@ marketing site. Vite + React 18 SPA, Vercel functions in `api/`, Supabase backen
 src/
   main.tsx              entry: Sentry/analytics init + render
   app/                  App (route → lazy page), routes.ts (URL matching), ErrorBoundary
-  styles/               index.css (entry), tokens.css (design tokens), base.css, legacy.css (being retired)
+  styles/               index.css (entry), tokens.css (design tokens), base.css, dashboard-legacy.css (dash-* phone rules, being retired)
   shared/
     ui/                 design-system primitives (Button, Field, Modal, Toggle, Panel, Icon, cn …)
     lib/                framework-level helpers (supabase client, auth, storage signing, analytics, hooks)
