@@ -1,32 +1,21 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// scenes.ts — the Pixflow homepage story, as data.
-//
-// SINGLE SOURCE OF TRUTH for the scroll narrative: the 3D canvas
-// (Pixflow3DScene) and the static mobile/reduced-motion fallback read the same
-// array, so copy + assets never drift between the two paths.
-//
-// Positioning: guests don't look for "a gallery" — they look for themselves.
-// Photographers want to upload once, send one clean link, and let the gallery
-// do the work. Voice: natural Israeli Hebrew, sharp, human, product-led. No
-// hype, no fake metrics, no em-dashes as sentence joiners.
-// ─────────────────────────────────────────────────────────────────────────────
+// The homepage scroll story as data: the 3D canvas and the static fallback both
+// read this array, so copy and assets never drift between the two paths.
+// Voice: natural Israeli Hebrew, product-led, no hype, no fake metrics.
 
-export const ASSET_BASE = '/assets/pixflow-landing'
+const ASSET_BASE = '/assets/pixflow-landing'
 
 export interface Scene {
-  /** Stable id, also used as the section DOM id + scroll anchor. */
+  /** Stable id, also the section DOM id + scroll anchor. */
   id: string
   /** WebP under public/assets/pixflow-landing/. */
   img: string
-  /** Meaningful alt for the static fallback (a11y). */
+  /** Alt text for the static fallback image. */
   alt: string
-  /** Small uppercase kicker above the title. */
   eyebrow: string
   /** Headline (\n marks intentional line breaks). */
   title: string
-  /** Supporting line. */
   body: string
-  /** Feature chips shown as pills under the body (empty on the hero). */
+  /** Feature chips under the body (empty on the hero). */
   tags: string[]
   /** Hero only: the muted trust line under the CTAs. */
   trust?: string
@@ -81,9 +70,5 @@ export const SCENES: Scene[] = [
   },
 ]
 
-// Extra product render (not a story beat) — fed into the floating-card field so
-// the 3D depth has more variety than the five hero shots alone.
+/** Extra product render (not a story beat) that adds variety to the floating cards. */
 export const EXTRA_TEXTURES = [`${ASSET_BASE}/product-gallery.webp`]
-
-// The final beat (Scene 6) is not a 3D plane — it is a calm, static section
-// rendered by HomepageCTA. Motion settles down before the call to action.
