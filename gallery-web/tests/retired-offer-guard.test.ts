@@ -27,6 +27,16 @@ const MARKETING_FILES = [
   'src/features/marketing/pages/LandingPageHe.tsx',
   'src/features/marketing/pages/PhotographersLanding.tsx',
   'src/features/marketing/pages/PricingPage.tsx',
+  'src/features/marketing/lib/pricingTiers.ts',
+  'src/features/marketing/components/editorial/TierCard.tsx',
+  'src/features/marketing/components/editorial/FinalCta.tsx',
+  'src/features/marketing/components/landing-he/HeHero.tsx',
+  'src/features/marketing/components/landing-he/PricingTeaser.tsx',
+  'src/features/marketing/components/landing-he/PhoneDemo.tsx',
+  'src/features/marketing/components/photographers/PhotographersHero.tsx',
+  'src/features/marketing/components/photographers/PainSection.tsx',
+  'src/features/marketing/components/photographers/PricingSection.tsx',
+  'src/features/marketing/components/photographers/PlanCard.tsx',
 ]
 
 // Markers that indicate the retired one-time offer is being advertised again.

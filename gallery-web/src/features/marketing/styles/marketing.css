@@ -1,0 +1,240 @@
+/* Marketing site art direction. Values that recur across pages live here as
+   --mk-* vars (use as bg-(--mk-x) / text-(--mk-x)); layout is Tailwind in TSX.
+   Everything is layered so utilities written in components always win. */
+
+@layer components {
+  .mk-root {
+    /* Editorial (cream / sage) surfaces */
+    --mk-surface: #fbfaf7;
+    --mk-border: #e0dbd1;
+    --mk-border-strong: #cfc8bb;
+    --mk-ink-soft: #3a3a38;
+    --mk-cream-light: #f6f3ed;
+    --mk-cream-gradient: radial-gradient(120% 120% at 50% 0%, #f6f3ed 0%, #f2efe9 46%, #e9ebe0 100%);
+    --mk-sage-light: #9db089;
+    --mk-sage-mist: #e9f0e4;
+    --mk-phone: #0e0e10;
+    --mk-phone-edge: #1a1a1a;
+    --mk-night-text: #f5f3ef;
+    --mk-halo-h: 0 0 30px rgba(246, 243, 237, 0.98), 0 0 12px rgba(246, 243, 237, 0.94), 0 1px 2px rgba(246, 243, 237, 0.9);
+    --mk-halo-b: 0 0 18px rgba(246, 243, 237, 0.98), 0 0 7px rgba(246, 243, 237, 0.92);
+    --mk-halo-eyebrow: 0 0 12px rgba(246, 243, 237, 0.95);
+    --mk-scene-vignette: radial-gradient(115% 95% at 50% 40%, transparent 58%, rgba(70, 78, 58, 0.11) 100%), linear-gradient(to bottom, transparent 84%, rgba(233, 235, 224, 0.65) 100%);
+    --mk-film-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    --mk-scan-line: linear-gradient(90deg, transparent, #7b8f6e, transparent);
+    --mk-scan-glow: 0 0 14px 1px rgba(123, 143, 110, 0.4);
+    --mk-beam: linear-gradient(90deg, transparent, #9db089, transparent);
+    --mk-beam-glow: 0 0 16px 2px rgba(123, 143, 110, 0.55);
+    --mk-phone-live-shadow: 0 0 50px rgba(123, 143, 110, 0.18), 0 24px 64px rgba(20, 20, 19, 0.16);
+    --mk-phone-thumb: linear-gradient(135deg, rgba(123, 143, 110, 0.25), rgba(123, 143, 110, 0.1));
+    --mk-font-sans: 'Inter Tight', 'Heebo', 'Noto Sans Hebrew', system-ui, sans-serif;
+    --mk-font-display: 'Playfair Display', 'Frank Ruhl Libre', Georgia, serif;
+
+    /* Editorial swatches (step badges, abstract portrait tiles) */
+    --mk-swatch-tan: linear-gradient(150deg, #c8b49e, #a98f76);
+    --mk-swatch-rose: linear-gradient(150deg, #c7a6a6, #a87e7e);
+    --mk-swatch-lilac: linear-gradient(150deg, #b7a6c7, #8e7ea8);
+    --mk-swatch-sage: linear-gradient(150deg, #9fb0a0, #7b8f6e);
+    --mk-swatch-slate: linear-gradient(150deg, #a8aeb8, #7e8694);
+    --mk-swatch-ochre: linear-gradient(150deg, #c9b98f, #a8965f);
+    --mk-swatch-teal: linear-gradient(150deg, #9fafb0, #6e8a8a);
+    --mk-head-tan: #e7d8c6;
+    --mk-head-sage: #cbd6c4;
+    --mk-head-rose: #e6d2d2;
+    --mk-head-slate: #d3d8e0;
+    --mk-head-ochre: #e8ddbe;
+    --mk-head-teal: #c9d8d8;
+
+    /* Dark indigo (English landing, SEO pages, selfie demo) */
+    --mk-night-card: #12121a;
+    --mk-night-ink: #e2e8f0;
+    --mk-seo-ink: #e8e8f0;
+    --mk-brand-pale: #a5b4fc;
+    --mk-brand-hover: #5457e0;
+    --mk-brand-gradient: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --mk-brand-glow: 0 0 24px rgba(99, 102, 241, 0.35), 0 0 60px rgba(99, 102, 241, 0.15);
+    --mk-brand-glow-strong: 0 0 32px rgba(99, 102, 241, 0.5), 0 0 80px rgba(99, 102, 241, 0.2);
+    --mk-lift-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    --mk-star: #f59e0b;
+    --mk-gold: rgba(251, 191, 36, 0.9);
+    --mk-gold-ink: #1a1a00;
+    --mk-dot-red: #ff5f57;
+    --mk-dot-yellow: #febc2e;
+    --mk-dot-green: #28c840;
+    --mk-success: #22c55e;
+    --mk-font-inter: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mk-selfie-bg: radial-gradient(ellipse at 50% 30%, rgba(99, 102, 241, 0.1) 0%, #07070d 70%);
+    --mk-selfie-cta: linear-gradient(135deg, #6366f1, #818cf8);
+    --mk-font-inter-plain: Inter, sans-serif;
+
+    /* English landing art direction */
+    --mk-lp-hero-bg: radial-gradient(ellipse at 40% 30%, rgba(99, 102, 241, 0.18) 0%, transparent 60%), radial-gradient(ellipse at 70% 70%, rgba(139, 92, 246, 0.12) 0%, transparent 50%);
+    --mk-lp-hero-overlay: linear-gradient(180deg, rgba(10, 10, 15, 0.6) 0%, rgba(10, 10, 15, 0.95) 100%);
+    --mk-lp-hero-text: linear-gradient(135deg, #fff, #c7d2fe, #818cf8);
+    --mk-lp-orb-1: radial-gradient(circle, rgba(99, 102, 241, 0.6), transparent 70%);
+    --mk-lp-orb-2: radial-gradient(circle, rgba(139, 92, 246, 0.5), transparent 70%);
+    --mk-lp-orb-3: radial-gradient(circle, rgba(99, 102, 241, 0.4), transparent 70%);
+    --mk-lp-mock-1: linear-gradient(135deg, #2d1b69 0%, #11998e 100%);
+    --mk-lp-mock-2: linear-gradient(135deg, #1a1a2e 0%, #6366f1 100%);
+    --mk-lp-mock-3: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+    --mk-lp-mock-4: linear-gradient(135deg, #141e30 0%, #243b55 100%);
+    --mk-lp-mock-5: linear-gradient(135deg, #1f1c2c 0%, #928dab 100%);
+    --mk-lp-mock-6: linear-gradient(135deg, #0d0d0d 0%, #434343 100%);
+    --mk-lp-star-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+    --mk-lp-feature-bar: linear-gradient(90deg, #6366f1, #8b5cf6, #818cf8);
+    --mk-lp-feature-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), 0 0 40px rgba(99, 102, 241, 0.15);
+    --mk-lp-popular-shadow: 0 0 30px rgba(99, 102, 241, 0.15);
+    --mk-lp-popular-shadow-hover: 0 0 40px rgba(99, 102, 241, 0.25), 0 12px 40px rgba(0, 0, 0, 0.3);
+    --mk-lp-gallery-glow: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.08), transparent 70%);
+    --mk-lp-final-glow: radial-gradient(circle, rgba(99, 102, 241, 0.12), transparent 70%);
+    --mk-lp-footer-line: linear-gradient(90deg, #6366f1, rgba(139, 92, 246, 0.5), transparent);
+    --mk-lp-demo-veil: linear-gradient(to bottom, rgba(10, 10, 15, 0.7), rgba(10, 10, 15, 0.9));
+    --mk-lp-vignette: radial-gradient(ellipse at center, transparent 35%, rgba(0, 0, 0, 0.5) 100%);
+    --mk-lp-sepia: rgba(120, 80, 40, 0.18);
+
+    /* Legal pages (terms / privacy) */
+    --mk-legal-bg: #f8f9fa;
+    --mk-legal-ink: #1a1a2e;
+    --mk-legal-body: #374151;
+    --mk-legal-line: #e5e7eb;
+    --mk-legal-muted: #9ca3af;
+    --mk-font-system: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /* Editorial type scale. Plain classes (not utilities) so a utility on the same
+     element overrides one property and keeps the rest, like a style spread. */
+  .mk-display { font-family: var(--mk-font-display); font-size: clamp(40px, 6vw, 72px); line-height: 1.05; font-weight: 700; letter-spacing: -0.03em; }
+  .mk-h1 { font-family: var(--mk-font-display); font-size: clamp(28px, 4vw, 40px); line-height: 1.15; font-weight: 700; letter-spacing: -0.02em; }
+  .mk-h2 { font-size: 26px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; }
+  .mk-h3 { font-size: 20px; line-height: 1.3; font-weight: 600; letter-spacing: -0.015em; }
+  .mk-body { font-size: 15px; line-height: 1.6; font-weight: 400; }
+  .mk-small { font-size: 13px; line-height: 1.5; font-weight: 400; }
+  .mk-label { font-size: 11px; line-height: 1.4; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  /* Pulsing face-landmark node on the static faces image. */
+  .mk-scan-node {
+    transform: translate(-50%, -50%);
+    animation: mk-scan-node 2.4s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mk-scan-node { animation: none; }
+  }
+
+  /* Animated gradient ring behind the /en hero download button. */
+  .mk-lp-ring {
+    position: relative;
+    z-index: 0;
+  }
+  .mk-lp-ring::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa, #6366f1);
+    background-size: 200% 200%;
+    animation: mk-lp-gradient-shift 3s ease infinite;
+    z-index: -1;
+  }
+
+  /* Spark that drifts across the /en final CTA button. */
+  .mk-lp-sparkle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -20%;
+    width: 6px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 50%;
+    filter: blur(1px);
+    animation: mk-lp-sparkle 4s ease-in-out infinite;
+    pointer-events: none;
+  }
+}
+
+/* Smooth in-page anchor scrolling while a page that opts in is mounted. */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.mk-smooth-scroll) { scroll-behavior: smooth; }
+}
+
+/* ── Keyframes ── */
+@keyframes mk-scan-node {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.55; }
+  50% { transform: translate(-50%, -50%) scale(1.5); opacity: 1; }
+}
+
+/* Legacy-homepage phone mockup */
+@keyframes mk-phone-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+@keyframes mk-viewfinder-pulse { 0%, 100% { transform: scale(1); opacity: 0.15; } 50% { transform: scale(1.05); opacity: 0.5; } }
+@keyframes mk-orb-glow { 0%, 100% { box-shadow: 0 0 10px rgba(123, 143, 110, 0.05); } 50% { box-shadow: 0 0 30px rgba(123, 143, 110, 0.15); } }
+
+/* /demo selfie flow */
+@keyframes mk-selfie-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+  50% { transform: scale(1.04); box-shadow: 0 0 30px 10px rgba(99, 102, 241, 0.25); }
+}
+@keyframes mk-selfie-glow {
+  0%, 100% { box-shadow: 0 0 20px 4px rgba(99, 102, 241, 0.3); }
+  50% { box-shadow: 0 0 40px 12px rgba(99, 102, 241, 0.5); }
+}
+@keyframes mk-selfie-slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes mk-selfie-scale-in {
+  from { opacity: 0; transform: scale(0.7); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes mk-selfie-success-ring {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); }
+  70% { box-shadow: 0 0 0 14px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+/* English landing + interactive demo */
+@keyframes mk-lp-orb-float {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(30px, -40px); }
+  50% { transform: translate(-20px, 20px); }
+  75% { transform: translate(15px, 30px); }
+}
+@keyframes mk-lp-hero-entrance {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes mk-lp-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.4); }
+}
+@keyframes mk-lp-mockup-in {
+  from { opacity: 0; transform: translateY(40px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes mk-lp-float {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(-120vh); opacity: 0; }
+}
+@keyframes mk-lp-word-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes mk-lp-gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes mk-lp-badge-pulse {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 1; }
+  50% { transform: translateX(-50%) scale(1.05); opacity: 0.85; }
+}
+@keyframes mk-lp-sparkle {
+  0%, 100% { left: -10%; top: 50%; opacity: 0; }
+  10% { opacity: 1; }
+  50% { left: 110%; top: 30%; opacity: 1; }
+  60% { opacity: 0; }
+}
+@keyframes mk-lp-demo-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mk-lp-ph-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+@keyframes mk-lp-star-pop { 0% { transform: scale(0); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
