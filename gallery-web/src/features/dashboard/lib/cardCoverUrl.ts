@@ -1,9 +1,7 @@
 import { displayUrl } from '@/shared/lib/supabase'
 
-// Covers can point at a multi-MB original (until derivatives are backfilled),
-// which made the grid download full-res images for every card. Route
-// gallery-images objects through the bounded, CDN-cached transform instead;
-// other URLs pass through untouched.
+// Covers may still point at a multi-MB original; route gallery-images objects
+// through the bounded, CDN-cached transform so the grid never pulls full-res.
 const CARD_COVER_WIDTH = 640
 
 export function cardCoverUrl(url: string): string {

@@ -1,21 +1,8 @@
 import { pathHash } from './uploadPipeline'
 
-// Pre-upload duplicate detection for SAFE re-uploads (e.g. restoring the 165
-// images that were dropped when a 1,165 selection was truncated to 1,000).
-//
-// Signal = the SAME content key the upload pipeline already uses to name a
-// storage object: pathHash(galleryId/name/size/lastModified). Two selections of
-// the exact same file produce the same key; a genuinely different photo — even
-// one that happens to share a filename — has a different size and/or mtime, so
-// it produces a DIFFERENT key and is never silently skipped.
-//
-// Classification per candidate file:
-//   • duplicate   — content key matches an image already in the gallery.
-//                   Skipping it avoids creating a duplicate DB row.
-//   • review      — filename matches an existing image but the content key does
-//                   NOT. Could be a genuinely different photo (or a re-export);
-//                   surfaced for the user to decide, never auto-skipped.
-//   • new         — neither key nor filename seen before.
+// Pre-upload duplicate detection keyed on the pipeline's content key
+// (pathHash of galleryId/name/size/lastModified): exact matches are `duplicate`,
+// same filename with a different key is `review` (never auto-skipped), else `new`.
 
 export interface ExistingImageRef {
   filename?: string | null

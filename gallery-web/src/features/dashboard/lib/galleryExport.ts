@@ -1,17 +1,6 @@
-// galleryExport.ts — portable per-gallery backup as a single ZIP.
-//
-// Pixflow's trust story: a photographer should never feel locked in. This
-// helper bundles every original photo of a gallery (with the gallery shape
-// preserved in a metadata.json sidecar) into one downloadable archive that
-// can be restored elsewhere or kept as an offline backup.
-//
-// Phase 1 is client-side: the browser fetches each image and zips locally.
-// For very large galleries (~500+ originals) Phase 2 should spawn a
-// server-side render to S3 + presigned-URL download so the photographer
-// doesn't have to keep the tab open for minutes. See note at saveAs().
-//
-// Pattern intentionally mirrors the in-app batch-download in App.tsx so the
-// two flows behave the same (JSZip + createObjectURL + anchor click).
+// Portable per-gallery backup: every original plus a metadata.json sidecar in
+// one client-side ZIP (JSZip + object URL). Very large galleries would be better
+// served by a server-side render; see the note at saveAs().
 
 import { supabase } from '@/shared/lib/supabase'
 
@@ -43,12 +32,8 @@ export interface ExportResult {
 
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024 * 1024 // 2 GB
 
-/**
- * Fetches a gallery's row, sections and images from Supabase, downloads each
- * original (with a HEAD-guarded fallback to the web preview when the
- * original_uploaded flag is false), and triggers a browser download of a
- * single ZIP containing `photos/`, `metadata.json` and `README.txt`.
- */
+/** Download a gallery's originals (falling back to the web preview) and save one
+ *  ZIP with `photos/`, `metadata.json` and `README.txt`. */
 export async function exportGalleryAsZip(
   galleryId: string,
   opts: ExportOptions = {},
@@ -108,9 +93,7 @@ export async function exportGalleryAsZip(
   onProgress({ phase: 'metadata', current: 1, total: 1 })
 
   // ── 2. Pick the storage bucket ────────────────────────────────────────────
-  // Mirrors App.tsx (`gallery?.demo_expires_at ? 'demo-uploads' : ...`) — the
-  // owner-facing dashboard never has demo galleries open, so default to the
-  // production bucket.
+  // The owner dashboard never opens demo galleries, so default to production.
   const ds = (gallery.delivery_settings ?? {}) as Record<string, unknown>
   const bucket =
     (ds.imageBucket as string | undefined) ||
@@ -146,11 +129,8 @@ export async function exportGalleryAsZip(
     const sectionInfo = img.section_id ? sectionById.get(img.section_id) : null
     const sectionFolder = sectionInfo?.slug ?? '_unsectioned'
 
-    // P2.2: owner export uses the AUTHENTICATED storage download (the owner's
-    // Supabase session), never a public URL. This removes the last public
-    // /originals/ dependency and keeps working after originals go private
-    // (the owner reads under their own RLS). Prefer the original; on any error
-    // (incl. a not-yet-uploaded original 404) fall back to the web preview.
+    // Authenticated owner download (never a public URL) so export keeps working
+    // with private originals; any error falls back to the web preview.
     let blob: Blob | null = null
     let servedFrom: 'original' | 'web_preview' = 'web_preview'
     if (img.original_path) {
