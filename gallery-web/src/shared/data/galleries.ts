@@ -33,3 +33,57 @@ export async function listGalleryNames(galleryIds: string[]) {
     .select('id, name, published_at')
     .in('id', galleryIds)
 }
+
+// ── Owner reads/writes (RLS: only the signed-in owner's galleries match) ──
+
+/** A business's galleries with `columns`, newest first. */
+export async function listBusinessGalleries<Columns extends string>(businessId: string, columns: Columns) {
+  return supabase
+    .from('galleries')
+    .select(columns)
+    .eq('business_id', businessId)
+    .order('created_at', { ascending: false })
+}
+
+/** One gallery by id; errors when it doesn't exist. */
+export async function getGallery<Columns extends string>(galleryId: string, columns: Columns) {
+  return supabase.from('galleries').select(columns).eq('id', galleryId).single()
+}
+
+/** One gallery by id, or null. */
+export async function findGallery<Columns extends string>(galleryId: string, columns: Columns) {
+  return supabase.from('galleries').select(columns).eq('id', galleryId).maybeSingle()
+}
+
+/** Inserts a gallery; data is `{ id }`. */
+export async function insertGallery(row: Record<string, unknown>) {
+  return supabase.from('galleries').insert(row).select('id').single()
+}
+
+/** Inserts a gallery; data is `{ id, slug }` or null. */
+export async function insertGalleryWithSlug(row: Record<string, unknown>) {
+  return supabase.from('galleries').insert(row).select('id, slug').maybeSingle()
+}
+
+/**
+ * Updates plain granted columns (name, status, published_at, image_count, face_index_enabled).
+ * delivery_settings can only be written through `updateGallerySettings`.
+ */
+export async function updateGallery(galleryId: string, patch: Record<string, unknown>) {
+  return supabase.from('galleries').update(patch).eq('id', galleryId)
+}
+
+/** Deletes a gallery; sections and images cascade via FK (storage objects do not). */
+export async function deleteGallery(galleryId: string) {
+  return supabase.from('galleries').delete().eq('id', galleryId)
+}
+
+/** Validated, owner-checked delivery_settings patch; data is `{ ok, errors? }`. */
+export async function updateGallerySettings(galleryId: string, patch: Record<string, unknown>) {
+  return supabase.rpc('update_gallery_settings', { p_gallery_id: galleryId, p_patch: patch })
+}
+
+/** Clones settings + sections (not photos) into a new draft; data is the new gallery id. */
+export async function duplicateGallery(sourceGalleryId: string, newName: string) {
+  return supabase.rpc('duplicate_gallery', { p_source_gallery_id: sourceGalleryId, p_new_name: newName })
+}

@@ -80,3 +80,80 @@ export async function listImagesByIds(imageIds: string[]) {
     .in('id', imageIds)
     .order('sort_order', { ascending: true })
 }
+
+// ── Owner writes (RLS: only rows in the signed-in owner's galleries match) ──
+
+export async function updateImage(imageId: string, patch: Record<string, unknown>) {
+  return supabase.from('images').update(patch).eq('id', imageId)
+}
+
+/** Applies `patch` to the given images; pass `galleryId` to also scope the update to that gallery. */
+export async function updateImages(imageIds: string[], patch: Record<string, unknown>, galleryId?: string) {
+  const query = supabase.from('images').update(patch).in('id', imageIds)
+  return galleryId ? query.eq('gallery_id', galleryId) : query
+}
+
+/** Moves every image of the gallery that has no section into `sectionId`. */
+export async function assignUnsectionedImages(galleryId: string, sectionId: string) {
+  return supabase.from('images')
+    .update({ section_id: sectionId })
+    .eq('gallery_id', galleryId)
+    .is('section_id', null)
+}
+
+export async function deleteImage(imageId: string) {
+  return supabase.from('images').delete().eq('id', imageId)
+}
+
+export async function deleteImages(imageIds: string[]) {
+  return supabase.from('images').delete().in('id', imageIds)
+}
+
+/** Every image of a gallery in one unpaged select, in display order (ZIP export). */
+export async function listImagesForExport(galleryId: string) {
+  return supabase
+    .from('images')
+    .select('id, filename, web_preview_path, original_path, original_uploaded, thumbnail_path, is_top_pick, sort_order, section_id')
+    .eq('gallery_id', galleryId)
+    .order('sort_order', { ascending: true })
+}
+
+/** `[{ gallery_id, thumbnail_path, web_preview_path }]`: the first photo of each gallery, in one RPC. */
+export async function listGalleryCoverThumbs(galleryIds: string[]) {
+  return supabase.rpc('gallery_cover_thumbs', { p_gallery_ids: galleryIds })
+}
+
+export interface RecordImageUploadArgs {
+  p_gallery_id: string
+  p_filename: string
+  p_web_preview_path: string
+  p_thumbnail_path: string
+  p_original_path: string
+  p_original_size: number
+  p_section_id: string | null
+  p_sort_order: number
+  p_public_thumb_present: boolean
+}
+
+/** Inserts the images row for an uploaded object and consumes one token server-side; data is the new id. */
+export async function recordImageUpload(args: RecordImageUploadArgs) {
+  return supabase.rpc('record_image_upload', args)
+}
+
+export interface ReplaceImageArgs {
+  p_gallery_id: string
+  p_image_id: string
+  p_web_preview_path: string
+  p_thumbnail_path: string
+  p_original_path: string
+  p_filename: string
+  p_original_size: number
+  p_mime_type: string | null
+  p_width: number | null
+  p_height: number | null
+}
+
+/** Points an image row at new objects in one transaction (`replace_image`); data has `ok` and the old paths. */
+export async function replaceImage(args: ReplaceImageArgs) {
+  return supabase.rpc('replace_image', args)
+}

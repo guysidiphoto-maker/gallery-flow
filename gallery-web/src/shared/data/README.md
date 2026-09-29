@@ -24,8 +24,15 @@ token, client session, vendor code). See `publicGallery.ts`, `clientPortal.ts`.
 (on-the-fly resize) in `shared/lib/supabase.ts`. When signed URLs are enabled,
 `shared/lib/signedStorage.ts` asks our `/api/gallery-access` for short-lived ones instead.
 
+Uploads, deletes and authenticated downloads go through `storage.ts`.
+
 **Edge functions.** Server code run by Supabase, called with `supabase.functions.invoke`:
-`rekognition` (selfie face search, `faceSearch.ts`) and `admin` (`admin.ts`).
+`rekognition` (selfie face search + face indexing, `faceSearch.ts`), `admin` (`admin.ts`),
+`share-gallery` (`shareEmail.ts`) and `create-checkout` (`tokens.ts`).
+
+**Owner modules.** The dashboard's reads/writes (`galleries`, `images`, `sections`, `stories`,
+`presets`, `clients`, `search`, `activity`, `onboarding`, `tokens`) rely on RLS or on
+self-scoped RPCs: they return only the signed-in owner's rows (a user id argument is a filter, never the security check).
 
 **Error convention.** Table/RPC functions return Supabase's result untouched:
 `const { data, error } = await listGallerySections(id)`. They never throw; the caller

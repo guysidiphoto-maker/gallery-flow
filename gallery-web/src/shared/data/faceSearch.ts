@@ -11,3 +11,8 @@ export async function searchFacesBySelfie(galleryId: string, selfie: File | Blob
   if (token) form.append('token', token)
   return supabase.functions.invoke('rekognition', { body: form })
 }
+
+/** Starts (idempotent) face indexing of a gallery's photos; already indexed images are skipped. */
+export async function requestGalleryFaceIndex(galleryId: string) {
+  return supabase.functions.invoke('rekognition', { body: { action: 'index_gallery', galleryId } })
+}
