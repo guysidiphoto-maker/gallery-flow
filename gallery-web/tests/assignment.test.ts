@@ -5,7 +5,7 @@
 import {
   BULK_ASSIGN_MAX, validateBulkAssignInput, runBulkAssign, clientBelongsToBusiness,
 } from '../server/clientAdmin.js'
-import { computeVisibilityIndicator } from '../src/components/assignment/visibility.js'
+import { computeVisibilityIndicator } from '../src/features/clients/assignment/visibility.js'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

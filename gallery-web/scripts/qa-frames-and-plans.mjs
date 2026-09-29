@@ -1,8 +1,8 @@
 // qa-frames-and-plans.mjs — extract a DENSE frame set (~1 per scene) from each
 // realistic render + write the scene plan JSON, so creative reviewers can assess
 // the whole video (sequence/pacing/crop/motion/typography), not just endpoints.
-import { planStory } from "../src/lib/storyStudio/planner.ts";
-import { computeTotalDuration } from "../src/lib/storyStudio/sceneplan.ts";
+import { planStory } from "../src/features/story-studio/planner.ts";
+import { computeTotalDuration } from "../src/features/story-studio/sceneplan.ts";
 import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";

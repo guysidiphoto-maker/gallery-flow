@@ -1,7 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
+import { serviceClient } from '../server/supabase.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-
-const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
 
 async function sendSms(
   phone: string,
@@ -63,9 +61,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'unauthorized' })
   }
 
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!serviceKey) return res.status(500).json({ error: 'Server misconfigured' })
-  const supabase = createClient(SUPABASE_URL, serviceKey)
+  const supabase = serviceClient()
+  if (!supabase) return res.status(500).json({ error: 'Server misconfigured' })
 
   // Fetch failed leads with retry_count < 3
   const { data: leads, error } = await supabase

@@ -4,33 +4,112 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/sitemap.xml", "destination": "/api/sitemap.xml" },
-    { "source": "/stories-bundle/(.*)", "destination": "/stories-bundle/$1" },
-    { "source": "/", "destination": "/api/page?route=home-he" },
-    { "source": "/en", "destination": "/api/page?route=home-en" },
-    { "source": "/photographers", "destination": "/api/page?route=photographers" },
-    { "source": "/demo", "destination": "/api/page?route=demo" },
-    { "source": "/terms", "destination": "/api/page?route=terms" },
-    { "source": "/privacy", "destination": "/api/page?route=privacy" },
-    { "source": "/face-recognition-photo-gallery", "destination": "/api/page?route=face-recognition-photo-gallery" },
-    { "source": "/ai-event-photo-gallery", "destination": "/api/page?route=ai-event-photo-gallery" },
-    { "source": "/event-photographers", "destination": "/api/page?route=event-photographers" },
-    { "source": "/event-production-companies", "destination": "/api/page?route=event-production-companies" },
-    { "source": "/wedding-photo-gallery", "destination": "/api/page?route=wedding-photo-gallery" },
-    { "source": "/corporate-event-gallery", "destination": "/api/page?route=corporate-event-gallery" },
-    { "source": "/how-it-works", "destination": "/api/page?route=how-it-works" },
-    { "source": "/blog", "destination": "/api/page?route=blog-index" },
-    { "source": "/blog/:slug", "destination": "/api/page?p=/blog/:slug" },
-    { "source": "/gallery/:id", "destination": "/api/share?id=:id" },
-    { "source": "/:slug/gallery/:id", "destination": "/api/gallery-page?biz=:slug&legacyId=:id" },
-    { "source": "/:business/:gallery", "destination": "/api/gallery-page?biz=:business&gallery=:gallery" },
-    { "source": "/:business/:gallery/:section", "destination": "/api/gallery-page?biz=:business&gallery=:gallery&section=:section" },
-    { "source": "/((?!stories-bundle/).*)", "destination": "/app.html" }
+    {
+      "source": "/api/append-event-posts",
+      "destination": "/api/gallery-access"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap.xml"
+    },
+    {
+      "source": "/stories-bundle/(.*)",
+      "destination": "/stories-bundle/$1"
+    },
+    {
+      "source": "/",
+      "destination": "/api/page?route=home-he"
+    },
+    {
+      "source": "/en",
+      "destination": "/api/page?route=home-en"
+    },
+    {
+      "source": "/photographers",
+      "destination": "/api/page?route=photographers"
+    },
+    {
+      "source": "/demo",
+      "destination": "/api/page?route=demo"
+    },
+    {
+      "source": "/terms",
+      "destination": "/api/page?route=terms"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/api/page?route=privacy"
+    },
+    {
+      "source": "/face-recognition-photo-gallery",
+      "destination": "/api/page?route=face-recognition-photo-gallery"
+    },
+    {
+      "source": "/ai-event-photo-gallery",
+      "destination": "/api/page?route=ai-event-photo-gallery"
+    },
+    {
+      "source": "/event-photographers",
+      "destination": "/api/page?route=event-photographers"
+    },
+    {
+      "source": "/event-production-companies",
+      "destination": "/api/page?route=event-production-companies"
+    },
+    {
+      "source": "/wedding-photo-gallery",
+      "destination": "/api/page?route=wedding-photo-gallery"
+    },
+    {
+      "source": "/corporate-event-gallery",
+      "destination": "/api/page?route=corporate-event-gallery"
+    },
+    {
+      "source": "/how-it-works",
+      "destination": "/api/page?route=how-it-works"
+    },
+    {
+      "source": "/blog",
+      "destination": "/api/page?route=blog-index"
+    },
+    {
+      "source": "/blog/:slug",
+      "destination": "/api/page?p=/blog/:slug"
+    },
+    {
+      "source": "/gallery/:id",
+      "destination": "/api/share?id=:id"
+    },
+    {
+      "source": "/:slug/gallery/:id",
+      "destination": "/api/gallery-page?biz=:slug&legacyId=:id"
+    },
+    {
+      "source": "/:business/:gallery",
+      "destination": "/api/gallery-page?biz=:business&gallery=:gallery"
+    },
+    {
+      "source": "/:business/:gallery/:section",
+      "destination": "/api/gallery-page?biz=:business&gallery=:gallery&section=:section"
+    },
+    {
+      "source": "/((?!stories-bundle/).*)",
+      "destination": "/app.html"
+    }
   ],
   "crons": [
-    { "path": "/api/retry-failed-sends", "schedule": "0 0 * * *" },
-    { "path": "/api/stories/sweep-stale", "schedule": "*/15 * * * *" }
+    {
+      "path": "/api/retry-failed-sends",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/stories/sweep-stale",
+      "schedule": "*/15 * * * *"
+    }
   ],
   "functions": {
     "api/stories/render.ts": {

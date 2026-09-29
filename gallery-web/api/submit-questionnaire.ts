@@ -1,12 +1,10 @@
-import { createClient } from '@supabase/supabase-js'
+import { serviceClient } from '../server/supabase.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   isPublicFormsEnabled, isUuid, isValidEmail, cleanText, clientIp,
   maskPhone, maskEmail, countSince, verifyTurnstileToken,
 } from '../server/publicEndpointGuards.js'
 import { withSentry, captureApiError } from '../server/sentryServer.js'
-
-const SUPABASE_URL = 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
 
 // ── Abuse limits (SINGLE SOURCE OF TRUTH for this endpoint) ───────────────────
 // Over the limit, the response is still PERSISTED — only the cost-bearing
@@ -112,9 +110,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ ok: false, error: 'turnstile_failed' })
   }
 
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!serviceKey) return res.status(500).json({ ok: false, error: 'Server misconfigured' })
-  const supabase = createClient(SUPABASE_URL, serviceKey)
+  const supabase = serviceClient()
+  if (!supabase) return res.status(500).json({ ok: false, error: 'Server misconfigured' })
 
   try {
     // Fetch questionnaire with send_method and gallery info

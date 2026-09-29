@@ -4,9 +4,9 @@
 // Renders the fully-automatic story + the three template variants, letting the
 // PLANNER select + sequence from the whole event via real signals.
 //   node --experimental-strip-types scripts/qa-render-gallery.mts "<srcDir>" <outTag>
-import { planStory, recommendTemplate, type PlannerImage } from "../src/lib/storyStudio/planner.ts";
-import { computeTotalDuration, applyBeatSync, type ScenePlan, type AudioAnalysis, type StoryTemplate } from "../src/lib/storyStudio/sceneplan.ts";
-import MUSIC_ANALYSIS from "../src/lib/storyStudio/musicAnalysis.json" with { type: "json" };
+import { planStory, recommendTemplate, type PlannerImage } from "../src/features/story-studio/planner.ts";
+import { computeTotalDuration, applyBeatSync, type ScenePlan, type AudioAnalysis, type StoryTemplate } from "../src/features/story-studio/sceneplan.ts";
+import MUSIC_ANALYSIS from "../src/features/story-studio/musicAnalysis.json" with { type: "json" };
 import { bundle } from "@remotion/bundler";
 import { selectComposition, renderMedia } from "@remotion/renderer";
 import { execFileSync } from "node:child_process";

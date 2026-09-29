@@ -5,7 +5,7 @@
 import React from "react";
 import { Composition } from "remotion";
 import { StoryStudioVideo } from "./StoryStudioVideo";
-import { totalFrames, type ScenePlan } from "../src/lib/storyStudio/sceneplan";
+import { totalFrames, type ScenePlan } from "../src/features/story-studio/sceneplan";
 
 const FALLBACK: ScenePlan = {
   version: 1,

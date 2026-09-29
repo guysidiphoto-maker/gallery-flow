@@ -2,8 +2,8 @@
 // categorically different. Uses stock (picsum) photos, NOT customer data — this
 // proves TEMPLATE differentiation (motion/pacing/composition/transitions), which
 // is image-agnostic. Run: node --experimental-strip-types scripts/story-evidence.mts
-import { planStory, type PlannerImage } from "../src/lib/storyStudio/planner.ts";
-import { totalFrames, type ScenePlan, type StoryTemplate } from "../src/lib/storyStudio/sceneplan.ts";
+import { planStory, type PlannerImage } from "../src/features/story-studio/planner.ts";
+import { totalFrames, type ScenePlan, type StoryTemplate } from "../src/features/story-studio/sceneplan.ts";
 import { bundle } from "@remotion/bundler";
 import { selectComposition, renderStill, renderMedia } from "@remotion/renderer";
 import { promises as fs } from "node:fs";

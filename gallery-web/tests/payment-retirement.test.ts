@@ -8,13 +8,19 @@
 //   (A) the gallery-unlock payment path is gone everywhere, and
 //   (B) subscription checkout + the token economy are untouched.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..') // repo root (gallery-flow)
 const read = (p: string) => readFileSync(resolve(root, p), 'utf8')
+// Concatenate every .ts/.tsx under a folder (features are split across files).
+const readTree = (dir: string): string =>
+  readdirSync(resolve(root, dir), { recursive: true, encoding: 'utf8' })
+    .filter(f => /\.tsx?$/.test(f))
+    .map(f => read(`${dir}/${f}`))
+    .join('\n')
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {
@@ -58,7 +64,7 @@ function ok(name: string, cond: boolean, detail = '') {
 
 // ── Frontend: no gallery-payment surfaces, subscription client kept ──────────
 {
-  const token = read('gallery-web/src/lib/tokenClient.ts')
+  const token = read('gallery-web/src/features/dashboard/lib/tokenClient.ts')
   ok('tokenClient still exports subscription startCheckout',
     /export async function startCheckout/.test(token))
   ok('tokenClient no longer exports startGalleryCheckout',
@@ -68,11 +74,11 @@ function ok(name: string, cond: boolean, detail = '') {
   ok('tokenClient keeps the token packages (subscription tiers)',
     /TOKEN_PACKAGES/.test(token))
 
-  const app = read('gallery-web/src/App.tsx')
+  const app = readTree('gallery-web/src/features/viewer')
   ok('public viewer has no paywall / gallery-checkout code',
     !/startGalleryCheckout/.test(app) && !/requires_payment === true/.test(app))
 
-  const dash = read('gallery-web/src/pages/Dashboard.tsx')
+  const dash = readTree('gallery-web/src/features/dashboard').replace(/\/\/[^\n]*/g, '')
   ok('dashboard has no client-payment toggle / buy button',
     !/startGalleryCheckout/.test(dash) && !/GALLERY_BILLING_ON/.test(dash.replace(/\/\/[^\n]*/g, '')))
 }
@@ -82,10 +88,10 @@ function ok(name: string, cond: boolean, detail = '') {
 // after the first pass — this sweep makes that class of miss impossible.)
 {
   const marketing = [
-    'gallery-web/src/pages/PricingPage.tsx',
-    'gallery-web/src/pages/LandingPageHe.tsx',
-    'gallery-web/src/pages/PhotographersLanding.tsx',
-    'gallery-web/src/components/landing3d/HomepagePricing.tsx',
+    'gallery-web/src/features/marketing/pages/PricingPage.tsx',
+    'gallery-web/src/features/marketing/pages/LandingPageHe.tsx',
+    'gallery-web/src/features/marketing/pages/PhotographersLanding.tsx',
+    'gallery-web/src/features/marketing/home3d/HomepagePricing.tsx',
   ]
   for (const f of marketing) {
     const body = read(f).replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '') // strip comments

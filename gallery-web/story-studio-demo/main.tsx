@@ -2,9 +2,9 @@
 // Synthetic images only (SVG data-URIs) — no customer data.
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { StoryStudioEditor } from "../src/lib/storyStudio/StoryStudioEditor";
-import type { PlannerImage } from "../src/lib/storyStudio/planner";
-import type { ScenePlan } from "../src/lib/storyStudio/sceneplan";
+import { StoryStudioEditor } from "../src/features/story-studio/StoryStudioEditor";
+import type { PlannerImage } from "../src/features/story-studio/planner";
+import type { ScenePlan } from "../src/features/story-studio/sceneplan";
 
 // Canvas-generated PNG data-URIs. (Remotion's <Img> rejects SVG data-URIs via
 // its decode() gate; production uses raster storage URLs, so PNG mirrors that.)

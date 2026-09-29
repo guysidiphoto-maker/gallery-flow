@@ -8,8 +8,8 @@
 //   • same filename in different folders → treated independently, not collapsed
 //   • interrupted upload + retry → already-stored files dedupe on retry
 
-import { classifyForUpload, extractExistingKeys, contentKey } from '../src/lib/dedupeUpload.ts'
-import { pathHash } from '../src/lib/uploadPipeline.ts'
+import { classifyForUpload, extractExistingKeys, contentKey } from '../src/features/dashboard/lib/dedupeUpload.ts'
+import { pathHash } from '../src/features/dashboard/lib/uploadPipeline.ts'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

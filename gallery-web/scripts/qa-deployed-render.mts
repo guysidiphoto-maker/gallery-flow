@@ -5,8 +5,8 @@
 //
 //   node --experimental-strip-types scripts/qa-deployed-render.mts <jobKey>
 // jobKey ∈ wedding-auto | wedding-edit | corporate-auto | corporate-edit | concert-auto | concert-edit
-import { planStory, type PlannerImage } from "../src/lib/storyStudio/planner.ts";
-import { computeTotalDuration, type ScenePlan } from "../src/lib/storyStudio/sceneplan.ts";
+import { planStory, type PlannerImage } from "../src/features/story-studio/planner.ts";
+import { computeTotalDuration, type ScenePlan } from "../src/features/story-studio/sceneplan.ts";
 
 const BASE = process.env.QA_BASE!;
 const SHARE = process.env.QA_SHARE!;

@@ -5,8 +5,8 @@
 //   3. Legacy galleries (no Design-tab keys) keep their exact appearance.
 // Run:  npx tsx tests/grid-layout.test.ts
 
-import { validateDeliverySettingsPatch } from '../src/lib/deliverySettingsSchema.ts'
-import { resolveGridLayout, gapForSpacing } from '../src/lib/galleryLayout.ts'
+import { validateDeliverySettingsPatch } from '../src/shared/gallery/deliverySettingsSchema.ts'
+import { resolveGridLayout, gapForSpacing } from '../src/shared/gallery/galleryLayout.ts'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

@@ -2,7 +2,7 @@
 // (no in-code/JSON edits). Resolves scene.src from the approved concert folder
 // (served read-only via the running manifest server on :8802) and exports the MP4.
 //   node --experimental-strip-types scripts/render-plan.mts <planJson> <srcDir> <label>
-import { computeTotalDuration, type ScenePlan } from "../src/lib/storyStudio/sceneplan.ts";
+import { computeTotalDuration, type ScenePlan } from "../src/features/story-studio/sceneplan.ts";
 import { bundle } from "@remotion/bundler";
 import { selectComposition, renderMedia } from "@remotion/renderer";
 import { execFileSync } from "node:child_process";

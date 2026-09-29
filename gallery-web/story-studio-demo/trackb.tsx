@@ -3,9 +3,9 @@
 // through the actual UI controls. Exposes window.__getPlan() for extraction.
 import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
-import { StoryStudioEditor } from "../src/lib/storyStudio/StoryStudioEditor";
-import type { PlannerImage } from "../src/lib/storyStudio/planner";
-import type { ScenePlan } from "../src/lib/storyStudio/sceneplan";
+import { StoryStudioEditor } from "../src/features/story-studio/StoryStudioEditor";
+import type { PlannerImage } from "../src/features/story-studio/planner";
+import type { ScenePlan } from "../src/features/story-studio/sceneplan";
 
 function App() {
   const [data, setData] = useState<any>(null);

@@ -3,9 +3,9 @@
 // required versions (Locked Order / Suggested Edit / Manually Refined) with
 // system Chrome, and extracts a dense frame set per version for review.
 //   node --experimental-strip-types scripts/qa-render-event.mts [template]
-import { planStory, type PlannerImage } from "../src/lib/storyStudio/planner.ts";
-import { computeTotalDuration, applyBeatSync, MIN_SCENE_SEC, MAX_SCENE_SEC, type ScenePlan, type AudioAnalysis } from "../src/lib/storyStudio/sceneplan.ts";
-import MUSIC_ANALYSIS from "../src/lib/storyStudio/musicAnalysis.json" with { type: "json" };
+import { planStory, type PlannerImage } from "../src/features/story-studio/planner.ts";
+import { computeTotalDuration, applyBeatSync, MIN_SCENE_SEC, MAX_SCENE_SEC, type ScenePlan, type AudioAnalysis } from "../src/features/story-studio/sceneplan.ts";
+import MUSIC_ANALYSIS from "../src/features/story-studio/musicAnalysis.json" with { type: "json" };
 import { bundle } from "@remotion/bundler";
 import { selectComposition, renderMedia } from "@remotion/renderer";
 import { execFileSync } from "node:child_process";

@@ -3,9 +3,9 @@
 // plan) so the ACTUAL Story Studio editor can load it in the browser. Stays up
 // until killed. Never touches the source originals.
 //   node --experimental-strip-types scripts/trackb-manifest.mts "<srcDir>"
-import { planStory, recommendTemplate, type PlannerImage } from "../src/lib/storyStudio/planner.ts";
-import { applyBeatSync, type ScenePlan, type AudioAnalysis } from "../src/lib/storyStudio/sceneplan.ts";
-import MUSIC_ANALYSIS from "../src/lib/storyStudio/musicAnalysis.json" with { type: "json" };
+import { planStory, recommendTemplate, type PlannerImage } from "../src/features/story-studio/planner.ts";
+import { applyBeatSync, type ScenePlan, type AudioAnalysis } from "../src/features/story-studio/sceneplan.ts";
+import MUSIC_ANALYSIS from "../src/features/story-studio/musicAnalysis.json" with { type: "json" };
 import { execFileSync } from "node:child_process";
 import sharp from "sharp";
 import { createServer } from "node:http";
