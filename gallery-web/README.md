@@ -1,31 +1,50 @@
 # gallery-web
 
-Pixflow public gallery + photographer dashboard (Vite + React).
+Pixflow on the web: the public gallery viewer, the photographer dashboard, the client
+portal and the marketing site. Vite + React 18 + Tailwind v4, deployed on Vercel, backed
+by Supabase (Postgres, Auth, Storage, Edge Functions).
 
-## Operator notes
-
-### `react-window` dependency (perf/web-grid-virtualization-and-batch-reorder)
-
-This branch adds `react-window` (+ `@types/react-window`) for masonry/grid
-virtualization on galleries with more than 300 photos. The package was added
-to `package.json` but **not installed**. Run:
+## Run it
 
 ```sh
-npm install react-window
-npm install --save-dev @types/react-window
+npm install
+npm run dev          # http://localhost:5173 — talks to the PRODUCTION Supabase project
 ```
 
-(or `npm install` to pick both up from the manifest).
+- There is no `.env` in the repo; without `VITE_SUPABASE_URL` the app uses production.
+  Anything you create, upload or delete locally is real data.
+- `npm run dev` does not run the Vercel functions in `api/`. Signed image URLs, watermarked
+  and ZIP downloads, client invites, the importer and story rendering need `vercel dev`
+  (`vercel link` + `vercel env pull` first).
+- Local feature flags go in `.env.local` (gitignored), e.g. `VITE_FEATURE_GALLERY_BILLING=true`.
 
-Without the install the dev/build will fail with `Cannot find module
-'react-window'` — the code is gated to only mount virtualization when
-`images.length > 300`, but the import is unconditional.
+## Where things are
 
-### `reorder_images` RPC (migration 070)
+| Path | What |
+|---|---|
+| `src/app/` | App shell: `routes.ts` (URL → page), lazy page map, error boundary |
+| `src/features/<area>/` | One folder per product area: `viewer`, `dashboard`, `client-portal`, `marketing`, `brand-kit`, `clients`, `importer`, `portfolio`, `story-studio`, … |
+| `src/shared/data/` | Every Supabase read/write, as plainly named functions — start with its README |
+| `src/shared/ui/` | Design-system primitives (Button, Field, Modal, Toggle, WorkspaceView, …) |
+| `src/shared/gallery/` | Gallery rules shared by viewer + dashboard (branding, layout, presets, settings schema) |
+| `src/styles/tokens.css` | Design tokens — every color/font/radius is a Tailwind utility |
+| `api/`, `server/` | Vercel functions and their helpers (service-role Supabase, origin checks, SMS) |
+| `seo/` | Server-rendered marketing/blog content |
+| `stories-remotion/`, `story-studio-remotion/` | Remotion compositions bundled for server-side story rendering |
 
-Migration `supabase/migrations/070_reorder_images_rpc.sql` defines a
-SECURITY DEFINER RPC that replaces the previous N-parallel-UPDATE fan-out
-in `Dashboard.tsx`'s `reorderImage`. Apply it via the Supabase MCP, the
-Supabase CLI (`supabase db push`), or the SQL editor before deploying the
-client changes — otherwise drag-reorder will fail with "function does not
-exist".
+Conventions (styling, imports, comments) are in [`CLAUDE.md`](./CLAUDE.md).
+
+## Checks
+
+```sh
+npx tsc --noEmit -p .
+npm run build
+for t in tests/*.test.ts src/features/story-studio/*.test.ts; do npx tsx $t || echo "FAIL $t"; done
+npx -y -p node@24 node --import tsx tests/api-error-hygiene.test.ts
+npm run test:e2e     # Playwright smoke suite (needs E2E_* env, see tests/README.md)
+```
+
+## Deploys
+
+Every push to a branch creates a Vercel preview; merging to `main` deploys production.
+Database changes are migrations in `../supabase/migrations/` applied with the Supabase CLI.
