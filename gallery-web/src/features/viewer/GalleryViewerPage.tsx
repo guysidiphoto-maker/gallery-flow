@@ -1096,7 +1096,7 @@ function DownloadEmailGate({ lang, onSubmit, onClose }: {
   )
 }
 
-export function App() {
+export function GalleryViewerPage() {
   const [gallery, setGallery] = useState<Gallery | null>(null)
   const [images, setImages] = useState<GalleryImage[]>([])
   const [sections, setSections] = useState<GallerySection[]>([])
