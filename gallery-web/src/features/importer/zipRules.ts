@@ -1,40 +1,32 @@
-// zipRules.ts — BROWSER-SAFE mirror of the Import Center validation rules.
-//
-// gallery-web/server/importer.ts is the source of truth, but it imports
-// node:crypto (for the server-side hash helper), so it cannot be bundled into
-// the Vite client. This module re-states ONLY the pure validation rules the
-// wizard needs, with identical semantics. Parity is enforced by
-// tests/import-center.test.ts, which runs the same vectors through BOTH
-// modules and fails if they ever diverge.
-//
-// If you change a rule here, change server/importer.ts too (and vice versa).
+// Browser-safe copy of the ZIP validation rules in server/importer.ts, which can't be
+// bundled (it imports node:crypto). Keep both in sync when a rule changes; note the
+// client caps entries at 40MB (ZIP_ENTRY_MAX_BYTES) while the server allows 200MB.
 
-export const CSV_MAX_BYTES = 2 * 1024 * 1024
 export const ZIP_ENTRY_MAX_BYTES = 40 * 1024 * 1024
-export const JOB_UNCOMPRESSED_MAX_BYTES = 10 * 1024 * 1024 * 1024
-export const ZIP_BOMB_RATIO = 100
-export const ZIP_MAX_DEPTH = 3
+const JOB_UNCOMPRESSED_MAX_BYTES = 10 * 1024 * 1024 * 1024
+const ZIP_BOMB_RATIO = 100
+const ZIP_MAX_DEPTH = 3
 export const ZIP_FILE_MAX_BYTES = 2 * 1024 * 1024 * 1024 // jszip loads the whole ZIP in memory
-export const FILENAME_MAX_LEN = 200
+const FILENAME_MAX_LEN = 200
 
 const EXT_TO_MIME: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
 }
 
-export function mimeForExt(ext: string): string | null {
+function mimeForExt(ext: string): string | null {
   return EXT_TO_MIME[ext.toLowerCase()] ?? null
 }
 
-export function extOf(filename: string): string {
+function extOf(filename: string): string {
   const dot = filename.lastIndexOf('.')
   return dot > 0 ? filename.slice(dot + 1).toLowerCase() : ''
 }
 
-export type SanitizeResult =
+type SanitizeResult =
   | { ok: true; name: string }
   | { ok: false; reason: 'traversal' | 'absolute' | 'control_chars' | 'empty' }
 
-export function sanitizeImportFilename(raw: string): SanitizeResult {
+function sanitizeImportFilename(raw: string): SanitizeResult {
   if (typeof raw !== 'string' || raw.trim() === '') return { ok: false, reason: 'empty' }
   // eslint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f]/.test(raw)) return { ok: false, reason: 'control_chars' }
@@ -52,7 +44,7 @@ export function sanitizeImportFilename(raw: string): SanitizeResult {
   return { ok: true, name }
 }
 
-export function dedupeFilename(name: string, used: Set<string>): string {
+function dedupeFilename(name: string, used: Set<string>): string {
   const key = (n: string) => n.toLowerCase()
   if (!used.has(key(name))) { used.add(key(name)); return name }
   const dot = name.lastIndexOf('.')
@@ -71,12 +63,12 @@ export interface ZipEntryMeta {
   compressedSize: number
 }
 
-export type ZipEntryVerdict =
+type ZipEntryVerdict =
   | { verdict: 'ok'; filename: string; mime: string }
   | { verdict: 'skip'; reason: 'directory' | 'macosx' | 'dotfile' }
   | { verdict: 'reject'; reason: 'traversal' | 'absolute' | 'control_chars' | 'empty' | 'unsupported_type' | 'too_large' | 'too_deep' | 'bomb_ratio' }
 
-export function validateZipEntry(entry: ZipEntryMeta): ZipEntryVerdict {
+function validateZipEntry(entry: ZipEntryMeta): ZipEntryVerdict {
   if (entry.isDirectory || entry.path.endsWith('/')) return { verdict: 'skip', reason: 'directory' }
   const parts = entry.path.split('/')
   if (parts[0] === '__MACOSX') return { verdict: 'skip', reason: 'macosx' }
@@ -131,9 +123,7 @@ export function summarizeZipEntries(entries: ZipEntryMeta[]): ZipSummary {
   return { accepted, skipped, rejected, totalUncompressedBytes: total, overJobCap: total > JOB_UNCOMPRESSED_MAX_BYTES }
 }
 
-// ── ZIP filename → collection auto-match ────────────────────────────────────
-
-export function normalizeZipStem(zipFilename: string): string {
+function normalizeZipStem(zipFilename: string): string {
   return zipFilename
     .replace(/\.zip$/i, '')
     .replace(/[\s_]*[-_(]?\s*(part\s*)?\d+\s*[)]?$/i, '')
@@ -153,8 +143,7 @@ export function autoMatchZipToCollection(
   return null
 }
 
-// ── Browser content hash (same output as server sha256HexBytes) ─────────────
-
+// Same output as the server's sha256HexBytes.
 export async function sha256HexBrowser(bytes: ArrayBuffer | Uint8Array): Promise<string> {
   const buf = bytes instanceof Uint8Array
     ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer

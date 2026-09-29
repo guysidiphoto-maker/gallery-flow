@@ -1,26 +1,15 @@
-// ImportCenter.tsx — provider-agnostic Import Center (contract C7).
-//
-// A five-step guided MANUAL migration wizard. There is NO Pixieset API and no
-// scraping: the owner exports their own CSVs + per-collection ZIPs from the
-// official Pixieset UI, and this wizard turns them into piXflow draft galleries.
-//
-// Navigation is props-only (no router coupling): onOpenGallery? opens a created
-// gallery, onExit? returns to wherever the Dashboard mounted this. The `locale`
-// prop (default 'he') drives text + direction; it falls back to the owner-wide
-// locale from useOwnerLocale when the prop is not pinned.
-//
-// State machine of the wizard mirrors the server job:
-//   1 Explain → 2 CSV dry-run + mapping → 3 ZIP mapping → 4 Run → 5 Report.
-// Each step owns its loading / empty / error states. The job row is created
-// lazily on first entry to step 2 so a user who only reads step 1 leaves no
-// draft behind.
-
-import React, { useCallback, useMemo, useState } from 'react'
+// Five-step guided MANUAL Pixieset migration (no API, no scraping): the owner exports
+// CSVs + per-collection ZIPs themselves. The job row is created lazily on leaving
+// step 1, so reading the intro leaves no draft behind.
+import { useCallback, useMemo, useState } from 'react'
 import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import { makeT, dirFor, type ImporterLocale } from './strings'
-import { palette, Button, Notice } from './ui'
 import { createJob, loadOwnerBusiness, type ImportCollection, type OwnerBusiness } from './importApi'
 import type { StepIndex, ZipSlot, CollectionOutcome } from './wizardTypes'
+import { ImportButton } from './components/ImportButton'
+import { Notice } from './components/Notice'
+import { StepIndicator } from './components/StepIndicator'
+import { textDim, textMain } from './components/theme'
 import { Step1Explain } from './steps/Step1Explain'
 import { Step2Csv } from './steps/Step2Csv'
 import { Step3Zip } from './steps/Step3Zip'
@@ -36,11 +25,8 @@ export interface ImportCenterProps {
   locale?: ImporterLocale
 }
 
-const STEPS: StepIndex[] = [1, 2, 3, 4, 5]
-
 export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp = 'he' }: ImportCenterProps) {
   const owner = useOwnerLocale()
-  // The explicit prop wins; otherwise follow the owner-wide locale.
   const locale: ImporterLocale = localeProp ?? (owner.locale as ImporterLocale)
   const dir = dirFor(locale)
   const t = useMemo(() => makeT(locale), [locale])
@@ -55,7 +41,6 @@ export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp
   const [zips, setZips] = useState<ZipSlot[]>([])
   const [outcomes, setOutcomes] = useState<CollectionOutcome[]>([])
 
-  // Lazily create the job + resolve the business when the owner leaves step 1.
   const ensureJob = useCallback(async (): Promise<boolean> => {
     if (jobId && business) return true
     setBooting(true); setBootError(null)
@@ -87,46 +72,25 @@ export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp
   const commonProps = { t, dir, locale }
 
   return (
-    <div dir={dir} style={{ color: palette.text, maxWidth: 920, margin: '0 auto', padding: '8px 4px' }}>
-      <header style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+    <div dir={dir} className={`${textMain} mx-auto max-w-[920px] px-1 py-2`}>
+      <header className="mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 style={{ fontSize: 24, fontWeight: 800, margin: '0 0 4px' }}>{t('import.title')}</h1>
-            <p style={{ color: palette.textDim, fontSize: 14, margin: 0 }}>{t('import.subtitle')}</p>
+            <h1 className="mb-1 text-2xl font-extrabold">{t('import.title')}</h1>
+            <p className={`${textDim} text-sm`}>{t('import.subtitle')}</p>
           </div>
-          {onExit && (
-            <Button variant="ghost" onClick={onExit}>{t('import.common.close')}</Button>
-          )}
+          {onExit && <ImportButton variant="ghost" onClick={onExit}>{t('import.common.close')}</ImportButton>}
         </div>
-
-        {/* Step indicator */}
-        <ol style={{ display: 'flex', gap: 8, listStyle: 'none', padding: 0, margin: '16px 0 0', flexWrap: 'wrap' }}>
-          {STEPS.map(s => {
-            const active = s === step
-            const done = s < step
-            return (
-              <li key={s} style={{
-                fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 999,
-                background: active ? palette.accent : done ? 'rgba(91,140,255,.15)' : palette.panelAlt,
-                color: active ? palette.accentText : done ? palette.accent : palette.textDim,
-                border: `1px solid ${active ? palette.accent : palette.border}`,
-              }}>
-                {s}. {t(`import.step${s}.title` as never).replace(/^.*?:\s*/, '')}
-              </li>
-            )
-          })}
-        </ol>
+        <StepIndicator t={t} step={step} />
       </header>
 
       {bootError && (
-        <div style={{ marginBottom: 16 }}>
+        <div className="mb-4">
           <Notice tone="danger">{t('import.common.error')}</Notice>
         </div>
       )}
 
-      {step === 1 && (
-        <Step1Explain {...commonProps} onNext={goToStep2} />
-      )}
+      {step === 1 && <Step1Explain {...commonProps} onNext={goToStep2} />}
 
       {step === 2 && jobId && (
         <Step2Csv
@@ -172,9 +136,7 @@ export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp
         />
       )}
 
-      {booting && (
-        <div style={{ marginTop: 12, fontSize: 13, color: palette.textDim }}>{t('import.common.loading')}</div>
-      )}
+      {booting && <div className={`${textDim} mt-3 text-[13px]`}>{t('import.common.loading')}</div>}
     </div>
   )
 }

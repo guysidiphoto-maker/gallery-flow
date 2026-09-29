@@ -25,7 +25,7 @@ export function WatermarkPreview({ enabled, position, opacity, scale, contrastAw
           <div
             className={cn(
               'pointer-events-none absolute font-semibold tracking-[0.1em] text-white',
-              contrastAware && '[text-shadow:0_1px_2px_rgb(0_0_0/0.5)]',
+              contrastAware && '[text-shadow:0_1px_2px_color-mix(in_srgb,var(--color-black)_50%,transparent)]',
               overlayPositionClass(position),
             )}
             style={{ opacity: opacity / 100, fontSize: `${Math.max(10, scale * 1.2)}px` }}
