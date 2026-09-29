@@ -1,14 +1,5 @@
-// strings.ts — local he/en strings for the assignment components.
-//
-// WHY LOCAL: the shared `src/lib/ownerLocale.ts` hook is created concurrently
-// by another agent (wave 1) and MUST NOT be imported here yet. Per the sprint
-// contract (C8), each wave-1 area ships its own strings module in the shared
-// `{he:{},en:{}}` flat-key shape; the wave-2 integrator may merge these keys
-// into ownerLocale.ts or keep this module and only swap the `locale` prop to
-// come from `useOwnerLocale()`. Either way the keys below are stable.
-//
-// Copy rules (contract): no internal jargon, no long dashes, every key exists
-// in BOTH languages.
+// he/en strings for the assignment components, in the same flat-key shape as
+// the owner locale so they can be merged later. Every key exists in both.
 
 export type AssignmentLocale = 'he' | 'en'
 

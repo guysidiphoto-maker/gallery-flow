@@ -1,13 +1,6 @@
-// visibility.ts — pure logic for the "no client can currently see this
-// gallery" indicator (sprint contract C3). Kept free of React/browser imports
-// so it is provable offline (tests/assignment.test.ts runs it under tsx).
-//
-// A gallery is visible in the client portal ONLY when ALL of these hold:
-//   1. it is assigned to a client (galleries.client_id set)
-//   2. it is published (status === 'live') — the portal bootstrap only returns
-//      live galleries
-//   3. the assigned client has at least one ACTIVE member (someone who can
-//      actually log in; cpv2_owner_clients_overview exposes active_member_count)
+// Pure logic for the "no client can see this gallery" indicator; kept free of
+// React/browser imports so tests/assignment.test.ts can run it under tsx.
+// Visible only when assigned, published (live) and the client has an active member.
 
 export type VisibilityReason = 'unassigned' | 'not_published' | 'no_active_members'
 

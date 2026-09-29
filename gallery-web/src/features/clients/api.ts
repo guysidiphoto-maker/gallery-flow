@@ -1,11 +1,6 @@
-// Data layer for the owner-side Clients Manager (Client Portal V2).
-//
-// READS  → supabase.rpc(...) directly, run under the owner's session. The RPCs
-//          are self-scoped (they resolve the caller's business from auth.uid();
-//          the browser never passes a business_id) and return only owned rows.
-// WRITES → POST /api/client-admin via authedFetch. Every action re-verifies
-//          ownership server-side. No email is ever sent — invite/reset links are
-//          RETURNED for the owner to deliver manually.
+// Clients Manager data layer. Reads are self-scoped owner RPCs (business comes
+// from auth.uid(), never the browser); writes go through /api/client-admin,
+// which re-verifies ownership. No email is sent — links are returned instead.
 import { supabase } from '@/shared/lib/supabase'
 import { authedFetch } from '@/shared/lib/authedFetch'
 
@@ -83,12 +78,6 @@ export interface AssignableGalleryRow {
   event_date: string | null
 }
 
-export interface EntitlementRow {
-  capability: string
-  active: boolean
-  expires_at: string | null
-}
-
 export type MemberRole = 'client_admin' | 'approver' | 'viewer'
 export type SettableStatus = 'active' | 'disabled' | 'revoked'
 
@@ -122,22 +111,23 @@ export async function fetchAssignableGalleries(): Promise<AssignableGalleryRow[]
   return (data ?? []) as AssignableGalleryRow[]
 }
 
-export async function fetchEntitlements(): Promise<EntitlementRow[]> {
-  const { data, error } = await supabase.rpc('my_business_entitlements')
-  if (error) throw new Error(error.message)
-  return (data ?? []) as EntitlementRow[]
+interface EntitlementRow {
+  capability: string
+  active: boolean
+  expires_at: string | null
 }
 
+// Soft signal for a UI badge only: fails closed (no badge) on any error.
 export async function hasProductionSuite(): Promise<boolean> {
   try {
-    const rows = await fetchEntitlements()
+    const { data, error } = await supabase.rpc('my_business_entitlements')
+    if (error) throw new Error(error.message)
+    const rows = (data ?? []) as EntitlementRow[]
     return rows.some(
       r => r.capability === 'production_suite' && r.active &&
         (!r.expires_at || new Date(r.expires_at).getTime() > Date.now()),
     )
   } catch {
-    // Entitlement lookup is a soft signal for a UI badge only — never blocks the
-    // page. Fail closed (no badge) on any error.
     return false
   }
 }
