@@ -1,0 +1,2 @@
+/* StoryPlayer entrance; ships with the lazily loaded player chunk. */
+@keyframes story-player-fade-in { from { opacity: 0 } to { opacity: 1 } }
