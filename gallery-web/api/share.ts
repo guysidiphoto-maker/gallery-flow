@@ -10,32 +10,15 @@
 // that fetches the latest /index.html, extracts the Vite asset URLs, and
 // loads the React app.
 
-import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
+import { anonClient } from '../server/supabase.js'
 
-// Read Supabase credentials from server env vars (set in Vercel project
-// settings as SUPABASE_URL + SUPABASE_ANON_KEY). Falls back to the
-// VITE_-prefixed names so a single env can power both bundle + Functions.
-const SUPABASE_URL =
-  process.env.SUPABASE_URL ||
-  process.env.VITE_SUPABASE_URL ||
-  ''
-const SUPABASE_ANON_KEY =
-  process.env.SUPABASE_ANON_KEY ||
-  process.env.VITE_SUPABASE_ANON_KEY ||
-  ''
 
 const BOT_UA =
   /WhatsApp|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|GoogleBot|iMessage|SkypeUriPreview|Pinterest|redditbot/i
 
-// Skip creating the client if env is missing — the route still works in
-// degraded mode (bare title/description for crawlers, browser SPA shell
-// served as before). Better to lose a polished preview than 500 the route.
-const supabase =
-  SUPABASE_URL && SUPABASE_ANON_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-    : null
+const supabase = anonClient()
 
 function escapeHtml(s: string): string {
   return s
@@ -64,7 +47,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   let description = 'Find your photos with a selfie.'
   let canonicalPath = `/gallery/${id || ''}`
 
-  if (id && supabase) {
+  if (id) {
     const { data: gallery } = await supabase
       .from('galleries')
       .select('id, name, delivery_settings')

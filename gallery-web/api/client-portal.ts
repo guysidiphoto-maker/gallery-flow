@@ -14,17 +14,14 @@
 // The portal DATA path is NOT here — the authenticated client calls the
 // self-scoped `client_portal_bootstrap()` RPC directly with its session.
 
-import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
+import { serviceClient } from '../server/supabase.js'
 import { sha256Hex, normalizeEmail, isValidEmail, appendAudit } from '../server/clientAdmin.js'
 
 export const maxDuration = 30
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-const supabase =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) : null
+const supabase = serviceClient()
 
 type Json = Record<string, unknown>
 const bad = (res: VercelResponse, status: number, code: string, extra?: Json) =>

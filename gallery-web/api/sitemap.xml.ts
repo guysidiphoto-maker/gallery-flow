@@ -20,11 +20,8 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { allRoutes } from '../seo/registry.js'
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../server/env.js'
 
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-const SUPABASE_ANON_KEY =
-  process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
 
 const SITE_ORIGIN =
   process.env.SITE_ORIGIN ||
@@ -54,7 +51,6 @@ function xmlEscape(s: string): string {
 }
 
 async function fetchPublicGalleries(): Promise<Array<{ url: string; lastmod?: string }>> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return []
   // Inner join `businesses` so we can construct /{business-slug}/{gallery-slug}
   // — the canonical short-link form. Filter:
   //   - status = 'live' (only published)

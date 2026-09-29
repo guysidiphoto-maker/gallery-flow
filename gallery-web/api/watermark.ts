@@ -22,21 +22,16 @@
 //
 // Runtime: nodejs (sharp is a native binding — Edge can't run it).
 
-import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
+import { serviceClient } from '../server/supabase.js'
+import { isAllowedOrigin } from '../server/origin.js'
 import sharp from 'sharp'
 
 export const config = { runtime: 'nodejs' }
 export const maxDuration = 30
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-
-const supabase =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    : null
+const supabase = serviceClient()
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PRIVATE_BUCKET = 'gallery-images'
@@ -58,21 +53,6 @@ interface WatermarkConfig {
   contrastAware: boolean
 }
 
-function isAllowedOrigin(origin: string | undefined): boolean {
-  if (!origin) return true
-  try {
-    const u = new URL(origin)
-    const host = u.hostname
-    if (host === 'localhost' || host === '127.0.0.1') return true
-    if (host.endsWith('.vercel.app')) return true
-    if (host === 'pixflow.co.il' || host.endsWith('.pixflow.co.il')) return true
-    if (host === 'pixflow-ai.com' || host.endsWith('.pixflow-ai.com')) return true
-    if (host === 'eclipsemedia.co.il' || host.endsWith('.eclipsemedia.co.il')) return true
-    return false
-  } catch {
-    return false
-  }
-}
 
 function clampInt(n: unknown, lo: number, hi: number, dflt: number): number {
   const v = typeof n === 'number' ? n : Number(n)

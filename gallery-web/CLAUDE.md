@@ -18,7 +18,8 @@ src/
     types.ts            shared domain types (DB rows)
   features/<name>/      one folder per product area; owns its pages, components, hooks and lib
 api/                    Vercel functions (never import from src/ except story-studio core)
-server/                 helpers for api/
+server/                 helpers for api/: env.ts (Supabase URL/keys), supabase.ts (serviceClient/anonClient),
+                        origin.ts (isAllowedOrigin), ownerAuth.ts, sentryServer.ts …
 ```
 
 Rules:
@@ -67,7 +68,7 @@ npx tsc --noEmit -p .                                    # types (src)
 npm run build                                           # production bundle
 for t in tests/*.test.ts src/features/story-studio/*.test.ts; do npx tsx $t || echo "FAIL $t"; done
 ```
-`tests/api-error-hygiene.test.ts` needs Node 24 (`node:module` registerHooks).
+`tests/api-error-hygiene.test.ts` needs Node 24: `npx -y -p node@24 node --import tsx tests/api-error-hygiene.test.ts`.
 
 ## Don'ts
 

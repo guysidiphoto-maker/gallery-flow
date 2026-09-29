@@ -14,9 +14,10 @@
 // NO real emails are sent. Invitation + password-reset links are generated and
 // RETURNED for the owner to deliver (email delivery is a later, manual step).
 
-import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
+import { serviceClient } from '../server/supabase.js'
+import { isAllowedOrigin } from '../server/origin.js'
 import {
   requireOwnerBusiness, clientBelongsToBusiness, appendAudit, withinRateLimit,
   normalizeEmail, isValidEmail, isRole, isSettableStatus,
@@ -26,21 +27,8 @@ import {
 
 export const maxDuration = 30
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-const supabase =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) : null
+const supabase = serviceClient()
 
-function isAllowedOrigin(origin: string | undefined): boolean {
-  if (!origin) return true
-  try {
-    const h = new URL(origin).hostname
-    return h === 'localhost' || h === '127.0.0.1' || h.endsWith('.vercel.app') ||
-      h === 'pixflow.co.il' || h.endsWith('.pixflow.co.il') ||
-      h === 'pixflow-ai.com' || h.endsWith('.pixflow-ai.com') ||
-      h === 'eclipsemedia.co.il' || h.endsWith('.eclipsemedia.co.il')
-  } catch { return false }
-}
 
 function originBase(req: VercelRequest): string {
   const origin = req.headers.origin

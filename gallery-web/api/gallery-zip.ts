@@ -18,9 +18,10 @@
 // the Phase 4 master plan estimate). Galleries >2GB risk timeout; for those
 // the frontend can fall back to client-side fetches over signed URLs.
 
-import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
+import { serviceClient } from '../server/supabase.js'
+import { isAllowedOrigin } from '../server/origin.js'
 import archiver from 'archiver'
 
 export const config = {
@@ -28,34 +29,13 @@ export const config = {
 }
 export const maxDuration = 300 // 5 minutes (Vercel Pro)
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-
-const supabase =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    : null
+const supabase = serviceClient()
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PRIVATE_BUCKET = 'gallery-images'
 const MAX_IMAGES_PER_REQUEST = 500
 const FETCH_CONCURRENCY = 6
 
-function isAllowedOrigin(origin: string | undefined): boolean {
-  if (!origin) return true
-  try {
-    const u = new URL(origin)
-    const host = u.hostname
-    if (host === 'localhost' || host === '127.0.0.1') return true
-    if (host.endsWith('.vercel.app')) return true
-    if (host === 'pixflow.co.il' || host.endsWith('.pixflow.co.il')) return true
-    if (host === 'pixflow-ai.com' || host.endsWith('.pixflow-ai.com')) return true
-    if (host === 'eclipsemedia.co.il' || host.endsWith('.eclipsemedia.co.il')) return true
-    return false
-  } catch {
-    return false
-  }
-}
 
 interface ZipBody {
   galleryId?: string

@@ -2,40 +2,15 @@
 // Actions: signed_url, public_gallery_session (guest viewers) and
 // verify_code / redeem_token (legacy client-portal PIN login).
 
-import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
+import { serviceClient } from '../server/supabase.js'
+import { isAllowedOrigin } from '../server/origin.js'
 
 export const maxDuration = 60
 
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+const supabase = serviceClient()
 
-const supabase =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    : null
-
-// ── Origin allowlist guard (Phase 1.B) ──────────────────────────────────
-// Allow same-origin (no Origin header on server-to-server, browsers send it),
-// production deployment, all *.vercel.app preview deployments, and localhost
-// dev. Reject everything else with 403.
-function isAllowedOrigin(origin: string | undefined): boolean {
-  if (!origin) return true // server-to-server / curl with no Origin
-  try {
-    const u = new URL(origin)
-    const host = u.hostname
-    if (host === 'localhost' || host === '127.0.0.1') return true
-    if (host.endsWith('.vercel.app')) return true
-    if (host === 'pixflow.co.il' || host.endsWith('.pixflow.co.il')) return true
-    if (host === 'pixflow-ai.com' || host.endsWith('.pixflow-ai.com')) return true
-    if (host === 'eclipsemedia.co.il' || host.endsWith('.eclipsemedia.co.il')) return true
-    return false
-  } catch {
-    return false
-  }
-}
 
 // ── Request bodies ─────────────────────────────────────────────────────
 

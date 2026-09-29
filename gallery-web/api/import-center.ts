@@ -20,9 +20,10 @@
 // cancel_job is SAFE: it marks the job cancelled; it NEVER deletes uploaded
 // images or galleries.
 
-import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
+import { serviceClient } from '../server/supabase.js'
+import { isAllowedOrigin } from '../server/origin.js'
 import {
   requireOwnerBusiness, appendAudit, withinRateLimit, type AuditAction,
 } from '../server/clientAdmin.js'
@@ -34,10 +35,7 @@ import {
 
 export const maxDuration = 30
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-const supabase =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) : null
+const supabase = serviceClient()
 
 // import_* audit actions are added to the DB CHECK in migration 097 (owner:
 // Agent-DB) and to the shared AuditAction TS union in wave 2. Until that merge,
@@ -48,16 +46,6 @@ type ImportAuditAction =
   | 'import_job_cancelled' | 'import_collection_imported'
 const asAudit = (a: ImportAuditAction) => a as unknown as AuditAction
 
-function isAllowedOrigin(origin: string | undefined): boolean {
-  if (!origin) return true
-  try {
-    const h = new URL(origin).hostname
-    return h === 'localhost' || h === '127.0.0.1' || h.endsWith('.vercel.app') ||
-      h === 'pixflow.co.il' || h.endsWith('.pixflow.co.il') ||
-      h === 'pixflow-ai.com' || h.endsWith('.pixflow-ai.com') ||
-      h === 'eclipsemedia.co.il' || h.endsWith('.eclipsemedia.co.il')
-  } catch { return false }
-}
 
 type Json = Record<string, unknown>
 const bad = (res: VercelResponse, status: number, code: string, extra?: Json) =>

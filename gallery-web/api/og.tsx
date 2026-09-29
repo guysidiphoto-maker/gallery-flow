@@ -51,20 +51,10 @@
 // Caching: 1 hour public CDN cache.
 
 import { ImageResponse } from '@vercel/og'
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../server/env.js'
 
 export const config = { runtime: 'edge' }
 
-// Read Supabase credentials from edge env vars (set in Vercel project
-// settings as SUPABASE_URL + SUPABASE_ANON_KEY). Falls back to the
-// Vite-style names a contributor might be tempted to set instead.
-const SUPABASE_URL =
-  process.env.SUPABASE_URL ||
-  process.env.VITE_SUPABASE_URL ||
-  ''
-const SUPABASE_ANON_KEY =
-  process.env.SUPABASE_ANON_KEY ||
-  process.env.VITE_SUPABASE_ANON_KEY ||
-  ''
 
 // Centralized public-storage URL builder. Mirrors the SPA's storageUrl() in
 // gallery-web/src/supabase.ts but reads SUPABASE_URL from env (edge runtime).
