@@ -1,5 +1,5 @@
+import { cn } from '@/shared/ui'
 import { Icon, type IconName } from '@/shared/ui/Icon'
-import { bg, bgSubtle, border, textMuted, textPrimary } from '../styles'
 import type { EditorTab } from '../types'
 import { useEditor, useOpenGallery } from './EditorContext'
 import { SectionList } from './photos/SectionList'
@@ -23,53 +23,39 @@ export function EditorSidebar() {
     || null
 
   return (
-    <aside className="dash-editor-sidebar" style={{
-      width: 260, flexShrink: 0,
-      borderInlineStart: `1px solid ${border}`,
-      background: bg,
-      display: 'flex', flexDirection: 'column',
-      overflowY: 'auto',
-    }}>
-      <div style={{
-        aspectRatio: '4 / 3', width: '100%', overflow: 'hidden',
-        background: editorCover ? bgSubtle : `linear-gradient(135deg, ${bgSubtle}, ${border})`,
-        borderBottom: `1px solid ${border}`,
-        position: 'relative',
-      }}>
+    <aside className="dash-editor-sidebar flex w-[260px] shrink-0 flex-col overflow-y-auto border-s border-line bg-canvas">
+      {/* No display class here: legacy CSS hides this first child on narrow screens. */}
+      <div
+        className={cn(
+          'relative aspect-[4/3] w-full overflow-hidden border-b border-line',
+          editorCover ? 'bg-surface' : 'bg-linear-135 from-surface to-line',
+        )}
+      >
         {editorCover ? (
-          <img src={editorCover} alt=""
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img src={editorCover} alt="" className="block size-full object-cover" />
         ) : (
-          <div style={{
-            position: 'absolute', inset: 0, display: 'flex',
-            alignItems: 'center', justifyContent: 'center', color: textMuted,
-          }}>
+          <div className="absolute inset-0 flex items-center justify-center text-muted">
             <Icon name="photo" size={32} strokeWidth={1.2} />
           </div>
         )}
       </div>
 
-      <div style={{
-        display: 'flex', justifyContent: 'space-around',
-        padding: '14px 12px', borderBottom: `1px solid ${border}`,
-      }}>
+      <div className="flex justify-around border-b border-line px-3 py-3.5">
         {TABS.map(t => {
           const active = editTab === t.id
           return (
-            <button key={t.id} onClick={() => setEditTab(t.id)} aria-label={t.label} style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              padding: 8, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', gap: 4,
-              color: active ? textPrimary : textMuted,
-              fontFamily: 'inherit',
-              position: 'relative',
-            }}>
+            <button
+              key={t.id}
+              onClick={() => setEditTab(t.id)}
+              aria-label={t.label}
+              className={cn(
+                'relative flex cursor-pointer flex-col items-center gap-1 bg-transparent p-2',
+                active ? 'text-ink' : 'text-muted',
+              )}
+            >
               <Icon name={t.icon} size={18} strokeWidth={active ? 1.85 : 1.5} />
               {active && (
-                <span style={{
-                  fontSize: 9, fontWeight: 600, letterSpacing: '0.14em',
-                  textTransform: 'uppercase', color: textPrimary,
-                }}>{t.label}</span>
+                <span className="text-[9px] font-semibold tracking-[0.14em] text-ink uppercase">{t.label}</span>
               )}
             </button>
           )

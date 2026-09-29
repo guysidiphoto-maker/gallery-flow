@@ -1,5 +1,4 @@
 import { useFocusTrap } from '@/shared/lib/useFocusTrap'
-import { bg, border } from '../styles'
 import { useEditor } from './EditorContext'
 import { EditorHeader } from './EditorHeader'
 import { EditorSidebar } from './EditorSidebar'
@@ -9,6 +8,7 @@ import { StoriesTab } from './stories/StoriesTab'
 import { ActivityTab } from './activity/ActivityTab'
 import { SettingsTab } from './settings/SettingsTab'
 import { DesignTab } from './design/DesignTab'
+import './editor.css'
 
 // Full-screen editor dialog for the open gallery: header, sidebar (cover
 // preview, tab strip, sets) and the active tab's pane.
@@ -19,36 +19,25 @@ export function GalleryEditor() {
   const dialogRef = useFocusTrap<HTMLDivElement>(true, close)
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 1000,
-      background: 'rgba(20,20,19,.55)', backdropFilter: 'blur(6px)',
-      display: 'flex', alignItems: 'stretch', justifyContent: 'center',
-      animation: 'overlayIn .2s ease both',
-    }} onClick={close}>
+    <div
+      className="fixed inset-0 z-[1000] flex animate-[fade-in_.2s_ease_both] items-stretch justify-center bg-ink/55 backdrop-blur-[6px]"
+      onClick={close}
+    >
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="gallery-editor-heading"
-        className="dash-editor-modal"
-        style={{
-          background: bg,
-          width: 'calc(100vw - 32px)', maxWidth: 1440,
-          height: 'calc(100vh - 32px)', maxHeight: 920,
-          margin: '16px',
-          borderRadius: 4, overflow: 'hidden', display: 'flex', flexDirection: 'column',
-          border: `1px solid ${border}`, animation: 'modalIn .3s ease both',
-        }} onClick={e => e.stopPropagation()}>
+        className="dash-editor-modal m-4 flex h-[calc(100vh-32px)] max-h-[920px] w-[calc(100vw-32px)] max-w-[1440px] animate-[editor-modal-in_.3s_ease_both] flex-col overflow-hidden rounded-[4px] border border-line bg-canvas"
+        onClick={e => e.stopPropagation()}
+      >
         <EditorHeader />
 
         {/* Below 900px `.dash-editor-body` stacks the sidebar above the pane. */}
-        <div className="dash-editor-body" style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+        <div className="dash-editor-body flex min-h-0 flex-1">
           <EditorSidebar />
-          <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
-            <div style={{
-              flex: 1, overflowY: 'auto',
-              padding: '24px 32px', minWidth: 0,
-            }}>
+          <div className="flex min-w-0 flex-1">
+            <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6">
               {editTab === 'photos' && <PhotosTab />}
               {editTab === 'stories' && <StoriesTab />}
               {editTab === 'activities' && <ActivityTab />}
