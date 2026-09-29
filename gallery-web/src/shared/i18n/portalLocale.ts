@@ -1,15 +1,10 @@
-// portalLocale — a tiny, dependency-free locale layer for the Client Portal V2.
-//
-// Two locales only: Hebrew (RTL, default) and English (LTR). The active
-// interface is NEVER mixed — every visible string comes from one dictionary.
-// Preference persists in localStorage so a client keeps their language across
-// visits. A React hook exposes `{ locale, dir, t, setLocale, toggle }` and
-// re-renders subscribers when the locale changes.
+// Client-portal locale (he/RTL default, en/LTR), never mixed in one view.
+// Persisted in localStorage; subscribers re-render on change.
 
 import { useCallback, useSyncExternalStore } from 'react'
 
-export type Locale = 'he' | 'en'
-export type Dir = 'rtl' | 'ltr'
+type Locale = 'he' | 'en'
+type Dir = 'rtl' | 'ltr'
 
 const STORAGE_KEY = 'pixflow-portal-locale'
 
@@ -26,16 +21,16 @@ const listeners = new Set<() => void>()
 
 function emit() { listeners.forEach(l => l()) }
 
-export function getLocale(): Locale { return current }
+function getLocale(): Locale { return current }
 
-export function setLocaleValue(next: Locale) {
+function setLocaleValue(next: Locale) {
   if (next === current) return
   current = next
   try { localStorage.setItem(STORAGE_KEY, next) } catch { /* ignore */ }
   emit()
 }
 
-export function dirFor(locale: Locale): Dir { return locale === 'he' ? 'rtl' : 'ltr' }
+function dirFor(locale: Locale): Dir { return locale === 'he' ? 'rtl' : 'ltr' }
 
 // ─── Dictionary ─────────────────────────────────────────────────────────────
 // One flat key namespace. Keep copy human and warm, not generic AI phrasing.
@@ -127,9 +122,9 @@ const STRINGS = {
   },
 } as const
 
-export type StringKey = keyof (typeof STRINGS)['he']
+type StringKey = keyof (typeof STRINGS)['he']
 
-export function translate(locale: Locale, key: StringKey, vars?: Record<string, string | number>): string {
+function translate(locale: Locale, key: StringKey, vars?: Record<string, string | number>): string {
   let s: string = STRINGS[locale][key]
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
@@ -143,14 +138,14 @@ export function translate(locale: Locale, key: StringKey, vars?: Record<string, 
 
 const INTL_LOCALE: Record<Locale, string> = { he: 'he-IL', en: 'en-US' }
 
-export function formatDate(locale: Locale, iso: string | null): string {
+function formatDate(locale: Locale, iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   return new Intl.DateTimeFormat(INTL_LOCALE[locale], { year: 'numeric', month: 'long' }).format(d)
 }
 
-export function formatNumber(locale: Locale, n: number): string {
+function formatNumber(locale: Locale, n: number): string {
   return new Intl.NumberFormat(INTL_LOCALE[locale]).format(n)
 }
 

@@ -1,16 +1,7 @@
 import { useEffect, useRef } from 'react'
 
-// Focus trap for modals. Required for WCAG 2.1.2 / 2.4.3 — once a dialog
-// opens, keyboard users must not be able to tab out of it into the
-// background page. Restores focus to whatever was active before the modal
-// opened when the dialog closes (Escape or programmatic).
-//
-// Usage:
-//   const ref = useFocusTrap(isOpen)
-//   <div role="dialog" ref={ref}>...</div>
-//
-// Accepts an optional onEscape callback so callers can wire Escape to
-// dismiss the modal without re-implementing the listener at each site.
+// Modal focus trap (WCAG 2.1.2 / 2.4.3): keeps Tab inside the dialog, restores
+// focus on close, and optionally wires Escape to onEscape.
 
 const FOCUSABLE = [
   'a[href]',
@@ -27,12 +18,8 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
 ) {
   const containerRef = useRef<T | null>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
-  // Keep onEscape in a ref so an unstable inline callback at the call site
-  // (e.g. `() => setShowX(false)` re-created every render) doesn't re-run the
-  // effect below — re-running it stole focus from any active input on every
-  // parent state change, breaking every text input inside the trapped modal
-  // (one keystroke → setState → re-render → effect re-run → focus jumps to
-  // the first focusable element in the dialog).
+  // Ref, not a dep: an inline callback would re-run the effect every render and
+  // steal focus from inputs inside the dialog.
   const onEscapeRef = useRef(onEscape)
   useEffect(() => { onEscapeRef.current = onEscape }, [onEscape])
 
@@ -43,8 +30,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
 
     previouslyFocused.current = document.activeElement as HTMLElement | null
 
-    // Move focus to the first focusable element in the dialog (or the
-    // container itself as a fallback so screen readers announce the role).
+    // Fall back to the container so screen readers still announce the role.
     const queueMicrotask = (cb: () => void) => Promise.resolve().then(cb)
     queueMicrotask(() => {
       const first = container.querySelector<HTMLElement>(FOCUSABLE)

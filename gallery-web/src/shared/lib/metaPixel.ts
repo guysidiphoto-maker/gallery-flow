@@ -1,17 +1,5 @@
-// Meta (Facebook) Pixel — env-gated, safe by default.
-//
-// SAFE BY DEFAULT: nothing loads and nothing is sent unless
-// `VITE_META_PIXEL_ID` is set at build time (a Vercel env var). With no ID,
-// every function here is a no-op — zero network, zero cookies, zero behavior
-// change. This mirrors lib/analytics.ts (GA4) so the code ships safely now and
-// you flip it on later by adding the env var in Vercel.
-//
-// Once the ID is set:
-//   • the fbq base code loads and fires PageView on init.
-//   • trackMetaStandard()/trackMetaCustom() fire conversion/CTA events.
-//
-// No private IDs are hardcoded. The ID comes only from the environment.
-// See docs/PIXFLOW_TRACKING_PLAN_META_GA4.md for the event taxonomy.
+// Meta Pixel, env-gated: with no VITE_META_PIXEL_ID every function here is a
+// no-op (no network, no cookies). Mirrors analytics.ts (GA4).
 
 const PIXEL_ID: string | undefined = import.meta.env.VITE_META_PIXEL_ID
 
@@ -80,9 +68,4 @@ export function trackMetaCustom(event: string, params?: Record<string, unknown>)
   } catch {
     /* swallow */
   }
-}
-
-/** True when the pixel is actually active (ID configured). */
-export function metaPixelEnabled(): boolean {
-  return Boolean(PIXEL_ID)
 }

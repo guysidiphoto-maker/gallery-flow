@@ -1,20 +1,6 @@
-// warmCache.ts — pre-warm the CDN edge for a gallery's thumbnails.
-//
-// Why: a guest typically views a gallery only once. The Cloudflare edge cache
-// is SHARED across guests, but the first request for an uncached image still
-// pays a ~1.5s origin round-trip — and that cost is latency (the storage
-// origin is far), not file size, so shrinking thumbnails barely helps it.
-//
-// The fix is to warm the shared edge BEFORE the first guest arrives. The
-// photographer publishes/shares from the same region as the guests (Tel Aviv
-// edge), so preloading the gallery's thumbnails from their browser populates
-// the exact edge the guests will hit. Combined with the 1-year cache
-// (uploadTypes ONE_YEAR_CACHE + the storage backfill) the warmth then sticks.
-// This mirrors what Pic-Time / Pixieset do server-side at upload time.
-//
-// Scope: we warm the first WARM_COUNT thumbnails — the initial on-screen
-// batches a guest sees. The long tail warms naturally as the first viewer
-// scrolls and then stays cached for a year.
+// Pre-warm the shared CDN edge with a gallery's first thumbnails from the
+// photographer's browser (same region as guests), so the first guest doesn't pay
+// the cold origin round-trip.
 
 import { supabase, storageUrl, displayUrl } from './supabase'
 
@@ -22,12 +8,7 @@ const BUCKET = 'gallery-images'
 const WARM_COUNT = 250 // first N thumbnails — covers the opening screens
 const CONCURRENCY = 6  // gentle on the photographer's connection
 
-// SINGLE SOURCE OF TRUTH for the responsive widths the grid emits in its
-// transform srcset. Both `MasonryGrid` (App.tsx) and `preloadGalleryThumbs`
-// below import this so the warming actually populates the same Supabase
-// transform variants the grid then requests. Drift between the two used to
-// warm 240/400/600 but the grid asked for 320/640/960/1280 — every guest
-// then paid the cold-transform cost on first load.
+// Shared with the grid so warming populates exactly the variants it requests.
 export const GRID_WIDTHS: number[] = [320, 640, 960, 1280]
 const THUMB_SIZES =
   '(max-width: 479px) 50vw, (max-width: 767px) 50vw, (max-width: 1099px) 33vw, 25vw'
@@ -81,11 +62,8 @@ export async function warmGalleryCache(galleryId: string): Promise<void> {
 }
 
 /**
- * Preload the gallery's first thumbnails into the *guest's* browser cache
- * while the welcome/cover screen is shown — so when they tap "enter" the grid
- * appears already-loaded (the Pixieset "everything loads on the cover page"
- * trick). Each preload mirrors the grid's srcset/sizes so the browser caches
- * the exact variant the grid will request. Returns a cancel function.
+ * Preload the first thumbnails into the guest's browser cache during the cover
+ * screen, mirroring the grid's srcset/sizes. Returns a cancel function.
  */
 export function preloadGalleryThumbs(
   items: Array<{ thumbnail_path?: string | null; storage_path?: string | null }>,
