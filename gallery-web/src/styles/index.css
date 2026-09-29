@@ -8,4 +8,4 @@
 
 @import './tokens.css';
 @import './base.css' layer(base);
-@import './legacy.css' layer(legacy);
+@import './dashboard-legacy.css' layer(legacy);
