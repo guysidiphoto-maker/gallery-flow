@@ -13,6 +13,8 @@ export function useAdminUsers(user: User | null, authLoading: boolean) {
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
   const [search, setSearch] = useState('')
+  // The query the shown rows belong to; paging uses it, not the live input.
+  const [submittedSearch, setSubmittedSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [denied, setDenied] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -34,8 +36,10 @@ export function useAdminUsers(user: User | null, authLoading: boolean) {
     if (status === 401) { setErr('נא להתחבר מחדש.'); return }
     if (!data) { setErr('שגיאה בטעינת המשתמשים.' + (detail ? ` (${detail})` : '')); return }
     const d = data as { rows: UserRow[]; total: number }
-    setRows(d.rows); setTotal(d.total); setOffset(nextOffset)
+    setRows(d.rows); setTotal(d.total); setOffset(nextOffset); setSubmittedSearch(nextSearch)
   }, [])
+
+  const goToOffset = useCallback((nextOffset: number) => load(nextOffset, submittedSearch), [load, submittedSearch])
 
   const loadAudit = useCallback(async () => {
     const { data } = await invokeAdmin('recent_grants', { limit: 50 })
@@ -78,7 +82,7 @@ export function useAdminUsers(user: User | null, authLoading: boolean) {
   }
 
   return {
-    rows, total, offset, search, setSearch, loading, denied, err, audit, load,
+    rows, total, offset, search, setSearch, loading, denied, err, audit, load, goToOffset,
     grant: { target, setTarget, amount, setAmount, reason, setReason, granting, amountValid, openGrant, confirmGrant },
     toast,
   }
