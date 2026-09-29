@@ -2,7 +2,10 @@
 // one client-side ZIP (JSZip + object URL). Very large galleries would be better
 // served by a server-side render; see the note at saveAs().
 
-import { supabase } from '@/shared/lib/supabase'
+import { getGallery } from '@/shared/data/galleries'
+import { listImagesForExport } from '@/shared/data/images'
+import { listGallerySections } from '@/shared/data/sections'
+import { downloadStorageObject } from '@/shared/data/storage'
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -44,22 +47,20 @@ export async function exportGalleryAsZip(
   // ── 1. Fetch gallery, sections, images ────────────────────────────────────
   onProgress({ phase: 'metadata', current: 0, total: 1 })
 
-  const { data: gallery, error: gErr } = await supabase
-    .from('galleries')
-    .select('id, name, slug, delivery_settings')
-    .eq('id', galleryId)
-    .single()
+  // Independent reads, fetched together. Sections use `*` to tolerate schemas
+  // without `description`; images bring every path so originals can be preferred.
+  const [
+    { data: gallery, error: gErr },
+    { data: sectionsRaw },
+    { data: imagesRaw, error: iErr },
+  ] = await Promise.all([
+    getGallery(galleryId, 'id, name, slug, delivery_settings'),
+    listGallerySections(galleryId, '*'),
+    listImagesForExport(galleryId),
+  ])
   if (gErr || !gallery) {
     throw new Error(`Gallery not found: ${gErr?.message ?? 'unknown error'}`)
   }
-
-  // gallery_sections.description may or may not exist depending on schema
-  // version — select * to be tolerant. Result is small (one row per section).
-  const { data: sectionsRaw } = await supabase
-    .from('gallery_sections')
-    .select('*')
-    .eq('gallery_id', galleryId)
-    .order('sort_order', { ascending: true })
   const sections = (sectionsRaw ?? []) as Array<{
     id: string
     name: string
@@ -67,14 +68,6 @@ export async function exportGalleryAsZip(
     sort_order: number
   }>
 
-  // Images: bring the full path set so we can prefer originals when available.
-  const { data: imagesRaw, error: iErr } = await supabase
-    .from('images')
-    .select(
-      'id, filename, web_preview_path, original_path, original_uploaded, thumbnail_path, is_top_pick, sort_order, section_id',
-    )
-    .eq('gallery_id', galleryId)
-    .order('sort_order', { ascending: true })
   if (iErr) {
     throw new Error(`Failed to fetch images: ${iErr.message}`)
   }
@@ -134,14 +127,14 @@ export async function exportGalleryAsZip(
     let blob: Blob | null = null
     let servedFrom: 'original' | 'web_preview' = 'web_preview'
     if (img.original_path) {
-      const { data, error } = await supabase.storage.from(bucket).download(img.original_path)
+      const { data, error } = await downloadStorageObject(bucket, img.original_path)
       if (!error && data) {
         blob = data
         servedFrom = 'original'
       }
     }
     if (!blob) {
-      const { data, error } = await supabase.storage.from(bucket).download(img.web_preview_path)
+      const { data, error } = await downloadStorageObject(bucket, img.web_preview_path)
       if (!error && data) {
         blob = data
         servedFrom = 'web_preview'

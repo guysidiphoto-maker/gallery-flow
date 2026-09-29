@@ -12,6 +12,7 @@ import {
 import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import { cn, Eyebrow, WorkspaceView } from '@/shared/ui'
 import { getProgress, saveProgress } from '../tour/onboarding'
+import { shimmer } from '../lib/skeleton'
 
 // The set of Dashboard views OwnerOverview can send the operator to.
 export type OverviewNavTarget = 'galleries' | 'clients' | 'search' | 'import'
@@ -398,7 +399,7 @@ function SkeletonRows({ count }: { count: number }) {
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="h-3.5 animate-[dash-skeleton_1.4s_ease_infinite] rounded-[4px] bg-linear-90 from-sunken from-25% via-line-soft via-37% to-sunken to-63% bg-size-[400%_100%]"
+          className={`h-3.5 rounded-[4px] ${shimmer}`}
           style={{ width: `${90 - i * 12}%` }}
         />
       ))}

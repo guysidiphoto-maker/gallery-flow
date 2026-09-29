@@ -23,9 +23,11 @@ export interface ImportCenterProps {
   onExit?: () => void
   /** Force a locale; when omitted, follows the owner-wide locale. Default 'he'. */
   locale?: ImporterLocale
+  /** The dashboard's already-resolved business; skips a second lookup. */
+  ownerBusiness?: OwnerBusiness | null
 }
 
-export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp = 'he' }: ImportCenterProps) {
+export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp = 'he', ownerBusiness = null }: ImportCenterProps) {
   const owner = useOwnerLocale()
   const locale: ImporterLocale = localeProp ?? (owner.locale as ImporterLocale)
   const dir = dirFor(locale)
@@ -45,7 +47,7 @@ export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp
     if (jobId && business) return true
     setBooting(true); setBootError(null)
     try {
-      const biz = business ?? await loadOwnerBusiness()
+      const biz = business ?? ownerBusiness ?? await loadOwnerBusiness()
       if (!biz) { setBootError('no_business'); return false }
       setBusiness(biz)
       let id = jobId
@@ -62,7 +64,7 @@ export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp
     } finally {
       setBooting(false)
     }
-  }, [jobId, business])
+  }, [jobId, business, ownerBusiness])
 
   const goToStep2 = useCallback(async () => {
     const ok = await ensureJob()

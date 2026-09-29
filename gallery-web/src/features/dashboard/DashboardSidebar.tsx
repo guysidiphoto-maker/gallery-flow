@@ -23,7 +23,7 @@ export function DashboardSidebar({
   onClose: () => void
   activeView: DashboardView
   onSelectView: (v: DashboardView) => void
-  tokenBalance: number
+  tokenBalance: number | null
   onBuyTokens: () => void
   avatar?: string
   displayName?: string

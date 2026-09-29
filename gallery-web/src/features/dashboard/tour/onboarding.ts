@@ -143,47 +143,37 @@ export async function saveProgressWith(
 }
 
 // ─── Default adapters (browser + Supabase) ──────────────────────────────────
-// The supabase client is imported LAZILY so importing this module in a bare
+// Supabase modules are imported LAZILY so importing this module in a bare
 // node/tsx test never constructs a network client.
 
-async function loadSupabase() {
-  const mod = await import('@/shared/lib/supabase')
-  return mod.supabase
+// The user id comes from the local session (no /auth/v1/user round trip);
+// RLS still checks the JWT on every onboarding_progress query.
+async function sessionUserId(): Promise<string | null> {
+  const { supabase } = await import('@/shared/lib/supabase')
+  const { data, error } = await supabase.auth.getSession()
+  return error ? null : data.session?.user.id ?? null
 }
 
 const supabaseDb: OnboardingDb = {
   async fetch(surface, version) {
-    const supabase = await loadSupabase()
-    const { data: userData, error: userError } = await supabase.auth.getUser()
-    const uid = userData?.user?.id
-    if (userError || !uid) return null
-    const { data, error } = await supabase
-      .from('onboarding_progress')
-      .select('status, step')
-      .eq('user_id', uid)
-      .eq('surface', surface)
-      .eq('version', version)
-      .maybeSingle()
+    const uid = await sessionUserId()
+    if (!uid) return null
+    const { getOnboardingProgress } = await import('@/shared/data/onboarding')
+    const { data, error } = await getOnboardingProgress(uid, surface, version)
     if (error || !data) return null
     return normalizeProgress(data, surface, version)
   },
   async save(progress) {
-    const supabase = await loadSupabase()
-    const { data: userData, error: userError } = await supabase.auth.getUser()
-    const uid = userData?.user?.id
-    if (userError || !uid) return
-    await supabase
-      .from('onboarding_progress')
-      .upsert(
-        {
-          user_id: uid,
-          surface: progress.surface,
-          version: progress.version,
-          status: progress.status,
-          step: progress.step,
-        },
-        { onConflict: 'user_id,surface,version' },
-      )
+    const uid = await sessionUserId()
+    if (!uid) return
+    const { upsertOnboardingProgress } = await import('@/shared/data/onboarding')
+    await upsertOnboardingProgress({
+      user_id: uid,
+      surface: progress.surface,
+      version: progress.version,
+      status: progress.status,
+      step: progress.step,
+    })
   },
 }
 

@@ -47,11 +47,11 @@ export function Dashboard() {
   const [activeView, setActiveView] = useState<DashboardView>(readViewFromUrl)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const { businessId, businessSlug, setBusinessId, resolveBusiness } = useBusiness(user)
+  const { businessId, businessSlug, domainRow, setBusinessId, resolveBusiness } = useBusiness(user)
   const { galleries, setGalleries, coverFallback, loadingGalleries, fetchGalleries } =
     useGalleries(user, businessId, setBusinessId)
-  const { tokenBalance, fetchTokenBalance, showBuyTokens, setShowBuyTokens } = useTokenBalance()
-  const customDomain = useCustomDomain(businessId)
+  const { tokenBalance, tokenBalanceLoaded, fetchTokenBalance, showBuyTokens, setShowBuyTokens } = useTokenBalance()
+  const customDomain = useCustomDomain(businessId, domainRow)
   const editor = useGalleryEditor({
     businessId, businessSlug, setGalleries, fetchGalleries,
     tokenBalance, fetchTokenBalance, openBuyTokens: () => setShowBuyTokens(true),
@@ -65,13 +65,12 @@ export function Dashboard() {
   const share = useShareGallery({ showToast, loadActivitySummary: editor.activity.loadActivitySummary })
   const createForm = useCreateGallery({ businessId, showToast, fetchGalleries })
 
+  // The shell renders at once; the balance doesn't need the business row, so it
+  // loads alongside it, and galleries start as soon as the row resolves.
   useEffect(() => {
     if (!user) return
-    void (async () => {
-      await resolveBusiness()
-      fetchGalleries()
-      fetchTokenBalance()
-    })()
+    void fetchTokenBalance()
+    void resolveBusiness().then(biz => fetchGalleries(biz?.id))
   }, [user])
 
   useEffect(() => { writeViewToUrl(activeView) }, [activeView])
@@ -116,7 +115,7 @@ export function Dashboard() {
           onClose={() => setSidebarOpen(false)}
           activeView={activeView}
           onSelectView={(view) => { setActiveView(view); setSidebarOpen(false) }}
-          tokenBalance={tokenBalance}
+          tokenBalance={tokenBalanceLoaded ? tokenBalance : null}
           onBuyTokens={() => setShowBuyTokens(true)}
           avatar={avatar}
           displayName={displayName}
@@ -155,6 +154,7 @@ export function Dashboard() {
             ) : activeView === 'import' ? (
               <ImportCenter
                 locale={locale}
+                ownerBusiness={businessId && businessSlug !== null ? { id: businessId, slug: businessSlug } : null}
                 onExit={() => setActiveView('galleries')}
                 onOpenGallery={() => { setActiveView('galleries') }}
               />
