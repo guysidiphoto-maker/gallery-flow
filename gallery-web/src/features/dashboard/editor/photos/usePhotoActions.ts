@@ -3,7 +3,7 @@ import { deleteImage, deleteImages, updateImage, updateImages } from '@/shared/d
 import { updateGallery } from '@/shared/data/galleries'
 import { readCoverConfig } from '@/shared/gallery/coverImage'
 import { purgeStorageForImages } from '../../lib/purgeStorage'
-import { moveItem, persistSortOrder } from '../../lib/reorder'
+import { applyServerSortOrder, fetchServerSortOrder, moveItem, persistSortOrder } from '../../lib/reorder'
 import { downloadImage } from '../../lib/download'
 import { orderedSectionImages, sectionImages, type PhotoSort } from '../../lib/photoOrder'
 import { usePhotoReplace } from './usePhotoReplace'
@@ -22,7 +22,7 @@ export function usePhotoActions(deps: {
   showToast: Toast
 }) {
   const { session, businessSlug, updateGallerySettings, clearCover, fetchGalleries, confirm, showToast } = deps
-  const { editingGallery, galleryImages, setGalleryImages, activeSectionId, markDirty } = session
+  const { editingGallery, galleryImages, setGalleryImages, activeSectionId, markDirty, isOpenGallery } = session
   const [selectMode, setSelectMode] = useState(false)
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set())
   const [gridSize, setGridSize] = useState<'regular' | 'large'>('regular')
@@ -208,10 +208,18 @@ export function usePhotoActions(deps: {
       idToOrder.has(i.id) ? { ...i, sort_order: idToOrder.get(i.id)! } : i
     ))
     markDirty()
+    const gid = editingGallery.id
     const failedIds = await persistSortOrder('images', next.map(i => i.id))
     if (failedIds.length > 0) {
-      showToast({ kind: 'error', text: `סידור ${failedIds.length} תמונות לא נשמר. גלריה תרענן.` })
       console.warn('[reorderImage] failed ids', failedIds)
+      const rows = await fetchServerSortOrder('images', gid)
+      if (rows && isOpenGallery(gid)) setGalleryImages(prev => applyServerSortOrder(prev, rows))
+      showToast({
+        kind: 'error',
+        text: rows
+          ? `סידור ${failedIds.length} תמונות לא נשמר. הוצג הסדר השמור.`
+          : `סידור ${failedIds.length} תמונות לא נשמר. רענן את הדף.`,
+      })
     }
   }
 

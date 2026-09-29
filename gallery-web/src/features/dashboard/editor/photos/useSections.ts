@@ -4,7 +4,7 @@ import { updateGallery } from '@/shared/data/galleries'
 import { deleteSection as deleteSectionRow, insertSection, updateSection } from '@/shared/data/sections'
 import { trackAction } from '@/shared/lib/sentryContext'
 import { purgeStorageForImages } from '../../lib/purgeStorage'
-import { moveItem, persistSortOrder } from '../../lib/reorder'
+import { applyServerSortOrder, fetchServerSortOrder, moveItem, persistSortOrder } from '../../lib/reorder'
 import { SECTION_COLUMNS, type Confirm, type Toast } from '../../types'
 import type { EditorSession } from '../useEditorSession'
 
@@ -19,7 +19,7 @@ export function useSections(deps: {
   const { session, fetchGalleries, confirm, showToast } = deps
   const {
     editingGallery, galleryImages, setGalleryImages,
-    sections, setSections, activeSectionId, setActiveSectionId, markDirty,
+    sections, setSections, activeSectionId, setActiveSectionId, markDirty, isOpenGallery,
   } = session
   const [newSectionName, setNewSectionName] = useState('')
   const [newSectionDesc, setNewSectionDesc] = useState('')
@@ -146,7 +146,8 @@ export function useSections(deps: {
   }
 
   async function reorderSection(draggedId: string, targetId: string) {
-    if (draggedId === targetId) return
+    if (draggedId === targetId || !editingGallery) return
+    const gid = editingGallery.id
     const ordered = sections.slice().sort((a, b) => a.sort_order - b.sort_order)
     const next = moveItem(ordered, draggedId, targetId)
     if (!next) return
@@ -158,8 +159,15 @@ export function useSections(deps: {
     markDirty()
     const failedIds = await persistSortOrder('gallery_sections', next.map(s => s.id))
     if (failedIds.length > 0) {
-      showToast({ kind: 'error', text: `סידור ${failedIds.length} סקשנים לא נשמר. רענן את הגלריה.` })
       console.warn('[reorderSection] failed ids', failedIds)
+      const rows = await fetchServerSortOrder('gallery_sections', gid)
+      if (rows && isOpenGallery(gid)) setSections(prev => applyServerSortOrder(prev, rows))
+      showToast({
+        kind: 'error',
+        text: rows
+          ? `סידור ${failedIds.length} סקשנים לא נשמר. הוצג הסדר השמור.`
+          : `סידור ${failedIds.length} סקשנים לא נשמר. רענן את הדף.`,
+      })
     }
   }
 
