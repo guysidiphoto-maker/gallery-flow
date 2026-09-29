@@ -1,24 +1,11 @@
-// Analytics foundation — Google Analytics 4 (GA4), env-gated.
-//
-// SAFE BY DEFAULT: nothing loads and nothing is sent unless
-// `VITE_GA4_MEASUREMENT_ID` is set at build time (a Vercel env var). With no
-// ID, every function here is a no-op — zero network, zero behavior change. This
-// lets the code ship safely now; you flip it on by adding the env var later.
-//
-// What you get once the ID is set:
-//   • GA4 "enhanced measurement" auto-tracks page_view on every route
-//     (galleries, dashboard, landing pages, blog, language routes) with no
-//     per-component code — covers most of the page-level KPIs by itself.
-//   • track(event, params) for explicit conversion/CTA events.
-//
-// No private IDs are hardcoded. The ID comes only from the environment.
+// Google Analytics 4, env-gated: with no VITE_GA4_MEASUREMENT_ID every function
+// here is a no-op. Page views come from GA4 enhanced measurement; track() is for
+// explicit conversion/CTA events.
 
-import { trackMetaStandard, trackMetaCustom, metaPixelEnabled } from './metaPixel'
+import { trackMetaStandard, trackMetaCustom } from './metaPixel'
 
 const GA_ID: string | undefined = import.meta.env.VITE_GA4_MEASUREMENT_ID
 
-// Canonical event taxonomy. Page-level views are captured automatically by GA4
-// enhanced measurement; the events below are the explicit ones worth firing.
 export const AnalyticsEvent = {
   DEMO_CLICK: 'demo_click',
   PRICING_CLICK: 'pricing_click',
@@ -30,12 +17,11 @@ export const AnalyticsEvent = {
   CONVERSION: 'conversion',
 } as const
 
-export type AnalyticsEventName =
+type AnalyticsEventName =
   (typeof AnalyticsEvent)[keyof typeof AnalyticsEvent]
 
-// Map our event taxonomy → Meta events. Standard events are the ones Meta's
-// optimizer understands; everything else is a Custom event so the real Standard
-// conversions (Lead/CompleteRegistration) stay clean. Per docs/PIXFLOW_TRACKING_PLAN.
+// Only true conversions map to Meta Standard events (the ones its optimizer
+// uses); everything else is Custom so Lead/CompleteRegistration stay clean.
 const META_STANDARD: Partial<Record<AnalyticsEventName, string>> = {
   [AnalyticsEvent.CONVERSION]: 'CompleteRegistration',
   [AnalyticsEvent.LEAD_CLICK]: 'Lead',
@@ -75,8 +61,6 @@ export function initAnalytics(): void {
       window.dataLayer!.push(arguments)
     }
     window.gtag('js', new Date())
-    // anonymize_ip + standard config; enhanced measurement is enabled in the
-    // GA4 property UI and needs no code here.
     window.gtag('config', GA_ID, { anonymize_ip: true })
   } catch {
     // Never let analytics break the app.
@@ -106,9 +90,4 @@ export function track(
   if (std) trackMetaStandard(std, params)
   const custom = META_CUSTOM[event]
   if (custom) trackMetaCustom(custom, params)
-}
-
-/** True when any analytics destination is active (GA4 or Meta Pixel). */
-export function analyticsEnabled(): boolean {
-  return Boolean(GA_ID) || metaPixelEnabled()
 }

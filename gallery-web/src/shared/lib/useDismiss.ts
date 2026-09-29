@@ -3,10 +3,8 @@
 
 import { useEffect, useRef } from 'react'
 
-// Pure handler factory — extracted so the dismissal contract (outside pointer
-// closes, inside pointer does NOT, Escape closes, other keys ignored) can be
-// unit-tested without a DOM/React runtime. Both the hook and the regression
-// test build their listeners from here so they can never drift apart.
+// Pure factory so the dismissal contract is unit-testable without a DOM; the
+// hook and the test share it so they can't drift apart.
 export function makeDismissHandlers(
   getContainer: () => { contains(node: unknown): boolean } | null,
   onClose: () => void,
@@ -18,12 +16,8 @@ export function makeDismissHandlers(
   const onKey = (e: { key: string; stopPropagation?: () => void; stopImmediatePropagation?: () => void }) => {
     if (e.key !== 'Escape') return
     onClose()
-    // Consume the Escape so it doesn't ALSO reach an outer Escape handler on
-    // the document (e.g. a modal's focus trap). Without this, pressing Escape
-    // with a menu open inside the gallery editor closed both the menu AND the
-    // editor. useDismiss listens in the capture phase (see below), so stopping
-    // immediate propagation here prevents the bubble-phase document listeners
-    // (useFocusTrap) from ever firing for this event.
+    // Consume Escape so an enclosing modal's focus trap (bubble phase) doesn't
+    // also close; we listen in the capture phase.
     e.stopPropagation?.()
     e.stopImmediatePropagation?.()
   }

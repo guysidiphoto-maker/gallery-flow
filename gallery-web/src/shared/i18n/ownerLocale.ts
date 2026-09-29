@@ -1,22 +1,11 @@
-// ownerLocale: a tiny, dependency-free locale layer for the OWNER dashboard
-// (the business operator's side; never used on client-portal routes).
-//
-// Cloned from src/lib/portalLocale.ts on purpose: two locales only, Hebrew
-// (RTL, default) and English (LTR). The active interface is NEVER mixed.
-// Preference persists in localStorage under its OWN key so the owner's
-// language choice is independent from any portal preference. A React hook
-// exposes `{ locale, dir, t, setLocale, toggle }` and re-renders subscribers
-// when the locale changes.
-//
-// Ownership note (overnight sprint contract C8): this module is created by
-// the Tour agent and carries the shared hook plus the tour strings. Other
-// wave-1 areas ship their strings in a local `strings.ts` with the same
-// `{ he: {}, en: {} }` shape and read `locale`/`dir` from useOwnerLocale().
+// Owner-dashboard locale (he/RTL default, en/LTR), never mixed in one view.
+// Stored under its own key so it's independent of the client-portal choice;
+// feature strings live in local `strings.ts` files with the same shape.
 
 import { useCallback, useSyncExternalStore } from 'react'
 
-export type Locale = 'he' | 'en'
-export type Dir = 'rtl' | 'ltr'
+type Locale = 'he' | 'en'
+type Dir = 'rtl' | 'ltr'
 
 const STORAGE_KEY = 'pixflow-owner-locale'
 
@@ -33,20 +22,19 @@ const listeners = new Set<() => void>()
 
 function emit() { listeners.forEach(l => l()) }
 
-export function getOwnerLocale(): Locale { return current }
+function getOwnerLocale(): Locale { return current }
 
-export function setOwnerLocaleValue(next: Locale) {
+function setOwnerLocaleValue(next: Locale) {
   if (next === current) return
   current = next
   try { localStorage.setItem(STORAGE_KEY, next) } catch { /* ignore */ }
   emit()
 }
 
-export function dirFor(locale: Locale): Dir { return locale === 'he' ? 'rtl' : 'ltr' }
+function dirFor(locale: Locale): Dir { return locale === 'he' ? 'rtl' : 'ltr' }
 
 // ─── Dictionary ─────────────────────────────────────────────────────────────
-// One flat key namespace. Copy rules (contract C8): action-oriented, warm,
-// no internal jargon, no em-dashes, every key exists in BOTH he and en.
+// Copy: action-oriented, warm, no jargon, no em-dashes; every key in both he and en.
 
 const STRINGS = {
   he: {
@@ -213,7 +201,7 @@ const STRINGS = {
 
 export type OwnerStringKey = keyof (typeof STRINGS)['he']
 
-export function translateOwner(locale: Locale, key: OwnerStringKey, vars?: Record<string, string | number>): string {
+function translateOwner(locale: Locale, key: OwnerStringKey, vars?: Record<string, string | number>): string {
   let s: string = STRINGS[locale][key]
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
@@ -227,14 +215,14 @@ export function translateOwner(locale: Locale, key: OwnerStringKey, vars?: Recor
 
 const INTL_LOCALE: Record<Locale, string> = { he: 'he-IL', en: 'en-US' }
 
-export function formatOwnerDate(locale: Locale, iso: string | null): string {
+function formatOwnerDate(locale: Locale, iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   return new Intl.DateTimeFormat(INTL_LOCALE[locale], { year: 'numeric', month: 'long', day: 'numeric' }).format(d)
 }
 
-export function formatOwnerNumber(locale: Locale, n: number): string {
+function formatOwnerNumber(locale: Locale, n: number): string {
   return new Intl.NumberFormat(INTL_LOCALE[locale]).format(n)
 }
 
@@ -245,7 +233,7 @@ function subscribe(cb: () => void) {
   return () => { listeners.delete(cb) }
 }
 
-export interface OwnerLocale {
+interface OwnerLocale {
   locale: Locale
   dir: Dir
   t: (key: OwnerStringKey, vars?: Record<string, string | number>) => string

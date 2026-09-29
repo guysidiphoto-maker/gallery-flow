@@ -1,0 +1,10 @@
+/* Status hues brighter than the editorial tokens, for legibility on the night background. */
+.ec-root {
+  --ec-error: #f87171;
+  --ec-success: #22c55e;
+  --ec-warning: #fbbf24;
+  --ec-error-border: rgb(239 68 68 / 0.5);
+}
+
+@keyframes ec-fade-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ec-check { 0% { transform: scale(0); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }

@@ -1,23 +1,6 @@
-// publicSession.ts — Phase 4.5.C
-//
-// Anonymous gallery viewer session. Lives parallel to (NOT mixed with)
-// Phase 3's client-token-* session keys, which authenticate PIN-protected
-// dashboards. This one authenticates anyone who opens /<biz>/<gallery>
-// from a WhatsApp/Slack link — they have no PIN and no login.
-//
-// Token: 43-char base64url, gallery-scoped, IP-bound, 60-min TTL. Issued
-// by /api/gallery-access action=public_gallery_session. Cached in
-// sessionStorage (tab-scoped, dies on tab close).
-//
-// Refresh strategy: callers should re-call ensurePublicSession before each
-// risky operation. The endpoint is idempotent (same-IP same-gallery alive
-// token is reused). A passive 50-minute interval refresh keeps the cache
-// warm; mid-scroll expiry is handled lazily by signedStorage.ts which
-// re-issues if the cache returns nothing.
-//
-// Feature flag: this whole module no-ops if VITE_PUBLIC_VIEWER_SIGNED_URLS
-// is not '1'. Until then ensurePublicSession returns null and signedStorage
-// behaves exactly as today (Phase 4.4 behavior).
+// Anonymous gallery-viewer session for link visitors (no PIN, no login), kept
+// separate from the PIN-dashboard client tokens. Gallery-scoped, IP-bound token
+// cached per tab; no-ops unless VITE_PUBLIC_VIEWER_SIGNED_URLS is '1'.
 
 const STORAGE_KEY = (galleryId: string) => `pixflow-public-token-${galleryId}`
 const REFRESH_BEFORE_EXPIRY_MS = 5 * 60 * 1000
@@ -149,10 +132,6 @@ export async function ensurePublicSession(
 export function readPublicSessionToken(galleryId: string): string | null {
   if (!ENABLED) return null
   return readCache(galleryId)
-}
-
-export function clearPublicSession(galleryId: string): void {
-  clearCache(galleryId)
 }
 
 export function isPublicViewerSignedUrlsEnabled(): boolean {

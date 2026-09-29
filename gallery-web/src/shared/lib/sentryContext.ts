@@ -1,18 +1,11 @@
-// Sentry context helpers — attaches user / gallery / action breadcrumbs
-// to every event captured after they're called.
-//
-// Every helper is a no-op when Sentry isn't initialized (no DSN in env),
-// so feature code can call them unconditionally without a guard. Failures
-// inside the SDK are swallowed — observability must never crash the app.
+// Sentry user/action context. Every helper is a safe no-op when Sentry isn't
+// initialized, so feature code can call them unconditionally.
 
 import * as Sentry from '@sentry/react'
 
-export interface SentryUser {
+interface SentryUser {
   id: string
-  /** Optional — the dashboard knows the photographer's email; the gallery
-   *  viewer does not. Passed through verbatim; the `beforeSend` hook in
-   *  `sentry.ts` redacts it from request payloads / extras but we keep it
-   *  on the user object so Sentry can group + search by it. */
+  /** Kept on the user object (not redacted) so Sentry can group/search by it. */
   email?: string
 }
 
@@ -24,49 +17,7 @@ export function setSentryUser(user: SentryUser): void {
   }
 }
 
-/** Clear the user context — call on sign-out. */
-export function clearSentryUser(): void {
-  try {
-    Sentry.setUser(null)
-  } catch {
-    /* observability never throws */
-  }
-}
-
-export interface SentryGallery {
-  id: string
-  slug?: string | null
-  status?: string | null
-}
-
-/** Tag the current Sentry scope with the gallery the user is operating on,
- *  and drop a breadcrumb so the event timeline shows when the user opened
- *  it. Tags are searchable in the Sentry UI — `gallery_id:abc` filters
- *  every event from that gallery's session. */
-export function setSentryGallery(gallery: SentryGallery): void {
-  try {
-    Sentry.setTag('gallery_id', gallery.id)
-    if (gallery.slug) Sentry.setTag('gallery_slug', gallery.slug)
-    if (gallery.status) Sentry.setTag('gallery_status', gallery.status)
-    Sentry.addBreadcrumb({
-      category: 'gallery',
-      message: 'open',
-      level: 'info',
-      data: {
-        gallery_id: gallery.id,
-        slug: gallery.slug ?? null,
-        status: gallery.status ?? null,
-      },
-    })
-  } catch {
-    /* observability never throws */
-  }
-}
-
-/** Drop a Sentry breadcrumb for a user action. Categories are short strings
- *  that group related events in the Sentry timeline ("gallery", "section",
- *  "upload", "story"). `data` is attached verbatim and runs through the
- *  PII redactor in `beforeSend`, so passing IDs / counts is safe. */
+/** Breadcrumb for a user action; `data` passes through the PII redactor. */
 export function trackAction(
   category: string,
   action: string,
@@ -85,11 +36,7 @@ export function trackAction(
   }
 }
 
-/** Pull the latest Sentry event id (set on any captured exception) along
- *  with the currently-tagged gallery + user. Used by the error boundary's
- *  "report this" button so the photographer can paste an actionable blob
- *  into a support email. */
-export interface SentryReportContext {
+interface SentryReportContext {
   eventId: string | null
   user: { id: string | null; email: string | null }
   gallery: { id: string | null; slug: string | null; status: string | null }
@@ -98,6 +45,7 @@ export interface SentryReportContext {
   timestamp: string
 }
 
+/** Last event id + tagged user/gallery, for the error boundary's "report this" blob. */
 export function getSentryReportContext(): SentryReportContext {
   let eventId: string | null = null
   let userId: string | null = null
@@ -113,8 +61,7 @@ export function getSentryReportContext(): SentryReportContext {
       userId = (scopeUser.id as string | undefined) ?? null
       userEmail = (scopeUser.email as string | undefined) ?? null
     }
-    // Tags aren't part of the public getter API, but the scope serializes
-    // them via `getScopeData()`; fall back gracefully if the shape shifts.
+    // Tags have no public getter; getScopeData() is best-effort.
     const scopeData = (scope as unknown as { getScopeData?: () => { tags?: Record<string, string> } }).getScopeData?.()
     const tags = scopeData?.tags ?? {}
     galleryId = tags.gallery_id ?? null
