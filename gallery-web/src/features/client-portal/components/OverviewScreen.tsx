@@ -1,15 +1,12 @@
-// OverviewScreen — the personalized opening screen for a selected client.
-//
-// Honest by design: a warm greeting with the REAL client name, a one-line human
-// sentence, the latest gallery highlighted, then recent galleries. NO invented
-// stats (no "pending approvals", cadence, or coverage guesses). Warm empty
-// state when there are no galleries yet. Same for entitled and non-entitled
-// clients — the difference is only which nav areas exist, not fabricated data.
+// Opening screen: greeting with the real client name, the latest gallery, then
+// recent ones. Deliberately no invented stats.
 
 import { Icon } from '@/shared/ui/Icon'
+import { cn, Eyebrow } from '@/shared/ui'
 import type { PortalLocale } from '@/shared/i18n/portalLocale'
-import { tokens, eyebrow, serifDisplay } from './tokens'
-import { PortalCover } from './CoverFallback'
+import { countLabel } from '../lib/countLabel'
+import { focusRing } from '../lib/focusRing'
+import { PortalCover } from './PortalCover'
 import { GalleryCard, type GalleryCardData } from './GalleryCard'
 import { EmptyState } from './EmptyState'
 
@@ -21,26 +18,18 @@ interface Props {
   onViewAll: () => void
 }
 
-function countLabel(loc: PortalLocale, n: number): string {
-  if (n === 1) return loc.t('galleries.count.one')
-  return loc.t('galleries.count', { n: loc.fmtNum(n) })
-}
-
 export function OverviewScreen({ loc, clientName, galleries, hrefFor, onViewAll }: Props) {
   const latest = galleries[0] ?? null
   const rest = galleries.slice(1, 4)
 
   return (
     <div>
-      {/* Greeting */}
-      <section style={{ marginBottom: 40 }}>
-        <div style={{ ...eyebrow, marginBottom: 12 }}>{loc.t('nav.overview')}</div>
-        <h2 style={{ ...serifDisplay, fontSize: 'clamp(28px, 4.5vw, 40px)', margin: '0 0 14px', lineHeight: 1.08 }}>
+      <section className="mb-10">
+        <Eyebrow className="mb-3 block">{loc.t('nav.overview')}</Eyebrow>
+        <h2 className="mb-3.5 font-serif text-[clamp(28px,4.5vw,40px)] leading-[1.08] font-medium tracking-[-0.01em] text-ink">
           {loc.t('overview.greeting', { name: clientName })}
         </h2>
-        <p style={{ fontSize: 15, color: tokens.textSecondary, margin: 0, lineHeight: 1.6, maxWidth: 560 }}>
-          {loc.t('overview.subtitle')}
-        </p>
+        <p className="max-w-[560px] text-[15px] leading-[1.6] text-ink-soft">{loc.t('overview.subtitle')}</p>
       </section>
 
       {!latest ? (
@@ -51,44 +40,36 @@ export function OverviewScreen({ loc, clientName, galleries, hrefFor, onViewAll 
         />
       ) : (
         <>
-          {/* Latest gallery — feature block */}
-          <section style={{ marginBottom: 44 }}>
-            <div style={{ ...eyebrow, marginBottom: 16 }}>{loc.t('overview.latest')}</div>
+          <section className="mb-11">
+            <Eyebrow className="mb-4 block">{loc.t('overview.latest')}</Eyebrow>
             <a
-              className="pf-focus pf-anim pf-feature-split"
               href={hrefFor(latest.id)}
               aria-label={`${loc.t('overview.latestCta')} — ${latest.name}`}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)',
-                gap: 0,
-                border: `1px solid ${tokens.border}`,
-                borderRadius: 6,
-                overflow: 'hidden',
-                textDecoration: 'none',
-                color: tokens.textPrimary,
-                background: '#fff',
-              }}
+              className={cn(
+                'grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] overflow-hidden rounded-sm border border-line-soft bg-white text-ink no-underline',
+                'max-[641px]:grid-cols-1',
+                focusRing,
+              )}
             >
-              <div style={{ minHeight: 220 }}>
-                <PortalCover coverUrl={latest.coverUrl} name={latest.name} aspectRatio="16 / 10" />
+              <div className="min-h-[220px]">
+                <PortalCover coverUrl={latest.coverUrl} name={latest.name} aspectClass="aspect-[16/10]" className="h-full" />
               </div>
-              <div style={{ padding: 'clamp(20px, 3vw, 32px)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12 }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: tokens.textSecondary }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: tokens.statusLive }} />
+              <div className="flex flex-col justify-center gap-3 p-[clamp(20px,3vw,32px)]">
+                <div className="inline-flex items-center gap-2 text-[11px] font-medium tracking-[0.14em] text-ink-soft uppercase">
+                  <span className="size-1.5 rounded-full bg-sage" />
                   {loc.t('status.published')}
                   {loc.fmtDate(latest.publishedIso) && (
                     <>
-                      <span aria-hidden style={{ opacity: 0.5 }}>·</span>
+                      <span aria-hidden className="opacity-50">·</span>
                       <span>{loc.fmtDate(latest.publishedIso)}</span>
                     </>
                   )}
                 </div>
-                <h3 style={{ ...serifDisplay, fontSize: 'clamp(22px, 3vw, 28px)', margin: 0, lineHeight: 1.2 }}>
+                <h3 className="font-serif text-[clamp(22px,3vw,28px)] leading-[1.2] font-medium tracking-[-0.01em] text-ink">
                   {latest.name}
                 </h3>
-                <div style={{ fontSize: 13, color: tokens.textMuted }}>{countLabel(loc, latest.imageCount)}</div>
-                <span style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 500, letterSpacing: '0.14em', textTransform: 'uppercase', color: tokens.textPrimary }}>
+                <div className="text-[13px] text-muted">{countLabel(loc, latest.imageCount)}</div>
+                <span className="mt-2 inline-flex items-center gap-2 text-xs font-medium tracking-[0.14em] text-ink uppercase">
                   {loc.t('overview.latestCta')}
                   <Icon name="arrow-out" size={13} strokeWidth={1.85} />
                 </span>
@@ -96,37 +77,24 @@ export function OverviewScreen({ loc, clientName, galleries, hrefFor, onViewAll 
             </a>
           </section>
 
-          {/* Recent galleries */}
           {rest.length > 0 && (
             <section>
-              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
-                <div style={eyebrow}>{loc.t('overview.recent')}</div>
+              <div className="mb-[18px] flex flex-wrap items-end justify-between gap-4">
+                <Eyebrow className="block">{loc.t('overview.recent')}</Eyebrow>
                 <button
                   type="button"
-                  className="pf-focus pf-anim"
                   onClick={onViewAll}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '8px 14px',
-                    border: `1px solid ${tokens.border}`,
-                    borderRadius: 999,
-                    background: 'transparent',
-                    color: tokens.textSecondary,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    fontSize: 11,
-                    fontWeight: 500,
-                    letterSpacing: '0.1em',
-                    textTransform: 'uppercase',
-                  }}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border border-line-soft bg-transparent px-3.5 py-2',
+                    'text-[11px] font-medium tracking-[0.1em] text-ink-soft uppercase',
+                    focusRing,
+                  )}
                 >
                   {loc.t('overview.recentCta')}
                   <Icon name="arrow-out" size={12} strokeWidth={1.85} />
                 </button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 20 }}>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
                 {rest.map(g => (
                   <GalleryCard
                     key={g.id}
