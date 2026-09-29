@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { insertGallery } from '@/shared/data/galleries'
 import { applyBrandKitToGalleryDefaults, getBrandKit } from '@/features/brand-kit/brandKit'
 import { assignGallery } from '@/features/clients/api'
 import type { Toast } from '../types'
@@ -42,7 +42,7 @@ export function useCreateGallery(deps: {
     // Brand Kit defaults (studio name / logo / welcome message) spread last.
     const brand = await getBrandKit(businessId)
     const brandDefaults = applyBrandKitToGalleryDefaults(brand)
-    const { data: created, error } = await supabase.from('galleries').insert({
+    const { data: created, error } = await insertGallery({
       name: newName.trim(),
       business_id: businessId,
       status: 'draft',
@@ -82,7 +82,7 @@ export function useCreateGallery(deps: {
         feedLayout,
         ...brandDefaults,
       },
-    }).select('id').single()
+    })
     setCreating(false)
     if (error) {
       console.warn('[createGallery]', error)

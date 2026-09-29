@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { deleteStory, insertStory } from '@/shared/data/stories'
+import { removeStorageObjects, uploadStorageObject } from '@/shared/data/storage'
 import { trackAction } from '@/shared/lib/sentryContext'
 import { readVideoDurationSeconds } from '../../lib/videoDuration'
 import { STORY_COLUMNS, type Toast } from '../../types'
@@ -22,6 +23,11 @@ export function useStories(deps: {
   const [storyMenuOpenId, setStoryMenuOpenId] = useState<string | null>(null)
   const [confirmDeleteStoryId, setConfirmDeleteStoryId] = useState<string | null>(null)
   const storyFileInputRef = useRef<HTMLInputElement>(null)
+
+  function endUpload() {
+    setStoryUploading(false)
+    setStoryUploadProgress(null)
+  }
 
   async function handleStoryUpload(files: FileList | null) {
     if (!files || files.length === 0 || !editingGallery || !businessSlug) return
@@ -56,34 +62,28 @@ export function useStories(deps: {
     const storagePath = `${businessSlug}/${editingGallery.id}/story_${styleTag}.mp4`
 
     setStoryUploadProgress({ pct: 30, filename: file.name })
-    const { error: uploadErr } = await supabase.storage
-      .from(STORY_BUCKET)
-      .upload(storagePath, file, { contentType: 'video/mp4', upsert: true, cacheControl: '31536000' })
+    const { error: uploadErr } = await uploadStorageObject(STORY_BUCKET, storagePath, file, {
+      contentType: 'video/mp4', upsert: true, cacheControl: '31536000',
+    })
     if (uploadErr) {
-      setStoryUploading(false)
-      setStoryUploadProgress(null)
+      endUpload()
       showToast({ kind: 'error', text: 'שגיאה בהעלאה: ' + uploadErr.message })
       console.warn('[handleStoryUpload]', uploadErr)
       return
     }
 
     setStoryUploadProgress({ pct: 80, filename: file.name })
-    const { data: inserted, error: insertErr } = await supabase
-      .from('stories')
-      .insert({
-        gallery_id: editingGallery.id,
-        style: 'manual',
-        storage_path: storagePath,
-        duration,
-      })
-      .select(STORY_COLUMNS)
-      .single()
+    const { data: inserted, error: insertErr } = await insertStory({
+      gallery_id: editingGallery.id,
+      style: 'manual',
+      storage_path: storagePath,
+      duration,
+    }, STORY_COLUMNS)
 
     if (insertErr || !inserted) {
       // Remove the orphaned object so retries don't pile up storage.
-      await supabase.storage.from(STORY_BUCKET).remove([storagePath])
-      setStoryUploading(false)
-      setStoryUploadProgress(null)
+      await removeStorageObjects(STORY_BUCKET, [storagePath])
+      endUpload()
       showToast({ kind: 'error', text: 'שגיאה בשמירת הסטורי: ' + (insertErr?.message ?? 'unknown') })
       console.warn('[story-insert]', insertErr)
       return
@@ -110,16 +110,11 @@ export function useStories(deps: {
     markDirty()
 
     if (story.storage_path) {
-      const { error: rmErr } = await supabase.storage
-        .from(STORY_BUCKET)
-        .remove([story.storage_path])
+      const { error: rmErr } = await removeStorageObjects(STORY_BUCKET, [story.storage_path])
       if (rmErr) console.warn('[story-delete] storage remove failed', rmErr)
     }
 
-    const { error: dbErr } = await supabase
-      .from('stories')
-      .delete()
-      .eq('id', storyId)
+    const { error: dbErr } = await deleteStory(storyId)
 
     if (dbErr) {
       setStories(previous)

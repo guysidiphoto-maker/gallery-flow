@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { deleteImage, deleteImages, updateImage, updateImages } from '@/shared/data/images'
+import { updateGallery } from '@/shared/data/galleries'
 import { clearSignedUrlCache } from '@/shared/lib/signedStorage'
 import { readCoverConfig } from '@/shared/gallery/coverImage'
 import { replacePhoto, ReplacePhotoError } from '../../lib/replacePhoto'
@@ -41,6 +42,26 @@ export function usePhotoActions(deps: {
     setSelectedImageIds(new Set())
   }
 
+  // Toasts and logs a failed write; true when there was an error.
+  function failed(error: { message: string } | null, logLabel: string, prefix: string): boolean {
+    if (!error) return false
+    showToast({ kind: 'error', text: prefix + error.message })
+    console.warn(logLabel, error)
+    return true
+  }
+
+  // Local patch of the matching photos after a successful write.
+  function patchImages(matches: (id: string) => boolean, patch: Partial<GalleryImage>) {
+    setGalleryImages(prev => prev.map(i => matches(i.id) ? { ...i, ...patch } : i))
+    markDirty()
+  }
+
+  // Keeps galleries.image_count in step after deletes, then refreshes the grid.
+  async function syncImageCount(galleryId: string, removed: number) {
+    await updateGallery(galleryId, { image_count: Math.max(0, galleryImages.length - removed) })
+    fetchGalleries()
+  }
+
   // In select mode a click toggles; emptying the selection leaves select mode.
   function toggleSelected(imageId: string) {
     setSelectedImageIds(prev => {
@@ -77,33 +98,21 @@ export function usePhotoActions(deps: {
     const ids = Array.from(selectedImageIds)
     // Snapshot paths before the row delete so storage can still be purged.
     const snap = galleryImages.filter(i => selectedImageIds.has(i.id))
-    const { error } = await supabase.from('images').delete().in('id', ids)
-    if (error) {
-      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + error.message })
-      console.warn('[bulkDelete]', error)
-      return
-    }
+    const { error } = await deleteImages(ids)
+    if (failed(error, '[bulkDelete]', 'שגיאה במחיקה: ')) return
     void purgeStorageForImages(snap)
     setGalleryImages(prev => prev.filter(i => !selectedImageIds.has(i.id)))
     markDirty()
-    await supabase.from('galleries')
-      .update({ image_count: Math.max(0, galleryImages.length - ids.length) })
-      .eq('id', editingGallery.id)
-    fetchGalleries()
+    await syncImageCount(editingGallery.id, ids.length)
     exitSelectMode()
   }
 
   async function bulkToggleTopPick(makeTopPick: boolean) {
     if (!editingGallery || selectedImageIds.size === 0) return
     const ids = Array.from(selectedImageIds)
-    const { error } = await supabase.from('images').update({ is_top_pick: makeTopPick }).in('id', ids)
-    if (error) {
-      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
-      console.warn('[bulkToggleTopPick]', error)
-      return
-    }
-    setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, is_top_pick: makeTopPick } : i))
-    markDirty()
+    const { error } = await updateImages(ids, { is_top_pick: makeTopPick })
+    if (failed(error, '[bulkToggleTopPick]', 'שגיאה: ')) return
+    patchImages(id => selectedImageIds.has(id), { is_top_pick: makeTopPick })
     exitSelectMode()
   }
 
@@ -111,17 +120,9 @@ export function usePhotoActions(deps: {
   async function bulkMoveToSection(sectionId: string) {
     if (!editingGallery || selectedImageIds.size === 0) return
     const ids = Array.from(selectedImageIds)
-    const { error } = await supabase.from('images')
-      .update({ section_id: sectionId })
-      .in('id', ids)
-      .eq('gallery_id', editingGallery.id)
-    if (error) {
-      showToast({ kind: 'error', text: 'העברה נכשלה: ' + error.message })
-      console.warn('[bulkMoveToSection]', error)
-      return
-    }
-    setGalleryImages(prev => prev.map(i => selectedImageIds.has(i.id) ? { ...i, section_id: sectionId } : i))
-    markDirty()
+    const { error } = await updateImages(ids, { section_id: sectionId }, editingGallery.id)
+    if (failed(error, '[bulkMoveToSection]', 'העברה נכשלה: ')) return
+    patchImages(id => selectedImageIds.has(id), { section_id: sectionId })
     exitSelectMode()
     showToast({ kind: 'success', text: `${ids.length} תמונות הועברו` })
   }
@@ -145,25 +146,15 @@ export function usePhotoActions(deps: {
     const img = galleryImages.find(i => i.id === imageId)
     if (!img) return
     const next = !img.is_top_pick
-    const { error } = await supabase.from('images').update({ is_top_pick: next }).eq('id', imageId)
-    if (error) {
-      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
-      console.warn('[toggleSingleTopPick]', error)
-      return
-    }
-    setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, is_top_pick: next } : i))
-    markDirty()
+    const { error } = await updateImage(imageId, { is_top_pick: next })
+    if (failed(error, '[toggleSingleTopPick]', 'שגיאה: ')) return
+    patchImages(id => id === imageId, { is_top_pick: next })
   }
 
   async function moveImageToSection(imageId: string, sectionId: string | null) {
-    const { error } = await supabase.from('images').update({ section_id: sectionId }).eq('id', imageId)
-    if (error) {
-      showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
-      console.warn('[moveImageToSection]', error)
-      return
-    }
-    setGalleryImages(prev => prev.map(i => i.id === imageId ? { ...i, section_id: sectionId } : i))
-    markDirty()
+    const { error } = await updateImage(imageId, { section_id: sectionId })
+    if (failed(error, '[moveImageToSection]', 'שגיאה: ')) return
+    patchImages(id => id === imageId, { section_id: sectionId })
   }
 
   async function deleteSingleImage(imageId: string) {
@@ -174,12 +165,8 @@ export function usePhotoActions(deps: {
       confirmLabel: 'מחק',
       danger: true,
     }))) return
-    const { error } = await supabase.from('images').delete().eq('id', imageId)
-    if (error) {
-      showToast({ kind: 'error', text: 'שגיאה במחיקה: ' + error.message })
-      console.warn('[deleteSingleImage]', error)
-      return
-    }
+    const { error } = await deleteImage(imageId)
+    if (failed(error, '[deleteSingleImage]', 'שגיאה במחיקה: ')) return
     // Deleting the cover photo clears the cover so the viewer never 404s.
     const deleted = galleryImages.find(i => i.id === imageId)
     const coverCfg = readCoverConfig((editingGallery.delivery_settings ?? {}) as Record<string, unknown>)
@@ -188,10 +175,7 @@ export function usePhotoActions(deps: {
     }
     setGalleryImages(prev => prev.filter(i => i.id !== imageId))
     markDirty()
-    await supabase.from('galleries')
-      .update({ image_count: Math.max(0, galleryImages.length - 1) })
-      .eq('id', editingGallery.id)
-    fetchGalleries()
+    await syncImageCount(editingGallery.id, 1)
   }
 
   async function downloadOriginal(imageId: string) {

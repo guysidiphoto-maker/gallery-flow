@@ -1,7 +1,7 @@
 // Clients Manager data layer. Reads are self-scoped owner RPCs (business comes
 // from auth.uid(), never the browser); writes go through /api/client-admin,
 // which re-verifies ownership. No email is sent — links are returned instead.
-import { supabase } from '@/shared/lib/supabase'
+import { getClientDetail, listAssignableGalleries, listClientsOverview, listMyEntitlements } from '@/shared/data/clients'
 import { authedFetch } from '@/shared/lib/authedFetch'
 
 // ── RPC row/shape types (frozen data contract) ──────────────────────────────
@@ -94,19 +94,19 @@ export type ApiResult<T> =
 // ── Reads ───────────────────────────────────────────────────────────────────
 
 export async function fetchClientsOverview(): Promise<ClientOverviewRow[]> {
-  const { data, error } = await supabase.rpc('cpv2_owner_clients_overview')
+  const { data, error } = await listClientsOverview()
   if (error) throw new Error(error.message)
   return (data ?? []) as ClientOverviewRow[]
 }
 
 export async function fetchClientDetail(clientId: string): Promise<ClientDetail | null> {
-  const { data, error } = await supabase.rpc('cpv2_owner_client_detail', { p_client_id: clientId })
+  const { data, error } = await getClientDetail(clientId)
   if (error) throw new Error(error.message)
   return (data ?? null) as ClientDetail | null
 }
 
 export async function fetchAssignableGalleries(): Promise<AssignableGalleryRow[]> {
-  const { data, error } = await supabase.rpc('cpv2_owner_assignable_galleries')
+  const { data, error } = await listAssignableGalleries()
   if (error) throw new Error(error.message)
   return (data ?? []) as AssignableGalleryRow[]
 }
@@ -120,7 +120,7 @@ interface EntitlementRow {
 // Soft signal for a UI badge only: fails closed (no badge) on any error.
 export async function hasProductionSuite(): Promise<boolean> {
   try {
-    const { data, error } = await supabase.rpc('my_business_entitlements')
+    const { data, error } = await listMyEntitlements()
     if (error) throw new Error(error.message)
     const rows = (data ?? []) as EntitlementRow[]
     return rows.some(

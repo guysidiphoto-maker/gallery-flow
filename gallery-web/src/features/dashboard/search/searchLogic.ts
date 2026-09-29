@@ -142,7 +142,7 @@ export function shouldSearch(query: string, payload: SearchFilterPayload): boole
 }
 
 // ─── Debounce + stale-response guard ────────────────────────────────────────
-// supabase.rpc() can't be aborted: each request takes a ticket and only the
+// Supabase RPCs can't be aborted: each request takes a ticket and only the
 // latest ticket may commit its response.
 
 export interface SequenceGuard {

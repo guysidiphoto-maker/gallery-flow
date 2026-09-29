@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { deleteImages } from '@/shared/data/images'
+import { updateGallery } from '@/shared/data/galleries'
+import { deleteSection as deleteSectionRow, insertSection, updateSection } from '@/shared/data/sections'
 import { trackAction } from '@/shared/lib/sentryContext'
 import { purgeStorageForImages } from '../../lib/purgeStorage'
 import { moveItem, persistSortOrder } from '../../lib/reorder'
@@ -31,30 +33,33 @@ export function useSections(deps: {
   const [editingSectionDescId, setEditingSectionDescId] = useState<string | null>(null)
   const [sectionDescDraft, setSectionDescDraft] = useState('')
 
+  // Appends a section to the open gallery; null (after a toast) on failure.
+  async function createSection(logLabel: string, fields: { name: string; description?: string | null }) {
+    const { data, error } = await insertSection(
+      { gallery_id: editingGallery!.id, ...fields, sort_order: sections.length },
+      SECTION_COLUMNS,
+    )
+    if (error || !data) {
+      showToast({ kind: 'error', text: 'יצירת הסקשן נכשלה. נסה שוב.' })
+      console.warn(logLabel, error)
+      return null
+    }
+    setSections(prev => [...prev, data])
+    setActiveSectionId(data.id)
+    return data
+  }
+
   async function addSection() {
     if (!editingGallery || !newSectionName.trim()) return
-    const trimmedDesc = newSectionDesc.trim()
-    const { data, error } = await supabase
-      .from('gallery_sections')
-      .insert({
-        gallery_id: editingGallery.id,
-        name: newSectionName.trim(),
-        description: trimmedDesc || null,
-        sort_order: sections.length,
-      })
-      .select(SECTION_COLUMNS)
-      .single()
-    if (error) {
-      showToast({ kind: 'error', text: 'יצירת הסקשן נכשלה. נסה שוב.' })
-      console.warn('[addSection]', error)
-      return
-    }
-    if (data) setSections(prev => [...prev, data])
+    const created = await createSection('[addSection]', {
+      name: newSectionName.trim(),
+      description: newSectionDesc.trim() || null,
+    })
+    if (!created) return
     markDirty()
     setNewSectionName('')
     setNewSectionDesc('')
     setShowAddSetModal(false)
-    if (data) setActiveSectionId(data.id)
   }
 
   // Uploads always land in a section; a brand-new gallery gets a default one
@@ -62,30 +67,15 @@ export function useSections(deps: {
   async function ensureUploadSection(): Promise<string | null> {
     if (activeSectionId) return activeSectionId
     if (!editingGallery) return null
-    const { data, error } = await supabase
-      .from('gallery_sections')
-      .insert({
-        gallery_id: editingGallery.id,
-        name: `סקשן ${sections.length + 1}`,
-        sort_order: sections.length,
-      })
-      .select(SECTION_COLUMNS)
-      .single()
-    if (error) {
-      showToast({ kind: 'error', text: 'יצירת הסקשן נכשלה. נסה שוב.' })
-      console.warn('[ensureUploadSection]', error)
-      return null
-    }
-    setSections(prev => [...prev, data])
-    setActiveSectionId(data.id)
-    return data.id
+    const created = await createSection('[ensureUploadSection]', { name: `סקשן ${sections.length + 1}` })
+    return created?.id ?? null
   }
 
   async function renameSection(id: string, name: string) {
     const trimmed = name.trim()
     if (!trimmed) return
     trackAction('section', 'rename', { section_id: id })
-    const { error } = await supabase.from('gallery_sections').update({ name: trimmed }).eq('id', id)
+    const { error } = await updateSection(id, { name: trimmed })
     if (error) {
       showToast({ kind: 'error', text: 'שגיאה: ' + error.message })
       console.warn('[renameSection]', error)
@@ -103,10 +93,7 @@ export function useSections(deps: {
     if (next === prev) return
     setSections(prevList => prevList.map(s => s.id === id ? { ...s, description: next } : s))
     markDirty()
-    const { error } = await supabase
-      .from('gallery_sections')
-      .update({ description: next })
-      .eq('id', id)
+    const { error } = await updateSection(id, { description: next })
     if (error) {
       setSections(prevList => prevList.map(s => s.id === id ? { ...s, description: prev } : s))
       showToast({ kind: 'error', text: 'שמירת התיאור נכשלה.' })
@@ -129,14 +116,14 @@ export function useSections(deps: {
       danger: true,
     }))) return
     if (photoIds.length > 0) {
-      const { error: imgErr } = await supabase.from('images').delete().in('id', photoIds)
+      const { error: imgErr } = await deleteImages(photoIds)
       if (imgErr) {
         showToast({ kind: 'error', text: 'שגיאה במחיקת התמונות: ' + imgErr.message })
         return
       }
       void purgeStorageForImages(photosToDelete)
     }
-    const { error } = await supabase.from('gallery_sections').delete().eq('id', id)
+    const { error } = await deleteSectionRow(id)
     if (error) { alert('שגיאה: ' + error.message); return }
     setGalleryImages(prev => prev.filter(i => i.section_id !== id))
     setSections(prev => prev.filter(s => s.id !== id))
@@ -145,9 +132,7 @@ export function useSections(deps: {
     }
     markDirty()
     if (photoIds.length > 0) {
-      await supabase.from('galleries')
-        .update({ image_count: Math.max(0, galleryImages.length - photoIds.length) })
-        .eq('id', editingGallery.id)
+      await updateGallery(editingGallery.id, { image_count: Math.max(0, galleryImages.length - photoIds.length) })
     }
     fetchGalleries()
   }

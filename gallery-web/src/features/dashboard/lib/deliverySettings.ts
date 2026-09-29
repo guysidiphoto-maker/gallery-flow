@@ -1,4 +1,4 @@
-import { supabase } from '@/shared/lib/supabase'
+import { updateGallerySettings } from '@/shared/data/galleries'
 
 // The only allowed write path for delivery_settings: direct column UPDATE is
 // revoked, so every write goes through the owner-checked, validating RPC.
@@ -7,10 +7,7 @@ export async function saveDeliverySettings(
   galleryId: string,
   patch: Record<string, unknown>,
 ): Promise<{ ok: boolean; errors?: unknown }> {
-  const { data, error } = await supabase.rpc('update_gallery_settings', {
-    p_gallery_id: galleryId,
-    p_patch: patch,
-  })
+  const { data, error } = await updateGallerySettings(galleryId, patch)
   if (error) return { ok: false, errors: [{ key: '_rpc', error: error.message }] }
   const res = (data ?? {}) as { ok?: boolean; errors?: unknown }
   return { ok: res.ok === true, errors: res.errors }

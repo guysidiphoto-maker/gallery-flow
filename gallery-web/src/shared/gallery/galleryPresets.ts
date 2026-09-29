@@ -1,7 +1,6 @@
 // Reusable delivery/appearance bundles. A preset never carries gallery identity
 // (title, client, passwords, cover, URLs); the server re-filters to the same keys.
-
-import { supabase } from '@/shared/lib/supabase'
+// DB reads/writes live in shared/data/presets.ts.
 
 /** Must match the server allowlist in _sanitize_preset_settings. */
 export const PRESET_ALLOWED_KEYS = [
@@ -55,52 +54,4 @@ export function summarizePreset(p: GalleryPreset): string[] {
   const total = Object.keys(s).length
   if (parts.length < total) parts.push(`+${total - parts.length} הגדרות`)
   return parts
-}
-
-export async function listPresets(businessId: string): Promise<GalleryPreset[]> {
-  const { data, error } = await supabase
-    .from('gallery_presets')
-    .select('*')
-    .eq('business_id', businessId)
-    .order('created_at', { ascending: false })
-  if (error) { console.warn('[presets] list failed', error); return [] }
-  return (data ?? []) as GalleryPreset[]
-}
-
-export async function savePreset(
-  businessId: string, name: string, deliverySettings: Record<string, unknown> | null | undefined,
-): Promise<GalleryPreset | null> {
-  const settings = capturePresetSettings(deliverySettings)
-  const { data, error } = await supabase
-    .from('gallery_presets')
-    .insert({ business_id: businessId, name: name.trim(), settings })
-    .select('*')
-    .single()
-  if (error) { console.warn('[presets] save failed', error); return null }
-  return data as GalleryPreset
-}
-
-export async function renamePreset(id: string, name: string): Promise<boolean> {
-  const { error } = await supabase
-    .from('gallery_presets')
-    .update({ name: name.trim() })
-    .eq('id', id)
-  if (error) { console.warn('[presets] rename failed', error); return false }
-  return true
-}
-
-export async function deletePreset(id: string): Promise<boolean> {
-  const { error } = await supabase.from('gallery_presets').delete().eq('id', id)
-  if (error) { console.warn('[presets] delete failed', error); return false }
-  return true
-}
-
-export async function setDefaultPreset(id: string): Promise<boolean> {
-  // A DB trigger clears the previous default.
-  const { error } = await supabase
-    .from('gallery_presets')
-    .update({ is_default: true })
-    .eq('id', id)
-  if (error) { console.warn('[presets] set-default failed', error); return false }
-  return true
 }

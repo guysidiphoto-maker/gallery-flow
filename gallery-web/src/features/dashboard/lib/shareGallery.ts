@@ -3,6 +3,8 @@
 // plain-text template as fallback.
 
 import { supabase } from '@/shared/lib/supabase'
+import { getOwnerBusiness } from '@/shared/data/businesses'
+import { invokeShareGallery } from '@/shared/data/shareEmail'
 
 // ── Brand kit shape ──────────────────────────────────────────────────────────
 // Mirrors the JSONB documented in migration 062. Every leaf is optional so a
@@ -53,11 +55,7 @@ export interface ShareGalleryPreviewResult {
 export async function loadStudioBrandKit(): Promise<BrandKit | null> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
-  const { data, error } = await supabase
-    .from('businesses')
-    .select('brand_kit, logo_url, business_name, website_url')
-    .eq('user_id', user.id)
-    .maybeSingle()
+  const { data, error } = await getOwnerBusiness(user.id, 'brand_kit, logo_url, business_name, website_url')
   if (error || !data) return null
   const stored = (data as { brand_kit?: BrandKit | null }).brand_kit ?? null
   // If the column is empty but the row has the legacy `logo_url` / website,
@@ -72,23 +70,23 @@ export async function loadStudioBrandKit(): Promise<BrandKit | null> {
   }
 }
 
+// Callers that already hold the kit pass it (even null) to skip the lookup.
+async function studioBrandFor(input: { studioBrand?: BrandKit | null }): Promise<BrandKit | null> {
+  return input.studioBrand !== undefined ? input.studioBrand : loadStudioBrandKit()
+}
+
 export async function sendGalleryShareEmail(
   input: ShareGalleryEmailInput,
 ): Promise<ShareGalleryEmailResult> {
   // Resolve brand kit up-front so a stale auth session fails here (in the
   // photographer's browser) rather than inside the edge function.
-  const studioBrand = input.studioBrand !== undefined
-    ? input.studioBrand
-    : await loadStudioBrandKit()
-
-  const { data, error } = await supabase.functions.invoke('share-gallery', {
-    body: {
-      galleryId:      input.galleryId,
-      recipientEmail: input.recipientEmail,
-      subject:        input.subject,
-      message:        input.message,
-      studioBrand:    studioBrand ?? null,
-    },
+  const studioBrand = await studioBrandFor(input)
+  const { data, error } = await invokeShareGallery({
+    galleryId:      input.galleryId,
+    recipientEmail: input.recipientEmail,
+    subject:        input.subject,
+    message:        input.message,
+    studioBrand:    studioBrand ?? null,
   })
   if (error) {
     return { ok: false, error: error.message ?? 'invoke_failed' }
@@ -104,19 +102,14 @@ export async function sendGalleryShareEmail(
 export async function previewGalleryShareEmail(
   input: Omit<ShareGalleryEmailInput, 'recipientEmail'> & { recipientEmail?: string },
 ): Promise<ShareGalleryPreviewResult> {
-  const studioBrand = input.studioBrand !== undefined
-    ? input.studioBrand
-    : await loadStudioBrandKit()
-
-  const { data, error } = await supabase.functions.invoke('share-gallery', {
-    body: {
-      galleryId:      input.galleryId,
-      recipientEmail: input.recipientEmail ?? '',
-      subject:        input.subject,
-      message:        input.message,
-      studioBrand:    studioBrand ?? null,
-      preview:        true,
-    },
+  const studioBrand = await studioBrandFor(input)
+  const { data, error } = await invokeShareGallery({
+    galleryId:      input.galleryId,
+    recipientEmail: input.recipientEmail ?? '',
+    subject:        input.subject,
+    message:        input.message,
+    studioBrand:    studioBrand ?? null,
+    preview:        true,
   })
   if (error) {
     return { ok: false, error: error.message ?? 'invoke_failed' }

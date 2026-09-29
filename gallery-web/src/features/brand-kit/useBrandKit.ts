@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase, storageUrl } from '@/shared/lib/supabase'
+import { storageUrl } from '@/shared/lib/supabase'
+import { uploadStorageObject } from '@/shared/data/storage'
 import {
   BRAND_KIT_BUCKET,
   type BrandKit,
@@ -59,10 +60,10 @@ export function useBrandKit(businessId: string | null) {
     if (!businessId) return
     const ext = (file.name.split('.').pop() ?? 'png').toLowerCase()
     const path = logoStoragePath(businessId, slot, ext)
-    const { error } = await supabase.storage
-      .from(BRAND_KIT_BUCKET)
-      // Short cache: the URL is stable, so a ?t= cache-bust is appended below.
-      .upload(path, file, { contentType: file.type || 'image/png', upsert: true, cacheControl: '300' })
+    // Short cache: the URL is stable, so a ?t= cache-bust is appended below.
+    const { error } = await uploadStorageObject(BRAND_KIT_BUCKET, path, file, {
+      contentType: file.type || 'image/png', upsert: true, cacheControl: '300',
+    })
     if (error) {
       flashToast(`שגיאה בהעלאה: ${error.message}`)
       return

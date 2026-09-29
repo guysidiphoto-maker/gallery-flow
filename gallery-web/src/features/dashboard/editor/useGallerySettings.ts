@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import type React from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { updateGallery } from '@/shared/data/galleries'
 import { validateDeliverySettingsPatch, summarizeValidationErrors } from '@/shared/gallery/deliverySettingsSchema'
 import { saveDeliverySettings, TEXT_INPUT_KEYS, TEXT_WRITE_DEBOUNCE_MS } from '../lib/deliverySettings'
 import type { Gallery, Toast } from '../types'
@@ -100,10 +100,7 @@ export function useGallerySettings(deps: {
     setGalleries(gs => gs.map(g => g.id === editingGallery.id ? { ...g, name: newTitle } : g))
     markDirty()
     // `name` is a granted column; galleryTitle must go through the RPC.
-    const { error: nameErr } = await supabase
-      .from('galleries')
-      .update({ name: newTitle })
-      .eq('id', editingGallery.id)
+    const { error: nameErr } = await updateGallery(editingGallery.id, { name: newTitle })
     const titleRes = await saveDeliverySettings(editingGallery.id, { galleryTitle: newTitle })
     if (nameErr || !titleRes.ok) {
       setEditingGallery(g => g && g.id === editingGallery.id
@@ -128,10 +125,7 @@ export function useGallerySettings(deps: {
       delivery_settings: nextSettings,
     })
     markDirty()
-    const { error: colErr } = await supabase
-      .from('galleries')
-      .update({ face_index_enabled: newVal })
-      .eq('id', editingGallery.id)
+    const { error: colErr } = await updateGallery(editingGallery.id, { face_index_enabled: newVal })
     const dsRes = await saveDeliverySettings(editingGallery.id, { faceIndexEnabled: newVal })
     if (colErr || !dsRes.ok) {
       setEditingGallery(g => g && g.id === editingGallery.id

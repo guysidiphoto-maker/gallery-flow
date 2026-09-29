@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { captureException } from '@sentry/react'
 import { trackAction } from '@/shared/lib/sentryContext'
-import { fetchAllGalleryImages } from '@/shared/gallery/fetchAllImages'
+import { fetchAllGalleryImages } from '@/shared/data/images'
 import { uploadMany, partitionUploadFiles, MAX_UPLOAD_BATCH, type UploadRejectReason } from '../../lib/uploadPipeline'
 import { classifyForUpload, extractExistingKeys, type ExistingImageRef } from '../../lib/dedupeUpload'
 import { requestFaceIndex } from '../../lib/faceIndex'

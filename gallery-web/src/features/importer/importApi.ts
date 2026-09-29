@@ -5,6 +5,7 @@
 import JSZip from 'jszip'
 import { supabase } from '@/shared/lib/supabase'
 import { authedFetch } from '@/shared/lib/authedFetch'
+import { getOwnerBusiness } from '@/shared/data/businesses'
 import { summarizeZipEntries, ZIP_FILE_MAX_BYTES, type ZipEntryMeta, type ZipSummary } from './zipRules'
 
 // ── API types ────────────────────────────────────────────────────────────────
@@ -104,9 +105,9 @@ export async function loadOwnerBusiness(): Promise<OwnerBusiness | null> {
   const { data: auth } = await supabase.auth.getUser()
   const uid = auth?.user?.id
   if (!uid) return null
-  const { data } = await supabase.from('businesses')
-    .select('id, slug').eq('user_id', uid).maybeSingle()
-  return data ? { id: data.id as string, slug: String(data.slug ?? '') } : null
+  const { data } = await getOwnerBusiness(uid, 'id, slug')
+  const row = data as { id: string; slug: string | null } | null
+  return row ? { id: row.id, slug: String(row.slug ?? '') } : null
 }
 
 // ── ZIP listing (client-side, jszip) ────────────────────────────────────────

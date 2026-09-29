@@ -17,6 +17,7 @@ const root = resolve(here, '..', '..')
 const mig = readFileSync(resolve(root, 'supabase/migrations/112_replace_image_rpc.sql'), 'utf8')
 const migBody = mig.replace(/--[^\n]*/g, '') // strip comments
 const lib = readFileSync(resolve(here, '..', 'src/features/dashboard/lib/replacePhoto.ts'), 'utf8')
+const imagesData = readFileSync(resolve(here, '..', 'src/shared/data/images.ts'), 'utf8')
 const pipeline = readFileSync(resolve(here, '..', 'src/features/dashboard/lib/uploadPipeline.ts'), 'utf8')
 
 let pass = 0, fail = 0
@@ -62,8 +63,9 @@ ok('returns was_cover hint', /was_cover/.test(migBody))
 ok('does NOT consume a token (no business_tokens UPDATE)', !/business_tokens/.test(migBody))
 
 // ── replacePhoto.ts: fail-closed ordering ────────────────────────────────────
-const iUpload = lib.indexOf('uploadReplacementOriginal')
-const iRpc = lib.indexOf("rpc('replace_image'")
+const iUpload = lib.indexOf('await uploadReplacementOriginal(')
+const iRpc = lib.indexOf('await replaceImage(')
+ok('replaceImage() is the replace_image RPC', /rpc\('replace_image'/.test(imagesData))
 const iCleanup = lib.lastIndexOf('removeObjects')
 ok('uploads new original BEFORE the DB flip', iUpload > 0 && iRpc > 0 && iUpload < iRpc)
 ok('deletes old objects AFTER the DB flip', iCleanup > iRpc)

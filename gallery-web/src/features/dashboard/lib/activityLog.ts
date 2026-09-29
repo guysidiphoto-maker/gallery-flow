@@ -2,7 +2,7 @@
 // swallowed — the photographer's analytics tab is a nice-to-have, not a
 // blocker on a guest's download or favorite action.
 
-import { supabase } from '@/shared/lib/supabase'
+import { insertDownloadLog } from '@/shared/data/activity'
 
 export type DownloadResolution = 'original' | 'web' | 'thumbnail'
 export type DownloadKind = 'single' | 'batch'
@@ -23,7 +23,7 @@ export async function logDownload(
   downloader?: Downloader | null,
 ): Promise<void> {
   try {
-    await supabase.from('gallery_download_log').insert({
+    await insertDownloadLog({
       gallery_id: galleryId,
       image_id: imageId,
       resolution,
@@ -53,7 +53,7 @@ export async function logBatchDownload(
       guest_email: downloader?.email ?? null,
       guest_name: downloader?.name ?? null,
     }))
-    await supabase.from('gallery_download_log').insert(rows)
+    await insertDownloadLog(rows)
   } catch (e) {
     console.warn('[activity] batch download log failed', e)
   }

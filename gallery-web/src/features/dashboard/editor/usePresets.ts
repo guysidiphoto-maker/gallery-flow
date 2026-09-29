@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
+import { capturePresetSettings, summarizePreset, type GalleryPreset } from '@/shared/gallery/galleryPresets'
 import {
-  listPresets, savePreset, renamePreset, deletePreset, setDefaultPreset,
-  capturePresetSettings, summarizePreset, type GalleryPreset,
-} from '@/shared/gallery/galleryPresets'
+  deleteGalleryPreset, insertGalleryPreset, listGalleryPresets, updateGalleryPreset,
+} from '@/shared/data/presets'
 import type { Confirm, EditorTab, Gallery, Toast } from '../types'
+
+// True when the write succeeded; failures are logged under `[presets] <label> failed`.
+function succeeded(label: string, error: unknown): boolean {
+  if (error) console.warn(`[presets] ${label} failed`, error)
+  return !error
+}
 
 // Owner-scoped reusable settings bundles; loaded once, when Settings first opens.
 export function usePresets(deps: {
@@ -21,7 +27,8 @@ export function usePresets(deps: {
 
   const refreshPresets = useCallback(async () => {
     if (!businessId) return
-    setPresets(await listPresets(businessId))
+    const { data, error } = await listGalleryPresets(businessId)
+    setPresets(succeeded('list', error) ? (data ?? []) as GalleryPreset[] : [])
     setPresetsLoaded(true)
   }, [businessId])
 
@@ -35,9 +42,13 @@ export function usePresets(deps: {
     const name = window.prompt('שם הפריסט')?.trim()
     if (!name) return
     setPresetBusy(true)
-    const created = await savePreset(businessId, name, editingGallery.delivery_settings as Record<string, unknown>)
+    const { error } = await insertGalleryPreset({
+      business_id: businessId,
+      name: name.trim(),
+      settings: capturePresetSettings(editingGallery.delivery_settings),
+    })
     setPresetBusy(false)
-    if (created) { await refreshPresets(); showToast({ kind: 'success', text: 'הפריסט נשמר' }) }
+    if (succeeded('save', error)) { await refreshPresets(); showToast({ kind: 'success', text: 'הפריסט נשמר' }) }
     else showToast({ kind: 'error', text: 'שמירת הפריסט נכשלה' })
   }
 
@@ -62,25 +73,25 @@ export function usePresets(deps: {
     const name = window.prompt('שם חדש לפריסט', p.name)?.trim()
     if (!name || name === p.name) return
     setPresetBusy(true)
-    const ok = await renamePreset(p.id, name)
+    const { error } = await updateGalleryPreset(p.id, { name: name.trim() })
     setPresetBusy(false)
-    if (ok) { await refreshPresets(); showToast({ kind: 'success', text: 'שם הפריסט עודכן' }) }
+    if (succeeded('rename', error)) { await refreshPresets(); showToast({ kind: 'success', text: 'שם הפריסט עודכן' }) }
   }
 
   async function handleDeletePreset(p: GalleryPreset) {
     const ok = await confirm({ title: `למחוק את "${p.name}"?`, body: 'פעולה זו אינה הפיכה.', confirmLabel: 'מחק', danger: true })
     if (!ok) return
     setPresetBusy(true)
-    const done = await deletePreset(p.id)
+    const { error } = await deleteGalleryPreset(p.id)
     setPresetBusy(false)
-    if (done) { await refreshPresets(); showToast({ kind: 'success', text: 'הפריסט נמחק' }) }
+    if (succeeded('delete', error)) { await refreshPresets(); showToast({ kind: 'success', text: 'הפריסט נמחק' }) }
   }
 
   async function handleSetDefaultPreset(p: GalleryPreset) {
     setPresetBusy(true)
-    const ok = await setDefaultPreset(p.id)
+    const { error } = await updateGalleryPreset(p.id, { is_default: true })
     setPresetBusy(false)
-    if (ok) { await refreshPresets(); showToast({ kind: 'success', text: 'הוגדר כברירת מחדל' }) }
+    if (succeeded('set-default', error)) { await refreshPresets(); showToast({ kind: 'success', text: 'הוגדר כברירת מחדל' }) }
   }
 
   return {

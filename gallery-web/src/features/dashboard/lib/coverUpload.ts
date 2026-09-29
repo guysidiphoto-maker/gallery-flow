@@ -2,11 +2,13 @@
 // {slug}/{galleryId}/covers/… keeps the galleryId segment the storage RLS keys on,
 // never calls record_image_upload (no token, no images row) and is downscaled first.
 
-import { supabase, storageUrl } from '@/shared/lib/supabase'
+import { storageUrl } from '@/shared/lib/supabase'
+import { removeStorageObjects } from '@/shared/data/storage'
 import {
   validateUploadFile,
   sanitizeFilename,
   pathHash,
+  uploadWithRetry,
   type UploadRejectReason,
 } from './uploadPipeline'
 
@@ -39,8 +41,7 @@ export class CoverUploadError extends Error {
 
 interface ResizeOut { blob: Blob; width: number; height: number }
 
-// Self-contained canvas downscale (mirrors uploadPipeline's approach but kept
-// local so this module has no dependency on its non-exported internals).
+// Canvas downscale to a JPEG no larger than maxDim on its long edge.
 async function downscaleToJpeg(file: File, maxDim: number, quality: number): Promise<ResizeOut> {
   let bitmap: ImageBitmap | HTMLImageElement
   try {
@@ -100,20 +101,14 @@ export async function uploadCoverImage(
   const path = `${businessSlug}/${galleryId}/covers/${hash}_${baseName}.jpg`
 
   onPhase?.('uploading')
-  let lastErr: unknown = null
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, blob, { upsert: true, contentType: 'image/jpeg', cacheControl: '31536000' })
-    if (!error) {
-      onPhase?.('done')
-      return { path, url: storageUrl(BUCKET, path), width, height }
-    }
-    lastErr = error
-    await new Promise(r => setTimeout(r, 400 * (attempt + 1)))
+  try {
+    await uploadWithRetry(BUCKET, path, blob, 'image/jpeg')
+  } catch (lastErr) {
+    onPhase?.('error')
+    throw new CoverUploadError('upload_failed', lastErr instanceof Error ? lastErr.message : String(lastErr))
   }
-  onPhase?.('error')
-  throw new CoverUploadError('upload_failed', lastErr instanceof Error ? lastErr.message : String(lastErr))
+  onPhase?.('done')
+  return { path, url: storageUrl(BUCKET, path), width, height }
 }
 
 /** Best-effort delete of a custom cover; refuses any path outside `covers/`
@@ -121,7 +116,7 @@ export async function uploadCoverImage(
 export async function deleteCoverObject(path: string | null | undefined): Promise<void> {
   if (!path || !/\/covers\//.test(path)) return
   try {
-    await supabase.storage.from(BUCKET).remove([path])
+    await removeStorageObjects(BUCKET, [path])
   } catch {
     /* best-effort: RLS-authorized owner only; ignore transient/absent */
   }

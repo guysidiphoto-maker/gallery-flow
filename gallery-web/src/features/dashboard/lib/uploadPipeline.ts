@@ -2,17 +2,10 @@
 // recorded via record_image_upload(), which consumes the token server-side.
 // Keys are deterministic, so a retry overwrites orphans instead of piling up.
 
-import { supabase } from '@/shared/lib/supabase'
+import { recordImageUpload } from '@/shared/data/images'
+import { uploadStorageObject } from '@/shared/data/storage'
 
 const BUCKET = 'gallery-images'
-// Thumbs are dual-written to the public bucket for crawlers/OG. Best-effort:
-// failure never blocks the upload; a backfill reconciles public_thumb_present.
-const THUMB_PUBLIC_BUCKET = 'gallery-images-thumbs-public'
-
-const WEB_MAX_DIM       = 1600
-const WEB_JPEG_QUALITY  = 0.82
-const THUMB_MAX_DIM     = 360
-const THUMB_JPEG_QUALITY = 0.75
 
 export interface UploadResult {
   imageId: string
@@ -103,38 +96,6 @@ function buildPath(slug: string, galleryId: string,
   return `${slug}/${galleryId}/${kind}/${hash}_${filename}`
 }
 
-// ── Canvas resize ──────────────────────────────────────────────────────────
-
-interface ResizeResult { blob: Blob; width: number; height: number }
-
-async function resizeToBlob(file: File, maxDim: number, quality: number): Promise<ResizeResult> {
-  // createImageBitmap is the fast path; fall back to <img> for older browsers.
-  let bitmap: ImageBitmap | HTMLImageElement
-  if (typeof createImageBitmap === 'function') {
-    bitmap = await createImageBitmap(file)
-  } else {
-    bitmap = await loadImageElement(file)
-  }
-  const srcW = (bitmap as ImageBitmap).width || (bitmap as HTMLImageElement).naturalWidth
-  const srcH = (bitmap as ImageBitmap).height || (bitmap as HTMLImageElement).naturalHeight
-  const scale = Math.min(1, maxDim / Math.max(srcW, srcH))
-  const dstW = Math.max(1, Math.round(srcW * scale))
-  const dstH = Math.max(1, Math.round(srcH * scale))
-
-  const canvas = document.createElement('canvas')
-  canvas.width = dstW
-  canvas.height = dstH
-  const ctx = canvas.getContext('2d')!
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(bitmap as CanvasImageSource, 0, 0, dstW, dstH)
-
-  const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', quality))
-  if ('close' in bitmap) (bitmap as ImageBitmap).close()
-  if (!blob) throw new Error('canvas.toBlob returned null')
-  return { blob, width: dstW, height: dstH }
-}
-
 function loadImageElement(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
@@ -151,17 +112,17 @@ function loadImageElement(file: File): Promise<HTMLImageElement> {
 // Supabase's 1h default (which forced slow hourly origin re-fetches).
 const ONE_YEAR_CACHE = '31536000'
 
-// Upload one object with a few retries. A transient network/throttle blip on
-// one of thousands of uploads must not fail the whole image — the path is
-// content-addressed so the retry overwrites the same key, no garbage accrues.
-async function uploadOne(
+// Upsert one object with a few retries, throwing the last error. A transient blip on
+// one of thousands of uploads must not fail the whole image; content-addressed
+// paths make the retry overwrite the same key, so no garbage accrues.
+export async function uploadWithRetry(
   bucket: string, path: string, body: Blob | File, contentType: string,
 ): Promise<void> {
   let lastErr: Error | null = null
   for (let attempt = 0; attempt < 3; attempt++) {
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(path, body, { upsert: true, contentType, cacheControl: ONE_YEAR_CACHE })
+    const { error } = await uploadStorageObject(bucket, path, body, {
+      upsert: true, contentType, cacheControl: ONE_YEAR_CACHE,
+    })
     if (!error) return
     lastErr = error
     await new Promise(r => setTimeout(r, 400 * (attempt + 1)))
@@ -187,12 +148,12 @@ export async function uploadOneImage(file: File, opts: UploadOptions): Promise<U
   const origPath = buildPath(businessSlug, galleryId, 'originals', hash, file.name)
 
   onProgress?.({ phase: 'original' })
-  await uploadOne(BUCKET, origPath, file, file.type || 'image/jpeg')
+  await uploadWithRetry(BUCKET, origPath, file, file.type || 'image/jpeg')
 
   onProgress?.({ phase: 'record' })
   // All path columns point at the original; sizes are derived on demand and
   // original_uploaded becomes true so HD downloads resolve immediately.
-  const { data, error } = await supabase.rpc('record_image_upload', {
+  const { data, error } = await recordImageUpload({
     p_gallery_id:            galleryId,
     p_filename:              file.name,
     p_web_preview_path:      origPath,
@@ -227,7 +188,7 @@ export async function uploadReplacementOriginal(
   const hash     = pathHash(`${galleryId}/${file.name}/${file.size}/${file.lastModified}`)
   const origPath = buildPath(businessSlug, galleryId, 'originals', hash, file.name)
   onProgress?.({ phase: 'original' })
-  await uploadOne(BUCKET, origPath, file, file.type || 'image/jpeg')
+  await uploadWithRetry(BUCKET, origPath, file, file.type || 'image/jpeg')
   onProgress?.({ phase: 'done' })
   return { path: origPath, size: file.size }
 }
@@ -305,10 +266,4 @@ export async function uploadMany(
   const workers = Array.from({ length: Math.min(concurrency, total) }, () => worker())
   await Promise.all(workers)
   return { ok: results, failed }
-}
-
-function ensureJpgExt(name: string): string {
-  if (/\.(jpe?g)$/i.test(name)) return name
-  const dot = name.lastIndexOf('.')
-  return (dot > 0 ? name.slice(0, dot) : name) + '.jpg'
 }

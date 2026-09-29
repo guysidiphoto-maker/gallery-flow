@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { supabase } from '@/shared/lib/supabase'
 import { warmGalleryCache } from '@/shared/lib/warmCache'
-import { fetchAllGalleryImages } from '@/shared/gallery/fetchAllImages'
+import { assignUnsectionedImages, fetchAllGalleryImages } from '@/shared/data/images'
+import { updateGallery } from '@/shared/data/galleries'
+import { insertSection, listGallerySections } from '@/shared/data/sections'
+import { listGalleryStories } from '@/shared/data/stories'
 import { requestFaceIndex } from '../lib/faceIndex'
 import {
   IMAGE_COLUMNS_WITH_ORIGINAL, SECTION_COLUMNS, STORY_COLUMNS,
@@ -40,19 +42,11 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
     const [imagesAll, sectionsRes, storiesRes] = await Promise.all([
       // Paginated: a plain select silently truncated galleries past 1000 rows.
       fetchAllGalleryImages<GalleryImage & { section_id?: string | null }>(g.id, IMAGE_COLUMNS_WITH_ORIGINAL),
-      supabase
-        .from('gallery_sections')
-        .select(SECTION_COLUMNS)
-        .eq('gallery_id', g.id)
-        .order('sort_order', { ascending: true }),
-      supabase
-        .from('stories')
-        .select(STORY_COLUMNS)
-        .eq('gallery_id', g.id)
-        .order('created_at', { ascending: true }),
+      listGallerySections(g.id, SECTION_COLUMNS),
+      listGalleryStories(g.id, STORY_COLUMNS),
     ])
     const imgs = imagesAll
-    let secs = sectionsRes.data ?? []
+    let secs: GallerySection[] = sectionsRes.data ?? []
 
     // Self-heal legacy photos with no section: fold them into the first
     // section (creating one if needed) so nothing is hidden.
@@ -60,18 +54,11 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
     if (loose.length > 0) {
       let target = secs[0]
       if (!target) {
-        const { data } = await supabase
-          .from('gallery_sections')
-          .insert({ gallery_id: g.id, name: 'סקשן 1', sort_order: 0 })
-          .select(SECTION_COLUMNS)
-          .single()
+        const { data } = await insertSection({ gallery_id: g.id, name: 'סקשן 1', sort_order: 0 }, SECTION_COLUMNS)
         if (data) { secs = [data]; target = data }
       }
       if (target) {
-        await supabase.from('images')
-          .update({ section_id: target.id })
-          .eq('gallery_id', g.id)
-          .is('section_id', null)
+        await assignUnsectionedImages(g.id, target.id)
         loose.forEach(i => { i.section_id = target!.id })
       }
     }
@@ -87,10 +74,7 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
     const wasLive = editingGallery.status === 'live'
     const publishedAt = new Date().toISOString()
     setPublishing(true)
-    const { error } = await supabase
-      .from('galleries')
-      .update({ status: 'live', published_at: publishedAt })
-      .eq('id', editingGallery.id)
+    const { error } = await updateGallery(editingGallery.id, { status: 'live', published_at: publishedAt })
     setPublishing(false)
     if (error) {
       showToast({ kind: 'error', text: 'הפרסום נכשל. נסה שוב.' })

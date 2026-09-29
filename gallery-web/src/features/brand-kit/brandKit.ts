@@ -1,7 +1,7 @@
 // businesses.brand_kit JSONB: types, defaults, DB helpers and the gallery-defaults projection.
 // Every field is optional because owners who never opened /brand-kit still have `{}`.
 
-import { supabase } from '@/shared/lib/supabase'
+import { getBrandKitRow, updateBrandKit } from '@/shared/data/businesses'
 import type { DeliverySettings } from '@/shared/types'
 
 export const BRAND_KIT_BUCKET = 'business-brand'
@@ -156,11 +156,7 @@ export const FONT_PAIRS: FontPair[] = [
 
 /** Brand kit merged over defaults; null when the row isn't visible (RLS: owner only). */
 export async function getBrandKit(businessId: string): Promise<BrandKit | null> {
-  const { data, error } = await supabase
-    .from('businesses')
-    .select('brand_kit')
-    .eq('id', businessId)
-    .maybeSingle()
+  const { data, error } = await getBrandKitRow(businessId)
 
   if (error) {
     console.error('[brandKit] getBrandKit failed', error)
@@ -177,10 +173,7 @@ export async function saveBrandKit(
   brand: BrandKit,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const next: BrandKit = { ...brand, schema_version: 1 }
-  const { error } = await supabase
-    .from('businesses')
-    .update({ brand_kit: next })
-    .eq('id', businessId)
+  const { error } = await updateBrandKit(businessId, next)
   if (error) {
     console.error('[brandKit] saveBrandKit failed', error)
     return { ok: false, error: error.message }
