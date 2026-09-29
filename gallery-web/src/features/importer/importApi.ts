@@ -86,6 +86,14 @@ export async function reportCollectionProgress(args: {
   return callImport<{ job_status: JobStatus }>('update_collection_progress', { ...args })
 }
 
+/** The job's persisted collections and per-file rows (the resume checkpoint). */
+export async function getJobStatus(jobId: string) {
+  return callImport<{
+    collections: Array<ImportCollection>
+    files: Array<{ collection_id: string; filename: string; status: string; content_hash: string | null }>
+  }>('job_status', { jobId, includeFiles: true })
+}
+
 /** Inline client creation via the existing client-admin endpoint. */
 export async function createClientInline(name: string): Promise<string | null> {
   const res = await authedFetch('/api/client-admin', {
