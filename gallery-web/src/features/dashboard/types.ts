@@ -60,7 +60,7 @@ export interface ActivitySummary {
   recent_emails: Array<{ id: string; recipient_email: string; subject: string | null; status: string; created_at: string }>
 }
 
-export type DashboardView = 'overview' | 'galleries' | 'clients' | 'search' | 'import'
+export type DashboardView = 'overview' | 'galleries' | 'clients' | 'search' | 'import' | 'brand-kit'
 
 export type EditorTab = 'photos' | 'settings' | 'activities' | 'welcome' | 'stories'
 

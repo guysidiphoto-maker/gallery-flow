@@ -31,7 +31,7 @@ export function WatermarkSection({ brand, onChange, onBlur }: {
 
   return (
     <BrandKitCard
-      eyebrow="05 — Watermark"
+      eyebrow="05"
       title="סימן מים"
       description="חתימה דיסקרטית על תמונות הגלריה. ניתן להשתמש בלוגו, בשם הסטודיו או בטקסט חופשי."
     >

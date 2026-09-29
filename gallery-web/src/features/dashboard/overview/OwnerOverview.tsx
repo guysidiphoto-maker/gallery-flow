@@ -10,7 +10,7 @@ import {
   type AssignableGalleryRow,
 } from '@/features/clients/api'
 import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
-import { cn, Eyebrow } from '@/shared/ui'
+import { cn, Eyebrow, WorkspaceView } from '@/shared/ui'
 import { getProgress, saveProgress } from '../tour/onboarding'
 
 // The set of Dashboard views OwnerOverview can send the operator to.
@@ -187,17 +187,7 @@ export default function OwnerOverview({
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
-    <div dir={dir} className="animate-[dash-fade-up_.4s_ease_both]">
-      {/* Heading */}
-      <div className="mb-8">
-        <Eyebrow className="mb-3.5 block font-medium">{t('nav.overview')}</Eyebrow>
-        <h1 className="text-[clamp(28px,4vw,52px)] leading-[1.02] font-medium tracking-[-0.025em] text-ink">
-          {t('overview.title')}
-        </h1>
-        <p className="mt-3.5 max-w-[560px] text-[15px] leading-[1.55] text-ink-soft">
-          {t('overview.subtitle')}
-        </p>
-      </div>
+    <WorkspaceView dir={dir} eyebrow={t('nav.workspace')} title={t('overview.title')} description={t('overview.subtitle')}>
 
       {error && (
         <div className="mb-7 flex flex-wrap items-center justify-between gap-4 rounded-sm border border-line-soft bg-raised px-[22px] py-5">
@@ -370,7 +360,7 @@ export default function OwnerOverview({
           </button>
         </div>
       )}
-    </div>
+    </WorkspaceView>
   )
 }
 

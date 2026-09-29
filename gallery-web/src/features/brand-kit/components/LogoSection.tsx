@@ -15,7 +15,7 @@ export function LogoSection({ brand, onUpload, onClear }: {
 }) {
   return (
     <BrandKitCard
-      eyebrow="01 — Logo"
+      eyebrow="01"
       title="לוגו"
       description="עד שלוש גרסאות. המערכת תבחר את הנכונה לפי הקונטקסט (גלריה, מייל, פוסט)."
     >

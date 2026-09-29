@@ -21,7 +21,7 @@ export function SocialSection({ brand, onChange, onBlur }: {
   const social = brand.social ?? {}
   return (
     <BrandKitCard
-      eyebrow="06 — Social"
+      eyebrow="06"
       title="רשתות חברתיות"
       description="המסבירים מהיכן הסטודיו זמין. מופיעים בכרטיסי שיתוף ובמיילים."
     >

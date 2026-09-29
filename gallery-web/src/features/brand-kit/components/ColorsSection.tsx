@@ -28,7 +28,7 @@ export function ColorsSection({ brand, onChange, onBlur, onToggleApply }: {
 
   return (
     <BrandKitCard
-      eyebrow="02 — Colors"
+      eyebrow="02"
       title="צבעים"
       description="חמשת הצבעים שמגדירים את הוויזואל של הסטודיו. מומלץ ניגוד גבוה בין טקסט לרקע."
     >
@@ -39,7 +39,7 @@ export function ColorsSection({ brand, onChange, onBlur, onToggleApply }: {
             <div className="flex items-center gap-2.5 rounded-hair border border-line bg-raised p-2">
               <input
                 type="color"
-                aria-label={`${f.label} color`}
+                aria-label={`צבע ${f.label}`}
                 value={colors[f.key] ?? COLOR_INPUT_FALLBACK}
                 onChange={e => setColor(f.key, e.target.value)}
                 onBlur={onBlur}

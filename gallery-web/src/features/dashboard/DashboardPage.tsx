@@ -7,10 +7,12 @@ import { useConfirm } from '@/shared/ui/useConfirm'
 import { Icon } from '@/shared/ui/Icon'
 import { ClientsManager } from '@/features/clients/ClientsManager'
 import ImportCenter from '@/features/importer/ImportCenter'
+import { BrandKitView } from '@/features/brand-kit/BrandKitView'
 import FirstRunTour from './tour/FirstRunTour'
 import OwnerOverview from './overview/OwnerOverview'
 import GlobalSearch from './search/GlobalSearch'
 import { TOKEN_BILLING_ON } from './lib/billing'
+import { readViewFromUrl, writeViewToUrl } from './lib/viewUrl'
 import type { DashboardView } from './types'
 import { useBusiness } from './hooks/useBusiness'
 import { useGalleries } from './hooks/useGalleries'
@@ -35,14 +37,14 @@ import { StoryGenerateModal } from './editor/stories/StoryGenerateModal'
 import './dashboard.css'
 
 // Photographer dashboard: auth gate, business bootstrap, shell and the
-// in-page view switch (overview / galleries / clients / search / import).
+// in-page view switch (overview / galleries / clients / search / import / brand kit).
 export function Dashboard() {
   const { user, loading } = useAuth()
   const { showToast, ToastContainer } = useToast()
   const { locale, t: ownerT } = useOwnerLocale()
   const { confirm, ConfirmHost } = useConfirm()
-  // Views switch in place (no route change); galleries stays the default.
-  const [activeView, setActiveView] = useState<DashboardView>('galleries')
+  // Views switch in place (no navigation); the URL mirrors the tab so a refresh keeps it.
+  const [activeView, setActiveView] = useState<DashboardView>(readViewFromUrl)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const { businessId, businessSlug, setBusinessId, resolveBusiness } = useBusiness(user)
@@ -71,6 +73,8 @@ export function Dashboard() {
       fetchTokenBalance()
     })()
   }, [user])
+
+  useEffect(() => { writeViewToUrl(activeView) }, [activeView])
 
   // Attach the photographer to every Sentry event for the session.
   useEffect(() => {
@@ -122,19 +126,20 @@ export function Dashboard() {
         <div className="min-w-0 flex-1">
           <button
             onClick={() => setSidebarOpen(true)}
-            aria-label="Open menu"
+            aria-label={ownerT('nav.openMenu')}
             className="fixed start-4 top-4 z-50 hidden size-10 cursor-pointer items-center justify-center rounded-md border border-line bg-raised p-0 text-ink shadow-[0_2px_8px] shadow-ink/8 max-[900px]:flex"
           >
             <Icon name="menu" size={18} strokeWidth={2} />
           </button>
 
-          <main className="mx-auto max-w-[1180px] px-10 pt-14 pb-24">
+          {/* One content width and padding for every tab; tabs never set their own. */}
+          <main className="mx-auto max-w-[1180px] px-10 pt-14 pb-24 max-[600px]:px-5">
             {activeView === 'overview' ? (
               <OwnerOverview
                 businessId={businessId}
                 businessSlug={businessSlug}
                 locale={locale}
-                onNavigate={(view) => setActiveView(view)}
+                onNavigate={setActiveView}
                 onNewGallery={() => createForm.setShowModal(true)}
               />
             ) : activeView === 'clients' ? (
@@ -145,6 +150,8 @@ export function Dashboard() {
                 onOpenClient={() => { setActiveView('clients') }}
                 onOpenGallery={() => { setActiveView('galleries') }}
               />
+            ) : activeView === 'brand-kit' ? (
+              <BrandKitView businessId={businessId} />
             ) : activeView === 'import' ? (
               <ImportCenter
                 locale={locale}

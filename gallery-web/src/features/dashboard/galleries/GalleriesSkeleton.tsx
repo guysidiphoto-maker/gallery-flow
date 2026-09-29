@@ -1,14 +1,30 @@
-const shimmer = 'bg-linear-90 from-line from-25% via-ink via-50% to-line to-75% bg-size-[400px_100%] animate-[dash-shimmer_1.5s_ease_infinite]'
+const shimmer = 'animate-[dash-skeleton_1.4s_ease_infinite] bg-linear-90 from-sunken from-25% via-line-soft via-37% to-sunken to-63% bg-size-[400%_100%]'
 
+// Mirrors the loaded layout (stats strip + 4:3 cards with a caption) so the
+// grid doesn't jump when galleries arrive.
 export function GalleriesSkeleton() {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-5">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="h-40 rounded-[18px] border border-line bg-raised p-7">
-          <div className={`mb-4 h-4 w-3/5 rounded-[8px] ${shimmer}`} />
-          <div className={`h-3 w-2/5 rounded-sm ${shimmer}`} />
-        </div>
-      ))}
+    <div aria-hidden>
+      <div className="mb-14 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] border border-line bg-surface">
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className={i > 0 ? 'border-s border-line p-7' : 'p-7'}>
+            <div className={`mb-3.5 h-3 w-16 rounded-[4px] ${shimmer}`} />
+            <div className={`h-[26px] w-12 rounded-[4px] ${shimmer}`} />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-8">
+        {[0, 1, 2].map(i => (
+          <div key={i} className="rounded-[4px] bg-surface">
+            <div className={`aspect-[4/3] rounded-hair ${shimmer}`} />
+            <div className="px-4 pt-[18px] pb-4">
+              <div className={`mb-2.5 h-2.5 w-20 rounded-[4px] ${shimmer}`} />
+              <div className={`mb-2 h-5 w-3/5 rounded-[4px] ${shimmer}`} />
+              <div className={`h-3.5 w-16 rounded-[4px] ${shimmer}`} />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

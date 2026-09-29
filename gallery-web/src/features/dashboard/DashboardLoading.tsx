@@ -1,10 +1,18 @@
+const bar = 'animate-[dash-skeleton_1.4s_ease_infinite] rounded-[4px] bg-linear-90 from-sunken from-25% via-line-soft via-37% to-sunken to-63% bg-size-[400%_100%]'
+
+// Auth is still resolving: paint the shell's silhouette (sidebar + tab header)
+// at the real sizes, so the signed-in dashboard fades in without a jump.
 export function DashboardLoading() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas">
-      <div className="flex flex-col items-center gap-4">
-        <div className="size-10 animate-spin-slow rounded-full border-3 border-line border-t-ink" />
-        <div className="text-sm tracking-[0.02em] text-ink-soft">Loading...</div>
-      </div>
+    <div className="dash flex min-h-screen bg-canvas [direction:rtl]" aria-busy="true" aria-label="טוען">
+      <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col gap-3 border-s border-line px-5 py-7 max-[900px]:hidden">
+        <div className={`mb-8 h-6 w-24 ${bar}`} />
+        {[0, 1, 2, 3, 4, 5].map(i => <div key={i} className={`h-4 w-32 ${bar}`} />)}
+      </aside>
+      <main className="mx-auto w-full max-w-[1180px] px-10 pt-14 pb-24 max-[600px]:px-5">
+        <div className="mb-3.5 flex h-5 items-center"><div className={`h-3 w-20 ${bar}`} /></div>
+        <div className={`h-[clamp(28px,4vw,52px)] w-64 ${bar}`} />
+      </main>
     </div>
   )
 }

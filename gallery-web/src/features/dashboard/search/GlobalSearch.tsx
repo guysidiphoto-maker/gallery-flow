@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { supabase, displayUrl } from '@/shared/lib/supabase'
-import { cn, Input, Select } from '@/shared/ui'
+import { cn, Input, Select, WorkspaceView } from '@/shared/ui'
+import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import {
   EMPTY_FILTER_STATE, EMPTY_RESULT,
   buildFilterPayload, createDebouncer, createSequenceGuard,
@@ -95,16 +96,10 @@ export default function GlobalSearch({
   }, [])
 
   const activeFilterCount = Object.keys(payload).length
+  const { t: ownerT } = useOwnerLocale()
 
   return (
-    <div dir={dir} className="mx-auto max-w-[960px] text-ink">
-      {/* Header */}
-      <div className="mb-5">
-        <h2 className="mb-1.5 text-[26px] font-medium tracking-[-0.02em]">
-          {tr('search.title')}
-        </h2>
-        <p className="text-[13px] text-muted">{tr('search.subtitle')}</p>
-      </div>
+    <WorkspaceView dir={dir} eyebrow={ownerT('nav.workspace')} title={tr('search.title')} description={tr('search.subtitle')}>
 
       {/* Search input */}
       <div className="mb-3 flex items-center gap-2.5">
@@ -114,13 +109,13 @@ export default function GlobalSearch({
           onChange={e => setQuery(e.target.value)}
           placeholder={tr('search.placeholder')}
           aria-label={tr('search.title')}
-          className="flex-1 rounded-[4px] py-3 text-[15px]"
+          className="h-11 flex-1 rounded-[4px] py-0 text-[15px]"
         />
         <button
           type="button"
           onClick={() => setShowFilters(v => !v)}
           className={cn(
-            'cursor-pointer rounded-[4px] border px-4 py-[11px] text-[13px] whitespace-nowrap',
+            'h-11 cursor-pointer rounded-[4px] border px-4 text-[13px] whitespace-nowrap',
             showFilters || activeFilterCount > 0 ? 'border-ink bg-ink text-surface' : 'border-line bg-raised text-ink',
           )}
         >
@@ -194,7 +189,7 @@ export default function GlobalSearch({
           )}
         </div>
       )}
-    </div>
+    </WorkspaceView>
   )
 }
 

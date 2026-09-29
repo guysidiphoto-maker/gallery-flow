@@ -2,6 +2,8 @@
 // in-page view switch (list → detail / bulk assign), not a separate route.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '@/shared/ui/Toast'
+import { WorkspaceView } from '@/shared/ui'
+import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import { fetchClientsOverview, hasProductionSuite, type ClientOverviewRow } from './api'
 import { ClientDetailView } from './ClientDetailView'
 import { ClientListRow } from './ClientListRow'
@@ -37,6 +39,7 @@ const FILTER_TABS: { id: StatusFilter; label: string }[] = [
 
 export function ClientsManager({ businessSlug }: Props) {
   const { showToast, ToastContainer } = useToast()
+  const { t } = useOwnerLocale()
   const [view, setView] = useState<View>({ kind: 'list' })
 
   const [clients, setClients] = useState<ClientOverviewRow[]>([])
@@ -96,22 +99,14 @@ export function ClientsManager({ businessSlug }: Props) {
   }
 
   return (
-    <div>
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-5">
-        <div>
-          <div className="mb-3.5 flex items-center gap-2.5 text-[11px] font-medium tracking-wide-label text-muted uppercase">
-            Workspace
-            {hasProduction && <Badge tone="accent" icon="bolt">Production Suite</Badge>}
-          </div>
-          <h1 className="text-[clamp(28px,4vw,52px)] leading-[1.02] font-medium tracking-[-0.025em] text-ink">
-            לקוחות
-          </h1>
-        </div>
-        <div className="flex flex-wrap gap-2.5">
-          <Button variant="ghost" icon="gallery" onClick={() => setView({ kind: 'assign' })}>שיוך גלריות</Button>
-          <Button variant="outline" icon="plus" onClick={() => setCreateOpen(true)}>לקוח חדש</Button>
-        </div>
-      </div>
+    <WorkspaceView
+      eyebrow={<>{t('nav.workspace')}{hasProduction && <Badge tone="accent" icon="bolt">Production Suite</Badge>}</>}
+      title={t('nav.clients')}
+      actions={<>
+        <Button variant="ghost" icon="gallery" onClick={() => setView({ kind: 'assign' })} className="h-10 py-0">שיוך גלריות</Button>
+        <Button variant="outline" icon="plus" onClick={() => setCreateOpen(true)} className="h-10 py-0">לקוח חדש</Button>
+      </>}
+    >
 
       {loading ? (
         <Skeleton height={78} count={4} />
@@ -156,6 +151,6 @@ export function ClientsManager({ businessSlug }: Props) {
       />
 
       <ToastContainer />
-    </div>
+    </WorkspaceView>
   )
 }

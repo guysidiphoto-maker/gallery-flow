@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase, storageUrl } from '@/shared/lib/supabase'
-import { useOwnerBusiness } from '@/shared/lib/useOwnerBusiness'
 import {
   BRAND_KIT_BUCKET,
   type BrandKit,
@@ -13,21 +12,18 @@ import {
 
 const TOAST_MS = 2200
 
-/** Loads the owner's brand kit and exposes save/upload actions with a status toast. */
-export function useBrandKit() {
-  const { status, businessId } = useOwnerBusiness()
+/**
+ * Loads the owner's brand kit and exposes save/upload actions with a status toast.
+ * Runs inside the dashboard, which already owns auth and the business row.
+ */
+export function useBrandKit(businessId: string | null) {
   const [brand, setBrand] = useState<BrandKit>(defaultBrandKit())
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | null>(null)
 
   useEffect(() => {
-    // Signed-out or no business row yet: the dashboard handles both (it creates the row).
-    if (status === 'signed-out' || status === 'no-business') {
-      window.location.replace('/dashboard')
-      return
-    }
-    if (status !== 'ready' || !businessId) return
+    if (!businessId) return
     let cancelled = false
     void getBrandKit(businessId).then(fresh => {
       if (cancelled) return
@@ -35,7 +31,7 @@ export function useBrandKit() {
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [status, businessId])
+  }, [businessId])
 
   function flashToast(msg: string) {
     setToast(msg)
@@ -81,7 +77,7 @@ export function useBrandKit() {
   }
 
   return {
-    loading: status === 'loading' || loading,
+    loading,
     brand,
     setBrand,
     toast,
