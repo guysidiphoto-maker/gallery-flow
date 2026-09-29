@@ -7,7 +7,7 @@
 // their exact current behavior. Also proves the private-gate URL is small +
 // disabled-aware, and that source inference is correct.
 
-import { readCoverConfig, coverIsEnabled, gateCoverBackgroundUrl, coverPathBelongsToGallery } from '../src/lib/coverImage.ts'
+import { readCoverConfig, coverIsEnabled, gateCoverBackgroundUrl, coverPathBelongsToGallery } from '../src/shared/gallery/coverImage.ts'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

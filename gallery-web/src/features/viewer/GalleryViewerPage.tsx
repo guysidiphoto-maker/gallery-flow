@@ -1,0 +1,3448 @@
+import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
+import { supabase, storageUrl, displayUrl } from '@/shared/lib/supabase'
+import { ensurePublicSession, isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from '@/shared/lib/publicSession'
+import { signedStorageUrl, signedWatermarkedUrl } from '@/shared/lib/signedStorage'
+import { preloadGalleryThumbs, GRID_WIDTHS } from '@/shared/lib/warmCache'
+import { TurnstileWidget } from '@/shared/ui/TurnstileWidget'
+import { SignedImg } from '@/shared/ui/SignedImg'
+import { CoverBackdrop } from './components/CoverBackdrop'
+import { OpeningText } from './components/OpeningText'
+import type { Gallery, GalleryImage, GallerySection, Story, DeliverySettings } from '@/shared/types'
+import { Viewer } from './components/Lightbox'
+import { PasswordGate, isGalleryUnlocked } from './components/PasswordGate'
+import { t, type Lang } from '@/shared/i18n/viewerStrings'
+import {
+  getMeta as gcGetMeta,
+  getImages as gcGetImages,
+  getImagesResult as gcGetImagesResult,
+  getStories as gcGetStories,
+  getHidden as gcGetHidden,
+  setHidden as gcSetHidden,
+  bootstrapGallery as gcBootstrap,
+  getStoredToken,
+  type GalleryMeta,
+} from '@/shared/gallery/galleryClient'
+import { logDownload, logBatchDownload } from '@/features/dashboard/lib/activityLog'
+import { downloadFileName, downloadCacheKey, pickDownloadPath, shouldWarmDownload, classifyDownloadError, keysOverCap, type DownloadQuality } from './lib/mobileViewer'
+import { coverIsEnabled, gateCoverBackgroundUrl } from '@/shared/gallery/coverImage'
+import { resolveGridLayout, gapForSpacing } from '@/shared/gallery/galleryLayout'
+import { resolveGalleryBranding } from '@/shared/gallery/galleryBranding'
+
+// Both surfaces only mount once a guest opts in (face search button / story
+// circle). Lazy-loading keeps their JS (camera pipeline + autoplay video
+// player) out of the gallery's initial bundle.
+const FaceSearchExperience = lazy(() =>
+  import('./face-search/FaceSearchExperience').then(m => ({ default: m.FaceSearchExperience })),
+)
+const StoryPlayer = lazy(() =>
+  import('./components/StoryPlayer').then(m => ({ default: m.StoryPlayer })),
+)
+
+// ─── Phase 6 step 5 phase 2 — published-snapshot cutover flag ──────────────
+// When `VITE_USE_PUBLISHED_SNAPSHOT` is the string `'true'` AND the gallery
+// has a non-null `published_revision_id`, the viewer reads delivery_settings
+// + sections from the gallery_revisions snapshot (via the
+// `gallery_get_published_snapshot` RPC) instead of the live row. This lets
+// photographers edit a published gallery without leaking unpublished changes
+// to clients — the snapshot only updates when Publish is clicked.
+//
+// Default is OFF (legacy behaviour) so the rollback is a single env-var flip.
+// Image rows are intentionally NOT snapshotted: gallery_get_images still
+// returns the live image set, so photos uploaded post-publish remain visible.
+const USE_PUBLISHED_SNAPSHOT =
+  (import.meta.env.VITE_USE_PUBLISHED_SNAPSHOT as string | undefined) === 'true'
+
+interface PublishedSnapshot {
+  revision_id: string
+  revision_index: number
+  settings: Record<string, unknown> | null
+  section_data: Array<{
+    id: string
+    name: string
+    slug?: string | null
+    sort_order?: number | null
+    description?: string | null
+  }> | null
+  name: string | null
+  status: string | null
+  access_type: string | null
+  event_date: string | null
+  event_type: string | null
+  event_location: string | null
+  created_at: string
+}
+
+// ─── Scroll reveal wrapper — 3D parallax on each image ─────────────────────
+// a11y: when prefers-reduced-motion is set we skip the parallax entirely and
+// render a plain wrapper — no perspective/rotateX that can cause vestibular
+// discomfort (WCAG 2.3.3 / prefers-reduced-motion).
+
+function ScrollReveal({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // Honour the OS reduced-motion preference before wiring the observer.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    const el = ref.current
+    if (!el) return
+    const mobile = window.innerWidth < 768
+    const strength = mobile ? 1 : 0.5
+    const thresholds = Array.from({ length: 21 }, (_, i) => i / 20)
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      const ratio = entry.intersectionRatio
+      const isAbove = entry.boundingClientRect.top + entry.boundingClientRect.height / 2 < window.innerHeight / 2
+      const abs = 1 - ratio
+      const opacity = Math.max(0.15, 1 - abs * 0.85 * strength)
+      const rotateX = (isAbove ? 1 : -1) * abs * 5 * strength
+      const scale = 1 + 0.03 * strength - abs * 0.1 * strength
+      const translateY = (isAbove ? -1 : 1) * abs * 20 * strength
+      el.style.opacity = `${opacity}`
+      el.style.transform = `perspective(600px) rotateX(${rotateX}deg) scale(${scale}) translateY(${translateY}px)`
+    }, { threshold: thresholds })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  return <div ref={ref} style={{ willChange: 'opacity, transform', transformStyle: 'preserve-3d' }}>{children}</div>
+}
+
+// ─── Masonry Grid (3-column, full-frame for presence) ───────────────────────
+// Column masonry: each image renders FULL (uncropped) at its natural aspect,
+// so portraits stay tall and every photo keeps its presence — like Pixieset.
+// Round-robin placement (image i → column i % cols) fixes each photo's column
+// once, so the layout never "dances" as images lazy-load.
+
+function computeColumns(layoutMode: string, w: number): number {
+  if (layoutMode === '1-col') return 1
+  if (w < 640) return 2            // phones: 2 across
+  if (layoutMode === '3-col') return 4
+  return 3                          // tablet/desktop: 3 big columns
+}
+
+function useColumnCount(layoutMode: string): number {
+  const initial = typeof window === 'undefined' ? 3 : computeColumns(layoutMode, window.innerWidth)
+  const [cols, setCols] = useState(initial)
+  useEffect(() => {
+    const calc = () => setCols(computeColumns(layoutMode, window.innerWidth))
+    calc()
+    window.addEventListener('resize', calc)
+    return () => window.removeEventListener('resize', calc)
+  }, [layoutMode])
+  return cols
+}
+
+function MasonryGrid({ images, imgBucket, layoutMode, imageSpacing, cornerStyle, onImageClick, onDownload, onWarmDownload, selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide, watermark }: {
+  images: GalleryImage[]
+  /** Storage bucket the thumbnails live in. The component picks the path
+   *  per image (thumbnail_path with web fallback) and routes through
+   *  SignedImg, which signs/short-circuits based on the feature flag. */
+  imgBucket: string
+  layoutMode: string
+  imageSpacing: string
+  cornerStyle: string
+  onImageClick: (index: number) => void
+  onDownload?: (img: GalleryImage) => void
+  /** Warm/release the downloadable File for a tile as it enters/leaves the
+   *  viewport, so a single tap on the tile's download icon opens the iOS share
+   *  sheet without first opening the image. Called with (img, true) on enter
+   *  and (img, false) on exit. */
+  onWarmDownload?: (img: GalleryImage, warm: boolean) => void
+  selectMode?: boolean
+  selectedIds?: Set<string>
+  onToggleSelect?: (id: string) => void
+  clientMode?: boolean
+  hiddenIds?: Set<string>
+  onToggleHide?: (id: string) => void
+  watermark?: { text: string; position: string } | null
+}) {
+  const imgRefs = useRef<Map<string, HTMLImageElement>>(new Map())
+  const cols = useColumnCount(layoutMode)
+
+  // Download-warm viewport observer. When a tile scrolls into view we warm its
+  // downloadable File (mobile only, gated in the parent) so a single tap on the
+  // tile's download icon opens the iOS share sheet immediately; when it scrolls
+  // out we release/abort. Bounded to on-screen tiles; the parent caps memory.
+  const warmObserverRef = useRef<IntersectionObserver | null>(null)
+  const tileImgByEl = useRef<Map<Element, GalleryImage>>(new Map())
+  const tileElById = useRef<Map<string, Element>>(new Map())
+  useEffect(() => {
+    if (!onWarmDownload) return
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const img = tileImgByEl.current.get(e.target)
+          if (img) onWarmDownload(img, e.isIntersecting)
+        }
+      },
+      { rootMargin: '100px 0px' },
+    )
+    warmObserverRef.current = obs
+    tileImgByEl.current.forEach((_img, el) => obs.observe(el))
+    return () => { obs.disconnect(); warmObserverRef.current = null }
+  }, [onWarmDownload])
+  // Ref callback per tile: (un)register the element with the observer. Handles
+  // remount/unmount so obsolete elements are never left observed.
+  const registerTile = useCallback((img: GalleryImage) => (el: HTMLDivElement | null) => {
+    const prev = tileElById.current.get(img.id)
+    if (prev && prev !== el) {
+      warmObserverRef.current?.unobserve(prev)
+      tileImgByEl.current.delete(prev)
+      tileElById.current.delete(img.id)
+    }
+    if (el) {
+      tileElById.current.set(img.id, el)
+      tileImgByEl.current.set(el, img)
+      warmObserverRef.current?.observe(el)
+    }
+  }, [])
+
+  // Measure the container so thumbnails are fetched at the exact column width.
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const measure = () => setContainerWidth(el.clientWidth)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Progressive render: keep at most this many photos mounted at once.
+  const BATCH_SIZE = 150
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    setVisibleCount(prev => Math.min(Math.max(BATCH_SIZE, prev), images.length))
+  }, [images.length])
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    if (visibleCount >= images.length) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some(e => e.isIntersecting)) {
+          setVisibleCount(c => Math.min(c + BATCH_SIZE, images.length))
+        }
+      },
+      { rootMargin: '600px 0px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [visibleCount, images.length])
+  const visibleImages = useMemo(() => images.slice(0, visibleCount), [images, visibleCount])
+
+  const gap = gapForSpacing(imageSpacing)
+  const rounded = cornerStyle === 'rounded'
+  // Exact display width of one column → the precise size to fetch (× DPR).
+  const colWidth = containerWidth > 0 ? (containerWidth - gap * (cols - 1)) / cols : 0
+  const imgSizes = colWidth > 0 ? `${Math.round(colWidth)}px` : `${Math.round(100 / cols)}vw`
+
+  // Height-balanced masonry: place each image (in order) into the currently
+  // SHORTEST column, using its real aspect ratio (h/w) for the height. This
+  // keeps columns even — no one column ending far short of the others (the big
+  // black gap). Deterministic in index order, so loading more images never
+  // reshuffles already-placed ones → no jump. Falls back to ~square (1) when a
+  // photo's dimensions aren't stored yet (then it degrades to round-robin).
+  //
+  // One path for every gallery size, large or small. We deliberately do NOT
+  // virtualize with a react-window list: that owns its own `overflow:auto`
+  // viewport, which on desktop steals the wheel from the document and traps
+  // scrolling inside the first section (the "stuck first section" bug), and its
+  // fixed per-row height clipping leaves black gaps when portrait + landscape
+  // tiles mix in one row. Here the browser/document stays the only vertical
+  // scroll owner, and each tile keeps its own natural aspect ratio (no row
+  // clipping → no black holes). Memory is bounded instead by the progressive
+  // `visibleCount` batching above: only ~BATCH_SIZE tiles mount up-front, and
+  // more reveal as the sentinel scrolls into view.
+  const columns = useMemo(() => {
+    const result: Array<Array<{ img: GalleryImage; index: number }>> = Array.from({ length: cols }, () => [])
+    const heights = new Array(cols).fill(0)
+    for (let i = 0; i < visibleImages.length; i++) {
+      const img = visibleImages[i]
+      const ratio = img.width && img.height ? img.height / img.width : 1
+      let c = 0
+      for (let k = 1; k < cols; k++) if (heights[k] < heights[c] - 1e-6) c = k
+      result[c].push({ img, index: i })
+      heights[c] += ratio
+    }
+    return result
+  }, [visibleImages, cols])
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        display: 'flex', gap,
+        padding: gap > 0 ? `0 ${gap}px` : 0,
+        maxWidth: layoutMode === '1-col' ? 900 : undefined,
+        margin: layoutMode === '1-col' ? '0 auto' : undefined,
+        position: 'relative',
+      }}
+    >
+      {columns.map((col, ci) => (
+        <div key={ci} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap }}>
+          {col.map(({ img, index }) => {
+            const isSelected = selectMode && selectedIds?.has(img.id)
+            // First-row tiles are the LCP — load them eagerly with a high
+            // fetchpriority hint so the browser races them ahead of all the
+            // below-the-fold lazy tiles. `fetchpriority` is a lowercase HTML
+            // attribute (not a documented React prop yet), so we attach it
+            // via an extra spread.
+            const isAboveFold = index < cols
+            return (
+              <div
+                key={img.id}
+                ref={registerTile(img)}
+                className="grid-item"
+                style={{ position: 'relative', borderRadius: rounded ? 8 : 0, overflow: 'hidden' }}
+              >
+                <SignedImg
+                  ref={el => { if (el) imgRefs.current.set(img.id, el) }}
+                  bucket={imgBucket}
+                  // Serve the pre-baked static derivatives DIRECTLY (zero
+                  // Supabase transforms): phones pick the ~640 thumb, big desktop
+                  // columns pick the ≤2048 web preview. `path` is the small
+                  // fallback for no-srcset browsers. (Cost control 2026-07-05.)
+                  path={img.thumbnail_path || img.storage_path}
+                  srcSetPaths={[
+                    { path: img.thumbnail_path, width: 640 },
+                    { path: img.storage_path, width: 2048 },
+                  ]}
+                  sizes={imgSizes}
+                  alt=""
+                  loading={isAboveFold ? 'eager' : 'lazy'}
+                  // React 18.3+ camelCases this to the DOM `fetchpriority`
+                  // attribute. High-priority hint races the LCP tiles ahead.
+                  fetchPriority={isAboveFold ? 'high' : undefined}
+                  decoding="async"
+                  style={{
+                    width: '100%', height: 'auto', display: 'block',
+                    // Reserve each tile's space BEFORE its image loads so a
+                    // column never collapses to 0-height (the big black gaps).
+                    // `auto W/H` uses the real ratio when we have it, else a
+                    // 3:2 placeholder; once the image loads its natural ratio
+                    // takes over, so photos are never cropped or distorted.
+                    aspectRatio: img.width && img.height ? `${img.width} / ${img.height}` : 'auto 3 / 2',
+                    cursor: 'pointer',
+                    background: 'linear-gradient(135deg, rgba(255,255,255,.02), rgba(255,255,255,.05))',
+                    transition: 'opacity .35s ease, filter .3s ease',
+                    opacity: selectMode && !isSelected ? 0.55 : (clientMode && hiddenIds?.has(img.id)) ? 0.3 : 1,
+                    filter: selectMode && !isSelected ? 'saturate(0.6)' : 'none',
+                  }}
+                  onLoad={e => { e.currentTarget.style.animation = 'none' }}
+                  onClick={() => selectMode ? onToggleSelect?.(img.id) : onImageClick(index)}
+                />
+                {/* Selection checkbox */}
+                {selectMode && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onToggleSelect?.(img.id) }}
+                    style={{
+                      position: 'absolute', top: 10, insetInlineStart: 10,
+                      width: 28, height: 28, borderRadius: '50%',
+                      border: isSelected ? '2px solid #818cf8' : '2px solid rgba(255,255,255,.5)',
+                      background: isSelected ? 'linear-gradient(135deg, #6366f1, #818cf8)' : 'rgba(0,0,0,.4)',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+                      transition: 'all .25s cubic-bezier(.16,1,.3,1)',
+                      transform: isSelected ? 'scale(1)' : 'scale(0.9)',
+                      boxShadow: isSelected ? '0 2px 12px rgba(99,102,241,.4)' : '0 2px 8px rgba(0,0,0,.3)',
+                    }}
+                  >
+                    {isSelected && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                  </button>
+                )}
+                {/* Client hide/unhide button */}
+                {clientMode && onToggleHide && (
+                  <button
+                    className="grid-item__dl"
+                    onClick={e => { e.stopPropagation(); onToggleHide(img.id) }}
+                    style={{
+                      position: 'absolute', top: 10, insetInlineEnd: 10,
+                      width: 34, height: 34, borderRadius: '50%',
+                      border: hiddenIds?.has(img.id) ? '1.5px solid rgba(239,68,68,.4)' : '1px solid rgba(255,255,255,.1)',
+                      background: hiddenIds?.has(img.id) ? 'rgba(239,68,68,.75)' : 'rgba(0,0,0,.45)',
+                      backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: hiddenIds?.has(img.id) ? 1 : undefined,
+                      transition: 'all .25s cubic-bezier(.16,1,.3,1)',
+                      boxShadow: hiddenIds?.has(img.id) ? '0 2px 10px rgba(239,68,68,.3)' : '0 2px 8px rgba(0,0,0,.2)',
+                    }}
+                  >
+                    {hiddenIds?.has(img.id) ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    )}
+                  </button>
+                )}
+                {/* Download button on hover */}
+                {!selectMode && onDownload && (
+                  <button
+                    className="grid-item__dl"
+                    // Booster: the instant the finger touches the icon, warm the
+                    // File (if not already). Combined with the viewport warm this
+                    // makes the very first tap open the share sheet.
+                    onPointerDown={() => onWarmDownload?.(img, true)}
+                    onClick={e => { e.stopPropagation(); onDownload(img) }}
+                    style={{
+                      position: 'absolute', bottom: 10, insetInlineEnd: 10,
+                      width: 34, height: 34, borderRadius: '50%',
+                      border: '1px solid rgba(255,255,255,.1)',
+                      background: 'rgba(0,0,0,.45)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: 0, transition: 'all .25s cubic-bezier(.16,1,.3,1)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,.25)',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,.7)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,.5)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,.45)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                  </button>
+                )}
+                {/* Watermark overlay — purely presentational; the original
+                    download is unaffected. Only renders for previews. */}
+                {watermark?.text && (
+                  <div
+                    aria-hidden
+                    style={{
+                      position: 'absolute', pointerEvents: 'none',
+                      ...(watermark.position === 'bottom-left'  ? { bottom: 8, left: 8 }
+                        : watermark.position === 'top-right'    ? { top: 8, right: 8 }
+                        : watermark.position === 'top-left'     ? { top: 8, left: 8 }
+                        : watermark.position === 'center'       ? { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+                        : { bottom: 8, right: 8 }),
+                      color: 'rgba(255,255,255,.75)',
+                      fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
+                      textShadow: '0 1px 4px rgba(0,0,0,.6)',
+                      maxWidth: '60%',
+                      overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {watermark.text}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+      {/* Progressive-render sentinel: when this scrolls into view we reveal
+          the next BATCH_SIZE photos. Sized so it never affects layout. */}
+      {visibleCount < images.length && (
+        <div
+          ref={sentinelRef}
+          aria-hidden
+          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, pointerEvents: 'none' }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Welcome Screen ─────────────────────────────────────────────────────────
+
+function WelcomeScreen({ style = 'mosaic', galleryTitle, galleryDescription, welcomeMessage, textAnimation = 'blur', animationSpeed = 'normal', eventDate, eventLocation, clientName, studioName, studioWebsite, images, storageUrl: getUrl, coverImageUrl, coverCrop, gateCoverUrl, onEnter, faceSearchAvailable, facePrivacyMode, onFindMyPhotos, lang = 'he', headingFont, bodyFont }: {
+  style?: 'mosaic' | 'cinematic' | 'minimal'
+  galleryTitle: string
+  galleryDescription?: string
+  welcomeMessage?: string
+  textAnimation?: 'blur' | 'typewriter' | 'slide'
+  animationSpeed?: 'slow' | 'normal' | 'fast'
+  eventDate?: string
+  eventLocation?: string
+  clientName: string
+  studioName: string
+  studioWebsite?: string
+  images: GalleryImage[]
+  storageUrl: (path: string) => string
+  coverImageUrl?: string | null
+  coverCrop?: { zoom: number; x: number; y: number } | null
+  // Private face-search moment A only: an optimized cover render URL. When set,
+  // the cinematic background uses the shared premium CoverBackdrop treatment
+  // (blur + scrim + vignette + zoom) instead of the plain welcome cover.
+  gateCoverUrl?: string | null
+  onEnter: () => void
+  faceSearchAvailable: boolean
+  facePrivacyMode: 'open' | 'private' | null
+  onFindMyPhotos: () => void
+  lang?: Lang
+  // Photographer-chosen fonts from the Design tab. Applied to the heading
+  // (h1) and supporting body text. Undefined = use the global stack.
+  headingFont?: string
+  bodyFont?: string
+}) {
+  const wsTxt = t(lang)
+  // Initial render must already have animations applied. Otherwise the first
+  // paint shows every element at its default style (opacity 1), then the
+  // animation flips them to opacity 0 ("from" via fill-mode both), then they
+  // fade back in — that's the visible flash. Starting `visible` true means
+  // fill-mode both pins each element to opacity 0 during its start delay
+  // from frame one.
+  const [visible] = useState(true)
+  const [entered, setEntered] = useState(false)
+
+  const isPrivate = faceSearchAvailable && facePrivacyMode === 'private'
+  const showFindButton = faceSearchAvailable && facePrivacyMode !== null
+  const isMinimal = style === 'minimal'
+  const isCinematic = style === 'cinematic'
+
+  const handleEnter = () => {
+    setEntered(true)
+    setTimeout(onEnter, 600)
+  }
+
+  // ── Shared content overlay (all styles) ──
+  const renderContent = () => (
+    <div style={{
+      position: 'relative', zIndex: 2, textAlign: 'center',
+      padding: '0 24px', maxWidth: isMinimal ? 800 : 680,
+    }}>
+      {/* Studio name */}
+      {studioName && (
+        <div style={{ animation: visible ? 'wcFadeUp .9s cubic-bezier(.16,1,.3,1) .3s both' : 'none' }}>
+          {studioWebsite ? (
+            <a href={studioWebsite.startsWith('http') ? studioWebsite : `https://${studioWebsite}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{
+                display: 'inline-block', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase',
+                color: 'rgba(255,255,255,.4)', margin: '0 0 20px', fontWeight: 500,
+                textDecoration: 'none', transition: 'color .2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,.8)' }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,.4)' }}
+              onClick={e => e.stopPropagation()}
+            >{studioName}</a>
+          ) : (
+            <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(255,255,255,.3)', margin: '0 0 20px', fontWeight: 500 }}>
+              {studioName}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Title */}
+      <div style={{
+        animation: visible
+          ? (isCinematic ? 'wcReveal 1.4s cubic-bezier(.16,1,.3,1) .5s both'
+            : isMinimal ? 'wcLetterSpace 1.2s cubic-bezier(.16,1,.3,1) .4s both'
+            : 'wcFadeUp 1s cubic-bezier(.16,1,.3,1) .5s both')
+          : 'none',
+      }}>
+        <h1 style={{
+          fontSize: isMinimal ? 'clamp(40px, 9vw, 88px)' : 'clamp(32px, 7vw, 68px)',
+          fontWeight: isMinimal ? 800 : 700, color: '#fff',
+          margin: 0,
+          lineHeight: isMinimal ? 1.02 : 1.08,
+          letterSpacing: isMinimal ? '0.04em' : '-0.025em',
+          textShadow: isCinematic ? '0 4px 60px rgba(0,0,0,.7)' : isMinimal ? 'none' : '0 2px 40px rgba(0,0,0,.5)',
+          textTransform: isMinimal ? 'uppercase' : 'none',
+          fontFamily: headingFont ? `'${headingFont}', inherit` : undefined,
+        }}>{galleryTitle}</h1>
+      </div>
+
+      {/* Client name */}
+      {clientName && (
+        <div style={{ animation: visible ? 'wcFadeUp .9s cubic-bezier(.16,1,.3,1) .65s both' : 'none' }}>
+          <p style={{
+            fontSize: isMinimal ? 'clamp(12px, 1.5vw, 15px)' : 'clamp(14px, 2vw, 19px)',
+            color: isMinimal ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.45)',
+            margin: isMinimal ? '16px 0 0' : '10px 0 0', fontWeight: 400,
+            letterSpacing: isMinimal ? '0.15em' : '0.01em',
+            textTransform: isMinimal ? 'uppercase' : 'none',
+            fontFamily: bodyFont ? `'${bodyFont}', inherit` : undefined,
+          }}>{clientName}</p>
+        </div>
+      )}
+
+      {/* Opening text — animated (shared component, reused on the private
+          face-search results screen so both look identical). Falls back to the
+          gallery description when no dedicated welcome message is set, so the
+          photographer's opening line still animates + reads well instead of
+          rendering as faint static text. */}
+      <OpeningText message={welcomeMessage || galleryDescription} animation={textAnimation} speed={animationSpeed} animate={visible} marginTop={24} />
+
+      {/* Event meta */}
+      {(eventDate || eventLocation) && (
+        <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .8s both' : 'none' }}>
+          {/* TODO: a11y — event meta at rgba(.25) is ~1.8:1 contrast on black. Design decision needed: raise opacity or use a larger font size to meet WCAG 3.1.4 for decorative metadata. */}
+          <p style={{
+            fontSize: 12, color: 'rgba(255,255,255,.25)', margin: '10px 0 0',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, letterSpacing: '0.03em',
+          }}>
+            {eventDate && <span>{eventDate}</span>}
+            {eventDate && eventLocation && <span style={{ opacity: .3 }}>{isMinimal ? '|' : '\u00b7'}</span>}
+            {eventLocation && <span>{eventLocation}</span>}
+          </p>
+        </div>
+      )}
+
+      {/* Secondary description — only when it isn't already the animated opening
+          line above (i.e. a dedicated welcome message exists). */}
+      {galleryDescription && welcomeMessage && (
+        <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .85s both' : 'none' }}>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,.5)', margin: '8px auto 0', maxWidth: 420, textShadow: '0 1px 8px rgba(0,0,0,.5)' }}>
+            {galleryDescription}
+          </p>
+        </div>
+      )}
+
+      {/* Private mode notice */}
+      {isPrivate && (
+        <div style={{ animation: visible ? 'wcFadeUp .8s cubic-bezier(.16,1,.3,1) .9s both' : 'none', marginTop: 20 }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '8px 18px', borderRadius: isMinimal ? 0 : 20,
+            background: 'rgba(99,102,241,.06)', border: '1px solid rgba(99,102,241,.12)',
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,.55)" strokeWidth="1.8" style={{ animation: 'wcFloat 2.5s ease-in-out infinite' }}>
+              <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', fontWeight: 400 }}>
+              {wsTxt.privacyModeBadge}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Buttons — delayed until welcome message is half done */}
+      <div style={{
+        display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', marginTop: 32,
+        animation: visible ? `wcFadeUp .9s cubic-bezier(.16,1,.3,1) ${
+          (welcomeMessage || galleryDescription)
+            ? (() => { const t = (welcomeMessage || galleryDescription) as string; const wc = t.split(/\s+/).filter(Boolean).length || 1; return 2.2 + wc * Math.min(0.12, 2 / wc) * 0.6 })()
+            : 1
+        }s both` : 'none',
+      }}>
+        {!isPrivate && (
+          <button onClick={handleEnter} style={{
+            padding: isMinimal ? '14px 48px' : '15px 44px',
+            borderRadius: isMinimal ? 0 : 50,
+            border: isMinimal ? '1px solid rgba(255,255,255,.25)' : '1px solid rgba(255,255,255,.18)',
+            background: isMinimal ? 'transparent' : 'rgba(255,255,255,.07)',
+            backdropFilter: isMinimal ? 'none' : 'blur(20px)',
+            color: '#fff',
+            fontSize: isMinimal ? 11 : 15,
+            fontWeight: isMinimal ? 500 : 600, cursor: 'pointer',
+            fontFamily: 'inherit',
+            letterSpacing: isMinimal ? '0.18em' : '0.01em',
+            textTransform: isMinimal ? 'uppercase' as const : 'none' as const,
+            transition: 'all .3s',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.background = isMinimal ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.16)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.35)'; e.currentTarget.style.transform = 'scale(1.03)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = isMinimal ? 'transparent' : 'rgba(255,255,255,.07)'; e.currentTarget.style.borderColor = isMinimal ? 'rgba(255,255,255,.25)' : 'rgba(255,255,255,.18)'; e.currentTarget.style.transform = 'scale(1)' }}
+          >{wsTxt.viewGallery}</button>
+        )}
+
+        {showFindButton && (
+          <button onClick={onFindMyPhotos} style={{
+            padding: isPrivate ? '16px 48px' : '15px 36px',
+            borderRadius: isMinimal ? 0 : 50, border: 'none',
+            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+            fontFamily: 'inherit', letterSpacing: '0.01em', transition: 'all .3s',
+            display: 'flex', alignItems: 'center', gap: 10,
+            animation: isPrivate ? 'wcGlow 3s ease-in-out infinite' : 'none',
+            position: 'relative', zIndex: 10,
+          }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05)' }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <circle cx="12" cy="8" r="4" /><path d="M5 20a7 7 0 0 1 14 0" />
+            </svg>
+            {wsTxt.findMyPhotos}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
+  // ── Mosaic background ──
+  const renderMosaicBg = () => (
+    <>
+      <style>{`
+        @keyframes wcScroll { from { transform: translate3d(0,0,0); } to { transform: translate3d(0,-50%,0); } }
+        @keyframes wcBgFadeIn { from { opacity: 0; } to { opacity: var(--wc-bg-target, 0.45); } }
+        /* translate3d + will-change force GPU compositing so the infinite scroll
+           runs on iOS/WebKit in-app browsers (WhatsApp/Instagram), not just desktop. */
+        .wc-col { display: flex; flex-direction: column; gap: 2px; will-change: transform; backface-visibility: hidden; }
+        .wc-col img {
+          width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block;
+          opacity: 0; transition: opacity .6s ease;
+        }
+        .wc-col img.wc-loaded { opacity: 1; }
+        /* Reduced-motion: stop the infinite mosaic scroll (WCAG 2.3.3) */
+        @media (prefers-reduced-motion: reduce) {
+          .wc-col { animation: none !important; }
+          .hero__bg { animation: none !important; }
+        }
+      `}</style>
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', gap: 2,
+        ['--wc-bg-target' as string]: isPrivate ? 0.06 : 0.45,
+        animation: 'wcBgFadeIn 2s ease .2s both',
+        filter: isPrivate ? 'blur(40px) saturate(.3)' : 'none',
+      }}>
+        {(() => {
+          const colCount = 6
+          const allImgs = images.length > 0 ? images : []
+          const shuffle = (arr: typeof images, seed: number) => {
+            const a = [...arr]
+            for (let i = a.length - 1; i > 0; i--) {
+              seed = (seed * 16807 + 0) % 2147483647
+              const j = seed % (i + 1)
+              ;[a[i], a[j]] = [a[j], a[i]]
+            }
+            return a
+          }
+          const columns = Array.from({ length: colCount }, (_, ci) => {
+            const col: typeof images = []
+            const shuffled = shuffle(allImgs, ci * 7919 + 1)
+            // Size each column so ONE (un-doubled) set already OVERFLOWS the
+            // viewport — the doubled copy used for the seamless loop then stays
+            // fully OFF-screen, so a paused animation (e.g. iOS Low Power Mode)
+            // never shows the duplicate half stacked below. Estimated tile height
+            // = (viewport width / columns) * 4/3. Capped at 40 so the animated
+            // layer stays reasonable for mobile WebKit.
+            const estTileH = Math.max(70, (window.innerWidth / colCount) * (4 / 3))
+            const fillCount = Math.ceil((window.innerHeight * 2.2) / estTileH)
+            const needed = Math.max(12, Math.min(fillCount, 40))
+            let lastId = ''
+            for (let j = 0; col.length < needed; j++) {
+              const img = shuffled[j % shuffled.length]
+              if (img.id !== lastId || allImgs.length <= 1) {
+                col.push(img)
+                lastId = img.id
+              }
+            }
+            return col
+          })
+          return columns.map((col, ci) => {
+            const doubled = [...col, ...col]
+            const speed = 40 + (ci % 3) * 15
+            const dir = ci % 2 === 0 ? 'normal' : 'reverse'
+            return (
+              <div key={ci} style={{ flex: 1, overflow: 'hidden' }}>
+                <div className="wc-col" style={{
+                  animation: `wcScroll ${speed}s linear infinite`,
+                  animationDirection: dir,
+                }}>
+                  {doubled.map((img, i) => (
+                    <img
+                      key={`${ci}-${i}`}
+                      src={getUrl(img.thumbnail_path || img.storage_path)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      onLoad={e => e.currentTarget.classList.add('wc-loaded')}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          })
+        })()}
+      </div>
+      {/* Mosaic overlay */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: isPrivate
+          ? 'radial-gradient(ellipse at center, rgba(0,0,0,.55) 0%, rgba(0,0,0,.88) 100%)'
+          : 'radial-gradient(ellipse at center, rgba(0,0,0,.35) 0%, rgba(0,0,0,.78) 100%)',
+      }} />
+    </>
+  )
+
+  // ── Cinematic background ──
+  const renderCinematicBg = () => {
+    // Private face-search moment A: reuse the shared premium cover backdrop
+    // (same treatment as the password gate). Falls through to the plain
+    // cinematic bg when no cover is configured or it fails to load.
+    if (isPrivate && gateCoverUrl) {
+      return <CoverBackdrop coverUrl={gateCoverUrl} />
+    }
+    const bgSrc = coverImageUrl || (images.length > 0 ? getUrl(images[0].thumbnail_path || images[0].storage_path) : null)
+    return (
+      <>
+        <style>{`
+          @keyframes wcCineZoom { 0% { transform: scale(1.05); } 100% { transform: scale(1.12); } }
+          @keyframes wcCineFadeIn { from { opacity: 0; } to { opacity: var(--wc-cine-target, 0.55); } }
+          @keyframes wcParticle {
+            0% { transform: translateY(0) translateX(0); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-100vh) translateX(40px); opacity: 0; }
+          }
+          /* Ken Burns zoom is a looping motion animation — suppress it for
+             vestibular safety (WCAG 2.3.3 / prefers-reduced-motion).       */
+          @media (prefers-reduced-motion: reduce) {
+            [style*="wcCineZoom"] { animation: wcCineFadeIn 2.5s ease .2s both !important; }
+          }
+        `}</style>
+        {bgSrc && (
+          <div style={{
+            position: 'absolute', inset: '-10%',
+            ['--wc-cine-target' as string]: isPrivate ? 0.08 : 0.55,
+            filter: isPrivate ? 'blur(50px) saturate(.2)' : 'blur(8px) saturate(1.1)',
+            animation: 'wcCineFadeIn 2.5s ease .2s both, wcCineZoom 20s ease-in-out infinite alternate',
+          }}>
+            {/* Cover image — meaningful alt derived from gallery title so screen
+                readers convey context rather than announcing an empty alt.
+                The image is decorative when private (blur makes it unrecognisable),
+                so alt="" is correct there. */}
+            <img
+              src={bgSrc}
+              alt={isPrivate ? '' : `${galleryTitle} cover photo`}
+              style={{
+                width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                ...(coverCrop ? { objectPosition: `${50 + (coverCrop.x || 0)}% ${50 + (coverCrop.y || 0)}%` } : {}),
+              }}
+            />
+          </div>
+        )}
+        {/* Heavy vignette */}
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          background: [
+            'radial-gradient(ellipse at center, rgba(0,0,0,.25) 0%, rgba(0,0,0,.85) 100%)',
+            'linear-gradient(to bottom, rgba(0,0,0,.3) 0%, transparent 30%, transparent 70%, rgba(0,0,0,.5) 100%)',
+          ].join(', '),
+        }} />
+        {/* Floating particles */}
+        {visible && !isPrivate && (
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+            {Array.from({ length: 20 }, (_, i) => (
+              <div key={i} style={{
+                position: 'absolute',
+                left: `${(i * 37 + 13) % 100}%`,
+                bottom: '-5%',
+                width: i % 3 === 0 ? 2 : 1,
+                height: i % 3 === 0 ? 2 : 1,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,.4)',
+                animation: `wcParticle ${8 + (i % 7) * 2}s linear ${i * 0.7}s infinite`,
+              }} />
+            ))}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  // ── Minimal background (pure black + subtle accent lines) ──
+  const renderMinimalBg = () => (
+    <>
+      <style>{`
+        @keyframes wcMinLine { 0% { transform: scaleX(0); } 100% { transform: scaleX(1); } }
+      `}</style>
+      {visible && (
+        <>
+          <div style={{
+            position: 'absolute', top: '38%', left: '10%', right: '10%', height: 1,
+            background: 'rgba(255,255,255,.04)', transformOrigin: 'left center',
+            animation: 'wcMinLine 1.5s cubic-bezier(.16,1,.3,1) .6s both',
+          }} />
+          <div style={{
+            position: 'absolute', top: '62%', left: '10%', right: '10%', height: 1,
+            background: 'rgba(255,255,255,.04)', transformOrigin: 'right center',
+            animation: 'wcMinLine 1.5s cubic-bezier(.16,1,.3,1) .8s both',
+          }} />
+        </>
+      )}
+    </>
+  )
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000, background: '#000',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      opacity: entered ? 0 : 1, transition: 'opacity .7s ease',
+      overflow: 'hidden',
+    }}>
+      {/* Shared keyframes */}
+      <style>{`
+        @keyframes wcFadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes wcGlow { 0%, 100% { box-shadow: 0 0 24px rgba(99,102,241,.3); } 50% { box-shadow: 0 0 48px rgba(99,102,241,.5), 0 0 80px rgba(99,102,241,.15); } }
+        @keyframes wcFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+        @keyframes wcLine { from { left: -30%; } to { left: 130%; } }
+        @keyframes wcReveal { from { opacity: 0; transform: translateY(30px) scale(.97); clip-path: inset(100% 0 0 0); } to { opacity: 1; transform: translateY(0) scale(1); clip-path: inset(0 0 0 0); } }
+        @keyframes wcLetterSpace { from { opacity: 0; letter-spacing: 0.12em; } to { opacity: 1; letter-spacing: 0.04em; } }
+      `}</style>
+
+      {/* Style-specific background */}
+      {style === 'mosaic' && renderMosaicBg()}
+      {style === 'cinematic' && renderCinematicBg()}
+      {style === 'minimal' && renderMinimalBg()}
+
+      {/* Private mode: accent line (all styles) */}
+      {isPrivate && visible && (
+        <div style={{
+          position: 'absolute', top: '50%', width: '20%', height: 1,
+          background: 'linear-gradient(90deg, transparent, rgba(99,102,241,.35), transparent)',
+          animation: 'wcLine 3.5s ease-in-out infinite',
+          pointerEvents: 'none',
+        }} />
+      )}
+
+      {/* Content */}
+      {renderContent()}
+    </div>
+  )
+}
+
+/** Safely read a delivery_settings field with a fallback default. */
+function s<K extends keyof DeliverySettings>(settings: Partial<DeliverySettings>, key: K, fallback: DeliverySettings[K]): DeliverySettings[K] {
+  const v = settings[key]
+  return v === undefined || v === null ? fallback : v as DeliverySettings[K]
+}
+
+// URL slug for the synthetic page that collects images without a section
+// (shown as a "More Photos" pill after the real sections).
+const UNSECTIONED_SLUG = 'more'
+
+// ─── Sticky section nav (Pixieset-style) ───────────────────────────────────
+// Three-column sticky bar: gallery section pills (left), the Stories toggle
+// (center), and the download / select toolbar (right). Each slot is optional;
+// the grid template keeps the layout balanced even when one slot is empty.
+function SectionNav({
+  sections,
+  sectionCounts,
+  totalCount,
+  showAllPill,
+  allPillLabel,
+  allPillCount,
+  activeId,
+  onJump,
+  centerToolbar,
+  toolbar,
+}: {
+  sections: GallerySection[]
+  sectionCounts: Record<string, number>
+  totalCount: number
+  showAllPill?: boolean
+  allPillLabel?: string
+  allPillCount?: number
+  activeId: string
+  onJump: (id: string) => void
+  centerToolbar?: React.ReactNode
+  toolbar?: React.ReactNode
+}) {
+  const hasSections = sections.length > 0
+  return (
+    // role="navigation" + aria-label give screen readers a named landmark
+    // so they can jump here directly (WCAG 1.3.1, 2.4.1).
+    <nav className="section-nav" role="navigation" aria-label="Gallery sections">
+      <div className="section-nav__inner">
+        <div className="section-nav__items">
+          {hasSections && (
+            <>
+              {sections.map(sec => {
+                const id = `section-${sec.id}`
+                return (
+                  <button
+                    key={sec.id}
+                    className={`section-nav__item ${activeId === id ? 'section-nav__item--active' : ''}`}
+                    onClick={() => onJump(id)}
+                  >
+                    <span className="section-nav__label">{sec.name}</span>
+                    <span className="section-nav__count">{sectionCounts[sec.id] ?? 0}</span>
+                  </button>
+                )
+              })}
+            </>
+          )}
+          {hasSections && showAllPill && (
+            <button
+              className={`section-nav__item ${activeId === 'all-images' ? 'section-nav__item--active' : ''}`}
+              onClick={() => onJump('all-images')}
+            >
+              <span className="section-nav__label">{allPillLabel ?? 'All Photos'}</span>
+              <span className="section-nav__count">{allPillCount ?? totalCount}</span>
+            </button>
+          )}
+        </div>
+        <div className="section-nav__center">{centerToolbar}</div>
+        <div className="section-nav__toolbar">{toolbar}</div>
+      </div>
+    </nav>
+  )
+}
+
+/** First-download email gate (Task: download tracking). Modal that collects an
+ *  email (required) + name (optional) before the pending download runs. Purely
+ *  presentational — the parent owns the captured identity + the deferred action. */
+function DownloadEmailGate({ lang, onSubmit, onClose }: {
+  lang: Lang
+  onSubmit: (email: string, name: string | null) => void
+  onClose: () => void
+}) {
+  const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [touched, setTouched] = useState(false)
+  const he = lang === 'he'
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+
+  const submit = () => {
+    setTouched(true)
+    if (!emailOk) return
+    onSubmit(email.trim(), name.trim() || null)
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 4000,
+        background: 'rgba(6,6,10,.72)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        animation: 'fadeIn .2s ease',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true"
+        dir={he ? 'rtl' : 'ltr'}
+        style={{
+          width: '100%', maxWidth: 400, background: '#141417',
+          border: '1px solid rgba(255,255,255,.1)', borderRadius: 18,
+          padding: 28, boxShadow: '0 24px 80px rgba(0,0,0,.55)',
+          color: '#fff', textAlign: he ? 'right' : 'left',
+        }}
+      >
+        <h3 style={{ margin: '0 0 8px', fontSize: 19, fontWeight: 600 }}>
+          {he ? 'לפני ההורדה' : 'Before you download'}
+        </h3>
+        <p style={{ margin: '0 0 20px', fontSize: 13, lineHeight: 1.5, color: 'rgba(255,255,255,.55)' }}>
+          {he
+            ? 'הצלם מבקש להשאיר אימייל כדי לקבל גישה להורדת התמונות.'
+            : 'The photographer asks for your email to grant access to downloads.'}
+        </p>
+
+        <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,.5)', marginBottom: 6 }}>
+          {he ? 'אימייל' : 'Email'} *
+        </label>
+        <input
+          type="email" inputMode="email" autoFocus dir="ltr"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submit() }}
+          placeholder="you@example.com"
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '11px 13px', marginBottom: 4,
+            borderRadius: 10, border: `1px solid ${touched && !emailOk ? 'rgba(248,113,113,.7)' : 'rgba(255,255,255,.14)'}`,
+            background: 'rgba(255,255,255,.04)', color: '#fff', fontSize: 14, outline: 'none',
+          }}
+        />
+        {touched && !emailOk && (
+          <p style={{ margin: '0 0 8px', fontSize: 11, color: 'rgba(248,113,113,.9)' }}>
+            {he ? 'נא להזין כתובת אימייל תקינה' : 'Please enter a valid email'}
+          </p>
+        )}
+
+        <label style={{ display: 'block', fontSize: 12, color: 'rgba(255,255,255,.5)', margin: '12px 0 6px' }}>
+          {he ? 'שם (רשות)' : 'Name (optional)'}
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submit() }}
+          placeholder={he ? 'השם שלך' : 'Your name'}
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '11px 13px', marginBottom: 20,
+            borderRadius: 10, border: '1px solid rgba(255,255,255,.14)',
+            background: 'rgba(255,255,255,.04)', color: '#fff', fontSize: 14, outline: 'none',
+          }}
+        />
+
+        <div style={{ display: 'flex', gap: 10, flexDirection: he ? 'row-reverse' : 'row' }}>
+          <button
+            onClick={submit}
+            disabled={!emailOk}
+            style={{
+              flex: 1, padding: '12px 16px', borderRadius: 10, border: 'none',
+              background: emailOk ? '#fff' : 'rgba(255,255,255,.15)',
+              color: emailOk ? '#111' : 'rgba(255,255,255,.4)',
+              fontSize: 14, fontWeight: 600, cursor: emailOk ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {he ? 'המשך להורדה' : 'Continue to download'}
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(255,255,255,.14)',
+              background: 'transparent', color: 'rgba(255,255,255,.7)', fontSize: 14, cursor: 'pointer',
+            }}
+          >
+            {he ? 'ביטול' : 'Cancel'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function App() {
+  const [gallery, setGallery] = useState<Gallery | null>(null)
+  const [images, setImages] = useState<GalleryImage[]>([])
+  const [sections, setSections] = useState<GallerySection[]>([])
+  const [stories, setStories] = useState<Story[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null)
+  const [unlocked, setUnlocked] = useState(false)
+  const [showWelcome, setShowWelcome] = useState(true)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [selectMode, setSelectMode] = useState(false)
+  const [dlProgress, setDlProgress] = useState<string | null>(null)
+  // The chapter currently in view, as a `section-<id>` anchor. Kept up to date
+  // by the scroll-spy observer and used to highlight the matching pill. Starts
+  // at 'all-images' until the first chapter scrolls into view.
+  const [activeSectionAnchor, setActiveSectionAnchor] = useState<string>('all-images')
+
+  // Sections render as PAGES (Pixieset-style "sets"): each section has its
+  // own URL — /<biz>/<gallery>/<section-slug> — and the pills switch pages
+  // via pushState instead of scrolling one long stacked feed. Images for the
+  // whole gallery are already in memory, so a page switch is instant. The
+  // face-search filter temporarily flattens back to stacked chapters so
+  // matches from every section stay visible at once (see pagedMode below).
+  const [viewerRole, setViewerRole] = useState<'none' | 'client' | 'guest'>('none')
+  const [clientCodeInput, setClientCodeInput] = useState('')
+  const [clientCodeError, setClientCodeError] = useState(false)
+  const [hiddenImageIds, setHiddenImageIds] = useState<Set<string>>(new Set())
+  // Active story index for the full-screen StoryPlayer overlay. null = closed.
+  // Set when a guest taps a story circle in the row below the hero.
+  const [storyPlayerIndex, setStoryPlayerIndex] = useState<number | null>(null)
+  // Face search: null = no search done; Set = matched IDs (always kept once found)
+  const [faceMatchIds, setFaceMatchIds] = useState<Set<string> | null>(null)
+  // Toggle: true = show only face matches, false = show all (but keep matches for toggling back)
+  const [faceFilterActive, setFaceFilterActive] = useState(false)
+  const [showFaceSearch, setShowFaceSearch] = useState(false)
+  const [faceSelfieUrl, setFaceSelfieUrl] = useState<string | null>(null)
+  const [savingPhoto, setSavingPhoto] = useState(false)
+  // Brief "נשמר / Saved" confirmation after a single-image download completes.
+  const [photoSaved, setPhotoSaved] = useState(false)
+  // Warmed download Files, keyed by downloadCacheKey(imageId, quality). The
+  // viewer prefetches the active image's downloadable File so the tap can call
+  // navigator.share() SYNCHRONOUSLY on iOS (preserving the user gesture) and
+  // the save completes on the first tap. inflight de-dupes concurrent warms.
+  const downloadFileCache = useRef<Map<string, { file: File }>>(new Map())
+  const downloadPrefetchInflight = useRef<Set<string>>(new Set())
+  // Abort handles for in-flight prefetches so superseded warms (e.g. when the
+  // guest swipes past an image before its blob lands) can be cancelled instead
+  // of piling up duplicate background downloads.
+  const downloadPrefetchAborts = useRef<Map<string, AbortController>>(new Map())
+  // Cap on cached download blobs. Bounds memory when a guest browses a large
+  // set at HD (each File can be several MB). LRU-ish: oldest inserted evicted.
+  // Sized to comfortably cover a phone viewport's worth of grid tiles plus the
+  // viewer's current/next, so warmed tiles are still cached by the time they
+  // are tapped, while memory stays bounded.
+  const MAX_DOWNLOAD_CACHE = 12
+  // Brief auto-dismissing toast for the "HD original still uploading,
+  // saved web copy instead" path. Distinct from dlProgress because that
+  // overlay is for in-flight batch downloads with a progress bar.
+  const [hdNotice, setHdNotice] = useState<string | null>(null)
+  // When the fullscreen viewer opens, it navigates through whichever list
+  // the clicked tile belonged to (full gallery / face-match filter / section).
+  // Snapshotting at click time means next/prev stays inside that subset and
+  // doesn't break if the filter later changes.
+  const [viewerList, setViewerList] = useState<GalleryImage[] | null>(null)
+
+  // Device detection for download UX
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+  const isAndroid = /Android/i.test(navigator.userAgent)
+
+  // Download progress tracking
+  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null)
+
+  // ── Download-tracking email gate ──────────────────────────────────────────
+  // When the gallery has trackDownloads on, the first download prompts for an
+  // email. downloaderRef is the source of truth for the guard + the log call
+  // (a ref sidesteps the stale-closure trap where the pending action captured a
+  // pre-submit null email). The state mirror only drives re-render of the gate.
+  const [downloader, setDownloader] = useState<{ email: string; name: string | null } | null>(null)
+  const downloaderRef = useRef<{ email: string; name: string | null } | null>(null)
+  const [emailGateOpen, setEmailGateOpen] = useState(false)
+  const pendingDownloadRef = useRef<(() => void) | null>(null)
+
+  // Parse gallery from URL. Every form may carry one extra trailing segment
+  // — the section page slug (/<biz>/<gallery>/<section>). basePath is the
+  // gallery's own URL without that segment; section navigation appends to it.
+  const galleryRef = useMemo(() => {
+    const path = window.location.pathname.replace(/\/+$/, '')
+    // Short slug form: /<biz>/g/<gallery-slug>
+    const short = path.match(/^\/([^/]+)\/g\/([^/]+)(?:\/[^/]+)?$/)
+    if (short) return { type: 'slug' as const, businessSlug: short[1], gallerySlug: short[2], basePath: `/${short[1]}/g/${short[2]}` }
+    const legacy = path.match(/^\/([^/]+)\/gallery\/([^/]+)(?:\/[^/]+)?$/)
+    if (legacy) return { type: 'id' as const, value: legacy[2], basePath: `/${legacy[1]}/gallery/${legacy[2]}` }
+    const direct = path.match(/^\/gallery\/([^/]+)(?:\/[^/]+)?$/)
+    if (direct) return { type: 'id' as const, value: direct[1], basePath: `/gallery/${direct[1]}` }
+    const clean = path.match(/^\/([^/]+)\/([^/]+)(?:\/[^/]+)?$/)
+    if (clean) return { type: 'slug' as const, businessSlug: clean[1], gallerySlug: clean[2], basePath: `/${clean[1]}/${clean[2]}` }
+    return null
+  }, [])
+
+  useEffect(() => {
+    if (!galleryRef) { setError('No gallery ID in URL'); return }
+    if (galleryRef.type === 'id') {
+      loadGallery(galleryRef.value)
+    } else {
+      (async () => {
+        try {
+          // Fast path: one RPC resolves business+gallery slug and returns
+          // meta + first image page + sections together (replaces ~4 serial
+          // round trips to the Sydney origin). Falls through to the legacy
+          // multi-call path if the RPC is absent (073 not yet applied) or on a
+          // transient failure — so behavior is preserved either way.
+          // First page is 100 (FIRST_PAGE below must match): covers the
+          // welcome mosaic (~30) + first grid screens while keeping the
+          // single-call payload light (~0.5s vs ~2s at 300). The rest streams
+          // via background pagination.
+          const boot = await gcBootstrap<GalleryMeta, GalleryImage, GallerySection>(
+            galleryRef.businessSlug, galleryRef.gallerySlug, 100,
+          )
+          if (boot.status === 'ok' && boot.galleryId) {
+            loadGallery(boot.galleryId, {
+              meta: boot.meta as unknown as GalleryMeta,
+              images: boot.images ?? [],
+              sections: boot.sections ?? [],
+            })
+            return
+          }
+          if (boot.status === 'not_found') { setError('Gallery not found'); return }
+          // boot.status === 'unavailable' → legacy resolve below.
+          const { data: bizRows } = await supabase.rpc('get_business_by_slug', { p_slug: galleryRef.businessSlug })
+          const biz = bizRows?.[0]
+          if (!biz) { setError('Gallery not found'); return }
+          // Migration 063 made gallery_status an enum of ('draft','live','archived').
+          // 'published' is no longer a valid value (it was a desktop-era ghost
+          // that never landed in the DB). We resolve against draft+live so the
+          // owner can deep-link into an unpublished gallery from their email.
+          const { data: g } = await supabase.from('galleries').select('*')
+            .eq('business_id', biz.id).eq('slug', galleryRef.gallerySlug)
+            .in('status', ['live', 'draft']).single()
+          if (g) { loadGallery(g.id); return }
+          const { data: byName } = await supabase.from('galleries').select('*')
+            .eq('business_id', biz.id).in('status', ['live', 'draft'])
+            .ilike('name', galleryRef.gallerySlug.replace(/-/g, '%')).limit(1)
+          if (byName?.[0]) { loadGallery(byName[0].id); return }
+          setError('Gallery not found')
+        } catch { setError('Gallery not found') }
+      })()
+    }
+  }, [galleryRef])
+
+  // ── Section pages ────────────────────────────────────────────────────────
+  // pagedMode: sections become separate pages. Off while the face filter is
+  // active (matches must stay visible across every section at once).
+  const pagedMode = sections.length > 0 && !faceFilterActive
+  const galleryBasePath = galleryRef?.basePath ?? null
+
+  // The section the current URL points at: the path segment after the
+  // gallery base, else the legacy ?section=<slug|id> query param.
+  const currentSectionParam = () => {
+    try {
+      const path = window.location.pathname.replace(/\/+$/, '')
+      if (galleryBasePath && path.startsWith(galleryBasePath + '/')) {
+        return decodeURIComponent(path.slice(galleryBasePath.length + 1))
+      }
+      return new URLSearchParams(window.location.search).get('section')
+    } catch { return null }
+  }
+
+  // Map a slug/id from the URL to a section anchor. UNSECTIONED_SLUG is the
+  // synthetic "More Photos" page that holds images without a section.
+  const anchorForParam = (param: string | null): string | null => {
+    if (!param) return null
+    if (param === UNSECTIONED_SLUG) return 'all-images'
+    const sec = sections.find(s => s.slug === param || s.id === param)
+    return sec ? `section-${sec.id}` : null
+  }
+
+  // Open a section page: swap state + URL, then land at the top of the new
+  // page's grid (scroll-margin-top clears the sticky nav). push=false for
+  // back/forward navigation, where the browser already changed the URL.
+  const openSectionPage = (anchorId: string, push = true) => {
+    setActiveSectionAnchor(anchorId)
+    if (push && galleryBasePath) {
+      try {
+        const secId = anchorId.replace(/^section-/, '')
+        const sec = sections.find(s => s.id === secId)
+        const slug = anchorId === 'all-images' ? UNSECTIONED_SLUG : (sec ? (sec.slug || sec.id) : null)
+        if (slug) window.history.pushState(null, '', `${galleryBasePath}/${encodeURIComponent(slug)}`)
+      } catch { /* URL sync is a nicety, never load-bearing */ }
+    }
+    // Wait a tick so the new page's block is mounted before scrolling.
+    setTimeout(() => {
+      document.getElementById(anchorId)?.scrollIntoView({ behavior: 'auto', block: 'start' })
+    }, 50)
+  }
+
+  // On load: open the section the URL deep-links to, else the first section
+  // that actually has photos.
+  useEffect(() => {
+    if (!pagedMode || images.length === 0) return
+    const fromUrl = anchorForParam(currentSectionParam())
+    if (fromUrl) { setActiveSectionAnchor(fromUrl); return }
+    const first = sections.find(s => images.some(im => im.section_id === s.id))
+    if (first) setActiveSectionAnchor(`section-${first.id}`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagedMode, sections, images.length])
+
+  // Back/forward: re-resolve the section page from the URL.
+  useEffect(() => {
+    if (!pagedMode) return
+    const onPop = () => {
+      const anchor = anchorForParam(currentSectionParam())
+      if (anchor) { openSectionPage(anchor, false); return }
+      const first = sections.find(s => images.some(im => im.section_id === s.id))
+      if (first) openSectionPage(`section-${first.id}`, false)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagedMode, sections, images])
+
+  // Scroll-spy: track which section is in view and update activeSectionAnchor.
+  // Only relevant in stacked-chapters mode (face filter active) — in paged
+  // mode exactly one section is on screen and navigation drives the anchor.
+  useEffect(() => {
+    if (sections.length === 0 || showWelcome || pagedMode) return
+    // When sections cover the gallery we no longer render an "all-images"
+    // section; only watch per-section anchors.
+    const ids = sections.length > 0
+      ? sections.map(sec => `section-${sec.id}`)
+      : ['all-images']
+    const elements = ids
+      .map(id => document.getElementById(id))
+      .filter((e): e is HTMLElement => !!e)
+    if (elements.length === 0) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Pick the entry closest to the top of the viewport that's currently
+        // intersecting. Sort by boundingClientRect.top so a section that's
+        // crossing the nav line is preferred over one already deep in view.
+        const visible = entries
+          .filter(e => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        if (visible[0]) {
+          setActiveSectionAnchor(visible[0].target.id)
+        }
+      },
+      {
+        // The observer fires when a section's top is between 70px from the
+        // top of the viewport and 60% of the viewport height.
+        rootMargin: '-70px 0px -40% 0px',
+        threshold: 0,
+      }
+    )
+
+    elements.forEach(el => observer.observe(el))
+    return () => observer.disconnect()
+  }, [sections, showWelcome, images])
+
+  // Hydrate a previously-captured downloader email for THIS gallery so a
+  // returning guest isn't asked twice. Keyed per gallery id in localStorage.
+  useEffect(() => {
+    const gid = gallery?.id
+    if (!gid) return
+    try {
+      const raw = localStorage.getItem(`pf-dl-id-${gid}`)
+      if (raw) {
+        const parsed = JSON.parse(raw) as { email?: string; name?: string | null }
+        if (parsed?.email) {
+          const d = { email: parsed.email, name: parsed.name ?? null }
+          downloaderRef.current = d
+          setDownloader(d)
+          return
+        }
+      }
+    } catch { /* ignore malformed cache */ }
+    downloaderRef.current = null
+    setDownloader(null)
+  }, [gallery?.id])
+
+  // Load hidden images for this gallery. Public galleries never flip `unlocked`
+  // (there's no token to store), so we must NOT gate on it — otherwise a client
+  // hides a photo but guests never filter it out. Access is enforced
+  // server-side by gallery_get_hidden's _gallery_authz: a gated gallery with no
+  // token simply returns [] until unlock, and this effect re-runs on `unlocked`
+  // to pick up the token-scoped list.
+  useEffect(() => {
+    if (!gallery) return
+    gcGetHidden(gallery.id).then(ids => {
+      setHiddenImageIds(new Set(ids))
+    })
+  }, [gallery?.id, unlocked])
+
+  // On first load, if the URL has a hash (e.g. #section-abc), scroll to it
+  // once the masonry has rendered.
+  useEffect(() => {
+    if (showWelcome || images.length === 0) return
+    const hash = window.location.hash.replace('#', '')
+    if (!hash) return
+    // Wait one tick so the masonry can paint and the IDs are mounted.
+    const id = setTimeout(() => {
+      const el = document.getElementById(hash)
+      if (el) el.scrollIntoView({ behavior: 'auto', block: 'start' })
+    }, 50)
+    return () => clearTimeout(id)
+  }, [showWelcome, images.length])
+
+  async function loadGallery(
+    id: string,
+    prefetch?: { meta: GalleryMeta; images: GalleryImage[]; sections: GallerySection[] },
+  ) {
+    // The bootstrap fast-path hands meta/images/sections in already; only fetch
+    // them here when there's no prefetch (the legacy id-route + fallback path).
+    const meta = prefetch?.meta ?? await gcGetMeta(id)
+    if (!meta) {
+      setError('Gallery not found')
+      return
+    }
+    const g = meta as unknown as Gallery
+    const gateOn = (meta as { signed_gate_enabled?: boolean }).signed_gate_enabled === true
+    const hasPw  = (meta as { has_password?: boolean }).has_password === true
+
+    if (isGalleryUnlocked(id)) {
+      setUnlocked(true)
+    }
+
+    // In private face-search mode, the bulk image fetch returns nothing — the
+    // matched rows come back from the rekognition edge function instead.
+    const isPrivateFaceMode =
+      ((g.delivery_settings as { facePrivacyMode?: string } | null)?.facePrivacyMode) === 'private'
+
+    // For galleries that are signed-gate-enabled AND password-protected, we
+    // must wait for the user to unlock before fetching images / stories /
+    // hidden state — those RPCs require a token. The PasswordGate effect
+    // re-runs loadGallery? No: it just flips `unlocked`, and the dependent
+    // useEffects pick up the rest (hidden, etc). For images + stories we
+    // mirror that here: skip the heavy fetch when the gate hasn't been passed.
+    const mustWaitForUnlock = gateOn && hasPw && !isGalleryUnlocked(id)
+
+    // Staged load: fetch a first slice fast so the welcome/cover + first grid
+    // screens render in ~0.6s, then stream the rest in the background instead
+    // of blocking ~2s on all ~900 rows. Pages arrive in sort_order, so
+    // appending keeps the gallery order stable.
+    const FIRST_PAGE = 100   // MUST match the gcBootstrap limit above; covers
+                             // the welcome mosaic + first grid screens, rest streams
+    const REST_PAGE = 1000
+    const skipImages = isPrivateFaceMode || mustWaitForUnlock
+
+    // Prefetched images are only valid for a NON-gated gallery — the bootstrap
+    // RPC ran without an unlock token, so a gated gallery's prefetch.images is
+    // empty and we must re-fetch with the token below. Sections carry no
+    // sensitive content, so the prefetch is always usable.
+    const canUsePrefetchImages = !!prefetch && !skipImages && !gateOn
+    const [firstImgs, secsRes] = await Promise.all([
+      canUsePrefetchImages
+        ? Promise.resolve(prefetch!.images)
+        : skipImages
+          ? Promise.resolve([] as GalleryImage[])
+          : gcGetImages<GalleryImage>(id, { offset: 0, limit: FIRST_PAGE }),
+      // gallery_sections is intentionally left on the legacy public path —
+      // section names ("Day 1", "Day 2") are far less sensitive than image
+      // contents, and gating them here would force every PasswordGate render
+      // to wait on token issuance for what is essentially a label.
+      prefetch
+        ? Promise.resolve({ data: prefetch.sections })
+        : supabase
+            .from('gallery_sections')
+            .select('id, name, slug, sort_order, description')
+            .eq('gallery_id', id)
+            .order('sort_order', { ascending: true }),
+    ])
+
+    // ── Phase 6 step 5 phase 2 — snapshot override ─────────────────────────
+    // When the cutover flag is on AND the gallery has been published at least
+    // once, the viewer reads delivery_settings + sections from the immutable
+    // gallery_revisions snapshot instead of the live row. The photographer
+    // can keep editing the live row freely; clients see the last-published
+    // state until the next Publish writes a new revision.
+    //
+    // Fallbacks (any of the below leaves the legacy live read intact):
+    //   • Flag off (default).
+    //   • Gallery has no published_revision_id yet.
+    //   • RPC errored or returned no rows.
+    let liveSections = (secsRes.data || []) as GallerySection[]
+    let liveGallery = g
+    const publishedRevisionId = (meta as { published_revision_id?: string | null }).published_revision_id ?? null
+    if (USE_PUBLISHED_SNAPSHOT && publishedRevisionId) {
+      try {
+        const { data: snapRows, error: snapErr } = await supabase.rpc(
+          'gallery_get_published_snapshot',
+          { p_gallery_id: id },
+        )
+        if (snapErr) {
+          console.warn('[snapshot] rpc_error — falling back to live read', snapErr.message)
+        } else {
+          const snap = Array.isArray(snapRows) ? (snapRows[0] as PublishedSnapshot | undefined) : (snapRows as PublishedSnapshot | undefined)
+          if (snap) {
+            // Override delivery_settings with the snapshotted JSONB. The live
+            // gallery row may have newer edits we explicitly want to hide.
+            const snapSettings = (snap.settings ?? {}) as Partial<DeliverySettings>
+            const snapStatus = (snap.status === 'draft' || snap.status === 'live' || snap.status === 'archived')
+              ? snap.status
+              : g.status
+            liveGallery = {
+              ...g,
+              name: snap.name ?? g.name,
+              status: snapStatus,
+              delivery_settings: snapSettings as DeliverySettings,
+            }
+            // Rebuild sections from snapshot.section_data, preserving the
+            // snapshot's ordering. Newer sections added post-publish are
+            // intentionally absent — photographer must re-publish to expose
+            // them to clients.
+            if (Array.isArray(snap.section_data)) {
+              liveSections = snap.section_data
+                .slice()
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                .map(s => ({
+                  id: s.id,
+                  name: s.name,
+                  slug: s.slug ?? null,
+                  sort_order: s.sort_order ?? 0,
+                }))
+            }
+          } else {
+            console.warn('[snapshot] no_row_for_published_revision_id — falling back to live read')
+          }
+        }
+      } catch (e) {
+        console.warn('[snapshot] threw — falling back to live read', e)
+      }
+    }
+
+    setImages(firstImgs)
+    setSections(liveSections)
+    setGallery(liveGallery)
+
+    // Stream the remaining pages in the background (best-effort), appending in
+    // order. Runs while the guest is still on the welcome/cover screen.
+    if (!skipImages && firstImgs.length === FIRST_PAGE) {
+      void (async () => {
+        for (let offset = FIRST_PAGE; ; offset += REST_PAGE) {
+          // getImagesResult retries transient failures internally and reports
+          // ok=false only on a real failure — so a network blip no longer looks
+          // like "end of data" and silently truncates the gallery. On a genuine
+          // failure we stop appending but leave the already-loaded pages intact.
+          const res = await gcGetImagesResult<GalleryImage>(id, { offset, limit: REST_PAGE })
+          if (!res.ok) break
+          if (res.data.length > 0) setImages(prev => [...prev, ...res.data])
+          if (res.data.length < REST_PAGE) break
+        }
+      })()
+    }
+
+    if (mustWaitForUnlock) return  // stories deferred to the unlock effect below
+
+    const stories = await gcGetStories<Story>(id)
+    if (stories.length > 0) {
+      const verified: Story[] = []
+      for (const story of stories) {
+        const url = storageUrl('gallery-stories', story.storage_path)
+        try {
+          const res = await fetch(url, { method: 'HEAD' })
+          if (res.ok) verified.push(story)
+        } catch { /* skip */ }
+      }
+      setStories(verified)
+    }
+  }
+
+  // ── Phase 4.5.C/D — public-viewer session bootstrap ─────────────────────
+  // When a gallery loads, fire-and-forget request a public-viewer token so
+  // signedStorage.ts has it ready before any signed_url call. No-op when
+  // VITE_PUBLIC_VIEWER_SIGNED_URLS is not '1' (the helper short-circuits).
+  // Refreshes silently every 50 minutes; mid-scroll expiry is handled
+  // lazily by signedStorage.ts which re-issues on cache miss.
+  //
+  // P4.5.D: when the server returns 429 turnstile_required, store the site
+  // key in state so the TurnstileWidget renders. The widget's onToken
+  // callback re-calls ensurePublicSession with the resolved token.
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
+  useEffect(() => {
+    if (!gallery?.id) return
+    if (!isPublicViewerSignedUrlsEnabled()) return
+    let cancelled = false
+    ;(async () => {
+      const r = await ensurePublicSession(gallery.id)
+      if (cancelled) return
+      if (r.notLive) {
+        // Gallery isn't live anymore — surface a 404-ish state. We don't
+        // wipe the existing UI here; the user already sees the gallery,
+        // just future signed_url calls will fail and fall back to public.
+        // P4.5.E will tighten this when the bucket actually flips.
+        console.warn('[publicSession] gallery_not_live')
+      }
+      if (r.needsTurnstile) {
+        setTurnstileSiteKey(r.needsTurnstile.siteKey)
+      }
+    })()
+    const REFRESH_MS = 50 * 60 * 1000
+    const iv = setInterval(() => {
+      ensurePublicSession(gallery.id, { bypassCache: true }).catch(() => { /* silent */ })
+    }, REFRESH_MS)
+    return () => { cancelled = true; clearInterval(iv) }
+  }, [gallery?.id])
+
+  // Re-issue the session once Turnstile resolves a token.
+  const onTurnstileToken = useCallback(async (token: string) => {
+    if (!gallery?.id) return
+    const r = await ensurePublicSession(gallery.id, { turnstileToken: token, bypassCache: true })
+    if (r.token) {
+      setTurnstileSiteKey(null) // dismiss the widget on success
+    }
+  }, [gallery?.id])
+
+  // After unlock, fetch the gated content (images + stories) for galleries
+  // that deferred them in loadGallery. No-op for galleries already loaded.
+  useEffect(() => {
+    if (!gallery || !unlocked || images.length > 0) return
+    const isPrivateFaceMode =
+      ((gallery.delivery_settings as { facePrivacyMode?: string } | null)?.facePrivacyMode) === 'private'
+    if (isPrivateFaceMode) return
+    ;(async () => {
+      const PAGE = 1000
+      const out: GalleryImage[] = []
+      for (let offset = 0; ; offset += PAGE) {
+        const rows = await gcGetImages<GalleryImage>(gallery.id, { offset, limit: PAGE })
+        out.push(...rows)
+        if (rows.length < PAGE) break
+      }
+      setImages(out)
+      const stories = await gcGetStories<Story>(gallery.id)
+      if (stories.length > 0) {
+        const verified: Story[] = []
+        for (const story of stories) {
+          const url = storageUrl('gallery-stories', story.storage_path)
+          try {
+            const res = await fetch(url, { method: 'HEAD' })
+            if (res.ok) verified.push(story)
+          } catch { /* skip */ }
+        }
+        setStories(verified)
+      }
+    })()
+  }, [gallery?.id, unlocked])
+
+  const handleUnlock = useCallback(() => setUnlocked(true), [])
+
+  // Resolve client selection settings (safe even when gallery is null)
+  const rawSettings: Partial<DeliverySettings> = (gallery?.delivery_settings || {}) as Partial<DeliverySettings>
+  const clientSelectionEnabled = rawSettings.clientSelectionEnabled ?? false
+  const clientCode = rawSettings.clientCode ?? ''
+
+  // Auto-skip role selection if client selection is not enabled,
+  // or restore client role from session
+  useEffect(() => {
+    if (!gallery) return
+    if (!clientSelectionEnabled) {
+      setViewerRole('guest')
+      return
+    }
+    const saved = sessionStorage.getItem(`client-role-${gallery.id}`)
+    if (saved === 'client') setViewerRole('client')
+  }, [gallery, clientSelectionEnabled])
+
+  // Toggle hidden state for an image (client mode)
+  const toggleHideImage = useCallback(async (imageId: string) => {
+    if (!gallery) return
+    const isHidden = hiddenImageIds.has(imageId)
+    await gcSetHidden(gallery.id, imageId, !isHidden)
+    setHiddenImageIds(prev => {
+      const next = new Set(prev)
+      if (isHidden) next.delete(imageId); else next.add(imageId)
+      return next
+    })
+  }, [gallery, hiddenImageIds])
+
+  // Visible images: guests see only non-hidden, clients see all. Face search
+  // filter is applied on top for guests only (clients always see the full set).
+  const visibleImages = useMemo(() => {
+    if (viewerRole === 'client') return images
+    const base = images.filter(img => !hiddenImageIds.has(img.id))
+    if (!faceMatchIds || !faceFilterActive) return base
+    return base.filter(img => faceMatchIds.has(img.id))
+  }, [images, hiddenImageIds, viewerRole, faceMatchIds, faceFilterActive])
+
+  // Images that belong to no section (or to a deleted one). In paged mode
+  // they get their own "More Photos" page; in stacked mode they render in
+  // the all-images safety-net block.
+  const unsectionedImages = useMemo(() => {
+    const sectionIdSet = new Set(sections.map(s => s.id))
+    return visibleImages.filter(img => !img.section_id || !sectionIdSet.has(img.section_id))
+  }, [visibleImages, sections])
+  const anySectionHasContent = useMemo(
+    () => sections.some(sec => visibleImages.some(img => img.section_id === sec.id)),
+    [sections, visibleImages]
+  )
+
+  // Surface face search whenever the photographer ENABLED face recognition for
+  // this gallery — public and private galleries alike. This used to be gated
+  // purely on the transient face_index_status, so a freshly-uploaded PUBLIC
+  // gallery (status still 'pending' while the worker catches up) showed no
+  // "find my photos" button, while a PRIVATE gallery did — the reported bug.
+  // Rekognition searches against whatever vectors exist so far and the worker
+  // keeps adding more, so a partial/just-started index is still useful; only a
+  // hard 'failed' index hides the entry. Legacy galleries indexed before the
+  // face_index_enabled column existed stay covered by the status clauses.
+  const faceEnabled =
+    gallery?.face_index_enabled === true ||
+    (gallery?.delivery_settings as { faceIndexEnabled?: boolean } | null)?.faceIndexEnabled === true
+  const faceSearchAvailable =
+    !!gallery &&
+    gallery.face_index_status !== 'failed' &&
+    (faceEnabled ||
+      gallery.face_index_status === 'done' ||
+      (gallery.face_index_status === 'indexing' && (gallery.face_indexed_count ?? 0) > 0))
+
+  const lang = (((gallery?.delivery_settings || {}) as Record<string, unknown>).language as Lang) || 'he'
+  const txt = t(lang)
+
+  useEffect(() => {
+    if (!gallery) return
+    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr'
+    document.documentElement.lang = lang
+  }, [gallery, lang])
+
+  // ── Storage hooks (must live above all early returns) ───────────────────
+  // These three useState/useEffect pairs MUST be called unconditionally on
+  // every render — React error #310 fires the moment the hook count
+  // diverges between renders. The error/!gallery/password-gate early
+  // returns below would otherwise skip them and crash on subsequent paint.
+  // Inputs are computed defensively so they tolerate gallery=null and an
+  // empty images list during the initial pre-load render.
+  const _hookRaw = (gallery?.delivery_settings || {}) as Record<string, unknown>
+  const _hookImgBucket = gallery?.demo_expires_at ? 'demo-uploads' : 'gallery-images'
+  const _hookCoverImageId = (_hookRaw.coverImageId as string | null | undefined) ?? null
+  const _hookCoverImageUrlSetting = (_hookRaw.coverImageUrl as string | null | undefined) ?? null
+  const _hookCoverImage = _hookCoverImageId ? images.find(img => img.id === _hookCoverImageId) ?? null : null
+  const _hookCoverImgForResolve = (() => {
+    if (!_hookCoverImageId) return null
+    const cid = _hookCoverImageId
+    const cFilename = cid.includes('/') ? cid.split('/').pop() : cid
+    return images.find(i => i.id === cid || i.filename === cid || i.filename === cFilename) ?? null
+  })()
+  const _hookWelcomeImages = (() => {
+    const TARGET = 30
+    const topPicks = images.filter(img => img.is_top_pick)
+    if (topPicks.length > 0) return topPicks.slice(0, TARGET)
+    if (sections.length <= 1) return images.slice(0, TARGET)
+    const perSection = Math.ceil(TARGET / sections.length)
+    const result: GalleryImage[] = []
+    for (const sec of sections) {
+      const secImgs = images.filter(img => img.section_id === sec.id)
+      result.push(...secImgs.slice(0, perSection))
+    }
+    const unsectioned = images.filter(img => !img.section_id)
+    result.push(...unsectioned.slice(0, Math.max(0, TARGET - result.length)))
+    return result.slice(0, TARGET)
+  })()
+
+  const [resolvedCoverUrl, setResolvedCoverUrl] = useState<string | null>(
+    _hookCoverImageUrlSetting
+      ?? (_hookCoverImgForResolve ? storageUrl(_hookImgBucket, _hookCoverImgForResolve.storage_path) : null),
+  )
+  useEffect(() => {
+    if (_hookCoverImageUrlSetting) {
+      setResolvedCoverUrl(_hookCoverImageUrlSetting); return
+    }
+    if (!_hookCoverImgForResolve) { setResolvedCoverUrl(null); return }
+    let cancelled = false
+    signedStorageUrl(_hookImgBucket, _hookCoverImgForResolve.storage_path)
+      .then(url => { if (!cancelled) setResolvedCoverUrl(url) })
+      .catch(() => { /* fallback handled by helper */ })
+    return () => { cancelled = true }
+  }, [_hookImgBucket, _hookCoverImgForResolve?.storage_path, _hookCoverImageUrlSetting])
+
+  // The welcome mosaic renders bounded transforms via renderUrl (see the
+  // WelcomeScreen storageUrl prop). It used to resolve signedStorageUrl for
+  // every welcome image first and swap those in — but with signed URLs off
+  // (prod) that resolved to the raw full-resolution originals, re-downloading
+  // tens of MB behind the cover screen. Dropped: the cover now stays bounded.
+
+  // While the welcome/cover screen is shown, preload the gallery's first grid
+  // thumbnails into the guest's browser cache (mirroring the grid's srcset).
+  // The grid isn't mounted yet, so without this the guest only starts loading
+  // photos AFTER tapping "enter". This is the Pixieset trick: the cover page
+  // doubles as a loading buffer, so the grid appears instantly on enter.
+  useEffect(() => {
+    if (!showWelcome || images.length === 0) return
+    return preloadGalleryThumbs(images, { bucket: _hookImgBucket, count: 150 })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWelcome, images.length, _hookImgBucket])
+
+  const [coverUrl, setCoverUrl] = useState<string | null>(
+    _hookCoverImage ? storageUrl(_hookImgBucket, _hookCoverImage.storage_path) : null,
+  )
+  useEffect(() => {
+    if (!_hookCoverImage) { setCoverUrl(null); return }
+    let cancelled = false
+    signedStorageUrl(_hookImgBucket, _hookCoverImage.storage_path)
+      .then(url => { if (!cancelled) setCoverUrl(url) })
+      .catch(() => { /* fallback handled by helper */ })
+    return () => { cancelled = true }
+  }, [_hookImgBucket, _hookCoverImage?.storage_path])
+
+  // Master on/off. The owner can disable the cover independently of the gallery
+  // privacy setting; when off, the welcome/hero cover and the private-gate
+  // background both fall back to their current no-cover behavior (no empty
+  // placeholder). Backward-compatible for galleries created before the toggle
+  // (see readCoverConfig): a cover chosen the old way stays on.
+  const coverEnabled = coverIsEnabled(_hookRaw)
+  const effectiveResolvedCoverUrl = coverEnabled ? resolvedCoverUrl : null
+  const effectiveCoverUrl = coverEnabled ? coverUrl : null
+
+  // Warm the downloadable File for the image the guest is viewing (and the
+  // likely-next one, web quality only) so the one-tap share path is armed
+  // before they tap. MUST live here, above every early return, to satisfy the
+  // Rules of Hooks. The gallery-static values it reads (downloadsEnabled,
+  // downloadQuality, prefetchDownloadFile) are declared lower in the component
+  // but are all initialized by the time this effect's callback runs. Deps are
+  // only the state that changes which image is active. On close it aborts
+  // in-flight warms and drops cached blobs to release memory.
+  useEffect(() => {
+    if (viewerIndex === null) {
+      downloadPrefetchAborts.current.forEach(c => c.abort())
+      downloadPrefetchAborts.current.clear()
+      downloadPrefetchInflight.current.clear()
+      downloadFileCache.current.clear()
+      return
+    }
+    if (!downloadsEnabled) return
+    const list = viewerList ?? images
+    const cur = list[viewerIndex]
+    const quality: DownloadQuality = downloadQuality === 'original' ? 'original' : 'web'
+    const nxt = list.length > 1 ? list[(viewerIndex + 1) % list.length] : undefined
+    // Cancel warms for images no longer current/next before starting new ones,
+    // so a fast swipe cannot stack duplicate background downloads.
+    const wanted = new Set<string>()
+    if (cur) wanted.add(downloadCacheKey(cur.id, quality))
+    if (nxt && quality === 'web') wanted.add(downloadCacheKey(nxt.id, 'web'))
+    downloadPrefetchAborts.current.forEach((c, key) => {
+      if (!wanted.has(key)) { c.abort(); downloadPrefetchAborts.current.delete(key) }
+    })
+    if (cur) void prefetchDownloadFile(cur)
+    if (nxt && nxt.id !== cur?.id && quality === 'web') void prefetchDownloadFile(nxt)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewerIndex, viewerList, images])
+
+  // Apply the resolved gallery branding (accent + fonts — including live Brand
+  // Kit inheritance for galleries with no per-gallery override) as CSS variables
+  // on :root, so the brand reaches EVERY sub-view: the welcome/cover screen and
+  // the password gate (both early returns) as well as the main gallery grid.
+  // Runs before any early return so hook order stays stable.
+  useEffect(() => {
+    const el = document.documentElement
+    if (!gallery) return
+    const b = resolveGalleryBranding(
+      (gallery.delivery_settings ?? {}) as unknown as Record<string, unknown>,
+      (gallery as unknown as { brand?: import('@/shared/gallery/galleryBranding').BrandDefaults }).brand,
+    )
+    el.style.setProperty('--accent', b.accentRgb)
+    el.style.setProperty('--accent-ink', b.accentInk)
+    // Appearance theme (curated, contrast-safe background/text/surface).
+    el.style.setProperty('--bg', b.theme.bg)
+    el.style.setProperty('--surface', b.theme.surface)
+    el.style.setProperty('--text', b.theme.text)
+    el.style.setProperty('--text-muted', b.theme.textMuted)
+    el.setAttribute('data-appearance', b.appearance)
+    if (b.headingFont) el.style.setProperty('--font-heading', `'${b.headingFont}'`)
+    else el.style.removeProperty('--font-heading')
+    if (b.bodyFont) el.style.setProperty('--font-body', `'${b.bodyFont}'`)
+    else el.style.removeProperty('--font-body')
+    return () => {
+      el.style.removeProperty('--accent')
+      el.style.removeProperty('--accent-ink')
+      el.style.removeProperty('--bg')
+      el.style.removeProperty('--surface')
+      el.style.removeProperty('--text')
+      el.style.removeProperty('--text-muted')
+      el.removeAttribute('data-appearance')
+      el.style.removeProperty('--font-heading')
+      el.style.removeProperty('--font-body')
+    }
+  }, [gallery])
+
+  if (error) {
+    // Map internal English error keys to a localized, branded fallback. The
+    // raw "Gallery not found" string was leaking to Hebrew clients hitting a
+    // dead link, which read as a broken site rather than a polite "wrong
+    // address" message.
+    const isRtl = document.documentElement.dir === 'rtl'
+    const headline = isRtl ? 'הגלריה לא נמצאה' : 'Gallery not found'
+    const body = isRtl
+      ? 'הקישור לא תקין או שהגלריה הוסרה. אם קיבלת אותו מהצלם, פנה אליו לבדיקה.'
+      : 'The link is invalid or the gallery was removed. If you received it from the photographer, please contact them.'
+    return (
+      <div className="center-msg" dir={isRtl ? 'rtl' : 'ltr'} style={{ padding: 24, textAlign: 'center' }}>
+        <h1 style={{
+          fontFamily: "var(--font-heading, 'Playfair Display', Georgia, serif)",
+          fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em',
+          margin: '0 0 12px', color: '#fafafa',
+        }}>{headline}</h1>
+        <p style={{
+          fontSize: 14, lineHeight: 1.6,
+          color: 'rgba(255,255,255,.65)',
+          margin: '0 0 24px', maxWidth: 420,
+        }}>{body}</p>
+      </div>
+    )
+  }
+
+  if (!gallery) {
+    return (
+      <div className="center-msg">
+        <div className="loader" />
+      </div>
+    )
+  }
+
+  // ── One-time gallery paywall — RETIRED ──────────────────────────────────
+  // The "$150 unlock gallery" client-payment feature has been removed. The
+  // server-side gate gallery_is_locked() is neutralized (always false), so a
+  // gallery with a historical requires_payment=true value is served normally
+  // according to its publish / privacy / password / client-assignment rules
+  // and never shows a payment screen. No unlock screen or checkout is rendered.
+
+  // ── Resolve settings with backward-compatible defaults ──────────────────
+  const raw: Partial<DeliverySettings> = (gallery.delivery_settings || {}) as Partial<DeliverySettings>
+
+  // Phase 6 Step 2: prefer typed column, fall back to JSONB during dual-read.
+  // gallery.access_type is the migrated source of truth; rawSettings.accessType
+  // remains populated by current writes until Step 4's RPC dual-writes both.
+  const accessType       = (gallery.access_type ?? s(raw, 'accessType', 'public')) as string
+  const galleryTitle     = s(raw, 'galleryTitle', '') || gallery.name
+  const clientName       = s(raw, 'clientName', '') || gallery.client_name
+  const coverImageId     = s(raw, 'coverImageId', null)
+  const feedLayout       = (raw as Record<string, unknown>).feedLayout as string || null
+  const isFeedSetting    = feedLayout === 'feed'
+  const isMobileDevice   = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  const isFeedMode       = isFeedSetting && isMobileDevice
+  // Layout — resolved through the single shared resolver so the editor preview,
+  // Preview route, and Live viewer can never disagree. Design tab keys
+  // (thumbnailSize / gridSpacing) win; legacy layoutMode / imageSpacing are the
+  // backward-compatible fallback so pre-Design-tab galleries look unchanged.
+  const { layoutMode, imageSpacing } = resolveGridLayout(raw as Record<string, unknown>, isFeedMode)
+  const cornerStyle      = isFeedMode ? 'sharp' : s(raw, 'cornerStyle', 'sharp')
+  // Business Brand Kit defaults surfaced on the meta (gallery.brand) — accent
+  // hex + fonts + logo only. A per-gallery override always wins; otherwise these
+  // are inherited (resolved in resolveGalleryBranding, below).
+  const brandDefaults = (gallery as unknown as { brand?: import('@/shared/gallery/galleryBranding').BrandDefaults }).brand
+  // Typography — the photographer's Design > Typography choice, else the brand
+  // font, else the dashboard's base stack.
+  const headingFont      = ((((raw as Record<string, unknown>).headingFont as string) || brandDefaults?.headingFont || '') as string).trim()
+  const bodyFont         = ((((raw as Record<string, unknown>).bodyFont as string) || brandDefaults?.bodyFont || '') as string).trim()
+  const studioName       = s(raw, 'studioName', '')
+  const studioWebsite    = (raw as Record<string, unknown>).studioWebsite as string || ''
+  const showFooterCredit = s(raw, 'showFooterCredit', true)
+  const showStories      = s(raw, 'showStories', true)
+  // Cost control (2026-07-05): 'high' now means the ~2048px web derivative
+  // (not the multi-MB original) — excellent for phones/social/small prints and
+  // ~15× cheaper on egress. Only an explicit 'original' downloads the full
+  // original. Unset defaults to 'high' so a missing setting never silently
+  // serves multi-MB originals to every guest.
+  const downloadQuality  = s(raw, 'downloadQuality', 'high')
+  // Backward compat: new downloadsEnabled falls back to old allowDownloads
+  const downloadsEnabled = raw.downloadsEnabled !== undefined
+    ? raw.downloadsEnabled
+    : (raw as Record<string, unknown>).allowDownloads !== false
+  // Download tracking (מעקב הורדות): when on, the first guest to download must
+  // enter an email so the photographer can attribute downloads. See the email
+  // gate + downloaderRef below.
+  const trackDownloads = (raw as Record<string, unknown>).trackDownloads === true
+  const facePrivacyMode = ((raw as Record<string, unknown>).facePrivacyMode as 'open' | 'private') || 'open'
+
+  // Theme color — selected by the photographer in the Design tab.
+  // Supports both the legacy palette (indigo/rose/amber/teal/slate, used by
+  // alma + lsports) and the new editorial palette (charcoal/sage/...). The
+  // legacy "indigo" is mapped to the editorial charcoal so older galleries
+  // adopt the new neutral by default rather than carrying the bright
+  // indigo into the cream design.
+  // Colors + fonts resolved through the single shared branding resolver (same
+  // palette + contrast rules the editor uses), so Live and the editor preview
+  // never disagree. A per-gallery override (themeColor / fonts) wins; otherwise
+  // the resolver inherits the business Brand Kit defaults surfaced on the meta
+  // (gallery.brand — accent hex + fonts only, never the full brand_kit).
+  const branding = resolveGalleryBranding(raw as Record<string, unknown>, brandDefaults)
+  const themeAccent = branding.accentHex
+
+  // Watermark settings — applied as a CSS overlay on web previews. Originals
+  // download untouched (the watermark is presentation-only, not baked in).
+  const watermarkEnabled = (raw as Record<string, unknown>).watermarkEnabled === true
+  const watermarkText = (((raw as Record<string, unknown>).watermarkText as string) || studioName || '').trim()
+  const watermarkPosition = ((raw as Record<string, unknown>).watermarkPosition as string) || 'bottom-right'
+
+  // ── Password gate ──────────────────────────────────────────────────────
+  // We no longer have the plaintext password on the client; the gate calls
+  // verify_gallery_password() RPC. We rely on accessType alone to know
+  // whether a gate is required.
+  if (accessType === 'password' && !unlocked) {
+    const signedGateOn = (gallery as { signed_gate_enabled?: boolean }).signed_gate_enabled === true
+    return (
+      <PasswordGate
+        galleryId={gallery.id}
+        galleryName={galleryTitle}
+        onUnlock={handleUnlock}
+        requireToken={signedGateOn}
+        lang={lang}
+        coverUrl={gateCoverBackgroundUrl(_hookRaw, _hookImgBucket)}
+      />
+    )
+  }
+
+  // ── Welcome screen (collage of top picks) ──────────────────────────────
+  // Source preference for the mosaic, in order:
+  //   1) photographer-curated top picks (is_top_pick = true)
+  //   2) first 30 photos, spread evenly across sections so the collage feels
+  //      representative of the whole gallery rather than concentrated in one
+  //      shoot block
+  // 30 is the visual sweet spot for the 6-column scrolling mosaic — more
+  // adds noise without adding feel.
+  const TARGET = 30
+  const topPicks = images.filter(img => img.is_top_pick)
+  const welcomeImages = (() => {
+    if (topPicks.length > 0) return topPicks.slice(0, TARGET)
+    if (sections.length <= 1) return images.slice(0, TARGET)
+    const perSection = Math.ceil(TARGET / sections.length)
+    const result: GalleryImage[] = []
+    for (const sec of sections) {
+      const secImgs = images.filter(img => img.section_id === sec.id)
+      result.push(...secImgs.slice(0, perSection))
+    }
+    const unsectioned = images.filter(img => !img.section_id)
+    result.push(...unsectioned.slice(0, Math.max(0, TARGET - result.length)))
+    return result.slice(0, TARGET)
+  })()
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  // Demo galleries store their images in the 'demo-uploads' bucket instead
+  // of the regular 'gallery-images' bucket. Detect by checking demo_expires_at.
+  const isDemoGallery = !!gallery?.demo_expires_at
+  const imgBucket = isDemoGallery ? 'demo-uploads' : 'gallery-images'
+
+  // Private face-mode: anon users can't fetch the bulk image list (RLS), so
+  // `images` is intentionally empty until the selfie unlocks matches. The
+  // welcome screen still needs to show — just without the mosaic. We force
+  // 'cinematic' (which renders the cover image alone) when there's nothing
+  // to mosaic with.
+  const isPrivateFaceMode = faceSearchAvailable && facePrivacyMode === 'private'
+  const welcomeStyleResolved: 'mosaic' | 'cinematic' | 'minimal' =
+    images.length === 0 ? 'cinematic' : (rawSettings.welcomeStyle || 'mosaic')
+
+  if (showWelcome && (images.length > 0 || isPrivateFaceMode)) {
+    return (
+      <>
+        <WelcomeScreen
+          style={welcomeStyleResolved}
+          galleryTitle={galleryTitle}
+          galleryDescription={rawSettings.galleryDescription || ''}
+          welcomeMessage={(rawSettings as Record<string, unknown>).welcomeMessage as string || ''}
+          textAnimation={((rawSettings as Record<string, unknown>).welcomeTextAnimation as 'blur' | 'typewriter' | 'slide') || 'blur'}
+          animationSpeed={((rawSettings as Record<string, unknown>).welcomeAnimationSpeed as 'slow' | 'normal' | 'fast') || 'normal'}
+          eventDate={(gallery.event_date ?? rawSettings.eventDate) || ''}
+          eventLocation={(gallery.event_location ?? rawSettings.eventLocation) || ''}
+          clientName={clientName || ''}
+          studioName={studioName}
+          studioWebsite={studioWebsite}
+          images={welcomeImages}
+          coverImageUrl={effectiveResolvedCoverUrl}
+          coverCrop={((gallery?.delivery_settings || {}) as Partial<DeliverySettings>).coverCrop}
+          gateCoverUrl={isPrivateFaceMode ? gateCoverBackgroundUrl(_hookRaw, imgBucket) : null}
+          storageUrl={(path: string) => displayUrl(imgBucket, path, 1280, 65)}
+          onEnter={() => setShowWelcome(false)}
+          faceSearchAvailable={faceSearchAvailable}
+          facePrivacyMode={faceSearchAvailable ? facePrivacyMode : null}
+          onFindMyPhotos={() => setShowFaceSearch(true)}
+          lang={lang}
+          headingFont={headingFont}
+          bodyFont={bodyFont}
+        />
+        {/* Face search experience — full-screen flow with camera, thinking, results */}
+        {showFaceSearch && gallery && (
+          <Suspense fallback={null}>
+            <FaceSearchExperience
+              galleryId={gallery.id}
+              backgroundImages={images.slice(0, 6)}
+              storageUrl={(path: string) => displayUrl(imgBucket, path, 1280, 65)}
+              privacyMode={facePrivacyMode}
+              lang={lang}
+              onClose={() => setShowFaceSearch(false)}
+              onSelfieCapture={(url) => setFaceSelfieUrl(url)}
+              onMatches={(ids, serverImages) => {
+                setFaceMatchIds(new Set(ids))
+                setFaceFilterActive(true)
+                setShowFaceSearch(false)
+                // In private mode the bulk image fetch was skipped, so the only
+                // images we have are the ones the server hydrated for matches.
+                if (facePrivacyMode === 'private' && serverImages.length > 0) {
+                  setImages(serverImages as unknown as GalleryImage[])
+                }
+                if (ids.length > 0) setShowWelcome(false)
+              }}
+              onBrowseAll={() => {
+                setShowFaceSearch(false)
+                setShowWelcome(false)
+              }}
+            />
+          </Suspense>
+        )}
+      </>
+    )
+  }
+
+  // ── Role selection (Client / Guest) ─────────────────────────────────────
+  if (clientSelectionEnabled && viewerRole === 'none') {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 999, background: '#0a0a0c',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      }}>
+        {studioName && (
+          <p style={{ fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginBottom: 8 }}>
+            {studioName}
+          </p>
+        )}
+        <h2 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: '0 0 8px' }}>{galleryTitle}</h2>
+        <p style={{ fontSize: 14, color: 'rgba(255,255,255,.4)', margin: '0 0 36px' }}>{txt.howToView}</p>
+
+        <div style={{ display: 'flex', gap: 14, marginBottom: 24 }}>
+          <button
+            onClick={() => setViewerRole('guest')}
+            style={{
+              padding: '14px 36px', borderRadius: 10,
+              border: '1px solid rgba(255,255,255,.15)', background: 'rgba(255,255,255,.05)',
+              color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer',
+              fontFamily: 'inherit', transition: 'all .2s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.1)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.05)' }}
+          >
+            {txt.guest}
+          </button>
+          <button
+            onClick={() => {
+              const el = document.getElementById('client-code-section')
+              if (el) el.style.display = 'block'
+            }}
+            style={{
+              padding: '14px 36px', borderRadius: 10,
+              border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              fontFamily: 'inherit', transition: 'all .2s',
+              boxShadow: '0 4px 20px rgba(99,102,241,.3)',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.9' }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+          >
+            {txt.imTheClient}
+          </button>
+        </div>
+
+        {/* Client code input */}
+        <div id="client-code-section" style={{ display: 'none', textAlign: 'center' }}>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', marginBottom: 10 }}>{txt.enterClientCode}</p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="text"
+              value={clientCodeInput}
+              onChange={e => { setClientCodeInput(e.target.value.toUpperCase()); setClientCodeError(false) }}
+              placeholder="CODE"
+              style={{
+                padding: '10px 14px', fontSize: 14, fontFamily: 'inherit',
+                color: '#fff', background: 'rgba(255,255,255,.06)',
+                border: clientCodeError ? '1px solid #ef4444' : '1px solid rgba(255,255,255,.15)',
+                borderRadius: 8, outline: 'none', letterSpacing: '0.1em',
+                width: 160, textAlign: 'center',
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  if (clientCodeInput === clientCode) {
+                    setViewerRole('client')
+                    sessionStorage.setItem(`client-role-${gallery.id}`, 'client')
+                  } else {
+                    setClientCodeError(true)
+                  }
+                }
+              }}
+              autoFocus
+            />
+            <button
+              onClick={() => {
+                if (clientCodeInput === clientCode) {
+                  setViewerRole('client')
+                  sessionStorage.setItem(`client-role-${gallery.id}`, 'client')
+                } else {
+                  setClientCodeError(true)
+                }
+              }}
+              style={{
+                padding: '10px 20px', borderRadius: 8, border: 'none',
+                background: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Enter
+            </button>
+          </div>
+          {clientCodeError && (
+            <p style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>{txt.invalidCode}</p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  function thumbUrl(img: GalleryImage) {
+    return storageUrl(imgBucket, img.thumbnail_path || img.storage_path)
+  }
+
+  function webUrl(img: GalleryImage) {
+    return storageUrl(imgBucket, img.storage_path)
+  }
+
+  function originalUrl(img: GalleryImage) {
+    // The original_path column is set at row-creation time, but the actual
+    // file only lands in storage when original_uploaded flips to true.
+    // Until then, hitting the original URL returns 404 — fall back to the
+    // already-uploaded web preview so the guest gets *something* instead of
+    // a broken download.
+    if (img.original_path && img.original_uploaded) {
+      return storageUrl(imgBucket, img.original_path)
+    }
+    return storageUrl(imgBucket, img.storage_path)
+  }
+
+  /** True if the guest is requesting an HD download but the original
+   * isn't actually in storage yet — used to surface a friendly notice
+   * instead of a silent fallback. */
+  function isOriginalPending(img: GalleryImage): boolean {
+    return Boolean(img.original_path) && img.original_uploaded !== true
+  }
+
+  function downloadUrl(img: GalleryImage) {
+    // 'original' and 'high' → serve original full-res file when available
+    const wantsHd = downloadQuality === 'original'
+    const path = wantsHd
+      ? (img.original_uploaded && img.original_path ? img.original_path : img.storage_path)
+      : img.storage_path
+    // Route the full-res download through the watermark engine when the
+    // gallery has watermarking enabled. Browse surfaces (thumbs, lightbox)
+    // still use the clean storage URL — only this download helper opts in.
+    if (watermarkEnabled && gallery?.business_id) {
+      return signedWatermarkedUrl(path, gallery.business_id)
+    }
+    if (wantsHd) return originalUrl(img)
+    return webUrl(img)
+  }
+
+  function storyUrl(st: Story) {
+    return storageUrl('gallery-stories', st.storage_path)
+  }
+
+  /** Show a 4-second auto-dismissing notice. Used to tell the guest we
+   * served the web copy because the HD original isn't in storage yet. */
+  function showHdNotice(msg: string) {
+    setHdNotice(msg)
+    setTimeout(() => setHdNotice(prev => prev === msg ? null : prev), 4000)
+  }
+
+  /** Trust storage, not the DB flag. The audit (and a real downloaded-only-
+   *  111KB report from a guest) showed images.original_uploaded going stale
+   *  vs. the actual file in S3 — the photographer ships the originals fine
+   *  but the per-row UPDATE silently drops, and the guest gets a 100KB web
+   *  preview instead of the 8 MB original. HEAD-check the original URL and
+   *  fall back ONLY when storage genuinely says 404. ~50 ms penalty on the
+   *  click is invisible next to the actual download. */
+  async function resolveDownloadUrl(img: GalleryImage): Promise<{ url: string; downgraded: boolean }> {
+    const wantsHd = downloadQuality === 'original'
+    // Watermark gate: photographer's per-gallery toggle (with brand-kit
+    // fallback handled server-side in /api/watermark). We only route the
+    // FULL-RESOLUTION download through the engine; thumbs + web previews
+    // keep streaming clean so browsing the gallery stays untouched.
+    const businessId = gallery?.business_id ?? ''
+
+    // P2.2: authorization tokens carried to /api signed_url + /api/watermark.
+    // pvt proves "real viewer of this gallery"; unlockToken proves
+    // password-unlock for password galleries (no-op for non-password). Both
+    // read from the active session — signedStorageUrl can read pvt itself, but
+    // we pass both explicitly so the download path is deterministic.
+    const signedOpts = gallery?.id
+      ? {
+          pvt: readPublicSessionToken(gallery.id) ?? undefined,
+          unlockToken: getStoredToken(gallery.id) ?? undefined,
+        }
+      : {}
+    const watermarkPath = (path: string): string =>
+      watermarkEnabled && businessId
+        ? signedWatermarkedUrl(path, businessId, signedOpts.pvt, signedOpts.unlockToken)
+        : '' // empty signals "no watermark wrap — use the signed/public URL"
+
+    if (!wantsHd || !img.original_path) {
+      // P4.5.D: when flag is on, route through signedStorageUrl. When flag
+      // off, signedStorageUrl short-circuits to public URL — same behavior
+      // as today (originalUrl/webUrl return public URLs).
+      const path = wantsHd ? (img.original_uploaded ? img.original_path! : img.storage_path) : img.storage_path
+      const wm = watermarkPath(path)
+      if (wm) return { url: wm, downgraded: false }
+      const url = await signedStorageUrl(imgBucket, path, signedOpts)
+      return { url, downgraded: false }
+    }
+
+    // HD requested AND original_path is set.
+    const wm = watermarkPath(img.original_path)
+    if (wm) return { url: wm, downgraded: false }
+
+    if (isPublicViewerSignedUrlsEnabled()) {
+      // P2.2: do NOT HEAD-check the public original URL — once the bucket is
+      // private that HEAD is a guaranteed 403 and would wrongly downgrade
+      // HD→web. Instead request an authorized signed URL directly; only a
+      // genuine sign failure (401 unauthorized, or 404 original truly absent)
+      // downgrades us to a signed web copy.
+      try {
+        const url = await signedStorageUrl(imgBucket, img.original_path, {
+          ...signedOpts,
+          fallbackToPublic: false,
+        })
+        return { url, downgraded: false }
+      } catch {
+        const fallbackUrl = await signedStorageUrl(imgBucket, img.storage_path, signedOpts)
+        return { url: fallbackUrl, downgraded: true }
+      }
+    }
+
+    // Flag OFF (legacy): HEAD-check the public original, then sign or fall back.
+    // signedStorageUrl short-circuits to the public URL while the flag is off,
+    // so this branch is byte-identical to the pre-P2.2 behavior.
+    const headCandidate = storageUrl(imgBucket, img.original_path)
+    try {
+      const head = await fetch(headCandidate, { method: 'HEAD' })
+      if (head.ok) {
+        const url = await signedStorageUrl(imgBucket, img.original_path, signedOpts)
+        return { url, downgraded: false }
+      }
+    } catch {
+      // Network blip — assume present and let the actual download surface any real error.
+      const url = await signedStorageUrl(imgBucket, img.original_path, signedOpts)
+      return { url, downgraded: false }
+    }
+    const fallbackUrl = await signedStorageUrl(imgBucket, img.storage_path, signedOpts)
+    return { url: fallbackUrl, downgraded: true }
+  }
+
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+
+  /** Brief "נשמר / Saved" confirmation, auto-dismissed. */
+  function flashSaved() {
+    setPhotoSaved(true)
+    setTimeout(() => setPhotoSaved(false), 1600)
+  }
+
+  const currentQuality = (): DownloadQuality => (downloadQuality === 'original' ? 'original' : 'web')
+
+  /** Store a warmed File and evict the oldest entries beyond the cap. Map
+   *  preserves insertion order, so the first key is the least-recently-added.
+   *  Dropped Files are plain blobs (no object URLs), so GC reclaims them. */
+  function cacheDownloadFile(key: string, file: File) {
+    downloadFileCache.current.set(key, { file })
+    for (const stale of keysOverCap([...downloadFileCache.current.keys()], MAX_DOWNLOAD_CACHE)) {
+      downloadFileCache.current.delete(stale)
+    }
+  }
+
+  /**
+   * Warm the downloadable File for one image into downloadFileCache so a later
+   * tap — from the fullscreen viewer OR a grid thumbnail — can share it
+   * synchronously. Best-effort: any failure just means the tap falls back to
+   * the async path. De-duped via downloadPrefetchInflight and abortable via
+   * downloadPrefetchAborts so a fast swipe or scroll cancels stale warms. The
+   * cached File carries the blob bytes, so it stays valid even after the signed
+   * URL that produced it expires — we never re-read the URL.
+   */
+  async function prefetchDownloadFile(img: GalleryImage) {
+    if (!img?.id) return
+    const quality = currentQuality()
+    const key = downloadCacheKey(img.id, quality)
+    if (downloadFileCache.current.has(key) || downloadPrefetchInflight.current.has(key)) return
+    const controller = new AbortController()
+    downloadPrefetchInflight.current.add(key)
+    downloadPrefetchAborts.current.set(key, controller)
+    try {
+      const { url } = await resolveDownloadUrl(img)
+      const res = await fetch(url, { signal: controller.signal })
+      if (!res.ok) return
+      const blob = await res.blob()
+      if (controller.signal.aborted) return
+      cacheDownloadFile(key, new File([blob], downloadFileName(img.filename), { type: 'image/jpeg' }))
+    } catch {
+      /* prefetch is best-effort (incl. AbortError) — the tap fetches on demand */
+    } finally {
+      downloadPrefetchInflight.current.delete(key)
+      downloadPrefetchAborts.current.delete(key)
+    }
+  }
+
+  /** Abort an in-flight warm for an image (used when a grid tile scrolls out
+   *  of view) so obsolete downloads do not pile up. A completed cache entry is
+   *  left in place — it is cheap to keep and makes a later tap instant. */
+  function cancelDownloadPrefetch(img: GalleryImage) {
+    if (!img?.id) return
+    const key = downloadCacheKey(img.id, currentQuality())
+    const controller = downloadPrefetchAborts.current.get(key)
+    if (controller) { controller.abort(); downloadPrefetchAborts.current.delete(key) }
+    downloadPrefetchInflight.current.delete(key)
+  }
+
+  /**
+   * Warm/release the download File for a grid tile as it enters/leaves the
+   * viewport. Bounded: mobile-only (desktop downloads need no prefetch), only
+   * the tiles actually on screen, capped by MAX_DOWNLOAD_CACHE, and aborted on
+   * scroll-away. This is what makes a single tap on a thumbnail's download icon
+   * open the iOS share sheet without first opening the image.
+   */
+  function warmTileDownload(img: GalleryImage, warm: boolean) {
+    if (!shouldWarmDownload({ isMobile, downloadsEnabled })) return
+    if (warm) void prefetchDownloadFile(img)
+    else cancelDownloadPrefetch(img)
+  }
+
+  /**
+   * Single-image download. On iOS Safari the ONLY reliable one-tap path is to
+   * call navigator.share() synchronously inside the tap — see pickDownloadPath.
+   * When the viewer has prefetched the File we take that synchronous path; the
+   * gesture is never spent on an await, so the save completes on the first tap.
+   * Otherwise we fall back to the async fetch→share/download path.
+   */
+  /** Persist the captured downloader identity (ref for immediate reads, state
+   *  for render, localStorage so it survives reloads of this gallery). */
+  function saveDownloader(email: string, name: string | null) {
+    const d = { email, name }
+    downloaderRef.current = d
+    setDownloader(d)
+    if (gallery) {
+      try { localStorage.setItem(`pf-dl-id-${gallery.id}`, JSON.stringify(d)) } catch { /* ignore */ }
+    }
+  }
+
+  /** Email gate: when trackDownloads is on and we have no identity yet, stash
+   *  the intended download and open the modal instead. Returns true if the
+   *  caller may proceed now, false if it was deferred behind the gate. */
+  function ensureDownloaderEmail(proceed: () => void): boolean {
+    if (!trackDownloads || downloaderRef.current) return true
+    pendingDownloadRef.current = proceed
+    setEmailGateOpen(true)
+    return false
+  }
+
+  function handleImageDownload(img: GalleryImage) {
+    if (savingPhoto) return
+    if (!ensureDownloaderEmail(() => handleImageDownload(img))) return
+    const quality = currentQuality()
+    const cached = isMobile ? downloadFileCache.current.get(downloadCacheKey(img.id, quality)) : undefined
+    const canShareFiles = !!cached && !!navigator.share && !!navigator.canShare?.({ files: [cached.file] })
+
+    if (pickDownloadPath({ isMobile, canShareFiles, hasPrefetchedFile: !!cached }) === 'share-sync' && cached) {
+      // SYNCHRONOUS share — no await before this line. This is the fix for the
+      // two-tap bug: the share sheet opens from the original tap.
+      setSavingPhoto(true)
+      navigator.share({ files: [cached.file], title: galleryTitle })
+        .then(() => {
+          flashSaved()
+          if (gallery) void logDownload(gallery.id, img.id, quality, 'single', downloaderRef.current)
+        })
+        .catch((err: unknown) => {
+          // AbortError = the guest dismissed the share sheet: not a failure.
+          if ((err as { name?: string } | null)?.name === 'AbortError') return
+          showHdNotice(txt.saveFailed ?? 'Save failed — tap Save to try again.')
+        })
+        .finally(() => setSavingPhoto(false))
+      return
+    }
+    void handleImageDownloadAsync(img, quality)
+  }
+
+  /** Async fallback: desktop, or a mobile tap before the File warmed. On mobile
+   *  the fetched File is cached, so if this tap loses the gesture (iOS) the very
+   *  next tap shares instantly — and preparation timing never shows a failure. */
+  async function handleImageDownloadAsync(img: GalleryImage, quality: DownloadQuality) {
+    if (savingPhoto) return
+    // Immediate feedback before the sign/fetch chain runs.
+    setSavingPhoto(true)
+    try {
+      const key = downloadCacheKey(img.id, quality)
+      const cached = downloadFileCache.current.get(key)
+      if (isMobile) {
+        // Reuse a warmed File if present; otherwise fetch once and cache it so a
+        // retry is instant and consistent with the viewer path.
+        let file = cached?.file
+        if (!file) {
+          const { url, downgraded } = await resolveDownloadUrl(img)
+          if (downgraded) {
+            showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+          }
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(`download_http_${res.status}`)
+          const blob = await res.blob()
+          file = new File([blob], downloadFileName(img.filename), { type: 'image/jpeg' })
+          cacheDownloadFile(key, file)
+        }
+        await shareOrSaveFile(file)
+      } else {
+        const { url, downgraded } = await resolveDownloadUrl(img)
+        if (downgraded) {
+          showHdNotice(txt.originalStillUploading ?? 'HD copy still uploading — saved web-quality version. Try again in a few minutes.')
+        }
+        await handleDownload(url, img.filename)
+      }
+      flashSaved()
+      if (gallery) void logDownload(gallery.id, img.id, quality, 'single', downloaderRef.current)
+    } catch (err) {
+      // Only a REAL failure gets a retry message. A dismissed share sheet
+      // (AbortError) or an iOS gesture-timing rejection (NotAllowedError, which
+      // just warmed the cache for the next tap) stays silent.
+      if (classifyDownloadError(err) === 'failure') {
+        showHdNotice(txt.saveFailed ?? 'Save failed — tap Save to try again.')
+      }
+    } finally {
+      setSavingPhoto(false)
+    }
+  }
+
+  /** Share a ready File (mobile) or fall back to an anchor download. Lets
+   *  navigator.share reject (incl. AbortError) so callers can react. */
+  async function shareOrSaveFile(file: File) {
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: galleryTitle })
+      return
+    }
+    const objectUrl = URL.createObjectURL(file)
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = file.name
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 4000)
+  }
+
+  async function handleDownload(url: string, filename: string) {
+    const res = await fetch(url)
+    const blob = await res.blob()
+    if (isMobile) {
+      const file = new File([blob], downloadFileName(filename), { type: 'image/jpeg' })
+      await shareOrSaveFile(file)
+      return
+    }
+    // Desktop: anchor download with the original filename. The anchor MUST be
+    // in the DOM for Safari/Firefox to honor the click, and the blob URL must
+    // outlive the click — revoke on a timeout, not synchronously.
+    const objectUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 4000)
+  }
+
+  async function handleBatchDownload(imgs: GalleryImage[]) {
+    if (imgs.length > 0 && !ensureDownloaderEmail(() => { void handleBatchDownload(imgs) })) return
+    if (gallery && imgs.length > 0) {
+      const wantsHd = downloadQuality === 'original'
+      void logBatchDownload(gallery.id, imgs.map(i => i.id), wantsHd ? 'original' : 'web', downloaderRef.current)
+    }
+    // Resolve URLs in parallel BEFORE the download loop. HEAD-check each
+    // original so a stale original_uploaded flag doesn't downgrade the
+    // batch silently. Parallel HEADs add ~few hundred ms total.
+    setDlProgress(`Checking ${imgs.length} files...`)
+    const resolved = await Promise.all(imgs.map(resolveDownloadUrl))
+    const downgradedCount = resolved.filter(r => r.downgraded).length
+    if (downgradedCount > 0) {
+      showHdNotice(txt.someOriginalsStillUploading ?? `${downgradedCount} HD originals are still uploading — those photos saved as web-quality. Try the batch again in a few minutes for full HD.`)
+    }
+    const urlFor = (i: number) => resolved[i].url
+    // On mobile with Web Share API: fetch all files and share in ONE share sheet.
+    // The user picks "Save X Images" and all photos go to the camera roll together.
+    if (isMobile && navigator.share) {
+      setDlProgress(`Preparing ${imgs.length} photos...`)
+      setDownloadProgress({ current: 0, total: imgs.length })
+      try {
+        const files: File[] = []
+        for (let i = 0; i < imgs.length; i++) {
+          setDlProgress(`Loading ${i + 1} / ${imgs.length}...`)
+          setDownloadProgress({ current: i + 1, total: imgs.length })
+          try {
+            const res = await fetch(urlFor(i))
+            const blob = await res.blob()
+            const cleanName = imgs[i].filename.replace(/\.[^.]+$/, '') + '.jpg'
+            files.push(new File([blob], cleanName, { type: 'image/jpeg' }))
+          } catch { /* skip failed image */ }
+        }
+        if (files.length > 0) {
+          setDlProgress(null)
+          setDownloadProgress(null)
+          // Web Share API with multiple files — native OS share sheet opens with
+          // "Save to Photos" option that saves all at once.
+          if (navigator.canShare && navigator.canShare({ files })) {
+            await navigator.share({ files, title: galleryTitle })
+            return
+          }
+        }
+      } catch {
+        // User cancelled or share failed — fall through to sequential downloads
+      } finally {
+        setDlProgress(null)
+        setDownloadProgress(null)
+      }
+    }
+
+    // Desktop (or mobile fallback): bundle all photos into a single ZIP.
+    setDlProgress(`Preparing ${imgs.length} photos...`)
+    setDownloadProgress({ current: 0, total: imgs.length })
+    const safeTitle = (galleryTitle || 'gallery').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '') || 'gallery'
+
+    // P4.6: when the public-viewer signed-URL flow is on, route the ZIP
+    // through /api/gallery-zip — the server fetches via service-role and
+    // streams the archive back. Avoids the per-image client-side fetches
+    // that would each round-trip through signedStorage.
+    if (isPublicViewerSignedUrlsEnabled() && gallery?.id) {
+      try {
+        const pvt = readPublicSessionToken(gallery.id) ?? ''
+        if (!pvt) throw new Error('no_pvt')
+        const wantsHd = downloadQuality === 'original'
+        const res = await fetch('/api/gallery-zip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            galleryId: gallery.id,
+            imageIds: imgs.map(i => i.id),
+            pvt,
+            // P2.2: password-gallery unlock token (no-op for non-password).
+            unlockToken: getStoredToken(gallery.id) ?? undefined,
+            quality: wantsHd ? 'original' : 'web',
+            filenameStem: safeTitle,
+            // Tell the ZIP endpoint to route each image through the
+            // watermark engine before adding it to the archive. The flag is
+            // honored server-side; if /api/gallery-zip doesn't yet
+            // understand it the field is ignored and we get clean originals
+            // (same as today) — never a 500.
+            watermark: watermarkEnabled,
+          }),
+        })
+        if (!res.ok) throw new Error(`zip_${res.status}`)
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${safeTitle}.zip`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        return
+      } catch (err) {
+        console.warn('[gallery-zip] server-side failed, falling back to JSZip:', err)
+        // fall through to client-side bundling below
+      } finally {
+        // Don't clear here — the JSZip fallback owns the progress UI from
+        // this point on. Clearing now would flicker the overlay closed/open.
+      }
+    }
+
+    try {
+      // JSZip is only needed for the fallback path (server-side /api/gallery-zip
+      // is preferred). Dynamic import keeps ~95KB out of the LCP-critical
+      // public-viewer bundle until a guest actually batch-downloads.
+      const { default: JSZip } = await import('jszip')
+      const zip = new JSZip()
+      const usedNames = new Set<string>()
+      for (let i = 0; i < imgs.length; i++) {
+        setDlProgress(`Downloading ${i + 1} / ${imgs.length}...`)
+        setDownloadProgress({ current: i + 1, total: imgs.length })
+        try {
+          // P2.2: when the signed-URL flow is on, never fetch a public original
+          // here — resolveDownloadUrl returns an authorized signed URL (and
+          // honors watermark + HD→web downgrade). Flag off → downloadUrl()
+          // returns the legacy public URL, identical to pre-P2.2.
+          const fetchUrl = isPublicViewerSignedUrlsEnabled()
+            ? (await resolveDownloadUrl(imgs[i])).url
+            : downloadUrl(imgs[i])
+          const res = await fetch(fetchUrl)
+          const blob = await res.blob()
+          let name = imgs[i].filename || `photo-${i + 1}.jpg`
+          if (usedNames.has(name)) {
+            const dot = name.lastIndexOf('.')
+            const base = dot > 0 ? name.slice(0, dot) : name
+            const ext = dot > 0 ? name.slice(dot) : ''
+            name = `${base}-${i + 1}${ext}`
+          }
+          usedNames.add(name)
+          zip.file(name, blob)
+        } catch { /* skip failed image */ }
+      }
+      setDlProgress(`Creating ZIP...`)
+      const zipBlob = await zip.generateAsync(
+        { type: 'blob' },
+        (meta) => setDlProgress(`Creating ZIP ${Math.round(meta.percent)}%...`),
+      )
+      const url = URL.createObjectURL(zipBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${safeTitle}.zip`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('ZIP download failed:', err)
+      // Surface a user-visible message — historical behaviour was a silent
+      // disappearance of the progress overlay, which read as "nothing
+      // happened" to the guest. Hebrew/English toast routed through the
+      // existing HD-notice channel.
+      const msg = document.documentElement.dir === 'rtl'
+        ? 'הורדת ה-ZIP נכשלה. נסה שוב, ואם זה חוזר, פנה לצלם.'
+        : 'ZIP download failed. Try again — if it keeps failing, contact the photographer.'
+      showHdNotice(msg)
+    } finally {
+      setDlProgress(null)
+      setDownloadProgress(null)
+    }
+  }
+
+  // ── Grid classes ────────────────────────────────────────────────────────
+  const gridClasses = [
+    'grid',
+    `grid--${layoutMode}`,
+    `grid--spacing-${imageSpacing}`,
+    cornerStyle === 'rounded' ? 'grid--corners-rounded' : '',
+  ].filter(Boolean).join(' ')
+
+  // ── Footer visibility ──────────────────────────────────────────────────
+  const showFooter = showFooterCredit || !!studioName
+  const footerText = studioName || txt.deliveredWith
+
+  // ── Should we show stories? ────────────────────────────────────────────
+  const showStoriesSection = showStories !== false && stories.length > 0
+
+  // ── Download label (smart: only say "Original" if originals are actually available) ──
+  const someOriginalsReady = images.some(img => img.original_path)
+  const downloadLabel = isMobile
+    ? (downloadQuality === 'original' && someOriginalsReady ? txt.saveOriginal : txt.save)
+    : (downloadQuality === 'original' && someOriginalsReady ? txt.downloadOriginal : txt.download)
+
+  // Hero background image: prefer the photographer's chosen cover; otherwise
+  // fall back to the first photo of the gallery (heavily blurred + dimmed)
+  // so the page never opens as a flat black rectangle.
+  //
+  // `resolvedCoverUrl` honours the Dashboard cover picker (delivery_settings
+  // .coverImageUrl) — the same source the welcome screen uses. The hero used
+  // to read only `coverUrl` (the coverImageId path), so a cover chosen in the
+  // dashboard never showed at the top. Prefer the resolved cover, then the
+  // id-based one, then the first photo.
+  // When no cover is set, pick a flattering hero rather than just images[0]
+  // (which is often a dark/portrait frame): prefer a landscape top-pick, then
+  // any landscape photo, then a top-pick, then the first image.
+  const _isLandscape = (im: GalleryImage) => !!(im.width && im.height && im.width > im.height)
+  const heroFallbackImage =
+    images.find(im => im.is_top_pick && _isLandscape(im))
+    ?? images.find(_isLandscape)
+    ?? images.find(im => im.is_top_pick)
+    ?? images[0]
+  const heroBgUrl = effectiveResolvedCoverUrl
+    || effectiveCoverUrl
+    // Blurred+dimmed hero — a small server-side transform is plenty and never
+    // pulls the multi-MB original (storage_path is the original in the
+    // originals-only model).
+    || (heroFallbackImage
+        ? displayUrl(imgBucket, heroFallbackImage.storage_path, 1280, 60)
+        : null)
+  const hasCustomCover = !!(effectiveResolvedCoverUrl || effectiveCoverUrl)
+
+  // Accent as "r, g, b" for the existing --accent CSS variable, plus a
+  // contrast-safe ink for text placed on the accent, and the photographer's
+  // chosen fonts as CSS variables so they apply gallery-wide (not just the
+  // welcome screen). Only emitted when a font was actually chosen, so galleries
+  // that never set one keep the default stack unchanged.
+  const themeAccentRgb = branding.accentRgb
+  const brandCssVars = [
+    `--accent: ${themeAccentRgb};`,
+    `--accent-ink: ${branding.accentInk};`,
+    branding.headingFont ? `--font-heading: '${branding.headingFont}';` : '',
+    branding.bodyFont ? `--font-body: '${branding.bodyFont}';` : '',
+  ].filter(Boolean).join(' ')
+
+  return (
+    <>
+      {/* Override the global branding CSS variables to match the photographer's
+          Design-tab choices. Cascades into every rgb(var(--accent)) rule plus
+          the gallery-wide heading/body font vars in styles.css. */}
+      <style>{`:root { ${brandCssVars} }`}</style>
+
+      {/* Skip link — keyboard-only shortcut past the hero to the photo grid.
+          Visible only on focus, hidden otherwise (WCAG 2.4.1 Bypass Blocks).
+          "#all-images" covers both sectioned and non-sectioned galleries. */}
+      <a href="#all-images" className="skip-link">
+        {lang === 'he' ? 'דלג לגלריה' : 'Skip to gallery'}
+      </a>
+      {/* P4.5.D — Turnstile challenge modal. Renders only when the public-
+          gallery-session endpoint returned `turnstile_required` for this IP.
+          The widget is invisible 98% of the time (Managed mode); when it does
+          show interaction, this overlay frames it. */}
+      {turnstileSiteKey && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 3000,
+          background: 'rgba(0,0,0,.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexDirection: 'column', gap: 16, padding: 24,
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 12, padding: '32px 28px',
+            maxWidth: 360, width: '100%', textAlign: 'center',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          }}>
+            <h2 style={{ margin: '0 0 8px', fontSize: 18, color: '#0a0a0f' }}>
+              רגע, מאמתים שאתה לא רובוט
+            </h2>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'rgba(0,0,0,.6)' }}>
+              זה לוקח שנייה ויעבור אוטומטית.
+            </p>
+            <TurnstileWidget siteKey={turnstileSiteKey} onToken={onTurnstileToken} />
+          </div>
+        </div>
+      )}
+      {/* Hero */}
+      {/* Feed mode: mobile sticky header */}
+      {isFeedMode && (
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 100,
+          background: 'linear-gradient(to bottom, rgba(7,7,13,.98), rgba(7,7,13,.92))',
+          backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+          borderBottom: '1px solid rgba(255,255,255,.05)',
+          padding: '16px 20px', textAlign: 'center',
+        }}>
+          <h1 style={{
+            fontFamily: "var(--font-heading, 'Playfair Display', Georgia, serif)",
+            fontSize: 20, fontWeight: 700, color: '#fff', margin: 0, lineHeight: 1.2,
+          }}>{galleryTitle}</h1>
+          {studioName && (
+            <p style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', margin: '4px 0 0', fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' as const }}>{studioName}</p>
+          )}
+        </div>
+      )}
+
+      {/* Hero */}
+      <header className={`hero ${heroBgUrl ? 'hero--has-bg' : ''} ${hasCustomCover ? 'hero--cover' : 'hero--blurred'}`} style={isFeedMode ? { display: 'none' } : undefined}>
+        {heroBgUrl && (
+          <div
+            className="hero__bg"
+            style={{ backgroundImage: `url(${heroBgUrl})` }}
+            aria-hidden="true"
+          />
+        )}
+        {heroBgUrl && <div className="hero__overlay" />}
+        <div className="hero__content">
+          {faceMatchIds && faceSelfieUrl ? (
+            /* ── Personalized hero after face search ── */
+            <>
+              <div style={{
+                width: 56, height: 56, borderRadius: '50%', overflow: 'hidden',
+                border: '2.5px solid rgba(255,255,255,.18)',
+                marginBottom: 16,
+                boxShadow: '0 4px 20px rgba(0,0,0,.3), 0 0 0 4px rgba(99,102,241,.12)',
+              }}>
+                <img src={faceSelfieUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+
+              {studioName && (
+                <p className="hero__eyebrow">{studioName}</p>
+              )}
+              <h1 className="hero__title" style={{ fontSize: 'clamp(24px, 4vw, 44px)' }}>{galleryTitle}</h1>
+
+              {/* Opening text — the SAME animated welcome message as the public
+                  gallery (shared OpeningText component). Shown once matches load
+                  (Moment B), never on the locked entry (Moment A). It mounts
+                  once here, so it does not replay on view toggles / rerenders;
+                  on refresh the guest re-enters via face search and it replays,
+                  matching the public gallery's per-load behavior. */}
+              <OpeningText
+                message={(rawSettings as Record<string, unknown>).welcomeMessage as string | undefined}
+                animation={((rawSettings as Record<string, unknown>).welcomeTextAnimation as 'blur' | 'typewriter' | 'slide') || 'blur'}
+                speed={((rawSettings as Record<string, unknown>).welcomeAnimationSpeed as 'slow' | 'normal' | 'fast') || 'normal'}
+                marginTop={18}
+              />
+
+              {/* Secured badge for face-search hero */}
+              {facePrivacyMode === 'private' && (
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '4px 12px', borderRadius: 999, margin: '8px 0 4px',
+                  background: 'rgba(34,197,94,.06)', border: '1px solid rgba(34,197,94,.10)',
+                }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(34,197,94,.65)" strokeWidth="2.2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  </svg>
+                  <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase' as const, color: 'rgba(34,197,94,.6)' }}>
+                    Your photos are protected
+                  </span>
+                </div>
+              )}
+
+              {/* ── Segmented toggle: Your Photos / All Photos ── */}
+              <div style={{
+                marginTop: 16,
+                display: 'inline-flex',
+                borderRadius: 999, padding: 3,
+                background: 'rgba(255,255,255,.05)',
+                border: '1px solid rgba(255,255,255,.07)',
+                backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              }}>
+                <button
+                  onClick={() => setFaceFilterActive(true)}
+                  style={{
+                    padding: '8px 18px', borderRadius: 999,
+                    border: 'none', cursor: 'pointer',
+                    fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                    letterSpacing: '.01em', whiteSpace: 'nowrap',
+                    transition: 'all .25s cubic-bezier(.16,1,.3,1)',
+                    background: faceFilterActive ? 'rgba(99,102,241,.25)' : 'transparent',
+                    color: faceFilterActive ? '#fff' : 'rgba(255,255,255,.4)',
+                    boxShadow: faceFilterActive ? '0 1px 6px rgba(99,102,241,.2)' : 'none',
+                  }}
+                >
+                  Your Photos · {faceMatchIds.size}
+                </button>
+                <button
+                  onClick={() => setFaceFilterActive(false)}
+                  style={{
+                    padding: '8px 18px', borderRadius: 999,
+                    border: 'none', cursor: 'pointer',
+                    fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                    letterSpacing: '.01em', whiteSpace: 'nowrap',
+                    transition: 'all .25s cubic-bezier(.16,1,.3,1)',
+                    background: !faceFilterActive ? 'rgba(255,255,255,.12)' : 'transparent',
+                    color: !faceFilterActive ? '#fff' : 'rgba(255,255,255,.4)',
+                    boxShadow: !faceFilterActive ? '0 1px 4px rgba(0,0,0,.2)' : 'none',
+                  }}
+                >
+                  All Photos · {images.length}
+                </button>
+              </div>
+            </>
+          ) : (
+            /* ── Default hero ── */
+            <>
+              {studioName && (
+                <p className="hero__eyebrow">{studioName}</p>
+              )}
+              <h1 className="hero__title">{galleryTitle}</h1>
+              {clientName && (
+                <p className="hero__sub">{clientName}</p>
+              )}
+              <div className="hero__meta">
+                <span className="hero__count">{images.length} {images.length === 1 ? 'photo' : 'photos'}</span>
+                {(accessType === 'password' || facePrivacyMode === 'private') && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '5px 12px', borderRadius: 999, marginLeft: 8,
+                    background: 'rgba(34,197,94,.06)', border: '1px solid rgba(34,197,94,.10)',
+                    backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+                    fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase' as const,
+                    color: 'rgba(34,197,94,.7)',
+                  }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    Secured
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </header>
+
+      {/* Stories — Instagram-style circle row, directly below the hero. Each
+          circle opens the full-screen StoryPlayer; the row scrolls away above
+          the sticky section nav. Replaces the old header toggle + collapsible
+          block that crowded the section pills. */}
+      {showStoriesSection && (
+        <div className="stories-circles" aria-label="Stories">
+          {stories.map((st, idx) => (
+            <button
+              key={st.id}
+              type="button"
+              className="story-circle"
+              onClick={() => setStoryPlayerIndex(idx)}
+              aria-label={`Play story ${st.style}`}
+            >
+              <span className="story-circle__ring">
+                <video
+                  className="story-circle__media"
+                  src={storyUrl(st)}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  tabIndex={-1}
+                />
+                <span className="story-circle__play" aria-hidden="true">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                </span>
+              </span>
+              <span className="story-circle__label">{st.style}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Unified sticky bar: section pills (left) + download/select toolbar (right) */}
+      {(sections.length > 0 || downloadsEnabled || showStoriesSection || faceSearchAvailable) && (
+        <SectionNav
+          sections={sections.filter(sec => images.some(im => im.section_id === sec.id))}
+          sectionCounts={sections.reduce<Record<string, number>>((acc, sec) => {
+            acc[sec.id] = images.filter(im => im.section_id === sec.id).length
+            return acc
+          }, {})}
+          showAllPill={pagedMode && anySectionHasContent && unsectionedImages.length > 0}
+          allPillLabel={txt.morePhotos}
+          allPillCount={unsectionedImages.length}
+          totalCount={images.length}
+          activeId={activeSectionAnchor}
+          onJump={(id) => {
+            if (pagedMode) {
+              // Each section is its own page — switch page + URL.
+              openSectionPage(id)
+              return
+            }
+            // Stacked chapters (face filter): a pill is a quick-jump — scroll
+            // to that chapter's block (scroll-margin-top clears the sticky
+            // nav). Scroll-spy keeps the active pill in sync as the user reads.
+            document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }}
+          /* Stories moved out of the header into the Instagram-style circle
+             row below the hero — the center slot crowded the section pills. */
+          centerToolbar={null}
+          toolbar={(faceSearchAvailable || downloadsEnabled) ? (
+            <>
+              {faceSearchAvailable && !selectMode && !faceMatchIds && (
+                <button
+                  className="gallery-toolbar__btn"
+                  onClick={() => setShowFaceSearch(true)}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <circle cx="12" cy="8" r="3" />
+                    <path d="M5.5 20a7 7 0 0 1 13 0" />
+                  </svg>
+                  Find my photos
+                </button>
+              )}
+              {faceMatchIds && faceFilterActive && !selectMode && (
+                <button
+                  className="gallery-toolbar__btn"
+                  onClick={() => { setFaceFilterActive(false); window.scrollTo({ top: 0, behavior: 'auto' }) }}
+                  aria-label={txt.showAllPhotos}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                  {txt.showAllPhotos}
+                </button>
+              )}
+              {downloadsEnabled && <button
+                className={`gallery-toolbar__btn ${selectMode ? 'gallery-toolbar__btn--active' : ''}`}
+                onClick={() => { setSelectMode(!selectMode); setSelectedIds(new Set()) }}
+              >
+                {selectMode ? `${selectedIds.size} ${txt.selected}` : txt.select}
+              </button>}
+              {selectMode && selectedIds.size > 0 && (
+                <button
+                  className="gallery-toolbar__btn gallery-toolbar__btn--primary"
+                  onClick={() => {
+                    handleBatchDownload(images.filter(img => selectedIds.has(img.id)))
+                    setSelectMode(false); setSelectedIds(new Set())
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  {isMobile ? txt.save : txt.download} {selectedIds.size}
+                </button>
+              )}
+              {downloadsEnabled && !selectMode && (
+                <button
+                  className="gallery-toolbar__btn"
+                  onClick={() => handleBatchDownload(images)}
+                  disabled={!!dlProgress}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  {dlProgress || (isMobile ? txt.saveAll : txt.downloadAll)}
+                </button>
+              )}
+              {selectMode && (
+                <button
+                  className="gallery-toolbar__btn gallery-toolbar__btn--ghost"
+                  onClick={() => { setSelectMode(false); setSelectedIds(new Set()) }}
+                >{txt.cancel}</button>
+              )}
+            </>
+          ) : null}
+        />
+      )}
+
+      {/* Stories now render as a circle row just below the hero (see the
+          .stories-circles block above the section nav). */}
+
+      {/* Full-screen StoryPlayer overlay. Mounted only while a story is
+          active; closing returns to the gallery without losing scroll. */}
+      {storyPlayerIndex !== null && stories.length > 0 && (
+        <Suspense fallback={null}>
+          <StoryPlayer
+            stories={stories}
+            initialIndex={storyPlayerIndex}
+            storyUrl={storyUrl}
+            onClose={() => setStoryPlayerIndex(null)}
+          />
+        </Suspense>
+      )}
+
+      {sections.length > 0 && sections.filter(sec =>
+        // Paged mode: render ONLY the active section's page. Stacked mode
+        // (face filter): every chapter renders one after another.
+        !pagedMode || activeSectionAnchor === `section-${sec.id}`
+      ).map(sec => {
+        // A section with zero matching images renders null; the all-photos
+        // safety-net block below kicks in if every section ends up empty.
+        // Face filter applies inside each chapter — visibleImages is already
+        // filtered by faceMatchIds when the filter is on, so each chapter
+        // shows only the matched photos that belong to it, and chapters with
+        // no matches disappear from the layout.
+        const sectionImages = visibleImages.filter(img => img.section_id === sec.id)
+        if (sectionImages.length === 0) return null
+        return (
+          <section key={sec.id} id={`section-${sec.id}`} className="gallery-section">
+            <h2 className="gallery-section__heading">
+              <span className="gallery-section__name">{sec.name}</span>
+              <span className="gallery-section__count">{sectionImages.length} {sectionImages.length === 1 ? 'photo' : 'photos'}</span>
+            </h2>
+            {sec.description && (
+              <p className="gallery-section__description">{sec.description}</p>
+            )}
+            <MasonryGrid
+              images={sectionImages}
+              imgBucket={imgBucket}
+              layoutMode={layoutMode}
+              imageSpacing={imageSpacing}
+              cornerStyle={cornerStyle}
+              onImageClick={(idx) => {
+                // Scope the fullscreen viewer to this section — next/prev
+                // stays within the section the user clicked into.
+                setViewerList(sectionImages)
+                setViewerIndex(idx)
+              }}
+              onDownload={downloadsEnabled ? handleImageDownload : undefined}
+              onWarmDownload={warmTileDownload}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={(id) => setSelectedIds(prev => {
+                const next = new Set(prev)
+                if (next.has(id)) next.delete(id); else next.add(id)
+                return next
+              })}
+              clientMode={viewerRole === 'client'}
+              hiddenIds={hiddenImageIds}
+              onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
+              watermark={watermarkEnabled && watermarkText ? { text: watermarkText, position: watermarkPosition } : null}
+            />
+          </section>
+        )
+      })}
+
+      {/* All Images section — covers three cases:
+          1. The gallery has no sections at all → show every image here.
+          2. Sections exist but none contain visible images (sync race or
+             post-upload state where section_id is briefly null on every
+             row) → show every image here as a safety net.
+          3. Sections exist and some images are sectioned but others are
+             not → show the unsectioned ones here so they aren't stranded
+             off-screen alongside a partially-populated section view.
+          Without this the page renders empty whenever any image lacks a
+          valid section_id. */}
+      {(() => {
+        const shouldRender =
+          sections.length === 0 ||
+          !anySectionHasContent ||
+          unsectionedImages.length > 0
+        if (!shouldRender) return null
+        // Paged mode: this block is the "More Photos" page — render it only
+        // when it IS the active page. (When no section has content it doubles
+        // as the safety net, and 'all-images' is the default anchor anyway.)
+        if (pagedMode && anySectionHasContent && activeSectionAnchor !== 'all-images') return null
+        const mainGridImages =
+          viewerRole === 'client' ? images :
+          sections.length === 0 ? visibleImages :
+          unsectionedImages.length > 0 ? unsectionedImages :
+          visibleImages
+        return (
+          <section id="all-images" className="gallery-section gallery-section--all">
+            <MasonryGrid
+              images={mainGridImages}
+              imgBucket={imgBucket}
+              layoutMode={layoutMode}
+              imageSpacing={imageSpacing}
+              cornerStyle={cornerStyle}
+              onImageClick={(idx) => {
+                setViewerList(mainGridImages)
+                setViewerIndex(idx)
+              }}
+              onDownload={downloadsEnabled ? handleImageDownload : undefined}
+              onWarmDownload={warmTileDownload}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={(id) => setSelectedIds(prev => {
+                const next = new Set(prev)
+                if (next.has(id)) next.delete(id); else next.add(id)
+                return next
+              })}
+              clientMode={viewerRole === 'client'}
+              hiddenIds={hiddenImageIds}
+              onToggleHide={viewerRole === 'client' ? toggleHideImage : undefined}
+              watermark={watermarkEnabled && watermarkText ? { text: watermarkText, position: watermarkPosition } : null}
+            />
+          </section>
+        )
+      })()}
+
+      {/* Footer */}
+      {showFooter && (
+        <footer className="footer">
+          {studioName && studioWebsite ? (
+            <a href={studioWebsite.startsWith('http') ? studioWebsite : `https://${studioWebsite}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ color: 'inherit', textDecoration: 'none', borderBottom: '1px solid rgba(255,255,255,.15)' }}
+            >{studioName}</a>
+          ) : footerText}
+        </footer>
+      )}
+
+      {/* Fullscreen viewer — uses whichever list the clicked tile was in,
+          so next/prev navigation stays within that subset (face-match
+          results stay filtered; section clicks stay inside the section). */}
+      {viewerIndex !== null && (
+        <Viewer
+          images={viewerList ?? images}
+          index={viewerIndex}
+          imgBucket={imgBucket}
+          allowDownloads={downloadsEnabled}
+          downloadLabel={downloadLabel}
+          onClose={() => { setViewerIndex(null); setViewerList(null) }}
+          onNavigate={setViewerIndex}
+          onDownload={handleImageDownload}
+        />
+      )}
+
+      {/* Face search — full-screen experience with camera, thinking, results */}
+      {showFaceSearch && gallery && (
+        <Suspense fallback={null}>
+          <FaceSearchExperience
+            galleryId={gallery.id}
+            backgroundImages={images.slice(0, 6)}
+            storageUrl={(path: string) => storageUrl(imgBucket, path)}
+            privacyMode={facePrivacyMode}
+            onClose={() => setShowFaceSearch(false)}
+            onSelfieCapture={(url) => setFaceSelfieUrl(url)}
+            onMatches={(ids, serverImages) => {
+              setFaceMatchIds(new Set(ids))
+              setFaceFilterActive(true)
+              setShowFaceSearch(false)
+              if (facePrivacyMode === 'private' && serverImages.length > 0) {
+                setImages(serverImages as unknown as GalleryImage[])
+              }
+              if (showWelcome && ids.length > 0) setShowWelcome(false)
+            }}
+            onBrowseAll={() => {
+              setShowFaceSearch(false)
+              if (showWelcome) setShowWelcome(false)
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* ── HD-still-uploading toast ── */}
+      {hdNotice && (
+        <div style={{
+          position: 'fixed', bottom: isMobile ? 100 : 80, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 950, padding: '12px 18px', borderRadius: 12,
+          background: 'rgba(28,18,4,.95)', border: '1px solid rgba(245,158,11,.35)',
+          backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+          maxWidth: 360, boxShadow: '0 8px 32px rgba(0,0,0,.4)',
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+          animation: 'fadeIn .25s ease',
+        }}>
+          <span style={{ fontSize: 16, lineHeight: 1, color: '#f59e0b' }}>⏳</span>
+          <span style={{ fontSize: 12, color: 'rgba(255,255,255,.85)', lineHeight: 1.5, flex: 1 }}>
+            {hdNotice}
+          </span>
+          <button
+            onClick={() => setHdNotice(null)}
+            aria-label="Dismiss"
+            style={{
+              background: 'transparent', border: 'none', color: 'rgba(255,255,255,.45)',
+              fontSize: 16, lineHeight: 1, cursor: 'pointer', padding: 0,
+            }}
+          >×</button>
+        </div>
+      )}
+
+      {/* ── Saving photo indicator (mobile) ── */}
+      {savingPhoto && (
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          zIndex: 9999, padding: '20px 32px', borderRadius: 16,
+          background: 'rgba(0,0,0,.85)', backdropFilter: 'blur(20px)',
+          display: 'flex', alignItems: 'center', gap: 12,
+          boxShadow: '0 8px 40px rgba(0,0,0,.5)',
+          animation: 'fadeIn .2s ease',
+        }}>
+          <div className="loader" style={{ width: 20, height: 20 }} />
+          <span style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{txt.saving}</span>
+        </div>
+      )}
+
+      {/* ── Saved confirmation (brief) ── */}
+      {photoSaved && !savingPhoto && (
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          zIndex: 9999, padding: '20px 32px', borderRadius: 16,
+          background: 'rgba(0,0,0,.85)', backdropFilter: 'blur(20px)',
+          display: 'flex', alignItems: 'center', gap: 12,
+          boxShadow: '0 8px 40px rgba(0,0,0,.5)',
+          animation: 'fadeIn .2s ease',
+        }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          <span style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{txt.saved}</span>
+        </div>
+      )}
+
+      {/* ── Download progress overlay ── */}
+      {/* ── Download-tracking email gate ──
+          Shown on the first download when trackDownloads is on. Blocks the
+          pending download until the guest supplies an email; a name is
+          optional. The identity is remembered for this gallery afterwards. */}
+      {emailGateOpen && (
+        <DownloadEmailGate
+          lang={lang}
+          onSubmit={(email, name) => {
+            saveDownloader(email, name)
+            setEmailGateOpen(false)
+            const run = pendingDownloadRef.current
+            pendingDownloadRef.current = null
+            if (run) run()
+          }}
+          onClose={() => {
+            setEmailGateOpen(false)
+            pendingDownloadRef.current = null
+          }}
+        />
+      )}
+
+      {downloadProgress && (
+        <div style={{
+          position: 'fixed', bottom: isMobile ? 80 : 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 900, padding: '12px 24px', borderRadius: 14,
+          background: 'rgba(10,10,15,.92)', border: '1px solid rgba(255,255,255,.1)',
+          backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+          display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 8,
+          minWidth: 220, boxShadow: '0 8px 32px rgba(0,0,0,.4)',
+          animation: 'fadeIn .25s ease',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+            <div className="loader" style={{ width: 16, height: 16, borderWidth: 2 }} />
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,.7)', fontWeight: 500, flex: 1 }}>
+              {dlProgress}
+            </span>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', fontVariantNumeric: 'tabular-nums' }}>
+              {Math.round((downloadProgress.current / downloadProgress.total) * 100)}%
+            </span>
+          </div>
+          {/* Progress bar */}
+          <div style={{
+            width: '100%', height: 3, borderRadius: 2,
+            background: 'rgba(255,255,255,.08)', overflow: 'hidden',
+          }}>
+            <div style={{
+              height: '100%', borderRadius: 2,
+              background: 'linear-gradient(90deg, rgba(99,102,241,.8), rgba(139,92,246,.8))',
+              width: `${(downloadProgress.current / downloadProgress.total) * 100}%`,
+              transition: 'width .3s ease',
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Floating mobile download bar ── */}
+      {isMobile && downloadsEnabled && !selectMode && viewerIndex === null && !showFaceSearch && !downloadProgress && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 800,
+          padding: '12px 16px', paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+          background: 'rgba(10,10,15,.92)',
+          borderTop: '1px solid rgba(255,255,255,.06)',
+          backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+          display: 'flex', alignItems: 'center', gap: 10,
+          animation: 'fadeIn .3s ease',
+        }}>
+          {/* Device-specific hint */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,.35)', margin: 0, lineHeight: 1.4 }}>
+              {isIOS
+                ? txt.tapToShare
+                : txt.tapToSave}
+            </p>
+          </div>
+
+          {/* Save All button */}
+          <button
+            onClick={() => handleBatchDownload(faceFilterActive && faceMatchIds ? visibleImages : images)}
+            disabled={!!dlProgress}
+            style={{
+              padding: '10px 22px', borderRadius: 10, border: 'none',
+              background: 'linear-gradient(135deg, rgba(99,102,241,.9), rgba(139,92,246,.9))',
+              color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 7,
+              boxShadow: '0 2px 12px rgba(99,102,241,.25)',
+              whiteSpace: 'nowrap' as const, flexShrink: 0,
+              transition: 'all .2s ease',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            {isIOS ? txt.saveAll : txt.downloadAll}
+          </button>
+        </div>
+      )}
+    </>
+  )
+}

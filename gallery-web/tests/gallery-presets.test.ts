@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { capturePresetSettings, summarizePreset, PRESET_ALLOWED_KEYS } from '../src/lib/galleryPresets.ts'
+import { capturePresetSettings, summarizePreset, PRESET_ALLOWED_KEYS } from '../src/shared/gallery/galleryPresets.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..')

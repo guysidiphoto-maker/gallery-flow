@@ -16,8 +16,8 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..')
 const mig = readFileSync(resolve(root, 'supabase/migrations/112_replace_image_rpc.sql'), 'utf8')
 const migBody = mig.replace(/--[^\n]*/g, '') // strip comments
-const lib = readFileSync(resolve(here, '..', 'src/lib/replacePhoto.ts'), 'utf8')
-const pipeline = readFileSync(resolve(here, '..', 'src/lib/uploadPipeline.ts'), 'utf8')
+const lib = readFileSync(resolve(here, '..', 'src/features/dashboard/lib/replacePhoto.ts'), 'utf8')
+const pipeline = readFileSync(resolve(here, '..', 'src/features/dashboard/lib/uploadPipeline.ts'), 'utf8')
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

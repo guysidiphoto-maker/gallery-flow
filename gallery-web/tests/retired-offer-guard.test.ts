@@ -10,7 +10,7 @@
 //   2. NO public "99%" face-recognition accuracy claim, in any form.
 //
 // Scope note: this scans MARKETING files only. The dormant billing wiring in
-// src/pages/Dashboard.tsx, src/lib/tokenClient.ts and App.tsx is intentionally
+// src/features/dashboard/, src/features/dashboard/lib/tokenClient.ts and App.tsx is intentionally
 // NOT scanned — that surface is handled on another branch.
 
 import { readFileSync } from 'node:fs'
@@ -22,11 +22,11 @@ const ROOT = join(HERE, '..')
 
 // The five public marketing files the retired offer used to live in.
 const MARKETING_FILES = [
-  'src/components/landing3d/HomepagePricing.tsx',
-  'src/components/landing3d/ScrollStorySection.tsx',
-  'src/pages/LandingPageHe.tsx',
-  'src/pages/PhotographersLanding.tsx',
-  'src/pages/PricingPage.tsx',
+  'src/features/marketing/home3d/HomepagePricing.tsx',
+  'src/features/marketing/home3d/ScrollStorySection.tsx',
+  'src/features/marketing/pages/LandingPageHe.tsx',
+  'src/features/marketing/pages/PhotographersLanding.tsx',
+  'src/features/marketing/pages/PricingPage.tsx',
 ]
 
 // Markers that indicate the retired one-time offer is being advertised again.

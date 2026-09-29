@@ -1,13 +1,13 @@
 import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import * as Sentry from '@sentry/react'
-import { App } from './App'
+import { App } from '@/features/viewer/GalleryViewerPage'
 import './styles/index.css'
-import { initSentry } from './sentry'
-import { getSentryReportContext } from './lib/sentryContext'
+import { initSentry } from '@/shared/lib/sentry'
+import { getSentryReportContext } from '@/shared/lib/sentryContext'
 import { LANDING_PATHS } from '../seo/content'
-import { initAnalytics } from './lib/analytics'
-import { initMetaPixel } from './lib/metaPixel'
+import { initAnalytics } from '@/shared/lib/analytics'
+import { initMetaPixel } from '@/shared/lib/metaPixel'
 
 // ── Route-level code splitting ───────────────────────────────────────────
 // Every non-gallery route is lazy-loaded so the public gallery viewer
@@ -17,73 +17,73 @@ import { initMetaPixel } from './lib/metaPixel'
 // keeps the splash visible until the chunk + its sub-tree are ready (the
 // splash lives in index.html and is removed when React renders).
 const LandingPageHe = lazy(() =>
-  import('./pages/LandingPageHe').then(m => ({ default: m.LandingPageHe })),
+  import('@/features/marketing/pages/LandingPageHe').then(m => ({ default: m.LandingPageHe })),
 )
 // New cinematic Web-3D product homepage (feat/pixflow-3d-scroll-homepage).
 // `three` lives inside this chunk (and its own lazy sub-chunk), so it never
 // touches the gallery-viewer bundle or any non-home route.
 const Homepage3D = lazy(() =>
-  import('./components/landing3d/Homepage3D').then(m => ({ default: m.Homepage3D })),
+  import('@/features/marketing/home3d/Homepage3D').then(m => ({ default: m.Homepage3D })),
 )
 const LandingPage = lazy(() =>
-  import('./pages/LandingPage').then(m => ({ default: m.LandingPage })),
+  import('@/features/marketing/pages/LandingPage').then(m => ({ default: m.LandingPage })),
 )
 // Dedicated acquisition landing page for Israeli event photographers.
 const PhotographersLanding = lazy(() =>
-  import('./pages/PhotographersLanding').then(m => ({ default: m.PhotographersLanding })),
+  import('@/features/marketing/pages/PhotographersLanding').then(m => ({ default: m.PhotographersLanding })),
 )
 const SeoLanding = lazy(() =>
-  import('./pages/SeoLanding').then(m => ({ default: m.SeoLanding })),
+  import('@/features/marketing/pages/SeoLanding').then(m => ({ default: m.SeoLanding })),
 )
 const BlogIndex = lazy(() =>
-  import('./pages/BlogIndex').then(m => ({ default: m.BlogIndex })),
+  import('@/features/marketing/pages/BlogIndex').then(m => ({ default: m.BlogIndex })),
 )
 const BlogPost = lazy(() =>
-  import('./pages/BlogPost').then(m => ({ default: m.BlogPost })),
+  import('@/features/marketing/pages/BlogPost').then(m => ({ default: m.BlogPost })),
 )
 const DemoPage = lazy(() =>
-  import('./pages/DemoPage').then(m => ({ default: m.DemoPage })),
+  import('@/features/marketing/pages/DemoPage').then(m => ({ default: m.DemoPage })),
 )
-const PricingPage = lazy(() => import('./pages/PricingPage'))
+const PricingPage = lazy(() => import('@/features/marketing/pages/PricingPage'))
 const TermsPage = lazy(() =>
-  import('./pages/TermsPage').then(m => ({ default: m.TermsPage })),
+  import('@/features/marketing/pages/TermsPage').then(m => ({ default: m.TermsPage })),
 )
 const PrivacyPage = lazy(() =>
-  import('./pages/PrivacyPage').then(m => ({ default: m.PrivacyPage })),
+  import('@/features/marketing/pages/PrivacyPage').then(m => ({ default: m.PrivacyPage })),
 )
 const PortfolioPage = lazy(() =>
-  import('./pages/PortfolioPage').then(m => ({ default: m.PortfolioPage })),
+  import('@/features/portfolio/PortfolioPage').then(m => ({ default: m.PortfolioPage })),
 )
 const ClientDashboard = lazy(() =>
-  import('./pages/ClientDashboard').then(m => ({ default: m.ClientDashboard })),
+  import('@/features/client-portal/ClientPortalPage').then(m => ({ default: m.ClientDashboard })),
 )
 // Client Portal V2 — authenticated invitation acceptance + login.
 const ClientInviteAccept = lazy(() =>
-  import('./pages/ClientInviteAccept').then(m => ({ default: m.ClientInviteAccept })),
+  import('@/features/client-portal/InviteAcceptPage').then(m => ({ default: m.ClientInviteAccept })),
 )
 const ClientLogin = lazy(() =>
-  import('./pages/ClientLogin').then(m => ({ default: m.ClientLogin })),
+  import('@/features/client-portal/ClientLoginPage').then(m => ({ default: m.ClientLogin })),
 )
 const Dashboard = lazy(() =>
-  import('./pages/Dashboard').then(m => ({ default: m.Dashboard })),
+  import('@/features/dashboard/DashboardPage').then(m => ({ default: m.Dashboard })),
 )
 const VendorPortal = lazy(() =>
-  import('./pages/VendorPortal').then(m => ({ default: m.VendorPortal })),
+  import('@/features/vendor/VendorPortalPage').then(m => ({ default: m.VendorPortal })),
 )
 const EventCapturePage = lazy(() =>
-  import('./pages/EventCapturePage').then(m => ({ default: m.EventCapturePage })),
+  import('@/features/event-capture/EventCapturePage').then(m => ({ default: m.EventCapturePage })),
 )
 const QuestionnairePage = lazy(() =>
-  import('./pages/QuestionnairePage').then(m => ({ default: m.QuestionnairePage })),
+  import('@/features/questionnaire/QuestionnairePage').then(m => ({ default: m.QuestionnairePage })),
 )
 const StudioSettings = lazy(() =>
-  import('./pages/StudioSettings').then(m => ({ default: m.StudioSettings })),
+  import('@/features/studio-settings/StudioSettingsPage').then(m => ({ default: m.StudioSettings })),
 )
 const BrandKit = lazy(() =>
-  import('./pages/BrandKit').then(m => ({ default: m.BrandKit })),
+  import('@/features/brand-kit/BrandKitPage').then(m => ({ default: m.BrandKit })),
 )
 const AdminPage = lazy(() =>
-  import('./pages/AdminPage').then(m => ({ default: m.AdminPage })),
+  import('@/features/admin/AdminPage').then(m => ({ default: m.AdminPage })),
 )
 
 // The public marketing surfaces where the advertising pixel may fire. Everything

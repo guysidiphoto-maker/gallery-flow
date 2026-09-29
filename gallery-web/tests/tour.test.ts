@@ -23,7 +23,7 @@ import {
   type OnboardingDb,
   type OnboardingProgress,
   type OnboardingStore,
-} from '../src/lib/onboarding.ts'
+} from '../src/features/dashboard/tour/onboarding.ts'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

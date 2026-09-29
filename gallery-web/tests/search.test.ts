@@ -11,9 +11,9 @@ import {
   buildFilterPayload, createDebouncer, createSequenceGuard,
   hasActiveFilters, isEmptyResult, matchReasonStringKey,
   normalizeSearchResult, parseKeywords, shouldSearch,
-} from '../src/components/search/searchLogic.js'
-import type { SearchFilterState } from '../src/components/search/searchLogic.js'
-import { STRINGS, t, dirFor } from '../src/components/search/strings.js'
+} from '../src/features/dashboard/search/searchLogic.js'
+import type { SearchFilterState } from '../src/features/dashboard/search/searchLogic.js'
+import { STRINGS, t, dirFor } from '../src/features/dashboard/search/strings.js'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

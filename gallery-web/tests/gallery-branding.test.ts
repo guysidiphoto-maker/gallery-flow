@@ -6,7 +6,7 @@
 import {
   resolveGalleryBranding, readableInkOn, hexToRgbTriplet,
   normalizeAccentId, ACCENT_PALETTE, APPEARANCE_THEMES, normalizeAppearance,
-} from '../src/lib/galleryBranding.ts'
+} from '../src/shared/gallery/galleryBranding.ts'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

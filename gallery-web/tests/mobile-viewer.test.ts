@@ -18,7 +18,7 @@ import {
   shouldWarmDownload,
   classifyDownloadError,
   keysOverCap,
-} from '../src/lib/mobileViewer.ts'
+} from '../src/features/viewer/lib/mobileViewer.ts'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

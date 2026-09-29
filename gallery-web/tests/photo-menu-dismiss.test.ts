@@ -5,7 +5,7 @@
 // so it can be proven here without a DOM/React runtime. Run:
 //   npx tsx tests/photo-menu-dismiss.test.ts
 
-import { makeDismissHandlers } from '../src/components/portal/useDismiss.ts'
+import { makeDismissHandlers } from '../src/shared/lib/useDismiss.ts'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

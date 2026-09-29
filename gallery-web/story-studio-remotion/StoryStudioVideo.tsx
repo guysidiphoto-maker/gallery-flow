@@ -23,8 +23,8 @@ import type {
   StoryTemplate,
   TitleCard,
   BrandResolved,
-} from "../src/lib/storyStudio/sceneplan";
-import { MUSIC_TRACK_IDS, musicTrackFile } from "../src/lib/storyStudio/sceneplan";
+} from "../src/features/story-studio/sceneplan";
+import { MUSIC_TRACK_IDS, musicTrackFile } from "../src/features/story-studio/sceneplan";
 
 const isHebrew = (s?: string | null) => !!s && /[֐-׿]/.test(s);
 
