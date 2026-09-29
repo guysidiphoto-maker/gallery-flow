@@ -5,6 +5,7 @@ import {
   countSince, verifyTurnstileToken,
 } from '../server/publicEndpointGuards.js'
 import { withSentry, captureApiError } from '../server/sentryServer.js'
+import { galleryReadySms, normalizePhone, sendSms } from '../server/sms.js'
 
 // Over a limit the lead is still saved and the gallery URL returned; only the
 // cost-bearing SMS is withheld.
@@ -15,53 +16,7 @@ const GUEST_NAME_MAX = 80                // truncated before it enters the SMS b
 // ─── Phone normalization ────────────────────────────────────────────────────
 
 /** Normalize an Israeli mobile number to E.164 format (+972...) */
-function normalizePhone(raw: string): string | null {
-  const digits = raw.replace(/[\s\-()]/g, '')
-  if (/^\+9725[0-9]\d{7}$/.test(digits)) return digits
-  if (/^05[0-9]\d{7}$/.test(digits)) return '+972' + digits.slice(1)
-  if (/^9725[0-9]\d{7}$/.test(digits)) return '+' + digits
-  return null
-}
-
 // ─── Twilio SMS ─────────────────────────────────────────────────────────────
-
-async function sendSms(
-  phone: string,
-  guestName: string,
-  galleryUrl: string,
-): Promise<{ ok: boolean; messageId?: string; error?: string }> {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID
-  const authToken = process.env.TWILIO_AUTH_TOKEN
-  const fromNumber = process.env.TWILIO_PHONE_NUMBER
-
-  if (!accountSid || !authToken || !fromNumber) {
-    return { ok: false, error: 'SMS not configured' }
-  }
-
-  const body = `היי ${guestName}! 📸\nהגלריה מהאירוע מוכנה.\nצפה בתמונות שלך כאן:\n${galleryUrl}`
-
-  try {
-    const resp = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({ To: phone, From: fromNumber, Body: body }),
-      },
-    )
-
-    const data = await resp.json()
-    if (!resp.ok) {
-      return { ok: false, error: data?.message || `HTTP ${resp.status}` }
-    }
-    return { ok: true, messageId: data?.sid }
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' }
-  }
-}
 
 // ─── Handler ────────────────────────────────────────────────────────────────
 
@@ -169,10 +124,10 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Send SMS (one inline retry on failure)
-    let result = await sendSms(normalizedPhone, guestName, event.gallery_url)
+    let result = await sendSms(normalizedPhone, galleryReadySms(guestName, event.gallery_url))
     if (!result.ok) {
       await new Promise(r => setTimeout(r, 2000))
-      result = await sendSms(normalizedPhone, guestName, event.gallery_url)
+      result = await sendSms(normalizedPhone, galleryReadySms(guestName, event.gallery_url))
     }
 
     await supabase

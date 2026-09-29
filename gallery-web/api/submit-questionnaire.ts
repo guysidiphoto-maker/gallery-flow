@@ -5,6 +5,7 @@ import {
   maskPhone, maskEmail, countSince, verifyTurnstileToken,
 } from '../server/publicEndpointGuards.js'
 import { withSentry, captureApiError } from '../server/sentryServer.js'
+import { normalizePhone, sendSms } from '../server/sms.js'
 
 // Over a limit the response is still saved; only the SMS/email notification is withheld.
 const RESP_MAX_PER_QUESTIONNAIRE_PER_MIN = 60  // burst cap per questionnaire / 60s
@@ -14,56 +15,7 @@ const ANSWERS_MAX_BYTES = 20000                // reject pathological payloads
 
 // ─── Phone normalization ────────────────────────────────────────────────────
 
-function normalizePhone(raw: string): string | null {
-  const digits = raw.replace(/[\s\-()]/g, '')
-  if (/^\+9725[0-9]\d{7}$/.test(digits)) return digits
-  if (/^05[0-9]\d{7}$/.test(digits)) return '+972' + digits.slice(1)
-  if (/^9725[0-9]\d{7}$/.test(digits)) return '+' + digits
-  return null
-}
-
 // ─── SMS via Twilio ─────────────────────────────────────────────────────────
-
-async function sendSms(
-  phone: string,
-  name: string,
-  galleryUrl: string | null,
-): Promise<{ ok: boolean; error?: string }> {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID
-  const authToken = process.env.TWILIO_AUTH_TOKEN
-  const fromNumber = process.env.TWILIO_PHONE_NUMBER
-
-  if (!accountSid || !authToken || !fromNumber) {
-    return { ok: false, error: 'SMS not configured' }
-  }
-
-  let body = `היי ${name}! 📸\nתודה שמילאת את השאלון.`
-  if (galleryUrl) {
-    body += `\nצפה בגלריה שלך כאן:\n${galleryUrl}`
-  }
-
-  try {
-    const resp = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({ To: phone, From: fromNumber, Body: body }),
-      },
-    )
-
-    if (!resp.ok) {
-      const data = await resp.json()
-      return { ok: false, error: data?.message || `HTTP ${resp.status}` }
-    }
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' }
-  }
-}
 
 // ─── Handler ────────────────────────────────────────────────────────────────
 
@@ -175,7 +127,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     if (questionnaire.send_method === 'sms' && phone) {
       const normalized = normalizePhone(phone)
       if (normalized) {
-        const result = await sendSms(normalized, name, galleryUrl)
+        const text = `היי ${name}! 📸\nתודה שמילאת את השאלון.` + (galleryUrl ? `\nצפה בגלריה שלך כאן:\n${galleryUrl}` : '')
+        const result = await sendSms(normalized, text)
         smsSent = result.ok
         if (!result.ok) {
           console.warn(`[submit-questionnaire] sms failed to=${maskPhone(normalized)}: ${result.error}`)
