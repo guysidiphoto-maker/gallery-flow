@@ -1,9 +1,11 @@
 import { supabase } from '@/shared/lib/supabase'
+import { cn } from '@/shared/ui'
 import { Icon } from '@/shared/ui/Icon'
 import { StoryStudioLauncher } from '@/features/story-studio/StoryStudioLauncher'
-import { textPrimary } from '../../styles'
 import { useEditor } from '../EditorContext'
 import { STORY_GENERATE_MIN_PHOTOS } from './useStoryGeneration'
+
+const ctaButton = 'inline-flex items-center gap-2 rounded-hair border border-ink px-5 py-2.5 text-[11px] font-medium tracking-label uppercase'
 
 // CTA cluster: auto-generate (headline feature) sits left of the manual upload.
 export function StoryActions() {
@@ -18,25 +20,19 @@ export function StoryActions() {
         ref={storyFileInputRef}
         type="file"
         accept="video/mp4"
-        style={{ display: 'none' }}
+        className="hidden"
         onChange={(e) => handleStoryUpload(e.target.files)}
       />
-      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      <div className="inline-flex items-center gap-2.5">
         {/* Gated: a story from a handful of photos looks like a slideshow. */}
         {galleryImages.length >= STORY_GENERATE_MIN_PHOTOS && (
           <button
             onClick={storyGen.openGenerateModal}
             disabled={storyGenerating || storyUploading}
-            style={{
-              padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-              background: 'transparent', border: `1px solid ${textPrimary}`,
-              color: textPrimary,
-              cursor: storyGenerating ? 'wait' : 'pointer',
-              fontFamily: 'inherit',
-              opacity: storyGenerating ? 0.6 : 1,
-              letterSpacing: '0.18em', textTransform: 'uppercase',
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-            }}
+            className={cn(
+              ctaButton, 'bg-transparent text-ink',
+              storyGenerating ? 'cursor-wait opacity-60' : 'cursor-pointer',
+            )}
           >
             <Icon name="stories" size={13} strokeWidth={2} />
             צור סטורי אוטומטית
@@ -45,12 +41,7 @@ export function StoryActions() {
         {editingGallery && galleryImages.length >= STORY_GENERATE_MIN_PHOTOS && (
           <button
             onClick={() => { void storyGen.openStudio() }}
-            style={{
-              padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-              background: textPrimary, border: `1px solid ${textPrimary}`, color: '#fff',
-              cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.18em',
-              textTransform: 'uppercase', display: 'inline-flex', alignItems: 'center', gap: 8,
-            }}
+            className={cn(ctaButton, 'cursor-pointer bg-ink text-white')}
           >
             <Icon name="stories" size={13} strokeWidth={2} />
             Story Studio
@@ -69,14 +60,10 @@ export function StoryActions() {
         <button
           onClick={() => storyFileInputRef.current?.click()}
           disabled={storyUploading}
-          style={{
-            padding: '10px 20px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-            background: textPrimary, border: `1px solid ${textPrimary}`,
-            color: '#fff', cursor: storyUploading ? 'wait' : 'pointer',
-            fontFamily: 'inherit', opacity: storyUploading ? 0.6 : 1,
-            letterSpacing: '0.18em', textTransform: 'uppercase',
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-          }}
+          className={cn(
+            ctaButton, 'bg-ink text-white',
+            storyUploading ? 'cursor-wait opacity-60' : 'cursor-pointer',
+          )}
         >
           <Icon name="plus" size={13} strokeWidth={2} />
           העלאת סטורי
