@@ -1,21 +1,6 @@
-// sentryServer — minimal, dependency-free server-side error reporting for the
-// Vercel API/serverless functions.
-//
-// Why not @sentry/node: it isn't installed, and its OpenTelemetry-based init is
-// heavy to load on every one of the ~15 serverless functions (cold-start cost).
-// This helper instead POSTs a structured event straight to the SAME Sentry
-// project's ingest endpoint (parsed from the existing DSN) using plain `fetch` +
-// `crypto.randomUUID`. That works in BOTH the Node and Edge runtimes, adds no
-// dependency, and lets us control exactly what leaves the server (no PII).
-//
-// Reuses the frontend's DSN. The Sentry DSN is a PUBLIC value (safe in the
-// client bundle already), so reading VITE_SENTRY_DSN on the server leaks
-// nothing. Prefer a server-only SENTRY_DSN if set. If neither is set, every
-// function here is a no-op (falls back to console.error) — safe by default.
-//
-// Usage:
-//   export default withSentry('gallery-zip', handler)   // catches unhandled throws
-//   await captureApiError(err, { endpoint, status: 500, galleryId })  // explicit
+// Dependency-free Sentry reporting for api/ functions: POSTs events to the store
+// endpoint parsed from the (public) DSN, avoiding @sentry/node's cold-start cost.
+// No DSN → console.error only.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
@@ -39,12 +24,8 @@ const parsed = (() => {
   }
 })()
 
-export const sentryServerConfigured = parsed !== null
-
-// ── PII / secret scrubbing ───────────────────────────────────────────────────
-// Callers pass only curated, non-sensitive context, but this is belt-and-
-// suspenders: any key that looks sensitive is redacted, and email-looking
-// substrings inside string values are masked (mirrors the frontend beforeSend).
+// Belt-and-braces over curated context: redact sensitive-looking keys and mask
+// emails inside strings (mirrors the frontend beforeSend).
 const SENSITIVE_KEY = /phone|email|mail|token|authorization|secret|password|signature|signed|service_?role|api_?key|cookie|dsn/i
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g
 
@@ -90,8 +71,6 @@ export interface ApiErrorContext {
  *  callers so the event is delivered before the serverless instance freezes. */
 export async function captureApiError(error: unknown, context: ApiErrorContext): Promise<void> {
   const err = error instanceof Error ? error : new Error(String(error))
-  // Structured console line is always emitted (shows up in Vercel logs even
-  // when no DSN is configured).
   console.error(`[api-error] endpoint=${context.endpoint} status=${context.status ?? ''} reason=${context.reason ?? ''}: ${err.message}`)
 
   if (!parsed) return
@@ -153,10 +132,8 @@ function fallbackId(): string {
 
 type Handler = (req: VercelRequest, res: VercelResponse) => unknown | Promise<unknown>
 
-/** Wrap a serverless handler so any UNHANDLED throw is reported to Sentry and
- *  turned into a clean 500 (never a leaked stack trace). Handled responses
- *  (400/401/403/404/429, controlled 500s) are untouched — the handler decides
- *  those, so this only catches the unexpected. */
+/** Report any unhandled throw to Sentry and answer a clean 500 (no leaked stack).
+ *  Responses the handler sends itself are untouched. */
 export function withSentry(endpoint: string, handler: Handler): Handler {
   return async (req: VercelRequest, res: VercelResponse) => {
     try {

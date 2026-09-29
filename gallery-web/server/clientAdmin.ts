@@ -1,14 +1,10 @@
-// clientAdmin.ts — shared server helpers for the Client Portal V2 owner + portal
-// APIs. Pure helpers (validation, invite tokens, hashing) are unit-tested; the
-// supabase-taking helpers (owner resolution, audit, rate limit) centralize the
-// authorization + safety boundary so no endpoint re-implements it.
+// Shared helpers for the client-portal owner + portal APIs. The supabase-taking
+// helpers centralize the authorization boundary so no endpoint re-implements it.
 
 import { createHash, randomBytes } from 'node:crypto'
 import type { VercelRequest } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { requireAuthedUser, type GateFailure } from './ownerAuth.js'
-
-// ── Pure validation / tokens (offline-testable) ─────────────────────────────
 
 export function normalizeEmail(raw: unknown): string {
   return String(raw ?? '').trim().toLowerCase()
@@ -30,18 +26,18 @@ export function genInviteToken(): { token: string; tokenHash: string } {
   return { token, tokenHash: sha256Hex(token) }
 }
 
-export const INVITE_TTL_DAYS = 7
+const INVITE_TTL_DAYS = 7
 export function inviteExpiryISO(nowMs: number = Date.now()): string {
   return new Date(nowMs + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
 }
 
-export const ROLES = ['client_admin', 'approver', 'viewer'] as const
+const ROLES = ['client_admin', 'approver', 'viewer'] as const
 export type Role = (typeof ROLES)[number]
 export function isRole(x: unknown): x is Role {
   return typeof x === 'string' && (ROLES as readonly string[]).includes(x)
 }
 
-export const SETTABLE_STATUSES = ['active', 'disabled', 'revoked'] as const
+const SETTABLE_STATUSES = ['active', 'disabled', 'revoked'] as const
 export type SettableStatus = (typeof SETTABLE_STATUSES)[number]
 export function isSettableStatus(x: unknown): x is SettableStatus {
   return typeof x === 'string' && (SETTABLE_STATUSES as readonly string[]).includes(x)
@@ -54,9 +50,6 @@ export type AuditAction =
   | 'gallery_reassigned' | 'portal_access' | 'password_reset_requested'
   | 'production_access_denied'
 
-// ── Bulk gallery assignment (validation is pure/offline-testable; the runner
-//    takes a supabase client so the loop + audit logic is provable with mocks) ─
-
 export const BULK_ASSIGN_MAX = 200
 
 export interface BulkAssignInput {
@@ -68,11 +61,7 @@ export type BulkAssignValidation =
   | { ok: true; input: BulkAssignInput }
   | { ok: false; code: 'clientId_required' | 'galleryIds_required' | 'invalid_galleryIds' | 'too_many_galleries' }
 
-/**
- * Validate + normalize a bulk_assign_galleries body. Strict on shape (any
- * non-string / empty entry rejects the whole call — no silent dropping),
- * dedupes ids, and enforces the per-call cap AFTER dedupe.
- */
+/** Any bad entry rejects the whole call (no silent dropping); the cap applies after dedupe. */
 export function validateBulkAssignInput(body: Record<string, unknown>): BulkAssignValidation {
   const clientId = typeof body.clientId === 'string' ? body.clientId.trim() : ''
   if (!clientId) return { ok: false, code: 'clientId_required' }
@@ -108,14 +97,8 @@ export interface BulkAssignSummary {
 }
 
 /**
- * Server-side loop over cpv2_assign_gallery for one target client. Per-item
- * error isolation: a failing gallery never aborts the rest. Each state CHANGE
- * is audited (`gallery_assigned` / `gallery_reassigned`, metadata.bulk=true);
- * idempotent no-ops (already assigned to the same client) succeed silently and
- * are NOT audited, so the ledger records real transitions only.
- *
- * Caller MUST have already verified the client belongs to the owner's business
- * (the RPC re-verifies both sides anyway — defense in depth).
+ * A failing gallery never aborts the rest. Only real state changes are audited,
+ * not idempotent no-ops. Caller must already have verified client ownership.
  */
 export async function runBulkAssign(
   supabase: SupabaseClient,
@@ -160,16 +143,10 @@ export async function runBulkAssign(
   return { total: galleryIds.length, assigned, reassigned, unchanged, failed, results }
 }
 
-// ── Owner resolution (supabase-taking) ──────────────────────────────────────
-
 export type OwnerBusinessOk = { ok: true; userId: string; businessId: string }
 
-/**
- * Resolve the authenticated caller to THEIR business. One business per user
- * (businesses.user_id = auth.uid()). Fails closed: 401 without a valid JWT,
- * 404 if the user has no business. The returned businessId is the ONLY tenant
- * an owner API may act within — never trust a business_id from the body.
- */
+/** Resolve the caller to their (single) business. The returned businessId is the
+ *  only tenant an owner API may act within — never trust one from the body. */
 export async function requireOwnerBusiness(
   req: VercelRequest,
   supabase: SupabaseClient,
@@ -196,8 +173,6 @@ export async function clientBelongsToBusiness(
   return !!data
 }
 
-// ── Audit + rate limit (reuse client_access_audit as the ledger) ────────────
-
 export async function appendAudit(
   supabase: SupabaseClient,
   args: {
@@ -218,13 +193,8 @@ export async function appendAudit(
   })
 }
 
-/**
- * Audit-ledger-backed rate limit: true if fewer than `max` rows of `action`
- * exist for `businessId` within the last `windowMinutes`. Since abuse-sensitive
- * actions are audited anyway, the audit table doubles as the limiter — no extra
- * table. Fails OPEN only if the count query errors (logged by caller); callers
- * treat a false return as "throttled".
- */
+/** True if fewer than `max` `action` rows exist in the window. Abuse-sensitive
+ *  actions are audited anyway, so the audit table doubles as the limiter. */
 export async function withinRateLimit(
   supabase: SupabaseClient,
   businessId: string,

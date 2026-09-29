@@ -6,11 +6,8 @@ import {
 } from '../server/publicEndpointGuards.js'
 import { withSentry, captureApiError } from '../server/sentryServer.js'
 
-// ── Abuse limits (SINGLE SOURCE OF TRUTH for this endpoint) ───────────────────
-// Persistent, counted from event_leads.created_at (survives serverless cold
-// starts). Over the limit, the lead is still PERSISTED and the gallery URL is
-// still returned — only the cost-bearing SMS is withheld. See reconciliation
-// report for the value rationale.
+// Over a limit the lead is still saved and the gallery URL returned; only the
+// cost-bearing SMS is withheld.
 const LEAD_MAX_PER_EVENT_PER_MIN = 60    // simultaneous QR scans at a large event
 const LEAD_MAX_PER_PHONE_PER_HOUR = 5    // same phone across events / 3600s
 const GUEST_NAME_MAX = 80                // truncated before it enters the SMS body
@@ -126,10 +123,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(410).json({ ok: false, error: 'event_closed', message: 'האירוע הזה כבר לא פעיל' })
     }
 
-    // ── Rate limiting (persistent DB row-count). Over the limit we WITHHOLD the
-    // SMS but still persist the lead and return the gallery URL, so a legit
-    // guest at a busy event still gets access on-screen and the photographer
-    // still captures the contact. ──
+    // Over the limit: withhold the SMS but still save the lead, so a guest at a
+    // busy event still gets access on-screen.
     const perEvent = await countSince(supabase, 'event_leads', 'event_id', eventId, 60)
     const perPhone = await countSince(supabase, 'event_leads', 'phone', normalizedPhone, 3600)
     const withholdSms =

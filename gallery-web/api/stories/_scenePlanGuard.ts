@@ -1,14 +1,6 @@
-// _scenePlanGuard.ts — SELF-CONTAINED server-side ScenePlan guard for the Vercel
-// functions. Deliberately has NO relative imports: Vercel compiles each api file
-// to .js and preserves import specifiers, so a `.ts` specifier (or an
-// extensionless/`.js` one that maps to a .ts) fails at runtime with
-// ERR_MODULE_NOT_FOUND. Keeping this file import-free sidesteps that entirely.
-//
-// It mirrors the tested src/lib/storyStudio/{sceneplan,serverPlan}.ts logic
-// (tenant isolation, client-src discard, server-authoritative dims, injection +
-// range checks). Keep in sync with those; a follow-up can dedupe via a build step.
-
-// KEEP IN SYNC with src/lib/storyStudio/sceneplan.ts.
+// Hand-synced copy of the validation in src/features/story-studio/sceneplan.ts
+// (+ serverPlan.ts): MUST mirror their constants and rules. It stays import-free
+// because Vercel keeps import specifiers, so a relative .ts import fails at runtime.
 const MIN_SCENE_SEC = 1.2;
 const MAX_SCENE_SEC = 6.0;
 const MAX_TRANSITION_SEC = 1.2;
@@ -19,15 +11,12 @@ const MAX_TITLE_LEN = 80;
 const TEMPLATES = ['editorial-clean', 'cinematic-energy', 'fast-highlights'];
 const MOTION = ['none', 'push-in', 'pull-out', 'pan', 'focus-zoom', 'punch-in', 'parallax', 'reveal'];
 const TRANSITIONS = ['cut', 'cross-dissolve', 'slide', 'soft-blur', 'light-leak', 'whip', 'fade-color', 'masked-reveal', 'match-cut'];
-// Music V1: only these BUNDLED track ids are accepted (never an arbitrary URL).
+// Only bundled track ids, never an arbitrary URL.
 const MUSIC_TRACK_IDS = ['calm', 'warm', 'upbeat'];
 const MUSIC_MAX_FADE_SEC = 8;
 
-// FIRST-RELEASE synchronous-render cap. A single Vercel function has a hard
-// 300s ceiling; measured render cost is ~10-12s/scene at 3009MB, so >18 scenes
-// or >~45s of video risks a timeout that leaves an orphaned job. We enforce the
-// cap HERE (the render endpoint) rather than by raising the per-request limits.
-// Longer stories need the queue/Lambda path — see docs/story-studio.
+// Synchronous-render cap: at ~10-12s render cost per scene, longer stories risk
+// the 300s function timeout and an orphaned job.
 const RENDER_MAX_SCENES = 18;
 const RENDER_MAX_DURATION_SEC = 45;
 
@@ -40,12 +29,8 @@ function totalPlanDuration(plan: any): number {
   return Math.round(t * 100) / 100;
 }
 
-/**
- * Render-feasibility gate, separate from structural validity. A plan can be a
- * perfectly valid ScenePlan yet be too long to render synchronously; this returns
- * a human-readable reason the render endpoint surfaces to the UI (so the user
- * sees "shorten your story", not a 300s timeout).
- */
+/** A structurally valid plan can still be too long to render synchronously;
+ *  the reason is shown to the user instead of a timeout. */
 export function checkRenderFeasibility(plan: any): { ok: boolean; reason?: string } {
   const n = Array.isArray(plan?.scenes) ? plan.scenes.length : 0;
   if (n > RENDER_MAX_SCENES) {
@@ -57,8 +42,6 @@ export function checkRenderFeasibility(plan: any): { ok: boolean; reason?: strin
   }
   return { ok: true };
 }
-
-export const RENDER_CAPS = { RENDER_MAX_SCENES, RENDER_MAX_DURATION_SEC };
 
 export interface OwnerImage {
   id: string;
@@ -74,11 +57,8 @@ export interface GuardResult {
 
 const hasMarkup = (s: unknown): boolean => typeof s === 'string' && /[<>]/.test(s);
 
-// Only an http(s) URL is a loadable image for the renderer. A logo stored as a
-// local filesystem path (e.g. "/Users/.../logo.png", a long-standing data bug in
-// the gallery editor) resolves against the render server's own origin, 404s, and
-// crashes Chromium ("EncodingError → Page crashed!"). Treat any non-http(s) logo
-// as absent so the render proceeds without it instead of dying.
+// Some stored logos are local filesystem paths; they 404 and crash Chromium,
+// so any non-http(s) logo is treated as absent.
 const isHttpUrl = (s: unknown): s is string => typeof s === 'string' && /^https?:\/\//i.test(s);
 
 export function resolveAndValidatePlan(
@@ -154,8 +134,6 @@ export function resolveAndValidatePlan(
     const collageSrc = s.layout === 'collage' && Array.isArray(s.collageImageIds) ? s.collageImageIds.map((id: string) => resolveSrc(id)) : undefined;
     return { ...rest, src: resolveSrc(s.imageId), collageSrc, width: rec.width ?? s.width, height: rec.height ?? s.height };
   });
-  // Drop a non-http(s) brand logo (local path / junk) so it can never crash the
-  // renderer. The composition already skips the logo when it's absent.
   const brand = plan.brand && typeof plan.brand === 'object'
     ? { ...plan.brand, logoUrl: isHttpUrl(plan.brand.logoUrl) ? plan.brand.logoUrl : null }
     : plan.brand;

@@ -6,9 +6,7 @@ import {
 } from '../server/publicEndpointGuards.js'
 import { withSentry, captureApiError } from '../server/sentryServer.js'
 
-// ── Abuse limits (SINGLE SOURCE OF TRUTH for this endpoint) ───────────────────
-// Over the limit, the response is still PERSISTED — only the cost-bearing
-// SMS/email notification is withheld.
+// Over a limit the response is still saved; only the SMS/email notification is withheld.
 const RESP_MAX_PER_QUESTIONNAIRE_PER_MIN = 60  // burst cap per questionnaire / 60s
 const RESP_MAX_PER_CONTACT_PER_HOUR = 5        // same email/phone / 3600s
 const NAME_MAX = 80

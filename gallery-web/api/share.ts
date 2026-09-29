@@ -1,14 +1,5 @@
-// Crawler-detecting share route for /gallery/:id deep links.
-//
-// gallery-page.ts already handles the slug-shaped URLs (/:business/:gallery
-// and /:slug/gallery/:id). This handler covers the remaining shape — the
-// bare `/gallery/<uuid>` URLs that the dashboard "Copy link" button hands
-// out — which used to fall through to /index.html and lose their preview.
-//
-// For social-card crawlers we render og-tagged HTML pointing at /api/og.
-// For real browsers we mimic gallery-page.ts: emit a thin SPA bootstrap
-// that fetches the latest /index.html, extracts the Vite asset URLs, and
-// loads the React app.
+// Share route for bare /gallery/<uuid> links (gallery-page.ts handles the slug
+// shapes): og-tagged HTML for social crawlers, a thin SPA bootstrap for browsers.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
@@ -55,10 +46,8 @@ async function handler(req: VercelRequest, res: VercelResponse) {
       .in('status', ['live'])
       .single()
     if (gallery) {
-      // Whitelist: ONLY these fields may be read out of delivery_settings into
-      // OG meta. Anything else (notes, internal phone, clientCode, …) would
-      // leak into WhatsApp/Slack/Twitter previews. Do not add to this list
-      // without a security review.
+      // Allowlist: anything else in delivery_settings (notes, phone, clientCode)
+      // would leak into link previews. Don't extend without a security review.
       const rawSettings = (gallery.delivery_settings || {}) as Record<string, unknown>
       const safeSettings: {
         studioName?: string

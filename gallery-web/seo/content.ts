@@ -1,21 +1,6 @@
-// ─────────────────────────────────────────────────────────────────────────
-// seo/content.ts — PURE DATA. The single source of truth for marketing /
-// keyword landing-page copy. Imported by BOTH:
-//   • seo/registry.ts (server) → crawlable SSR HTML + JSON-LD
-//   • src/pages/SeoLanding.tsx (client) → the designed, interactive page
-// so the copy a crawler sees and the copy a user sees never diverge.
-//
-// This file must stay free of Node APIs / process.env so Vite can bundle it
-// into the client. Origin-dependent values (canonical URLs, schema) are added
-// server-side in seo/registry.ts.
-//
-// COPY RULES (do not violate):
-//   • No invented customers, logos, testimonials, prices, rankings, or stats.
-//   • No "#1 / best in the world" as fact. Aspirational positioning is fine
-//     ("built to become the leading platform", "designed for professional
-//     event teams").
-//   • Professional, credible, SaaS-level. Truthful about what Pixflow does.
-// ─────────────────────────────────────────────────────────────────────────
+// Pure data: landing-page copy shared by the SSR registry and the React page, so
+// crawler and user copy never diverge. No Node APIs (bundled into the client).
+// Copy rules: no invented customers/prices/stats, no "#1" claims as fact.
 
 export type Lang = 'he' | 'en'
 
@@ -68,9 +53,7 @@ export interface LandingContent {
 const HOME_EN: CtaLink = { label: 'Pixflow home', href: '/en' }
 const DEMO: CtaLink = { label: 'See the live demo', href: '/demo' }
 
-// ── Keyword landing pages (English — US / global market) ────────────────────
-// Each page targets a distinct, real search intent. Pages cross-link via
-// `related` so link equity flows between them and crawlers map the cluster.
+// One page per distinct search intent; `related` cross-links the cluster.
 
 export const LANDING_PAGES: LandingContent[] = [
   // ── 1. Face recognition gallery (core / head term) ──────────────────────
@@ -442,8 +425,7 @@ export const LANDING_PAGES: LandingContent[] = [
   },
 ]
 
-// Lookup helpers (shared by client + server).
-export const LANDING_BY_PATH: Record<string, LandingContent> = Object.fromEntries(
+const LANDING_BY_PATH: Record<string, LandingContent> = Object.fromEntries(
   LANDING_PAGES.map(p => [p.path, p]),
 )
 export const LANDING_PATHS: Set<string> = new Set(LANDING_PAGES.map(p => p.path))

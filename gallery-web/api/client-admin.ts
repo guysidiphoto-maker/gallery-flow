@@ -1,18 +1,6 @@
-// client-admin.ts — owner-side (photographer/production) Client Portal V2 write
-// surface. ONE multi-action endpoint (Vercel function-count discipline) for every
-// mutating owner operation. Reads are done directly by the UI via the self-scoped
-// cpv2_owner_* RPCs (migration 092).
-//
-// Security contract (enforced for EVERY action):
-//   1. valid Supabase JWT (Bearer)                    → requireOwnerBusiness
-//   2. business resolved from auth.uid() (never body) → requireOwnerBusiness
-//   3. target client/gallery/membership belongs to that business (re-checked)
-//   4. mutation via service-role or a tenant-checked SECURITY DEFINER RPC
-//   5. audited to client_access_audit; abuse-sensitive actions are rate-limited
-//   6. minimal, consistent JSON responses; failures fail closed
-//
-// NO real emails are sent. Invitation + password-reset links are generated and
-// RETURNED for the owner to deliver (email delivery is a later, manual step).
+// Owner-side client-portal mutations (one multi-action endpoint; reads go through
+// the self-scoped cpv2_owner_* RPCs). Every action is owner-scoped, audited and
+// fails closed. No emails are sent: invite/reset links are returned to the owner.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
@@ -226,9 +214,7 @@ async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
       }
 
       // ── bulk_assign_galleries ───────────────────────────────────────────
-      // Assign up to BULK_ASSIGN_MAX (200) galleries to ONE client in a single
-      // call. Per-item error isolation; idempotent (already-assigned-to-same-
-      // client succeeds as a no-op); each real transition is audited.
+      // Up to BULK_ASSIGN_MAX galleries to one client; per-item error isolation.
       case 'bulk_assign_galleries': {
         const v = validateBulkAssignInput(body)
         if (!v.ok) return void bad(res, 400, v.code)

@@ -1,20 +1,6 @@
-// api/page.ts — server-rendered marketing/SEO pages.
-//
-// A Vite SPA renders client-side, so crawlers and AI answer engines that don't
-// execute JS (and even Googlebot on first pass) would see one generic shell for
-// every marketing route. This function gives each registered route real,
-// crawlable HTML — unique <title>, description, canonical, hreflang, Open Graph,
-// Twitter, JSON-LD, and an above-the-fold content block — then loads the exact
-// same Vite bundle so the React SPA hydrates and takes over for users.
-//
-// This is the same server-render approach already proven in api/gallery-page.ts,
-// extended from galleries to marketing pages. It is intentionally NOT a Next.js
-// migration: lowest risk, reuses a production-proven pattern.
-//
-// Routing: vercel.json rewrites each marketing path to /api/page?route=<key>.
-// The bundle's hashed asset filenames are discovered at request time by fetching
-// the statically served /index.html (filesystem-first on Vercel, so no
-// recursion with the rewrites here), then re-emitted verbatim.
+// Server-rendered marketing pages: real crawlable head/body per registered route,
+// then the same Vite bundle hydrates. vercel.json rewrites each path to
+// /api/page?route=<key>; asset tags are discovered from the static /app.html.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
@@ -34,21 +20,9 @@ const FAVICON = `  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
   <link rel="apple-touch-icon" href="/pixflow-icon-192.png" />`
 
-// Discover the built bundle's hashed asset tags from the static SPA shell
-// (dist/app.html — renamed from index.html post-build so "/" can be SSR'd).
-// Re-emits the entry module <script>, the stylesheet <link>, and any
-// modulepreload <link>s that Vite generated.
-//
-// NB: the tag-matcher below captures each element only up to its first '>',
-// i.e. the OPENING tag. For void elements (<link …>) that is the whole element
-// and re-emitting verbatim is correct. For <script src> it is NOT — a <script>
-// needs an explicit </script>. Re-emitting the bare opening tag left the entry
-// script unclosed at end-of-document, so the browser swallowed </body></html>
-// as its text content and never executed the bundle → React never mounted and
-// every SSR route (/, /en, /blog, landing pages, …) rendered the static SEO
-// body on the dark app shell ("dark/dimmed" page). We therefore rebuild the
-// script from its src as a complete, self-closed tag, and pass link tags
-// through unchanged.
+// Re-emit the bundle's hashed asset tags from dist/app.html. The matcher only
+// captures opening tags, so <script> is rebuilt with its closing tag — an
+// unclosed one swallows the rest of the document and React never mounts.
 async function discoverAssets(
   origin: string,
 ): Promise<{ head: string; body: string } | null> {
@@ -175,10 +149,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const assets = await discoverAssets(origin)
 
-  // Asset discovery failed → fall back to a browser-side loader that pulls the
-  // bundle from /app.html (mirrors api/gallery-page.ts). Crawlers still get
-  // the full head + crawlable body above; only the interactive hydration is
-  // deferred to the client in this rare path.
+  // Discovery failed: load the bundle from /app.html in the browser instead.
   const assetHead = assets?.head ? `  ${assets.head}` : ''
   const assetBody = assets?.body
     ? `  ${assets.body}`
@@ -203,10 +174,8 @@ ${assetBody}
 </html>`
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
-  // Identical content for every user-agent (no cloaking), so the response is
-  // fully CDN-cacheable.
-  // CDN-cache for an hour; marketing copy changes rarely and this keeps the
-  // self-fetch for asset discovery off the hot path.
+  // Same content for every user-agent, so it's CDN-cacheable; keeps the asset
+  // self-fetch off the hot path.
   res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400')
   return res.status(200).send(html)
 }

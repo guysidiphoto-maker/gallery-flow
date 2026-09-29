@@ -1,26 +1,6 @@
-// watermark.ts — composites the studio's brand-kit watermark onto the
-// full-resolution download. Browsing surfaces (thumbs, web previews) stay
-// CLEAN; only the explicit download path routes through this engine. The
-// photographer keeps the wow-factor in the gallery, the watermark protects
-// the export. Failure mode is intentionally lenient: a missing watermark is
-// better than a 500, so any sharp/render error returns the unmarked original.
-//
-// Auth model:
-//   1. Origin allowlist (mirrors gallery-zip.ts).
-//   2. Public-viewer token (`pvt`) — must be alive AND scoped to the gallery
-//      we're serving. Resolves galleryId from the image's storage_path via
-//      service-role lookup, then verifies the PVT against that gallery_id.
-//      This keeps the URL shape simple (image + business) without trusting
-//      an attacker-supplied gallery hint.
-//
-// Brand-kit resolution order (per-gallery override > studio default):
-//   - delivery_settings.watermarkEnabled / watermarkText / watermarkPosition
-//     on the gallery row (existing per-gallery toggles) WIN if present.
-//   - businesses.brand_kit JSONB column (if present) supplies the studio's
-//     default watermark config + logo URL/scale/opacity/contrast_aware.
-//   - If neither is set, we fall back to returning the unmarked original.
-//
-// Runtime: nodejs (sharp is a native binding — Edge can't run it).
+// Composites the brand watermark onto full-resolution downloads only (browsing
+// stays clean). The gallery is resolved from the image, never from the request,
+// before verifying the pvt. Any render error returns the unmarked original.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withSentry } from '../server/sentryServer.js'
@@ -352,10 +332,8 @@ async function downloadOriginal(bucket: string, path: string): Promise<Buffer | 
 }
 
 function sendImage(res: VercelResponse, buf: Buffer, mime: 'image/jpeg' | 'image/png', filename: string) {
-  // 1 day on Vercel's CDN, 1 year client-side (the URL embeds the storage
-  // path which is content-addressable for a given upload, and the watermark
-  // config changes are rare). Brand-kit changes invalidate via a manual
-  // purge / new gallery slug rotation rather than a TTL race.
+  // The URL embeds the storage path (stable per upload); brand-kit changes
+  // need a manual purge.
   res.setHeader('Content-Type', mime)
   res.setHeader('Cache-Control', 'public, max-age=31536000, s-maxage=86400, stale-while-revalidate=86400, immutable')
   res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/[^\w.\- ]/g, '_')}"`)
@@ -402,7 +380,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(401).json({ ok: false, error: 'invalid_pvt' }); return
   }
 
-  // P2.2: password galleries additionally require a valid unlock token before
+  // Password galleries additionally require a valid unlock token before
   // we composite + stream the original. gallery_token_is_valid is a no-op
   // (true) for non-password galleries and an enforced gate for password ones.
   const unlock = String(req.query.unlock ?? '').trim()

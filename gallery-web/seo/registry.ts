@@ -1,30 +1,6 @@
-// ─────────────────────────────────────────────────────────────────────────
-// SEO registry — single source of truth for Pixflow's crawlable marketing
-// routes. Imported by:
-//   • api/page.ts        → server-renders <head> + above-the-fold content
-//   • api/sitemap.xml.ts → emits <url> entries + hreflang alternates
-//
-// Why a registry: a Vite SPA renders client-side, so crawlers and AI answer
-// engines (GPTBot, PerplexityBot, ClaudeBot, Googlebot without JS) would
-// otherwise see one generic shell for every route. This file gives every
-// marketing route real, unique, truthful HTML — title, description,
-// canonical, hreflang, Open Graph, Twitter, JSON-LD, and a server-rendered
-// content block — reusing the server-render pattern proven in
-// api/gallery-page.ts.
-//
-// Keyword landing pages come from seo/content.ts (pure data, shared with the
-// React renderer src/pages/SeoLanding.tsx) so crawler copy and user copy never
-// diverge.
-//
-// Content rules: no false claims, no invented customers/logos/prices/rankings,
-// no "#1" as fact. bodyHtml is author-trusted static content — never
-// interpolate request data into it.
-//
-// NOTE: a `/pricing` SSR route is intentionally NOT defined here. The pricing
-// page (PricingPage + its SPA route) lives on feat/pricing-model-v2; this
-// branch is based on main, which has no /pricing route. Add the pricing entry
-// when that branch merges, so the SSR route and the SPA route ship together.
-// ─────────────────────────────────────────────────────────────────────────
+// Crawlable marketing routes for api/page.ts (SSR head + body) and
+// api/sitemap.xml.ts: the SPA otherwise serves crawlers one generic shell.
+// bodyHtml is author-trusted static content — never interpolate request data.
 
 import { LANDING_PAGES, type LandingContent } from './content.js'
 import { BLOG_POSTS, BLOG_INDEX_PATH, type BlogPost } from './blog.js'
@@ -33,7 +9,7 @@ export const SITE_ORIGIN =
   process.env.SITE_ORIGIN || process.env.NEXT_PUBLIC_SITE_URL || 'https://pixflow-ai.com'
 
 export const OG_DEFAULT = `${SITE_ORIGIN}/og-default.png`
-export const LOGO_URL = `${SITE_ORIGIN}/pixflow-icon-512.png`
+const LOGO_URL = `${SITE_ORIGIN}/pixflow-icon-512.png`
 
 export type Lang = 'he' | 'en'
 
@@ -53,9 +29,7 @@ export interface SeoRoute {
   indexable: boolean
 }
 
-// Escape author text before it lands in HTML. Content is trusted (no user
-// input), but copy contains characters like `&` (e.g. "events & conferences")
-// that must be escaped for valid markup.
+// Content is trusted, but copy contains `&` etc. that must be escaped for valid markup.
 function esc(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -66,7 +40,7 @@ function esc(s: string): string {
 
 // ── Schema.org builders ────────────────────────────────────────────────────
 
-export function organizationLd(): Record<string, unknown> {
+function organizationLd(): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
@@ -80,7 +54,7 @@ export function organizationLd(): Record<string, unknown> {
   }
 }
 
-export function websiteLd(): Record<string, unknown> {
+function websiteLd(): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
@@ -92,7 +66,7 @@ export function websiteLd(): Record<string, unknown> {
   }
 }
 
-export function softwareApplicationLd(): Record<string, unknown> {
+function softwareApplicationLd(): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
@@ -115,7 +89,7 @@ export function softwareApplicationLd(): Record<string, unknown> {
   }
 }
 
-export function serviceLd(opts: {
+function serviceLd(opts: {
   name: string
   description: string
   audience: string
@@ -134,7 +108,7 @@ export function serviceLd(opts: {
   }
 }
 
-export function faqLd(qas: { q: string; a: string }[]): Record<string, unknown> {
+function faqLd(qas: { q: string; a: string }[]): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
@@ -146,7 +120,7 @@ export function faqLd(qas: { q: string; a: string }[]): Record<string, unknown> 
   }
 }
 
-export function breadcrumbLd(items: { name: string; path: string }[]): Record<string, unknown> {
+function breadcrumbLd(items: { name: string; path: string }[]): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
@@ -196,11 +170,8 @@ ${inner}
   </div>`
 }
 
-// ── Landing-page renderer (dark theme, inline-styled, self-contained) ────────
-// Produces crawlable HTML for a LandingContent that visually matches
-// src/pages/SeoLanding.tsx (so first paint ≈ the React page). Self-contained
-// inline styles because SeoLanding's CSS lives in a lazy chunk not present on
-// first paint.
+// Landing-page renderer: inline styles so first paint matches the React page,
+// whose CSS lives in a lazy chunk.
 
 const D = {
   bg: '#0a0a0f',
@@ -539,14 +510,8 @@ const STATIC_ROUTES: SeoRoute[] = [
     changefreq: 'weekly',
     priority: 1.0,
     indexable: true,
-    // The homepage `/` renders the real cream/green product page
-    // (src/pages/LandingPageHe.tsx) as its visible content. We intentionally
-    // emit NO visible body scaffold here — the crawlable <head> (title,
-    // description, canonical, hreflang, Open Graph, robots) and the JSON-LD
-    // below are still served server-side, so SEO and structured data are fully
-    // preserved. This removes the Hebrew SEO text block that previously painted
-    // first at `/` and made the homepage look like a generic SEO landing page;
-    // React now mounts the product homepage directly into an empty #root.
+    // No visible SSR body: it would flash before React mounts the real homepage.
+    // The <head> and JSON-LD are still served for crawlers.
     bodyHtml: '',
     jsonLd: [
       organizationLd(),
@@ -572,11 +537,8 @@ const STATIC_ROUTES: SeoRoute[] = [
     alternates: { he: '/', en: '/en' },
     changefreq: 'weekly',
     priority: 0.9,
-    // De-indexed on purpose: the /en browser view still hydrates into the
-    // legacy dark USD/DMG LandingPage, which is off-brand vs the cream/sage
-    // Hebrew product. Until a real on-brand English page exists, keep /en out
-    // of Google (noindex via api/page.ts robots meta + excluded from sitemap,
-    // both driven off this flag). Re-enable when the English page is rebuilt.
+    // De-indexed until an on-brand English page exists (/en still hydrates the
+    // legacy landing). Drives both the robots meta and the sitemap.
     indexable: false,
     bodyHtml: shell(
       'en',
@@ -630,12 +592,8 @@ const STATIC_ROUTES: SeoRoute[] = [
     changefreq: 'monthly',
     priority: 0.8,
     indexable: true,
-    // The /photographers browser view renders the real cream/sage React landing
-    // page (src/pages/PhotographersLanding.tsx) into #root. Like the homepage,
-    // we emit NO visible SSR scaffold — a plain SEO body would flash before
-    // React mounts and replaces it. Crawlers and link-preview bots (WhatsApp,
-    // Meta ads) still get the full <head> + JSON-LD below, which is the point:
-    // a correct title, description and OG card for shared/advertised links.
+    // Like the homepage: no visible SSR body, but link-preview bots still get
+    // the <head> + JSON-LD for shared/advertised links.
     bodyHtml: '',
     jsonLd: [
       organizationLd(),

@@ -1,11 +1,5 @@
-// ─────────────────────────────────────────────────────────────────────────
-// seo/blog.ts — PURE DATA. Single source of truth for blog/content posts,
-// shared by the server renderer (seo/registry.ts) and the React components
-// (src/pages/BlogIndex.tsx, src/pages/BlogPost.tsx).
-//
-// Same rules as seo/content.ts: no Node APIs, no invented stats/claims,
-// professional and truthful. Dates are ISO strings (no Date.now()).
-// ─────────────────────────────────────────────────────────────────────────
+// Pure data: blog posts shared by the SSR registry and the React blog pages.
+// Same copy rules as seo/content.ts; dates are ISO strings.
 
 export type Lang = 'he' | 'en'
 
@@ -350,10 +344,9 @@ export const BLOG_POSTS: BlogPost[] = [
   },
 ]
 
-export const BLOG_BY_PATH: Record<string, BlogPost> = Object.fromEntries(
+const BLOG_BY_PATH: Record<string, BlogPost> = Object.fromEntries(
   BLOG_POSTS.map(p => [p.path, p]),
 )
-export const BLOG_PATHS: Set<string> = new Set(BLOG_POSTS.map(p => p.path))
 
 export function getPostByPath(path: string): BlogPost | undefined {
   const clean = path.replace(/\/+$/, '')
