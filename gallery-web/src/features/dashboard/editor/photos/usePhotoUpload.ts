@@ -97,7 +97,10 @@ export function usePhotoUpload(deps: {
       if (TOKEN_BILLING_ON) openBuyTokens()
       return
     }
+    // Without a section the files would reach storage and then be rejected
+    // one by one by record_image_upload; stop before uploading anything.
     const targetSectionId = await ensureUploadSection()
+    if (!targetSectionId) return
     setUploading(true)
     setUploadBatch({ completed: 0, total: filesToUpload.length, failed: 0 })
     const result = await uploadMany(

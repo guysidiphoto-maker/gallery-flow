@@ -42,13 +42,17 @@ export function useSections(deps: {
   }, [galleryId])
 
   // Appends a section to the open gallery; null (after a toast) on failure.
-  async function createSection(logLabel: string, fields: { name: string; description?: string | null }) {
+  async function createSection(
+    logLabel: string,
+    fields: { name: string; description?: string | null },
+    errorText = 'יצירת הסקשן נכשלה. נסה שוב.',
+  ) {
     const { data, error } = await insertSection(
       { gallery_id: editingGallery!.id, ...fields, sort_order: sections.length },
       SECTION_COLUMNS,
     )
     if (error || !data) {
-      showToast({ kind: 'error', text: 'יצירת הסקשן נכשלה. נסה שוב.' })
+      showToast({ kind: 'error', text: errorText })
       console.warn(logLabel, error)
       return null
     }
@@ -71,11 +75,16 @@ export function useSections(deps: {
   }
 
   // Uploads always land in a section; a brand-new gallery gets a default one
-  // on the fly. Returns the target section id.
+  // on the fly. Returns the target section id, or null (after a toast) when
+  // none could be created — the caller must not upload then.
   async function ensureUploadSection(): Promise<string | null> {
     if (activeSectionId) return activeSectionId
     if (!editingGallery) return null
-    const created = await createSection('[ensureUploadSection]', { name: `סקשן ${sections.length + 1}` })
+    const created = await createSection(
+      '[ensureUploadSection]',
+      { name: `סקשן ${sections.length + 1}` },
+      'ההעלאה בוטלה: לא הצלחנו ליצור סקשן לתמונות. נסה שוב.',
+    )
     return created?.id ?? null
   }
 
