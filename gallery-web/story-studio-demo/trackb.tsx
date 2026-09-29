@@ -3,6 +3,7 @@
 // through the actual UI controls. Exposes window.__getPlan() for extraction.
 import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
+import "../src/styles/index.css"; // the editor is styled with Tailwind utilities
 import { StoryStudioEditor } from "../src/features/story-studio/StoryStudioEditor";
 import type { PlannerImage } from "../src/features/story-studio/planner";
 import type { ScenePlan } from "../src/features/story-studio/sceneplan";

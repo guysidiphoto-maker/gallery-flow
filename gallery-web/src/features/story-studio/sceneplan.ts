@@ -1,21 +1,6 @@
-// sceneplan.ts — Pixflow Story Studio canonical scene-plan contract (v1).
-//
-// This file is the SINGLE SOURCE OF TRUTH for the shape of a story. The editor,
-// the live preview, the final render (Remotion), persistence (story_renders.scene_plan
-// JSONB) and the test-suite all import these types + validators. If preview and export
-// ever diverge it is a bug in a consumer, never a second model here.
-//
-// Design rules:
-//   1. Deterministic: a ScenePlan fully describes a video. Same plan -> same MP4.
-//   2. Erasable TypeScript only (no enums / no namespaces) so it runs under Node's
-//      native type-stripping for zero-dependency unit tests.
-//   3. No imports. This module must be loadable from the web app, the Vercel API
-//      function, the Remotion bundle and a bare `node --test` worktree alike.
-
-// v2 adds: transitionOut, captionStyle, role, locked, beatAlignedSec per scene;
-// audio analysis + beatSyncStrength on the plan; parallax/reveal motions and
-// fade-color/masked-reveal/match-cut transitions. All new fields are OPTIONAL so
-// a v1 plan upgrades losslessly (see upgradeScenePlan).
+// Canonical Story Studio scene-plan contract: editor, preview, Remotion render, persistence
+// and tests all share it. Erasable TS only and no imports, so it loads in the web app, the API,
+// the Remotion bundle and plain Node alike. v2 fields are optional so v1 plans upgrade losslessly.
 export const SCENE_PLAN_VERSION = 2 as const;
 
 // ── Output geometry ─────────────────────────────────────────────────────────
@@ -23,28 +8,20 @@ export const STORY_WIDTH = 1080;
 export const STORY_HEIGHT = 1920;
 export const STORY_FPS = 30;
 
-// Per-scene duration clamps (seconds). Below MIN a photo cannot register; above
-// MAX a single photo drags the pace. MIN is deliberately low (1.2s) so the
-// fast-highlights template can cut on the beat like a real reel, while the
-// calmer templates sit far above the floor — the pace gap between templates is
-// itself a differentiator.
+// Per-scene duration clamps (seconds). MIN is low so fast-highlights can cut on the beat;
+// above MAX a single photo drags the pace.
 export const MIN_SCENE_SEC = 1.2;
 export const MAX_SCENE_SEC = 6.0;
-export const MIN_TRANSITION_SEC = 0.2;
-export const MAX_TRANSITION_SEC = 1.2;
+const MAX_TRANSITION_SEC = 1.2;
 
-// Caps that bound render cost + protect against abuse (mirrored by the validator
-// and the render endpoint allowlist).
-export const MIN_SCENES = 3;
+// Caps that bound render cost and abuse; mirrored by api/stories/_scenePlanGuard.ts.
+const MIN_SCENES = 3;
 export const MAX_SCENES = 40;
-export const MAX_TEXT_LEN = 120;
-export const MAX_TITLE_LEN = 80;
+const MAX_TEXT_LEN = 120;
+const MAX_TITLE_LEN = 80;
 
-// FIRST-RELEASE synchronous-render cap (separate from the structural MAX_SCENES).
-// One Vercel function is capped at 300s; measured render cost is ~10-12s/scene,
-// so we hard-limit a synchronous render to keep it well under the ceiling and
-// avoid orphaned jobs. Longer stories require the queue/Lambda path (documented
-// in docs/story-studio). Mirrored by api/stories/_scenePlanGuard.ts.
+// Synchronous-render cap: a Vercel function has 300s and a scene costs ~10-12s to render.
+// Mirrored by api/stories/_scenePlanGuard.ts.
 export const RENDER_MAX_SCENES = 18;
 export const RENDER_MAX_DURATION_SEC = 45;
 
@@ -54,9 +31,8 @@ export type StoryTemplate = "editorial-clean" | "cinematic-energy" | "fast-highl
 export type StoryLength = "short" | "standard" | "extended";
 export type GlobalPace = "relaxed" | "balanced" | "energetic";
 
-// "punch-in" is a fast snap-and-settle zoom (starts slightly enlarged, eases to
-// rest in the first third of the scene) — reads as energetic; used by
-// fast-highlights. The gentler push-in/pull-out are continuous Ken Burns moves.
+// "punch-in" is a fast snap-and-settle zoom (fast-highlights); push-in/pull-out are
+// continuous Ken Burns moves.
 export type MotionEffect =
   | "none" // still hold (important portraits)
   | "push-in"
@@ -73,8 +49,7 @@ export type CaptionStyle = "editorial" | "bold" | "minimal";
 /** The scene's narrative role in the event arc (drives motion/transition/pace). */
 export type SceneRole = "hook" | "atmosphere" | "people" | "energy" | "peak" | "closer" | "body";
 
-// "whip" is a fast motion-blur horizontal slide (reel-style hard-ish cut); the
-// other transitions are slower/softer. Templates pick disjoint vocabularies.
+// "whip" is a fast motion-blur slide; the rest are softer. Templates pick disjoint vocabularies.
 export type TransitionType =
   | "cut" // hard cut
   | "cross-dissolve" // dissolve
@@ -166,12 +141,9 @@ export interface Scene {
   locked?: boolean;
   /** Audio timing: the beat time (s from music start) this scene's cut aligns to. */
   beatAlignedSec?: number;
-  /** Scene layout. "single" (default) = one photo. "collage" = 2-3 LANDSCAPE
-   *  photos stacked vertically to fill 9:16 with no crop and no black bars —
-   *  the right treatment for landscape shots in a vertical story. */
+  /** "collage" stacks 2-3 landscape photos to fill 9:16 without crop or black bars. */
   layout?: "single" | "collage";
-  /** For a collage: the 2-3 image ids (incl. imageId) stacked top-to-bottom.
-   *  Each cell also needs a resolved src at render time (collageSrc). */
+  /** For a collage: the 2-3 image ids (incl. imageId), top-to-bottom. */
   collageImageIds?: string[];
   /** Resolved image URLs for a collage's cells (filled at render time). */
   collageSrc?: string[];
@@ -188,11 +160,7 @@ export interface TitleCard {
   durationSec: number;
 }
 
-/**
- * The resolved branding SNAPSHOT. Captured once (from the Brand Kit + gallery
- * override) and stored on the plan so preview and export render byte-identical
- * branding even if the global Brand Kit changes later.
- */
+/** Branding snapshot stored on the plan so preview and export match even if the Brand Kit changes later. */
 export interface BrandResolved {
   logoUrl?: string | null;
   accentHex: string;
@@ -217,10 +185,7 @@ export interface MusicConfig {
   license?: string | null;
 }
 
-/**
- * Genuine audio analysis of the chosen track (from scripts/analyze-audio.py).
- * Times are seconds from the music start. Absent => no beat-sync available.
- */
+/** Audio analysis of the chosen track (scripts/analyze-audio.py); times in seconds from music start. */
 export interface AudioAnalysis {
   trackId: string;
   durationSec: number;
@@ -232,12 +197,8 @@ export interface AudioAnalysis {
   energy?: number[] | null;
 }
 
-// ── Music V1: a small curated set of BUNDLED test tracks ──────────────────────
-// Authored in-repo (scripts/generate-story-audio.mjs) and shipped as static
-// assets in the Remotion bundle, so there is NO third-party licensing dependency
-// and NO external fetch/SSRF surface — a plan can only reference an allow-listed
-// id, never an arbitrary URL. The composition resolves the id via
-// staticFile(`stories-audio/${id}.wav`).
+// Bundled in-repo tracks: no licensing dependency and no fetch/SSRF surface, since a plan
+// can only reference an allow-listed id, never a URL.
 export interface MusicTrack {
   id: string;
   label: string;
@@ -287,11 +248,7 @@ export interface ScenePlan {
   planSeed?: number;
 }
 
-/**
- * Upgrade an older plan to the current version losslessly. v1 -> v2 only sets
- * the new version tag (every v2 field is optional and defaults are applied at
- * render time), so a saved v1 draft keeps working.
- */
+/** v1 -> v2 only bumps the tag: every v2 field is optional with render-time defaults. */
 export function upgradeScenePlan<T extends { version: number }>(plan: T): T {
   if (!plan || typeof plan !== "object") return plan;
   if (plan.version === SCENE_PLAN_VERSION) return plan;
@@ -299,11 +256,8 @@ export function upgradeScenePlan<T extends { version: number }>(plan: T): T {
 }
 
 /**
- * Align scene cuts to the music: nudge each scene's END boundary toward the
- * nearest analysed beat by `beatSyncStrength` (0 = off, 1 = snap fully), keeping
- * every duration within [MIN,MAX]. LOCKED scenes keep their exact duration (the
- * photographer's override wins). Deterministic; preview and export share it.
- * Records the aligned cut time on each scene as `beatAlignedSec`.
+ * Nudge each scene's end toward the nearest beat by `beatSyncStrength`, within duration clamps.
+ * Locked scenes keep their duration (the photographer's override wins).
  */
 export function applyBeatSync(plan: ScenePlan): ScenePlan {
   const audio = plan.audio;
@@ -346,11 +300,7 @@ export function orientationOf(width?: number, height?: number): Orientation {
   return "square";
 }
 
-/**
- * Total video length in seconds = opening card (if enabled) + every scene +
- * outro card (if enabled). Transitions overlap the outgoing scene so they do
- * NOT add wall-clock time (matching the Remotion sequence layout).
- */
+/** Transitions overlap the outgoing scene, so they add no wall-clock time. */
 export function computeTotalDuration(plan: ScenePlan): number {
   let total = 0;
   if (plan.opening?.enabled) total += plan.opening.durationSec;
@@ -359,12 +309,7 @@ export function computeTotalDuration(plan: ScenePlan): number {
   return Math.round(total * 100) / 100;
 }
 
-/**
- * Total frame count of the rendered video. Transitions overlap the previous
- * scene (net-zero wall-clock), so this = opening + Σ scenes + outro, each in
- * frames. Shared by the render (Root.calculateMetadata) and the editor's
- * <Player> so preview length can never drift from export length.
- */
+/** Shared by the render and the editor's <Player> so preview length never drifts from export. */
 export function totalFrames(plan: ScenePlan): number {
   const f = (s: number) => Math.max(1, Math.round(s * plan.fps));
   let total = 0;
@@ -380,10 +325,8 @@ export interface ValidationResult {
 }
 
 /**
- * Structural + SECURITY validation. `allowedImageIds`, when provided, is the set
- * of image ids that belong to the gallery — every scene must reference one of
- * them. This is the tenant-isolation gate the render endpoint runs before it
- * touches storage: a plan can never smuggle in a foreign image id.
+ * Structural + security validation. `allowedImageIds` is the gallery's image set: the
+ * tenant-isolation gate the render endpoint runs before touching storage.
  */
 export function validateScenePlan(
   plan: ScenePlan,
@@ -429,8 +372,7 @@ export function validateScenePlan(
       errors.push(`scene[${i}] references foreign imageId ${s.imageId}`);
     }
 
-    // Collage cells are FKs too — tenant-isolate them exactly like imageId so a
-    // collage can never smuggle in another gallery's photo.
+    // Collage cells are FKs too — tenant-isolate them like imageId.
     if (s.layout === "collage") {
       const ids = s.collageImageIds;
       if (!Array.isArray(ids) || ids.length < 2 || ids.length > 3) {
@@ -463,8 +405,7 @@ export function validateScenePlan(
       if (typeof s.text.content !== "string") errors.push(`scene[${i}] text.content not string`);
       else if (s.text.content.length > MAX_TEXT_LEN) errors.push(`scene[${i}] text too long`);
       if (/[<>]/.test(s.text.content || "")) {
-        // Text is rendered as plain text; angle brackets are a red flag for
-        // markup-injection attempts. Reject rather than sanitize silently.
+        // Angle brackets signal markup injection; reject rather than sanitize silently.
         errors.push(`scene[${i}] text contains disallowed characters`);
       }
     }
@@ -483,8 +424,7 @@ export function validateScenePlan(
     errors.push(`brand.accentHex not a hex color: ${plan.brand.accentHex}`);
   }
 
-  // Music (optional). trackId must be an allow-listed BUNDLED track — never an
-  // arbitrary URL — and volume/fades must be in range.
+  // trackId must be an allow-listed bundled track, never a URL.
   const m = plan.music;
   if (m) {
     if (m.trackId != null && !MUSIC_TRACK_IDS.includes(m.trackId)) {
@@ -504,10 +444,8 @@ export function validateScenePlan(
 }
 
 /**
- * Render-feasibility gate, separate from structural validity (validateScenePlan).
- * A plan can be a valid ScenePlan yet be too long to render synchronously within
- * the Vercel function ceiling. The editor uses this to explain the limit and
- * disable the render button; the render endpoint enforces the identical rule.
+ * A valid plan may still be too long to render within the function ceiling. The editor uses
+ * this to disable rendering; the render endpoint enforces the same rule.
  */
 export function checkRenderFeasibility(plan: ScenePlan): { ok: boolean; reason?: string } {
   const n = plan?.scenes?.length ?? 0;
@@ -527,10 +465,7 @@ export function checkRenderFeasibility(plan: ScenePlan): { ok: boolean; reason?:
   return { ok: true };
 }
 
-/**
- * Strip dev-only + volatile fields before a plan is handed to the renderer or
- * persisted. Keeps the stored/rendered plan clean and deterministic.
- */
+/** Strip dev-only fields before a plan is rendered or persisted. */
 export function sanitizeForRender(plan: ScenePlan): ScenePlan {
   return {
     ...plan,

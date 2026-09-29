@@ -1,15 +1,6 @@
-// serverPlan.ts — SERVER-SIDE security boundary for a client-submitted ScenePlan.
-//
-// The editor sends a ScenePlan to the render/draft endpoints. The client is
-// UNTRUSTED: it must not be able to (a) reference images from another gallery,
-// (b) inject arbitrary image URLs, (c) smuggle unsafe text/markup, or (d) blow
-// past duration/scene caps. This module is the single choke-point that makes a
-// submitted plan safe before it is persisted or rendered.
-//
-// It is PURE (no I/O, no Supabase) so it is fully unit-testable and reusable by
-// both the render endpoint and the draft endpoint. The caller supplies the
-// gallery's own image records + a src resolver; this module NEVER trusts a
-// client-provided scene.src.
+// Server-side choke-point that makes an untrusted client ScenePlan safe to persist or render:
+// no foreign images, no client-supplied URLs, no markup, no cap overruns. Pure (no I/O), so both
+// the render and draft endpoints share it and it is unit-testable.
 
 import {
   sanitizeForRender,
@@ -32,14 +23,7 @@ export interface ResolveResult {
   plan?: ScenePlan;
 }
 
-/**
- * Validate + harden a client plan against the gallery's own images.
- *
- * @param plan          the untrusted plan from the editor
- * @param galleryId     the gallery the caller owns (must match plan.galleryId)
- * @param ownerImages   the gallery's real image rows (source of truth)
- * @param resolveSrc    server-side resolver: image id -> render URL (signed/public)
- */
+/** Validate + harden a client plan against the gallery's own image rows (the source of truth). */
 export function resolveAndValidatePlan(
   plan: ScenePlan,
   galleryId: string,
@@ -51,8 +35,7 @@ export function resolveAndValidatePlan(
   if (!plan || typeof plan !== "object") {
     return { ok: false, errors: ["plan is not an object"] };
   }
-  // The plan must target the gallery the caller was authorized for — never
-  // trust plan.galleryId to redirect to a different gallery.
+  // Never let plan.galleryId redirect to a gallery the caller wasn't authorized for.
   if (plan.galleryId !== galleryId) {
     errors.push(`plan.galleryId (${plan.galleryId}) does not match authorized gallery`);
   }
@@ -61,34 +44,27 @@ export function resolveAndValidatePlan(
   for (const img of ownerImages) byId.set(img.id, img);
   const allowed = new Set(byId.keys());
 
-  // 1. Structural + tenant-isolation validation (foreign imageId, injection,
-  //    ranges) — the shared validator is the same one the editor/tests use.
+  // 1. Structural + tenant-isolation validation, shared with the editor and tests.
   const base = validateScenePlan(plan, allowed);
   if (!base.ok) errors.push(...base.errors);
 
   if (errors.length > 0) return { ok: false, errors };
 
-  // 2. Rebuild every scene with SERVER-resolved src + SERVER dims. Any client
-  //    scene.src is discarded; width/height come from our own records so the
-  //    renderer's fit/crop math can't be skewed by a tampered client.
+  // 2. Rebuild scenes with server-resolved src and dims so a tampered client can't inject URLs
+  //    or skew the renderer's crop math.
   const scenes: Scene[] = plan.scenes.map((s) => {
     const rec = byId.get(s.imageId)!; // guaranteed present (validated above)
     return {
       ...s,
       src: resolveSrc(s.imageId),
-      // Collage cells are ALSO server-resolved (client collageSrc discarded);
-      // every collage image id was tenant-validated above, so this can't leak
-      // another gallery's photo into a collage.
+      // Collage cells are server-resolved too (ids were tenant-validated above).
       collageSrc: s.layout === "collage" && s.collageImageIds ? s.collageImageIds.map((id) => resolveSrc(id)) : undefined,
       width: rec.width ?? s.width,
       height: rec.height ?? s.height,
     };
   });
 
-  // Drop a non-http(s) brand logo (e.g. a local filesystem path from the editor's
-  // logo-picker data bug) so it can never crash the renderer — a logo URL that
-  // isn't http(s) resolves against the render origin, 404s, and kills Chromium.
-  // The composition already renders no logo when it's absent.
+  // A non-http(s) logo resolves against the render origin, 404s and kills Chromium; drop it.
   const isHttpUrl = (s: unknown): s is string => typeof s === "string" && /^https?:\/\//i.test(s);
   const brand = plan.brand
     ? { ...plan.brand, logoUrl: isHttpUrl(plan.brand.logoUrl) ? plan.brand.logoUrl : null }
@@ -98,7 +74,7 @@ export function resolveAndValidatePlan(
   return { ok: true, errors: [], plan: safe };
 }
 
-/** Convenience: strip volatile/preview-only fields before persisting a draft. */
+/** Strip volatile/preview-only fields before persisting a draft. */
 export function stripForPersistence(plan: ScenePlan): ScenePlan {
   const cleaned = sanitizeForRender(plan);
   return {

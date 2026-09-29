@@ -1,17 +1,6 @@
-// planner.ts — Pixflow Story Studio deterministic auto-editing engine.
-//
-// Turns a gallery's photos into a ScenePlan that feels EDITED, not shuffled:
-// strong opening, varied composition/motion, burst de-duplication, coherent
-// pacing, subject-aware crop, branded outro. Fully deterministic — given the
-// same images + options it returns byte-identical output (no Math.random; a
-// tiny seeded PRNG drives the few "pick one of N" choices).
-//
-// It uses OPTIONAL quality metadata (image_ai_scores.story_score / focal point,
-// face boxes) ONLY when present and in-range. When absent it falls back to
-// honest structural heuristics (top-pick flag, sort order, orientation, capture
-// time). It never invents scores.
-//
-// Zero imports except the contract, so it runs under `node --test` type-stripping.
+// Deterministic auto-editor: turns gallery photos into a ScenePlan that feels edited, not shuffled.
+// Uses quality/face metadata only when present and in range — never invents scores. A seeded PRNG
+// drives the few "pick one of N" choices so the same input yields byte-identical output.
 
 import {
   type BrandResolved,
@@ -31,7 +20,6 @@ import {
   MAX_SCENE_SEC,
   MIN_SCENE_SEC,
   MAX_SCENES,
-  MIN_SCENES,
   RENDER_MAX_SCENES,
   RENDER_MAX_DURATION_SEC,
   SCENE_PLAN_VERSION,
@@ -44,8 +32,7 @@ import {
 
 export interface PlannerImage {
   id: string;
-  /** Resolved preview URL (thumb/web). Ignored by planning; used by the editor
-   *  to fill scene.src for the live <Player> preview + storyboard thumbnails. */
+  /** Preview URL; ignored by planning, used by the editor for the live preview. */
   src?: string;
   width?: number;
   height?: number;
@@ -63,8 +50,7 @@ export interface PlannerImage {
   /** Normalized Rekognition face boxes {x,y,w,h} in 0..1. Optional. */
   faceBoxes?: Array<{ x: number; y: number; w: number; h: number }> | null;
   sectionId?: string | null;
-  // ── Real content signals (from the image pipeline / detector). All optional;
-  //    when present they drive the auto arc, motion and transition choices. ──
+  // Content signals from the image pipeline; when present they drive arc, motion and transitions.
   /** Detected face count (0 => room/empty; 1 large => portrait; many => group). */
   faceCount?: number | null;
   /** Largest face area as a share of frame (portraits are high, crowds low). */
@@ -92,12 +78,8 @@ export interface PlannerOptions {
   event?: PlannerEvent;
   seed?: number;
   /**
-   * Keep the photographer's EXACT supplied order (the locked source of truth):
-   * no burst-dedup removal, no strength re-selection, no orientation interleave,
-   * no opener/closer promotion. Just cap to the render budget and apply the
-   * template's pacing/motion/transition/crop. This is the product DEFAULT — the
-   * smart re-sequence (preserveOrder:false) is offered as a separate
-   * "Suggested Edit" variant, never silently.
+   * Keep the photographer's exact order (no dedupe, re-selection or reordering) and only cap to
+   * the render budget. The smart re-sequence is offered separately as a "Suggested Edit".
    */
   preserveOrder?: boolean;
 }
@@ -113,25 +95,17 @@ interface TemplateProfile {
   openingHoldBonus: number; // extra seconds on the opening scene
   outroSec: number;
   openingSec: number;
-  // Multiplies the length's target duration. Keeps the pace gap REAL for a fixed
-  // gallery: fast ends up a shorter, punchier clip; editorial a longer, calmer
-  // one — instead of fitToTarget flattening every template to the same runtime.
+  // Scales the length target so fitToTarget doesn't flatten every template to one runtime.
   targetMult: number;
 }
 
-// Three templates that read as three different EDITS, not one edit reskinned.
-// The spread is intentional and large along every axis a viewer notices:
-//   pace          editorial 3.8s  ▸  cinematic 2.8s  ▸  fast 1.35s   (≈3× gap)
-//   motion        gentle/still    ▸  strong pans     ▸  snap punch-ins
-//   transitions   slow dissolves  ▸  dramatic leaks  ▸  hard cuts + whips
-//   composition   clean full-bleed▸  letterbox+vignette ▸ reel progress bars
+// Three templates that read as different edits, not one reskinned: a deliberately wide spread in
+// pace, motion and transitions.
 const TEMPLATE_PROFILES: Record<StoryTemplate, TemplateProfile> = {
-  // Calm gallery/magazine cut: photos breathe, motion is barely-there, cuts are
-  // slow cross-dissolves. Lots of deliberate stillness ("none").
+  // Calm magazine cut: slow dissolves, barely-there motion.
   "editorial-clean": {
     basePaceSec: 3.8,
-    // Fewer dead-static holds than before (one "none" per 4, not two) so the cut
-    // has gentle continuous drift rather than freeze-then-dissolve.
+    // One "none" per 4 keeps gentle drift rather than freeze-then-dissolve.
     motionVocab: ["push-in", "pull-out", "none", "push-in"],
     transitionVocab: ["cross-dissolve", "soft-blur"],
     transitionSec: 0.6,
@@ -141,8 +115,7 @@ const TEMPLATE_PROFILES: Record<StoryTemplate, TemplateProfile> = {
     outroSec: 2.8,
     targetMult: 1.15,
   },
-  // Filmic trailer: strong directional motion (pans + big push-ins), dramatic
-  // dissolves/light-leaks, letterbox + vignette treatment. Medium-slow pace.
+  // Filmic trailer: strong pans/push-ins, dissolves and light-leaks.
   "cinematic-energy": {
     basePaceSec: 2.8,
     motionVocab: ["push-in", "pan", "focus-zoom", "pan"],
@@ -154,8 +127,7 @@ const TEMPLATE_PROFILES: Record<StoryTemplate, TemplateProfile> = {
     outroSec: 2.8,
     targetMult: 1.0,
   },
-  // Reel/beat montage: very short holds, snap punch-ins, mostly HARD CUTS with
-  // the occasional whip. Reads as a punchy social highlights clip.
+  // Reel montage: short holds, punch-ins, mostly hard cuts with the odd whip.
   "fast-highlights": {
     basePaceSec: 1.35,
     motionVocab: ["punch-in", "none", "punch-in", "focus-zoom"],
@@ -208,12 +180,7 @@ function strengthOf(img: PlannerImage): number {
   return s;
 }
 
-/**
- * Resolve the crop/motion focal point (0..1). Priority:
- *   1. AI suggested focal point (if in range)
- *   2. Centroid of the largest face box (subject-aware, keeps faces in frame)
- *   3. Centre (0.5, 0.5)
- */
+/** Crop/motion focal point: AI focal if in range, else face centroid, else a thirds-biased default. */
 function resolveFocal(img: PlannerImage): { focal: FocalPoint; reason: string } {
   if (
     typeof img.focalX === "number" &&
@@ -226,9 +193,7 @@ function resolveFocal(img: PlannerImage): { focal: FocalPoint; reason: string } 
     return { focal: { x: img.focalX, y: img.focalY }, reason: "ai-focal" };
   }
   if (img.faceBoxes && img.faceBoxes.length > 0) {
-    // Area-weighted centroid of ALL faces: a single portrait resolves to that
-    // face, and a group resolves to the centre of the crowd (bigger/closer faces
-    // pull the frame), which keeps the people-mass in frame on a 9:16 crop.
+    // Area-weighted centroid of all faces keeps the people-mass in frame on a 9:16 crop.
     let sx = 0, sy = 0, sw = 0;
     for (const b of img.faceBoxes) {
       const a = Math.max(b.w * b.h, 1e-6);
@@ -241,23 +206,14 @@ function resolveFocal(img: PlannerImage): { focal: FocalPoint; reason: string } 
       reason: "face-centroid",
     };
   }
-  // No AI focal / face data: a dead-center crop amputates heads on 9:16 fill,
-  // because in most photography the subject/face sits ABOVE center (rule of
-  // thirds). Bias the vertical focal into the upper band so a center-cropped
-  // portrait keeps the face; landscapes bias a touch less. This is the single
-  // highest-value crop fix when no detection data exists.
+  // Faces usually sit above center, so a dead-center 9:16 crop cuts heads; bias upward,
+  // landscapes most strongly.
   const o = orientationOf(img.width, img.height);
-  // Faces sit above center in most event photography; bias higher so a 9:16
-  // fill-crop of a landscape frame keeps heads (reviewers: y=0.44 still edged
-  // faces low on group shots). Landscape needs the strongest upward bias.
   const y = o === "landscape" ? 0.38 : 0.4;
   return { focal: { x: 0.5, y }, reason: "thirds-default" };
 }
 
-/**
- * A face box is "edge-risky" if it sits near a frame edge where added motion
- * would crop it — in that case we hold static rather than push/pan into a face.
- */
+/** A face near a frame edge would be cropped by motion, so such scenes hold static. */
 function faceNearEdge(img: PlannerImage): boolean {
   if (!img.faceBoxes) return false;
   const M = 0.12;
@@ -266,24 +222,14 @@ function faceNearEdge(img: PlannerImage): boolean {
   );
 }
 
-/**
- * Face-aware fit: an establishing/room shot (detection ran and found only a
- * couple of tiny distant faces, or none) letterboxes so the venue reads; a
- * people beat fills the 9:16 frame and is framed on the detected faces. Falls
- * back to the prior orientation rule when no detection data exists.
- */
 function classifyFit(_img: PlannerImage, _template: StoryTemplate): "fit" | "fill" {
-  // AUTOMATIC cuts are ALWAYS full-bleed: every scene fills the 9:16 frame
-  // (cropped to its focal point). A letterbox matte on an auto scene reads as
-  // "black bars / broken" to a client (all three reviewers flagged this on a
-  // thin outdoor set). Letterbox stays available as a DELIBERATE per-scene choice
-  // in the editor (the fit toggle sets fit:"fit"); the planner never picks it.
+  // Auto cuts are always full-bleed: letterbox reads as "broken" to clients, so it stays a
+  // deliberate per-scene choice in the editor.
   return "fill";
 }
 
 // ── Content signals -> narrative role, arc, motion & transitions ──────────────
-// All gated on real detection signals being present; with none, the planner
-// keeps its prior template-vocabulary behaviour (see planStory).
+// Only used when detection signals exist; otherwise planStory uses template vocabularies.
 
 /** True once any real content signal (faces) is attached to the set. */
 function hasContentSignals(imgs: PlannerImage[]): boolean {
@@ -305,38 +251,26 @@ function groupStrength(img: PlannerImage): number {
   return faceCountOf(img) * (0.5 + 0.5 * (img.sharpness ?? 0.5));
 }
 
-/**
- * Order a selected set into an event arc using real signals:
- *   hook (strongest group) -> establishing room -> people/energy build ->
- *   intimate portrait (peak) -> warm group (closer).
- * Deterministic; falls back silently when a bucket is empty.
- */
+/** Event arc: hook (strongest group) -> establishing room -> build -> portraits -> warm closer. */
 function buildArc(imgs: PlannerImage[]): PlannerImage[] {
   const rooms = imgs.filter((i) => roleOf(i) === "atmosphere");
   const portraits = imgs.filter((i) => roleOf(i) === "peak");
   const groups = imgs.filter((i) => roleOf(i) === "people" || roleOf(i) === "energy");
 
-  // hook = strongest group (biggest, sharpest crowd — an immediate scale hook).
   const groupsByStrength = [...groups].sort((a, b) => groupStrength(b) - groupStrength(a));
   const hook = groupsByStrength[0];
-  // closer = the strongest EMOTIONAL PAYOFF among the remaining groups: a large
-  // crowd carries weight, warmth (golden-hour) breaks ties, and sharpness adds a
-  // touch. A generic standing group should not beat a bigger or warmer hero shot.
+  // Closer = strongest emotional payoff: crowd size, then warmth, then sharpness.
   const payoff = (g: PlannerImage) =>
     faceCountOf(g) + (g.warmth ?? 0) * 40 + (g.sharpness ?? 0.5) * 1.5;
   const closer =
     [...groups].filter((g) => g !== hook).sort((a, b) => payoff(b) - payoff(a))[0] ?? null;
   const midGroups = groups.filter((g) => g !== hook && g !== closer);
 
-  // One strong establishing shot is enough; extra near-identical room wides read
-  // as redundant (and pad the runtime). Keep only the sharpest room and let the
-  // photographer add more via the editor if a venue truly needs it.
+  // One establishing shot is enough; extra room wides read as redundant padding.
   const bestRoom = rooms.length ? [...rooms].sort((a, b) => (b.sharpness ?? 0) - (a.sharpness ?? 0))[0] : null;
 
-  // Interleave the middle beats (people/energy round-robin with intimate
-  // portraits) so close-ups never clump into one long block — that kills the
-  // rhythm on people-dense events like concerts. Portraits lean slightly later
-  // (toward the emotional close) by feeding groups first each pair.
+  // Interleave groups and portraits so close-ups never clump into one block; groups go first
+  // in each pair so portraits lean toward the close.
   const mid: PlannerImage[] = [];
   const a = [...midGroups];
   const b = [...portraits];
@@ -349,8 +283,7 @@ function buildArc(imgs: PlannerImage[]): PlannerImage[] {
   if (bestRoom) out.push(bestRoom); // establishing beat after the hook
   mid.forEach((m) => out.push(m));
   if (closer) out.push(closer);
-  // Safety: append any group/portrait not yet placed (NOT the dropped extra
-  // rooms — those are intentionally omitted). Keeps the close last.
+  // Append any unplaced group/portrait (extra rooms stay dropped), keeping the closer last.
   const tail = out.length ? out.pop()! : null;
   for (const im of imgs) if (!out.includes(im) && im !== tail && roleOf(im) !== "atmosphere") out.push(im);
   if (tail) out.push(tail);
@@ -358,11 +291,8 @@ function buildArc(imgs: PlannerImage[]): PlannerImage[] {
 }
 
 /**
- * Merge runs of collage-eligible LANDSCAPE scenes into 2-3-up vertical collages.
- * A landscape photo alone in 9:16 crops hard or shows black bars; stacking 2-3
- * fills the frame cleanly. Keeps the hook, closer and intimate portraits single
- * (they deserve the whole frame), and never collages more than 3 at once. Mutates
- * `scenes` in place. Deterministic.
+ * Merge runs of landscape scenes into 2-3-up vertical collages (a lone landscape in 9:16 crops
+ * hard or shows bars). Hook, closer and portraits stay single. Mutates `scenes`.
  */
 function mergeLandscapeCollages(scenes: Scene[]): void {
   const eligible = (s: Scene) =>
@@ -433,16 +363,14 @@ function motionForScene(
     return { motion: rng() < 0.5 ? "push-in" : "parallax", intensity: energetic ? "medium" : "subtle", direction: panDirTowardSubject(img) };
   }
   if (role === "peak") {
-    // Intimate portrait. Calm editorial holds it still; an energetic reel keeps a
-    // gentle move (a dead-still frame flattens a concert's mid-run against the beat).
+    // Editorial holds portraits still; energetic reels keep a gentle move against the beat.
     if (energetic) return { motion: i % 2 === 0 ? "push-in" : "pull-out", intensity: "medium", direction: "up" };
     return { motion: rng() < 0.5 ? "none" : "push-in", intensity: "subtle", direction: "up" };
   }
   if (isCloser) {
     return { motion: "pull-out", intensity: "medium", direction: "down" }; // breathe out on the close
   }
-  // People / energy beat: cycle push-in / face-aware pan / two-plane parallax so
-  // the movement stays dynamic across a people-dense event (concerts, parties).
+  // People/energy beats cycle moves so people-dense events stay dynamic.
   const cycle: MotionEffect[] = ["push-in", "pan", "parallax"];
   const m = cycle[i % cycle.length];
   return {
@@ -452,12 +380,7 @@ function motionForScene(
   };
 }
 
-/**
- * Recommend a template from real gallery signals: a dark, crowd-dense event
- * (concert / party) wants the energetic cinematic grade + faster pace; a calmer,
- * brighter event stays editorial. Used as the automatic default so the first cut
- * matches the event's energy instead of always opening slow.
- */
+/** Dark, crowd-dense events (concerts, parties) get cinematic-energy; calmer ones stay editorial. */
 export function recommendTemplate(images: PlannerImage[]): StoryTemplate {
   if (!hasContentSignals(images)) return "editorial-clean";
   const withB = images.filter((i) => typeof i.brightness === "number");
@@ -486,9 +409,7 @@ function transitionForScene(
 }
 
 // ── Burst de-duplication ──────────────────────────────────────────────────────
-// Photos captured within BURST_SEC of each other with the same orientation are
-// treated as one "moment"; we keep only the strongest so the story doesn't show
-// three near-identical frames in a row.
+// Same-orientation photos within BURST_SEC are one moment; keep only the strongest.
 const BURST_SEC = 3;
 
 function dedupeBursts(imgs: PlannerImage[]): PlannerImage[] {
@@ -525,9 +446,7 @@ function dedupeBursts(imgs: PlannerImage[]): PlannerImage[] {
 }
 
 // ── Anti-monotony interleave ──────────────────────────────────────────────────
-// Reorder so no more than 2 consecutive scenes share the same orientation,
-// pulling forward the next differently-oriented image when possible. Stable +
-// deterministic.
+// At most 2 consecutive scenes share an orientation, pulling the next different one forward.
 function interleaveByOrientation(imgs: PlannerImage[]): PlannerImage[] {
   const result: PlannerImage[] = [];
   const pool = imgs.slice();
@@ -552,11 +471,8 @@ function interleaveByOrientation(imgs: PlannerImage[]): PlannerImage[] {
   return result;
 }
 
-// Deterministic run-breaker: eliminates runs of >2 same-orientation scenes by
-// swapping the 3rd offender with the next interior scene of a different
-// orientation. Never moves index 0 (opener) or the last element (closer). Stable
-// and idempotent enough for our sizes; if no swap candidate exists the run is
-// left (unavoidable given the available orientation mix).
+// Break runs of >2 same-orientation scenes by swapping with the next interior scene of another
+// orientation. Never moves the opener or the closer.
 function breakOrientationRuns(list: PlannerImage[]): void {
   const orient = (im: PlannerImage) => orientationOf(im.width, im.height);
   for (let i = 2; i < list.length; i++) {
@@ -574,10 +490,7 @@ function breakOrientationRuns(list: PlannerImage[]): void {
   }
 }
 
-// Per-scene motion intensity, so a template isn't 100% one setting (reviewers:
-// "constant strong reads as a filter, not craft"). Gives motion dynamic range —
-// a gentle peak on the opener + top picks, medium elsewhere. Deterministic
-// (driven by the seeded rng passed in).
+// Vary intensity per scene: a constant setting reads as a filter, not craft.
 function variedIntensity(
   base: "subtle" | "medium" | "strong",
   i: number,
@@ -614,15 +527,14 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
 
   let ordered: PlannerImage[];
   if (preserveOrder) {
-    // LOCKED ORDER: keep the photographer's exact sequence, only cap to budget.
-    // No dedupe removal, no re-selection, no interleave, no opener/closer moves.
+    // Locked order: only cap to budget.
     const budget = Math.min(base.length, lengthTarget.maxScenes, RENDER_MAX_SCENES, MAX_SCENES);
     ordered = base.slice(0, budget);
   } else {
-    // SUGGESTED EDIT: the smart re-sequence.
+    // Suggested edit: the smart re-sequence.
     // 2. Burst de-dup (only when capture time exists).
     const deduped = dedupeBursts(base);
-    // 3. Budget cap (first-release render limit).
+    // 3. Budget cap (render limit).
     const budget = Math.min(deduped.length, lengthTarget.maxScenes, RENDER_MAX_SCENES, MAX_SCENES);
     // 4. Selection: if we must trim, keep the strongest while preserving order.
     let selected: PlannerImage[];
@@ -678,16 +590,10 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
     }
   }
 
-  // 7b. Promoting the opener/closer can re-introduce a 3-in-a-row orientation
-  // run (esp. once trimming to the render cap skews the portrait/landscape mix).
-  // Break any such run with a deterministic interior swap, keeping the pinned
-  // opener (index 0) and closer (last) in place. Skipped in locked-order mode —
-  // it reorders, which would violate the photographer's locked sequence.
+  // 7b. Opener/closer promotion can re-introduce orientation runs. Never in locked-order mode.
   if (!preserveOrder) breakOrientationRuns(ordered);
 
-  // 8. Build scenes with motion/transition variety + subject-aware crop.
-  // Built imperatively (not via .map) so each scene can look back at the
-  // previous one to avoid repeating motion/transition.
+  // 8. Build scenes imperatively so each can look back and avoid repeating motion/transition.
   const paceSec = profile.basePaceSec * PACE_MULT[pace];
   const scenes: Scene[] = [];
   for (let i = 0; i < ordered.length; i++) {
@@ -696,18 +602,14 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
     const o = orientationOf(img.width, img.height);
     const { focal, reason: focalReason } = resolveFocal(img);
 
-    // Motion: cycle template vocab with a seeded shift so the pattern isn't a
-    // strict, predictable period; hold static if motion would crop a face, and
-    // never repeat the exact same motion twice in a row.
+    // Seeded shift so the motion cycle isn't a predictable period.
     const mShift = rng() < 0.3 ? 1 : 0;
     let motion: MotionEffect = profile.motionVocab[(i + mShift) % profile.motionVocab.length];
-    // Never repeat the exact same (non-static) motion twice in a row: step
-    // through the vocab until it differs (or we exhaust it).
+    // Never repeat the same non-static motion twice in a row.
     for (let k = 1; k <= profile.motionVocab.length && prev && motion === prev.motion && motion !== "none"; k++) {
       motion = profile.motionVocab[(i + mShift + k) % profile.motionVocab.length];
     }
-    // Motions that settle at (or reveal) rest scale don't crop a near-edge face;
-    // only the continuous inward moves do, so hold static for those.
+    // Only continuous inward moves crop a near-edge face; hold static for those.
     if (
       faceNearEdge(img) &&
       motion !== "none" &&
@@ -731,9 +633,8 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
           ? "up"
           : "down";
 
-    // Transition: cycle template vocab with a seeded shift so flashy transitions
-    // (whip / light-leak) don't land on a fixed metronome. Avoid immediate repeat
-    // — EXCEPT "cut", where back-to-back hard cuts are the fast-highlights rhythm.
+    // Seeded shift keeps flashy transitions off a metronome. Avoid immediate repeats except
+    // "cut" — back-to-back hard cuts are the fast-highlights rhythm.
     const tShift = rng() < 0.35 ? 1 : 0;
     let transition: TransitionType =
       i === 0 ? "cross-dissolve" : profile.transitionVocab[(i + tShift) % profile.transitionVocab.length];
@@ -741,10 +642,7 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       transition = profile.transitionVocab[(i + tShift + 1) % profile.transitionVocab.length];
     }
 
-    // V2 intelligence: with real content signals, choose motion + transition by
-    // the scene's narrative role (portraits hold, wides drift cinematically,
-    // people beats pan toward the crowd, the close breathes out) and mark the
-    // arc role. Without signals, keep the template-vocab behaviour computed above.
+    // With content signals, motion and transition follow the scene's narrative role.
     let intensity: MotionIntensity = variedIntensity(profile.motionIntensity, i, Boolean(img.isTopPick), rng);
     let role: SceneRole | undefined;
     if (hasContentSignals(ordered)) {
@@ -755,8 +653,7 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
       intensity = m.intensity;
       const intrinsic = roleOf(img);
       role = i === 0 ? "hook" : i === ordered.length - 1 ? "closer" : intrinsic;
-      // Motion-diversity budget: never repeat the SAME visual family two scenes
-      // in a row (a run of push-ins reads canned). The closer keeps its pull-out.
+      // Never repeat a motion family twice in a row (reads canned); the closer keeps its pull-out.
       if (prev && role !== "closer" && motionFamily(motion) === motionFamily(prev.motion)) {
         if (role === "peak" && !energetic) {
           motion = "none"; // calm editorial: hold the portrait still
@@ -772,16 +669,13 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
         }
       }
       transition = i === 0 ? "cross-dissolve" : transitionForScene(ordered[i - 1], img, template);
-      // Break a run of 3 identical transitions (a long portrait block would else
-      // be all cross-dissolves) with a restrained alternate from the template.
+      // Break a run of 3 identical transitions with a restrained alternate.
       const prev2 = i >= 2 ? scenes[i - 2] : null;
       if (prev && prev2 && prev.transitionIn === transition && prev2.transitionIn === transition && transition !== "cut") {
         transition = transition === "cross-dissolve" ? "soft-blur" : "cross-dissolve";
       }
     }
 
-    // Fit: face-aware — letterbox establishing/room wides so the venue reads,
-    // fill people beats and frame them on the detected faces.
     const fit = classifyFit(img, template);
     const background = fit === "fit" ? "blur" : "none";
 
@@ -818,17 +712,11 @@ export function planStory(images: PlannerImage[], opts: PlannerOptions): ScenePl
     });
   }
 
-  // 8b. Landscape collages: a landscape photo alone in a 9:16 story either crops
-  // hard or shows black bars. Group runs of collage-eligible landscape scenes
-  // (not the hook/closer/portrait beats) into 2-3-up vertical collages that fill
-  // the frame with no crop and no bars. Reduces the scene list in place.
+  // 8b. Landscape collages.
   mergeLandscapeCollages(scenes);
 
-  // 9. Nudge total toward the length target within clamps (proportional). The
-  // template's targetMult keeps the pace difference real: fast finishes shorter.
-  // Clamp the target to the FIRST-RELEASE render duration cap (minus a rounding
-  // margin) so an auto plan is always renderable synchronously — never orphans
-  // a job by exceeding the 45s ceiling (e.g. extended editorial would be ~63s).
+  // 9. Nudge total toward the length target, capped below the render duration limit so an auto
+  // plan is always renderable synchronously.
   const cardsSec = profile.openingSec + profile.outroSec;
   const cappedTarget = Math.min(
     lengthTarget.targetSec * profile.targetMult,
@@ -896,6 +784,3 @@ function fitToTarget(scenes: Scene[], targetSec: number, profile: TemplateProfil
     sc.durationSec = Math.round(clamp(sc.durationSec * factor, MIN_SCENE_SEC, MAX_SCENE_SEC) * 100) / 100;
   }
 }
-
-// re-export for convenience
-export { MIN_SCENES, MAX_SCENES };
