@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { deleteImage, deleteImages, updateImage, updateImages } from '@/shared/data/images'
 import { updateGallery } from '@/shared/data/galleries'
 import { clearSignedUrlCache } from '@/shared/lib/signedStorage'
@@ -41,6 +41,10 @@ export function usePhotoActions(deps: {
     setSelectMode(false)
     setSelectedImageIds(new Set())
   }
+
+  // A selection is per gallery: carried over, a bulk delete would hit the previous gallery's photos.
+  const galleryId = editingGallery?.id
+  useEffect(() => { exitSelectMode() }, [galleryId])
 
   // Toasts and logs a failed write; true when there was an error.
   function failed(error: { message: string } | null, logLabel: string, prefix: string): boolean {

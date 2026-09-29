@@ -36,15 +36,17 @@ export function usePhotoUpload(deps: {
     session, businessId, businessSlug, tokenBalance, fetchTokenBalance,
     openBuyTokens, ensureUploadSection, fetchGalleries, showToast,
   } = deps
-  const { editingGallery, galleryImages, setGalleryImages, markDirty } = session
+  const { editingGallery, galleryImages, setGalleryImages, markDirty, isOpenGallery } = session
   const [uploading, setUploading] = useState(false)
   const [uploadBatch, setUploadBatch] = useState<{ completed: number; total: number; failed: number; current?: string } | null>(null)
   // Shown when a (re)upload contains files already in the gallery.
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  async function handleFileUpload(files: FileList | null) {
+  async function handleFileUpload(files: FileList | File[] | null) {
     if (!files || !editingGallery || !businessId || !businessSlug) return
+    // The picker button is disabled mid-upload; a drag-drop must not start a second batch.
+    if (uploading) return
     const selectedTotal = files.length
 
     // Gate bad files before the token check; drag-and-drop bypasses accept=.
@@ -136,10 +138,10 @@ export function usePhotoUpload(deps: {
     // Paginated refresh so counts stay right past 1000 images.
     fetchTokenBalance()
     const refreshed = await fetchAllGalleryImages<GalleryImage>(editingGallery.id, IMAGE_COLUMNS).catch(() => null)
-    if (refreshed) setGalleryImages(refreshed)
+    if (refreshed && isOpenGallery(editingGallery.id)) setGalleryImages(refreshed)
     setUploading(false)
     setUploadBatch(null)
-    if (result.ok.length > 0) markDirty()
+    if (result.ok.length > 0 && isOpenGallery(editingGallery.id)) markDirty()
 
     // Never report "done" while files were dropped / failed / skipped.
     {

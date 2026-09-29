@@ -23,7 +23,12 @@ export function PhotosToolbar() {
       <SectionHeading />
       <input ref={fileInputRef} type="file" multiple accept="image/*"
         className="hidden"
-        onChange={e => handleFileUpload(e.target.files)} />
+        onChange={e => {
+          // Copy, then reset so picking the same files again still fires onChange.
+          const files = e.target.files ? Array.from(e.target.files) : null
+          e.target.value = ''
+          void handleFileUpload(files)
+        }} />
       {/* Drives "Replace photo"; reset so re-picking the same file fires again. */}
       <input ref={replaceInputRef} type="file" accept="image/jpeg,image/png,image/webp"
         className="hidden"
