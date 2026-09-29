@@ -1,0 +1,80 @@
+/* Public questionnaire. Light mode uses a neutral gray palette of its own; dark mode
+   kicks in when the owner sets a background image or animation. */
+.q-root {
+  --q-bg: #f8f9fa;
+  --q-text: #1a1a2e;
+  --q-muted: #6b7280;
+  --q-faint: #9ca3af;
+  --q-input-bg: var(--color-white);
+  --q-input-border: #e5e7eb;
+  --q-input-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
+  --q-placeholder: #9ca3af;
+  --q-error-border: #ef4444;
+  --q-consent: #6b7280;
+  --q-link: var(--color-brand);
+  --q-error: #f87171;
+  --q-success: #22c55e;
+}
+.q-root[data-dark] {
+  --q-bg: var(--color-night);
+  --q-text: var(--color-white);
+  --q-muted: rgb(255 255 255 / 0.45);
+  --q-faint: rgb(255 255 255 / 0.25);
+  --q-input-bg: rgb(255 255 255 / 0.05);
+  --q-input-border: rgb(255 255 255 / 0.1);
+  --q-input-shadow: none;
+  --q-placeholder: rgb(255 255 255 / 0.2);
+  --q-error-border: rgb(239 68 68 / 0.5);
+  --q-consent: rgb(255 255 255 / 0.4);
+  --q-link: var(--color-brand-soft);
+}
+
+@keyframes q-fade-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes q-check { 0% { transform: scale(0); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
+@keyframes q-ken-burns { 0% { transform: scale(1); } 50% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+/* TikTok background: each logo sets --rot/--dx/--dy/--dz/--dur/--delay/--glow inline. */
+.q-logo {
+  position: absolute;
+  transform: rotate(var(--rot));
+  transform-style: preserve-3d;
+  animation: q-float var(--dur) ease-in-out var(--delay) infinite;
+}
+.q-glitch {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0.5;
+}
+.q-glitch-pink {
+  color: #fe2c55;
+  filter: drop-shadow(0 0 var(--glow) rgb(254 44 85 / 0.4));
+  animation: q-glitch-pink calc(var(--dur) * 0.7) ease-in-out var(--delay) infinite;
+}
+.q-glitch-cyan {
+  color: #25f4ee;
+  filter: drop-shadow(0 0 var(--glow) rgb(37 244 238 / 0.4));
+  animation: q-glitch-cyan calc(var(--dur) * 0.7) ease-in-out calc(var(--delay) + 0.3s) infinite;
+}
+
+@keyframes q-float {
+  0% { transform: rotate(var(--rot)) translate3d(0, 0, 0) rotateX(0deg) rotateY(0deg); }
+  25% { transform: rotate(calc(var(--rot) + 8deg)) translate3d(var(--dx), calc(var(--dy) * -1), var(--dz)) rotateX(15deg) rotateY(-10deg); }
+  50% { transform: rotate(calc(var(--rot) - 5deg)) translate3d(calc(var(--dx) / -2), var(--dy), calc(var(--dz) * 1.3)) rotateX(-10deg) rotateY(20deg); }
+  75% { transform: rotate(calc(var(--rot) + 3deg)) translate3d(calc(var(--dy) / 2), calc(var(--dx) / 3), calc(var(--dz) / -2)) rotateX(8deg) rotateY(-15deg); }
+  100% { transform: rotate(var(--rot)) translate3d(0, 0, 0) rotateX(0deg) rotateY(0deg); }
+}
+@keyframes q-glitch-pink {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(3px, -2px); }
+  40% { transform: translate(-2px, 3px); }
+  60% { transform: translate(4px, 1px); }
+  80% { transform: translate(-1px, -3px); }
+}
+@keyframes q-glitch-cyan {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-3px, 2px); }
+  40% { transform: translate(2px, -3px); }
+  60% { transform: translate(-4px, -1px); }
+  80% { transform: translate(1px, 3px); }
+}
