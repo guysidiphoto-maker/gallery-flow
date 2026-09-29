@@ -1,0 +1,33 @@
+/* Portfolio editor + public portfolio page. Hover chains and keyframes that
+   don't reduce to single utilities live here. */
+
+/* Editor-only status colors (no design token: the editor is a dark island). */
+.pe-root {
+  --pe-success: #10b981;
+  --pe-success-soft: #34d399;
+  --pe-danger: #f87171;
+}
+
+@keyframes pe-fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pe-saved-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+/* Public page panels: image zoom + overlay fade on hover. */
+.pf-panel { position: relative; overflow: hidden; cursor: pointer; }
+.pf-panel img { transition: transform 1.2s cubic-bezier(.25,.46,.45,.94), filter .8s; transform: scale(1.01); }
+.pf-panel:hover img { transform: scale(1.08); filter: brightness(1.05); }
+.pf-panel .pf-overlay { transition: opacity .8s; }
+.pf-panel:hover .pf-overlay { opacity: .25; }
+.pf-panel .pf-label { transition: opacity .5s .1s, transform .5s .1s cubic-bezier(.16,1,.3,1); }
+.pf-panel:hover .pf-label { opacity: 1; transform: translateY(0); }
+.pf-grid-item { animation: pp-panel-reveal .9s cubic-bezier(.16,1,.3,1) both; }
+.pf-thumb { overflow: hidden; cursor: pointer; }
+.pf-thumb img { transition: transform .6s cubic-bezier(.4,0,.2,1); }
+.pf-thumb:hover img { transform: scale(1.06); }
+.pp-scroll-hint { animation: pp-hero-fade-in 1.4s cubic-bezier(.16,1,.3,1) both .6s; }
+
+@keyframes pp-panel-reveal { from { opacity: 0; transform: scale(1.02); } to { opacity: 1; transform: scale(1); } }
+@keyframes pp-hero-fade-in { from { opacity: 0; transform: translateY(24px) } to { opacity: 1; transform: none } }
+@keyframes pp-view-fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes pp-scroll-bounce { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(6px) } }
+@keyframes pp-tile-fade { from { opacity: 0; transform: scale(1.08) } to { opacity: 1; transform: scale(1) } }
+@keyframes pp-load-bar { 0% { transform: translateY(-100%) } 50% { transform: translateY(0) } 100% { transform: translateY(100%) } }
