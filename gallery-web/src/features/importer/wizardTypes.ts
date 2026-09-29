@@ -1,8 +1,5 @@
-// wizardTypes.ts — shared shapes passed between ImportCenter and its steps.
-
 import type { ImporterKey } from './strings'
-import type { ImportCollection } from './importApi'
-import type { ZipListing } from './importApi'
+import type { ImportCollection, ZipListing } from './importApi'
 
 export type T = (key: ImporterKey, vars?: Record<string, string | number>) => string
 

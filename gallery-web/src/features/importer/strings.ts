@@ -1,9 +1,4 @@
-// strings.ts — Import Center copy, {he,en} flat keys (contract C8).
-//
-// Wave-1 rule: components ship their own strings module in the same
-// {he:{},en:{}} shape as src/lib/portalLocale.ts; Agent-OVERVIEW merges these
-// into ownerLocale.ts in wave 2 (or they stay local; both are acceptable).
-// Every key exists in BOTH locales. No internal jargon, no em-dashes.
+// Import Center copy, flat keys; every key exists in both locales.
 
 export type ImporterLocale = 'he' | 'en'
 
@@ -201,7 +196,7 @@ const en: Record<Keys, string> = {
   'import.common.close': 'Close',
 }
 
-export const IMPORTER_STRINGS: Record<ImporterLocale, Record<Keys, string>> = { he, en }
+const IMPORTER_STRINGS: Record<ImporterLocale, Record<Keys, string>> = { he, en }
 
 export type ImporterKey = Keys
 

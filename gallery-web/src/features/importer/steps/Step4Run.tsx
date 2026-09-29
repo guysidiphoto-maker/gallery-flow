@@ -1,19 +1,19 @@
-// Step4Run.tsx — the actual migration run.
-//
-// For each mapped collection: start_job (once), then runCollection() streams the
-// accepted ZIP entries through the EXISTING uploadPipeline.uploadMany via the
-// importApi run engine, with per-collection progress + checkpointing. Pause /
-// resume / cancel are wired to the API AND to local run controls so the loop
-// stops promptly between chunks. Duplicate policy: skip implemented; replace and
-// create-copy are shown DISABLED with honest labels.
-
-import React, { useCallback, useRef, useState } from 'react'
-import { Panel, Button, Notice, ProgressBar, palette } from '../ui'
+// Runs each mapped collection through runCollection (existing upload pipeline).
+// Pause/cancel hit the API and local refs so the loop stops between chunks.
+// Only the 'skip' duplicate policy exists; the others are shown disabled.
+import { useCallback, useRef, useState } from 'react'
+import { cn } from '@/shared/ui'
 import type { WizardCommon, ImportCollection, ZipSlot, CollectionOutcome, DuplicatePolicy } from '../wizardTypes'
 import {
-  startJob, pauseJob, resumeJob, cancelJob, runCollection,
-  type OwnerBusiness, type CollectionProgress,
+  startJob, pauseJob, resumeJob, cancelJob,
+  type OwnerBusiness,
 } from '../importApi'
+import { runCollection, type CollectionProgress } from '../runCollection'
+import { ImportPanel } from '../components/ImportPanel'
+import { ImportButton } from '../components/ImportButton'
+import { Notice } from '../components/Notice'
+import { ProgressBar } from '../components/ProgressBar'
+import { card, heading, intro, select, textDim } from '../components/theme'
 
 type RunState = 'idle' | 'running' | 'paused' | 'cancelled' | 'done'
 
@@ -34,7 +34,7 @@ export function Step4Run({
   const pausedRef = useRef(false)
   const cancelledRef = useRef(false)
 
-  // Collections that actually have a mapped ZIP with accepted files.
+  // Collections that have a mapped ZIP with accepted files.
   const runnable = collections
     .filter(c => c.client_match_status !== 'skip')
     .map(c => ({ col: c, slot: zips.find(z => z.collectionId === c.id && z.listing && z.listing.summary.accepted.length > 0) }))
@@ -75,18 +75,13 @@ export function Step4Run({
       })
       if (res.stopped === 'cancelled') { cancelledRef.current = true; break }
       if (res.stopped === 'paused') {
-        // Persist pause, keep partial outcomes, stop the loop.
         setRunState('paused')
         onFinished(outcomes)
         return
       }
     }
 
-    if (cancelledRef.current) {
-      setRunState('cancelled')
-    } else {
-      setRunState('done')
-    }
+    setRunState(cancelledRef.current ? 'cancelled' : 'done')
     onFinished(outcomes)
   }, [runnable, jobId, business, onFinished])
 
@@ -110,16 +105,16 @@ export function Step4Run({
   const running = runState === 'running'
 
   return (
-    <Panel>
-      <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 8px' }}>{t('import.step4.title')}</h2>
-      <p style={{ color: palette.textDim, fontSize: 14, lineHeight: 1.7, margin: '0 0 16px' }}>{t('import.step4.intro')}</p>
+    <ImportPanel>
+      <h2 className={heading}>{t('import.step4.title')}</h2>
+      <p className={intro}>{t('import.step4.intro')}</p>
 
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', fontSize: 13, color: palette.textDim, marginBottom: 6 }}>{t('import.step4.dupPolicy')}</label>
+      <div className="mb-4">
+        <label className={`${textDim} mb-1.5 block text-[13px]`}>{t('import.step4.dupPolicy')}</label>
         <select
           value={dupPolicy} disabled={runState !== 'idle'}
           onChange={e => setDupPolicy(e.target.value as DuplicatePolicy)}
-          style={{ background: palette.panelAlt, color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13 }}
+          className={cn(select, 'px-2.5 py-2')}
         >
           <option value="skip">{t('import.step4.dup.skip')}</option>
           <option value="replace" disabled>{t('import.step4.dup.replace')}</option>
@@ -127,24 +122,24 @@ export function Step4Run({
         </select>
       </div>
 
-      {error && <div style={{ marginBottom: 16 }}><Notice tone="danger">{t('import.common.error')}</Notice></div>}
-      {runState === 'paused' && <div style={{ marginBottom: 16 }}><Notice tone="warn">{t('import.step4.paused')}</Notice></div>}
-      {runState === 'cancelled' && <div style={{ marginBottom: 16 }}><Notice tone="warn">{t('import.step4.cancelled')}</Notice></div>}
+      {error && <div className="mb-4"><Notice tone="danger">{t('import.common.error')}</Notice></div>}
+      {runState === 'paused' && <div className="mb-4"><Notice tone="warn">{t('import.step4.paused')}</Notice></div>}
+      {runState === 'cancelled' && <div className="mb-4"><Notice tone="warn">{t('import.step4.cancelled')}</Notice></div>}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 18 }}>
+      <div className="mb-[18px] flex flex-col gap-3">
         {runnable.map(({ col, slot }) => {
           const p = progress[col.id]
           const total = slot.listing?.summary.accepted.length ?? 0
           const done = p ? p.uploaded + p.skippedDuplicate + p.failed : 0
           return (
-            <div key={col.id} style={{ background: palette.panelAlt, border: `1px solid ${palette.border}`, borderRadius: 10, padding: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 8 }}>
+            <div key={col.id} className={card}>
+              <div className="mb-2 flex justify-between text-sm">
                 <strong>{col.source_name}</strong>
-                <span style={{ color: palette.textDim }}>{done}/{total}</span>
+                <span className={textDim}>{done}/{total}</span>
               </div>
               <ProgressBar value={done} total={total} />
               {p && (
-                <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 12, color: palette.textDim }}>
+                <div className={`${textDim} mt-2 flex gap-4 text-xs`}>
                   <span>{t('import.step4.done')}: {p.uploaded}</span>
                   <span>{t('import.step4.dupSkipped')}: {p.skippedDuplicate}</span>
                   <span>{t('import.step4.failed')}: {p.failed}</span>
@@ -155,19 +150,19 @@ export function Step4Run({
         })}
       </div>
 
-      <div style={{ marginBottom: 16 }}>
+      <div className="mb-4">
         <Notice tone="info">{t('import.step4.cancelNote')}</Notice>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <Button variant="ghost" onClick={onBack} disabled={running}>{t('import.common.back')}</Button>
-        <div style={{ display: 'flex', gap: 10 }}>
-          {runState === 'idle' && <Button onClick={run} disabled={runnable.length === 0}>{t('import.step4.start')}</Button>}
-          {running && <Button variant="ghost" onClick={doPause}>{t('import.step4.pause')}</Button>}
-          {runState === 'paused' && <Button onClick={doResume}>{t('import.step4.resume')}</Button>}
-          {(running || runState === 'paused') && <Button variant="danger" onClick={doCancel}>{t('import.step4.cancel')}</Button>}
+      <div className="flex flex-wrap justify-between gap-3">
+        <ImportButton variant="ghost" onClick={onBack} disabled={running}>{t('import.common.back')}</ImportButton>
+        <div className="flex gap-2.5">
+          {runState === 'idle' && <ImportButton onClick={run} disabled={runnable.length === 0}>{t('import.step4.start')}</ImportButton>}
+          {running && <ImportButton variant="ghost" onClick={doPause}>{t('import.step4.pause')}</ImportButton>}
+          {runState === 'paused' && <ImportButton onClick={doResume}>{t('import.step4.resume')}</ImportButton>}
+          {(running || runState === 'paused') && <ImportButton variant="danger" onClick={doCancel}>{t('import.step4.cancel')}</ImportButton>}
         </div>
       </div>
-    </Panel>
+    </ImportPanel>
   )
 }
