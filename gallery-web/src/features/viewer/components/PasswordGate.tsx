@@ -1,31 +1,23 @@
 import { useState, useEffect, useRef } from 'react'
 import { verifyPassword, getStoredToken } from '@/shared/gallery/galleryClient'
 import { useFocusTrap } from '@/shared/lib/useFocusTrap'
+import { cn } from '@/shared/ui'
 import { CoverBackdrop } from './CoverBackdrop'
 
 interface PasswordGateProps {
   galleryId: string
   galleryName: string
   onUnlock: () => void
-  // When true (gallery has signed_gate_enabled), the legacy sessionStorage
-  // flag is not enough — only a fresh signed token will auto-unlock. Prevents
-  // mid-rollout users from seeing an empty gallery.
+  // Signed-gate galleries only auto-unlock from a fresh token, never the legacy flag.
   requireToken?: boolean
-  // Gallery delivery language — drives the gate's copy so a Hebrew gallery no
-  // longer shows an English gate. Defaults to 'he' (the app default).
   lang?: 'he' | 'en'
-  // Optional cover background. When the owner enabled a cover, this is a small,
-  // heavily-compressed render URL (see gateCoverBackgroundUrl) shown behind the
-  // gate with blur + scrim + vignette + a slow cinematic zoom. It is purely
-  // decorative and deliberately low-res so faces can't be read before unlock.
+  // Deliberately small, low-res render so faces can't be read before unlock.
   coverUrl?: string | null
 }
 
-// Legacy session flag — kept so existing tabs unlocked before the rollout
-// don't get re-prompted while their session is still active.
+// Legacy session flag: tabs unlocked before signed tokens aren't re-prompted.
 const LEGACY_KEY_PREFIX = 'gf_unlocked_'
 
-// Gate copy in both supported languages (logic stays language-agnostic).
 const GATE_STRINGS = {
   he: {
     e2e: 'מאובטח מקצה לקצה',
@@ -56,23 +48,16 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken, l
   const [submitting, setSubmitting] = useState(false)
   const [cooldownLeft, setCooldownLeft] = useState(0)
   const tickRef = useRef<number | null>(null)
-  // Cover background: drop the premium card treatment if the image fails to
-  // load (broken-image fallback → flat-dark gate). Fade/decoding is handled
-  // inside CoverBackdrop.
+  // A cover that fails to load falls back to the flat dark gate.
   const [coverFailed, setCoverFailed] = useState(false)
   const showCover = !!coverUrl && !coverFailed
 
-  // Focus trap — the password gate covers the entire screen and must not let
-  // Tab escape into background content (WCAG 2.1.2).
   const gateRef = useFocusTrap<HTMLDivElement>(true)
 
-  // Auto-unlock if a fresh signed-gate token is already stored, OR (legacy)
-  // the old sessionStorage flag is set. Both are valid recognition signals
-  // during the rollout; once every gallery is on the signed gate the legacy
-  // branch can be removed.
+  // Auto-unlock from a stored signed token, or (non-signed galleries) the legacy flag.
   useEffect(() => {
     if (getStoredToken(galleryId)) { onUnlock(); return }
-    if (requireToken) return  // signed-gate gallery: never honour legacy flag
+    if (requireToken) return
     if (sessionStorage.getItem(LEGACY_KEY_PREFIX + galleryId) === '1') onUnlock()
   }, [galleryId, onUnlock, requireToken])
 
@@ -94,9 +79,7 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken, l
     setSubmitting(false)
 
     if (res.ok === true) {
-      // verifyPassword already stashed the signed token (if any) in
-      // localStorage; flip the legacy flag too so older tabs/code paths
-      // still recognise the unlock.
+      // verifyPassword stored the signed token; the legacy flag covers older tabs.
       sessionStorage.setItem(LEGACY_KEY_PREFIX + galleryId, '1')
       onUnlock()
       return
@@ -119,52 +102,54 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken, l
       : str.viewGallery
 
   return (
-    // role="dialog" + aria-modal signal to screen readers that this gate is a
-    // blocking dialog; aria-labelledby points to the gallery title so it is
-    // announced as the dialog name when focus enters (WCAG 4.1.2, 1.3.1).
     <div
       ref={gateRef}
-      className={`pw-gate${showCover ? ' pw-gate--has-cover' : ''}`}
+      className={cn(
+        'fixed inset-0 z-[2000] flex animate-[gv-fade-in_.3s_ease] items-center justify-center bg-night',
+        !showCover && 'gv-pw-glow',
+      )}
       role="dialog"
       aria-modal="true"
       aria-labelledby="pw-gate-title"
     >
-      {/* Decorative cinematic cover (shared component). Falls back to the flat
-          dark gate if it fails to load. */}
       {showCover && <CoverBackdrop coverUrl={coverUrl} onFailed={() => setCoverFailed(true)} />}
-      <form className="pw-gate__card" onSubmit={handleSubmit}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '5px 14px', borderRadius: 999, marginBottom: 8,
-          background: 'rgba(34,197,94,.06)', border: '1px solid rgba(34,197,94,.12)',
-        }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(34,197,94,.65)" strokeWidth="2">
+      <form
+        className={cn(
+          'relative z-1 flex w-full max-w-[380px] flex-col items-center gap-[18px] px-7 py-12',
+          'animate-[gv-pw-card-enter_.5s_cubic-bezier(.16,1,.3,1)_both]',
+          // Faint glass keeps the controls legible over any cover.
+          showCover && 'rounded-[20px] bg-night/42 shadow-[0_24px_70px] shadow-black/50 backdrop-blur-[10px] backdrop-saturate-[1.05]',
+        )}
+        onSubmit={handleSubmit}
+      >
+        <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-(--viewer-success)/12 bg-(--viewer-success)/6 px-3.5 py-[5px]">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-(--viewer-success)/65">
             <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', color: 'rgba(34,197,94,.65)', textTransform: 'uppercase' }}>
+          <span className="text-[10px] font-semibold tracking-[.06em] text-(--viewer-success)/65 uppercase">
             {str.e2e}
           </span>
         </div>
-        <h1 id="pw-gate-title" className="pw-gate__title">{galleryName}</h1>
-        <p className="pw-gate__sub">{str.protected}</p>
+        <h1 id="pw-gate-title" className="text-center text-[30px] leading-[1.15] font-extrabold tracking-[-0.025em] text-white/94">{galleryName}</h1>
+        <p className="mb-2 text-[14px] tracking-[0.01em] text-white/62">{str.protected}</p>
         <input
-          className="pw-gate__input"
+          className={cn(
+            'w-full rounded-[10px] border border-white/10 bg-white/5 px-[18px] py-[13px] text-[15px] text-white outline-none',
+            'transition-[border-color,box-shadow,background-color] duration-200 ease-[ease] placeholder:text-white/22',
+            'focus:border-gallery-accent/55 focus:bg-white/7 focus:shadow-[0_0_20px_var(--color-gallery-accent)]/8 focus:ring-3 focus:ring-gallery-accent/12',
+          )}
           type="password"
           placeholder={str.enterPassword}
           value={value}
           onChange={(e) => { setValue(e.target.value); setError(false) }}
           autoFocus
           disabled={locked}
-          // aria-describedby links the input to its live error region so screen
-          // readers announce errors immediately on change (WCAG 3.3.1).
           aria-describedby="pw-gate-error"
           aria-invalid={error || locked ? 'true' : undefined}
         />
-        {/* aria-live="polite" announces the error via screen readers without
-            interrupting in-progress speech (WCAG 4.1.3 Status Messages).    */}
         <p
           id="pw-gate-error"
-          className="pw-gate__error"
+          className="animate-[gv-shake_.35s_ease] text-[13px] text-(--viewer-danger-soft)"
           aria-live="polite"
           aria-atomic="true"
         >
@@ -174,7 +159,16 @@ export function PasswordGate({ galleryId, galleryName, onUnlock, requireToken, l
               ? str.incorrect
               : ''}
         </p>
-        <button className="pw-gate__btn" type="submit" disabled={submitting || locked}>
+        <button
+          className={cn(
+            'w-full rounded-[10px] bg-gallery-accent/85 p-[13px] text-[15px] font-semibold text-white',
+            '[transition:background-color_.15s_ease,box-shadow_.2s_ease,scale_.15s_ease] active:scale-[.98]',
+            'hover:bg-gallery-accent hover:shadow-[0_4px_20px_color-mix(in_oklab,var(--color-gallery-accent)_30%,transparent),0_0_40px_color-mix(in_oklab,var(--color-gallery-accent)_10%,transparent)]',
+            'focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-gallery-accent',
+          )}
+          type="submit"
+          disabled={submitting || locked}
+        >
           {btnLabel}
         </button>
       </form>

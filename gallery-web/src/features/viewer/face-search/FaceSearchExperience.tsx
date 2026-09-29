@@ -62,7 +62,7 @@ export function FaceSearchExperience({
         <button
           onClick={onClose}
           aria-label="Close"
-          className="absolute top-5 right-5 z-10 flex size-11 cursor-pointer items-center justify-center rounded-full border border-white/8 bg-white/6 text-lg leading-none text-white/50 backdrop-blur-[12px] transition-all duration-250 ease-[cubic-bezier(.4,0,.2,1)] hover:scale-[1.08] hover:bg-white/12 hover:text-white/80"
+          className="absolute top-5 right-5 z-10 flex size-11 cursor-pointer items-center justify-center rounded-full border border-white/8 bg-white/6 text-[18px] leading-none text-white/50 backdrop-blur-[12px] transition-all duration-250 ease-[cubic-bezier(.4,0,.2,1)] hover:scale-[1.08] hover:bg-white/12 hover:text-white/80"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />

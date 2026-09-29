@@ -24,7 +24,7 @@ export function NotFoundPrivateStep({ ft, lang, onRetry }: Props) {
         {ft.privateNoMatch}
       </h2>
 
-      <p className={cn('mx-auto mb-8 max-w-[280px] text-sm leading-[1.7] text-white/32', dirClass(lang))}>
+      <p className={cn('mx-auto mb-8 max-w-[280px] text-[14px] leading-[1.7] text-white/32', dirClass(lang))}>
         {ft.privateNoMatchMsg}
       </p>
 
@@ -33,7 +33,7 @@ export function NotFoundPrivateStep({ ft, lang, onRetry }: Props) {
         {ft.retake}
       </FaceSearchButton>
 
-      <p className={cn('text-xs leading-[1.6] text-white/20', dirClass(lang))}>
+      <p className={cn('text-[12px] leading-[1.6] text-white/20', dirClass(lang))}>
         {ft.talkToPhotographer}
       </p>
     </div>

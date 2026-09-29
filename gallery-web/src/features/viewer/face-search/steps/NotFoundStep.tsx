@@ -21,12 +21,12 @@ export function NotFoundStep({ ft, lang, selfieUrl, onBrowseAll, onRetry }: Prop
         </div>
       )}
 
-      <h2 className={cn('mb-3 text-2xl font-bold tracking-[-0.02em] text-white', dirClass(lang))}>
+      <h2 className={cn('mb-3 text-[24px] font-bold tracking-[-0.02em] text-white', dirClass(lang))}>
         {ft.noMatch}
       </h2>
 
       {/* Hebrew copy is intentionally fixed here in both languages (existing behavior). */}
-      <p className={cn('mx-auto mb-3 max-w-[300px] text-sm leading-[1.7] text-white/38', dirClass(lang))}>
+      <p className={cn('mx-auto mb-3 max-w-[300px] text-[14px] leading-[1.7] text-white/38', dirClass(lang))}>
         לא הצלחנו למצוא אותך לפי הסלפי.
         <br />
         אפשר לנסות שוב עם תאורה טובה יותר, או לעבור על כל הגלריה.
@@ -37,7 +37,7 @@ export function NotFoundStep({ ft, lang, selfieUrl, onBrowseAll, onRetry }: Prop
           {ft.tipsTitle}
         </div>
         {[ft.tip1, ft.tip2, ft.tip3].map((tip, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs text-white/30">
+          <div key={i} className="flex items-center gap-2 text-[12px] text-white/30">
             <div className="size-1 shrink-0 rounded-full bg-brand/40" />
             {tip}
           </div>

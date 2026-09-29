@@ -21,7 +21,7 @@ const CORNERS = [
 export function CameraStep({ ft, lang, videoRef, onCapture, onUpload }: Props) {
   return (
     <div className="animate-[fse-fadeIn_.5s_cubic-bezier(.16,1,.3,1)_both]">
-      <p className={cn('mb-7 text-sm leading-[1.7] tracking-[.01em] text-white/45', dirClass(lang))}>
+      <p className={cn('mb-7 text-[14px] leading-[1.7] tracking-[.01em] text-white/45', dirClass(lang))}>
         {ft.cameraTip}
       </p>
 
