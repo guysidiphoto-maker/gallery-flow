@@ -17,7 +17,7 @@ export function BrandKitView({ businessId }: { businessId: string | null }) {
   const { t } = useOwnerLocale()
   const { loading, brand, setBrand, toast, saveSection, saveAll, uploadLogo, clearLogo } = useBrandKit(businessId)
 
-  // Callers pass the current `brand` at render time, matching the original blur-save semantics.
+  // Blur saves the rendered `brand`; by then the preceding onChange has re-rendered.
   const saveAs = (label: string) => () => saveSection(brand, label)
 
   return (
@@ -55,8 +55,18 @@ export function BrandKitView({ businessId }: { businessId: string | null }) {
             }}
           />
 
-          <VoiceSection brand={brand} onChange={setBrand} onBlur={saveAs('טון ומסר')} />
-          <WatermarkSection brand={brand} onChange={setBrand} onBlur={saveAs('סימן מים')} />
+          <VoiceSection
+            brand={brand}
+            onChange={setBrand}
+            onBlur={saveAs('טון ומסר')}
+            onSave={next => void saveSection(next, 'טון ומסר')}
+          />
+          <WatermarkSection
+            brand={brand}
+            onChange={setBrand}
+            onBlur={saveAs('סימן מים')}
+            onSave={next => void saveSection(next, 'סימן מים')}
+          />
           <SocialSection brand={brand} onChange={setBrand} onBlur={saveAs('רשתות חברתיות')} />
         </div>
       )}

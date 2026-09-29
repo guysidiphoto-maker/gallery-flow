@@ -22,6 +22,13 @@ export function useBrandKit(businessId: string | null) {
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | null>(null)
+  // Latest brand for async flows (logo upload) whose closure predates edits made meanwhile.
+  const brandRef = useRef(brand)
+  brandRef.current = brand
+
+  useEffect(() => () => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+  }, [])
 
   useEffect(() => {
     if (!businessId) return
@@ -43,6 +50,7 @@ export function useBrandKit(businessId: string | null) {
   /** Optimistically apply `next`, then persist the whole document. */
   async function saveSection(next: BrandKit, sectionLabel: string) {
     if (!businessId) return
+    brandRef.current = next
     setBrand(next)
     const res = await saveBrandKit(businessId, next)
     if (res.ok) flashToast(`${sectionLabel} נשמר`)
@@ -69,7 +77,8 @@ export function useBrandKit(businessId: string | null) {
       return
     }
     const publicUrl = `${storageUrl(BRAND_KIT_BUCKET, path)}?t=${Date.now()}`
-    await saveSection({ ...brand, logo: { ...brand.logo, [slot]: publicUrl } }, 'לוגו')
+    const latest = brandRef.current
+    await saveSection({ ...latest, logo: { ...latest.logo, [slot]: publicUrl } }, 'לוגו')
   }
 
   async function clearLogo(slot: BrandKitLogoSlot) {
