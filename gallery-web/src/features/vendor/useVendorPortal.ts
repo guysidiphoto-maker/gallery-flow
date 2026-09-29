@@ -44,34 +44,40 @@ export function useVendorPortal() {
       const v = Array.isArray(vData) ? vData[0] : vData
       setVendor(v)
 
-      const { data: tags } = await supabase
-        .from('image_vendor_tags')
-        .select('image_id, gallery_id')
-        .eq('vendor_id', v.id)
+      // Preferred: code-authenticated RPC (migration 115). It is the only path
+      // that still returns tagged photos from private-face-mode galleries.
+      // Fallback: the legacy anon table reads, for a DB without 115 applied.
+      let tagged: TaggedImage[] | null = null
+      const rpc = await supabase.rpc('get_vendor_images', { p_code: code })
+      if (!rpc.error && Array.isArray(rpc.data)) {
+        tagged = rpc.data as TaggedImage[]
+      } else {
+        const { data: tags } = await supabase
+          .from('image_vendor_tags')
+          .select('image_id, gallery_id')
+          .eq('vendor_id', v.id)
+        if (tags && tags.length > 0) {
+          const { data: rows } = await supabase.from('images')
+            .select('id, gallery_id, filename, storage_path:web_preview_path, thumbnail_path')
+            .in('id', tags.map(t => t.image_id))
+            .order('sort_order', { ascending: true })
+          tagged = (rows ?? []) as TaggedImage[]
+        }
+      }
 
-      if (!tags || tags.length === 0) {
+      if (!tagged || tagged.length === 0) {
         setError('No photos tagged for you yet')
         setLoading(false)
         return
       }
 
-      const imageIds = tags.map(t => t.image_id)
-      const galleryIds = [...new Set(tags.map(t => t.gallery_id))]
+      const galleryIds = [...new Set(tagged.map(t => t.gallery_id))]
+      const galsRes = await supabase.from('galleries')
+        .select('id, name, published_at')
+        .in('id', galleryIds)
 
-      const [imgsRes, galsRes] = await Promise.all([
-        supabase.from('images')
-          .select('id, gallery_id, filename, storage_path:web_preview_path, thumbnail_path')
-          .in('id', imageIds)
-          .order('sort_order', { ascending: true }),
-        supabase.from('galleries')
-          .select('id, name, published_at')
-          .in('id', galleryIds),
-      ])
-
-      if (imgsRes.data) {
-        setImages(imgsRes.data)
-        setSelectedIds(new Set(imgsRes.data.map(i => i.id)))
-      }
+      setImages(tagged)
+      setSelectedIds(new Set(tagged.map(i => i.id)))
 
       if (galsRes.data) {
         const gm = new Map<string, GalleryInfo>()
