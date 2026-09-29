@@ -91,6 +91,14 @@ function ok(name: string, cond: boolean, detail = '') {
     'gallery-web/src/features/marketing/pages/PricingPage.tsx',
     'gallery-web/src/features/marketing/pages/LandingPageHe.tsx',
     'gallery-web/src/features/marketing/pages/PhotographersLanding.tsx',
+    'gallery-web/src/features/marketing/lib/pricingTiers.ts',
+    'gallery-web/src/features/marketing/components/editorial/TierCard.tsx',
+    'gallery-web/src/features/marketing/components/editorial/FinalCta.tsx',
+    'gallery-web/src/features/marketing/components/landing-he/HeHero.tsx',
+    'gallery-web/src/features/marketing/components/landing-he/PricingTeaser.tsx',
+    'gallery-web/src/features/marketing/components/photographers/PhotographersHero.tsx',
+    'gallery-web/src/features/marketing/components/photographers/PricingSection.tsx',
+    'gallery-web/src/features/marketing/components/photographers/PlanCard.tsx',
     'gallery-web/src/features/marketing/home3d/HomepagePricing.tsx',
   ]
   for (const f of marketing) {

@@ -1,62 +1,50 @@
-// FaceScanShowcase — the signature "this is face recognition" scroll moment.
-// As the section travels through the viewport, a scan beam sweeps top→bottom
-// over a grid of portrait tiles; each face it crosses gets AI detection
-// brackets that snap in + a match-confidence chip, and a live "X faces found"
-// readout ticks up. Scroll-linked (rAF-throttled), jank-free, reduced-motion safe.
-
+// Signature face-recognition scroll moment: a beam sweeps down a grid of
+// abstract portraits as the section scrolls; each face it passes gets detection
+// brackets + a match chip. rAF-throttled, reduced-motion safe.
 import { useEffect, useRef, useState } from 'react'
-import { color, text, space, radius, font, ease } from '@/shared/ui/theme'
+import { cn } from '@/shared/ui'
 
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n))
 
-// Abstract warm-toned portrait tiles. row drives detection order (top rows
-// light up first as the beam descends). conf = match % shown on the chip.
-interface Tile { g: string; head: string; row: number; conf: number }
+// Row drives detection order (the beam descends); conf is the chip's match %.
+interface Tile { swatch: string; head: string; row: number; conf: number }
 const TILES: Tile[] = [
-  { g: 'linear-gradient(150deg,#C8B49E,#A98F76)', head: '#E7D8C6', row: 0, conf: 99 },
-  { g: 'linear-gradient(150deg,#9FB0A0,#7B8F6E)', head: '#CBD6C4', row: 0, conf: 97 },
-  { g: 'linear-gradient(150deg,#C7A6A6,#A87E7E)', head: '#E6D2D2', row: 0, conf: 98 },
-  { g: 'linear-gradient(150deg,#A8AEB8,#7E8694)', head: '#D3D8E0', row: 1, conf: 96 },
-  { g: 'linear-gradient(150deg,#C9B98F,#A8965F)', head: '#E8DDBE', row: 1, conf: 99 },
-  { g: 'linear-gradient(150deg,#9FAFB0,#6E8A8A)', head: '#C9D8D8', row: 1, conf: 98 },
+  { swatch: 'bg-(image:--mk-swatch-tan)', head: '[--mk-tile-head:var(--mk-head-tan)]', row: 0, conf: 99 },
+  { swatch: 'bg-(image:--mk-swatch-sage)', head: '[--mk-tile-head:var(--mk-head-sage)]', row: 0, conf: 97 },
+  { swatch: 'bg-(image:--mk-swatch-rose)', head: '[--mk-tile-head:var(--mk-head-rose)]', row: 0, conf: 98 },
+  { swatch: 'bg-(image:--mk-swatch-slate)', head: '[--mk-tile-head:var(--mk-head-slate)]', row: 1, conf: 96 },
+  { swatch: 'bg-(image:--mk-swatch-ochre)', head: '[--mk-tile-head:var(--mk-head-ochre)]', row: 1, conf: 99 },
+  { swatch: 'bg-(image:--mk-swatch-teal)', head: '[--mk-tile-head:var(--mk-head-teal)]', row: 1, conf: 98 },
 ]
 const ROWS = 2
 
-const STYLE_ID = 'fs-styles'
-function ensureStyles() {
-  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return
-  const el = document.createElement('style')
-  el.id = STYLE_ID
-  el.textContent = `
-    .fs-tile{position:relative;aspect-ratio:4/5;border-radius:${radius.md}px;overflow:hidden;
-      box-shadow:0 8px 24px rgba(20,20,19,.10)}
-    .fs-head{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);width:46%;aspect-ratio:1;
-      border-radius:50%;filter:blur(2px);opacity:.9}
-    .fs-body{position:absolute;left:50%;top:100%;transform:translateX(-50%);width:78%;aspect-ratio:1;
-      border-radius:50%;filter:blur(3px);opacity:.85}
-    .fs-box{position:absolute;inset:14% 18%;pointer-events:none;opacity:0;transition:opacity .35s ${ease.out}}
-    .fs-box.on{opacity:1}
-    .fs-corner{position:absolute;width:18px;height:18px;border:2.5px solid ${color.dark.accent};
-      transition:all .4s ${ease.out}}
-    .fs-box .fs-tl{top:0;left:0;border-right:none;border-bottom:none;border-top-left-radius:4px}
-    .fs-box .fs-tr{top:0;right:0;border-left:none;border-bottom:none;border-top-right-radius:4px}
-    .fs-box .fs-bl{bottom:0;left:0;border-right:none;border-top:none;border-bottom-left-radius:4px}
-    .fs-box .fs-br{bottom:0;right:0;border-left:none;border-top:none;border-bottom-right-radius:4px}
-    .fs-box:not(.on) .fs-corner{transform:scale(1.4);opacity:0}
-    .fs-chip{position:absolute;bottom:8px;left:50%;transform:translateX(-50%) translateY(6px);
-      background:rgba(14,14,16,.78);color:#E9F0E4;font-size:10px;font-weight:700;letter-spacing:.04em;
-      padding:3px 9px;border-radius:999px;white-space:nowrap;opacity:0;transition:all .4s ${ease.out};
-      backdrop-filter:blur(4px);border:1px solid rgba(157,176,137,.5)}
-    .fs-box.on .fs-chip{opacity:1;transform:translateX(-50%) translateY(0)}
-    .fs-beam{position:absolute;left:0;right:0;height:2px;pointer-events:none;
-      background:linear-gradient(90deg,transparent,${color.dark.accent},transparent);
-      box-shadow:0 0 16px 2px rgba(123,143,110,.55);opacity:.9;transition:opacity .3s}
-    @media(prefers-reduced-motion:reduce){
-      .fs-box,.fs-corner,.fs-chip{transition:none}
-      .fs-beam{display:none}
-    }
-  `
-  document.head.appendChild(el)
+const CORNER = 'absolute size-[18px] border-(--mk-sage-light) transition-all duration-[400ms] ease-out-expo motion-reduce:transition-none'
+const CORNERS = [
+  'top-0 left-0 border-t-[2.5px] border-l-[2.5px] rounded-tl-[4px]',
+  'top-0 right-0 border-t-[2.5px] border-r-[2.5px] rounded-tr-[4px]',
+  'bottom-0 left-0 border-b-[2.5px] border-l-[2.5px] rounded-bl-[4px]',
+  'bottom-0 right-0 border-b-[2.5px] border-r-[2.5px] rounded-br-[4px]',
+]
+
+function FaceTile({ tile, on }: { tile: Tile; on: boolean }) {
+  return (
+    <div className={cn('relative aspect-[4/5] overflow-hidden rounded-[12px] shadow-card', tile.swatch, tile.head)}>
+      <div className="absolute top-[30%] left-1/2 aspect-square w-[46%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,var(--mk-tile-head),transparent_70%)] opacity-90 blur-[2px]" />
+      <div className="absolute top-full left-1/2 aspect-square w-[78%] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,var(--mk-tile-head),transparent_65%)] opacity-85 blur-[3px]" />
+      <div className={cn(
+        'pointer-events-none absolute inset-x-[18%] inset-y-[14%] transition-opacity duration-[350ms] ease-out-expo motion-reduce:transition-none',
+        on ? 'opacity-100' : 'opacity-0',
+      )}>
+        {CORNERS.map(pos => <span key={pos} className={cn(CORNER, pos, !on && 'scale-140 opacity-0')} />)}
+        <span className={cn(
+          'absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-(--mk-sage-light)/50 bg-(--mk-phone)/78 px-[9px] py-[3px] text-[10px] font-bold tracking-[.04em] whitespace-nowrap text-(--mk-sage-mist) backdrop-blur-[4px] transition-all duration-[400ms] ease-out-expo motion-reduce:transition-none',
+          on ? 'translate-y-0 opacity-100' : 'translate-y-1.5 opacity-0',
+        )}>
+          זוהה · {tile.conf}%
+        </span>
+      </div>
+    </div>
+  )
 }
 
 export function FaceScanShowcase() {
@@ -64,8 +52,6 @@ export function FaceScanShowcase() {
   const [p, setP] = useState(0) // 0..1 scan progress
 
   useEffect(() => {
-    ensureStyles()
-    if (typeof window === 'undefined') return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setP(1); return }
     let raf = 0
     const onScroll = () => {
@@ -75,12 +61,9 @@ export function FaceScanShowcase() {
         const el = ref.current
         if (!el) return
         const r = el.getBoundingClientRect()
-        const vh = window.innerHeight
-        // 0 when the stage top reaches 80% down the viewport, 1 once it has
-        // travelled one stage-height further up.
-        const start = vh * 0.8
-        const prog = clamp01((start - r.top) / (r.height * 0.9))
-        setP(prog)
+        // 0 when the stage top reaches 80% down the viewport, 1 one stage-height later.
+        const start = window.innerHeight * 0.8
+        setP(clamp01((start - r.top) / (r.height * 0.9)))
       })
     }
     onScroll()
@@ -95,57 +78,38 @@ export function FaceScanShowcase() {
   const scanning = p > 0.02 && p < 0.98
 
   return (
-    <section style={{ maxWidth: 1000, margin: '0 auto', padding: `${space[7]}px clamp(20px, 5vw, 56px)` }}>
-      <div style={{ textAlign: 'center', marginBottom: space[5] }}>
-        <h2 style={{ ...text.h1, margin: 0 }}>זיהוי פנים שמוצא כל אחד</h2>
-        <p style={{ ...text.body, color: color.inkSoft, margin: `${space[3]}px auto 0`, maxWidth: 460 }}>
+    <section className="mx-auto max-w-[1000px] px-[clamp(20px,5vw,56px)] py-12">
+      <div className="mb-6 text-center">
+        <h2 className="mk-h1 m-0">זיהוי פנים שמוצא כל אחד</h2>
+        <p className="mk-body mx-auto mt-3 max-w-[460px] text-(--mk-ink-soft)">
           סלפי אחד, וה-AI סורק את כל האירוע ומחזיר לכל אורח רק את התמונות שלו.
         </p>
       </div>
 
-      {/* Scan stage */}
-      <div ref={ref} style={{
-        position: 'relative', borderRadius: radius.xl, overflow: 'hidden',
-        background: color.dark.bg, padding: `clamp(20px,4vw,40px)`,
-        border: `1px solid ${color.dark.border}`,
-      }}>
-        {/* live readout */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: space[2], marginBottom: space[4],
-          ...text.small, fontFamily: font.sans, color: color.dark.text,
-        }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: scanning ? color.dark.accent : 'rgba(157,176,137,.5)',
-            boxShadow: scanning ? `0 0 10px ${color.dark.accent}` : 'none',
-          }} />
-          <span style={{ fontWeight: 700, letterSpacing: '.02em' }}>
+      <div ref={ref} className="relative overflow-hidden rounded-xl border border-white/10 bg-(--mk-phone) p-[clamp(20px,4vw,40px)]">
+        <div className="mk-small mb-4 flex items-center gap-2 font-(family-name:--mk-font-sans) text-(--mk-night-text)">
+          <span className={cn(
+            'size-2 rounded-full',
+            scanning ? 'bg-(--mk-sage-light) shadow-[0_0_10px_var(--mk-sage-light)]' : 'bg-(--mk-sage-light)/50',
+          )} />
+          <span className="font-bold tracking-[.02em]">
             {detectedCount === TILES.length ? `${TILES.length} פנים זוהו` : scanning ? 'סורק פנים…' : 'מוכן לסריקה'}
           </span>
-          <span style={{ marginInlineStart: 'auto', color: color.dark.textMuted, fontVariantNumeric: 'tabular-nums' }}>
+          <span className="ms-auto text-(--mk-night-text)/62 tabular-nums">
             {detectedCount}/{TILES.length}
           </span>
         </div>
 
-        {/* grid */}
-        <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: space[3] }}>
-          {TILES.map((t, i) => {
-            const on = p >= rowThreshold(t.row)
-            return (
-              <div key={i} className="fs-tile" style={{ background: t.g }}>
-                <div className="fs-head" style={{ background: `radial-gradient(circle, ${t.head}, transparent 70%)` }} />
-                <div className="fs-body" style={{ background: `radial-gradient(circle, ${t.head}, transparent 65%)` }} />
-                <div className={`fs-box ${on ? 'on' : ''}`}>
-                  <span className="fs-corner fs-tl" /><span className="fs-corner fs-tr" />
-                  <span className="fs-corner fs-bl" /><span className="fs-corner fs-br" />
-                  <span className="fs-chip">זוהה · {t.conf}%</span>
-                </div>
-              </div>
-            )
-          })}
-
-          {/* scan beam — vertical position follows scroll progress */}
-          <div className="fs-beam" style={{ top: `${clamp01(p) * 100}%`, opacity: scanning ? 0.95 : 0 }} />
+        <div className="relative grid grid-cols-3 gap-3 px-0">
+          {TILES.map((t, i) => <FaceTile key={i} tile={t} on={p >= rowThreshold(t.row)} />)}
+          {/* Beam position follows scroll progress. */}
+          <div
+            className={cn(
+              'pointer-events-none absolute inset-x-0 h-0.5 bg-(image:--mk-beam) shadow-(--mk-beam-glow) transition-opacity duration-300 ease-[ease] motion-reduce:hidden',
+              scanning ? 'opacity-95' : 'opacity-0',
+            )}
+            style={{ top: `${clamp01(p) * 100}%` }}
+          />
         </div>
       </div>
     </section>

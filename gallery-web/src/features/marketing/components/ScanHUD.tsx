@@ -1,12 +1,8 @@
-// ScanHUD — a site-wide "AI camera" overlay. A fixed scan line sits across the
-// middle of the viewport; as you scroll, any heading / card / image / [data-scan]
-// element passing through it gets locked with face-detection brackets + a match
-// chip, tracking the element like real-time face tracking. Corner reticles frame
-// the viewport for the camera-HUD feel. Pure overlay (pointer-events: none),
-// rAF-throttled, reduced-motion safe (renders nothing).
-
-import React, { useEffect, useRef, useState } from 'react'
-import { color, font } from '@/shared/ui/theme'
+// Site-wide "AI camera" overlay: a fixed scan line locks face-detection brackets
+// onto headings/cards/images crossing it as you scroll. Pure overlay,
+// rAF-throttled, renders nothing under reduced motion.
+import { useEffect, useRef, useState } from 'react'
+import { cn } from '@/shared/ui'
 
 interface Box { key: string; x: number; y: number; w: number; h: number; conf: number; op: number }
 
@@ -14,13 +10,26 @@ const SELECTOR = 'h1,h2,h3,img,[data-scan],.pf-card,.phone'
 
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n))
 
+const CORNER = 'absolute size-3.5 border-sage'
+const RETICLES = [
+  'top-[18px] left-[18px] border-t-2 border-l-2',
+  'top-[18px] right-[18px] border-t-2 border-r-2',
+  'bottom-[18px] left-[18px] border-b-2 border-l-2',
+  'bottom-[18px] right-[18px] border-b-2 border-r-2',
+]
+const BRACKETS = [
+  'top-0 left-0 border-t-2 border-l-2 rounded-tl-[4px]',
+  'top-0 right-0 border-t-2 border-r-2 rounded-tr-[4px]',
+  'bottom-0 left-0 border-b-2 border-l-2 rounded-bl-[4px]',
+  'bottom-0 right-0 border-b-2 border-r-2 rounded-br-[4px]',
+]
+
 export function ScanHUD() {
   const [boxes, setBoxes] = useState<Box[]>([])
   const [scanning, setScanning] = useState(false)
   const raf = useRef(0)
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
     const compute = () => {
@@ -33,8 +42,7 @@ export function ScanHUD() {
       els.forEach((el, i) => {
         const r = el.getBoundingClientRect()
         if (r.width < 60 || r.height < 26 || r.top > vh || r.bottom < 0) return
-        const center = r.top + r.height / 2
-        const dist = Math.abs(center - scanY)
+        const dist = Math.abs(r.top + r.height / 2 - scanY)
         if (dist > band) return
         found.push({
           key: `${i}`,
@@ -43,7 +51,7 @@ export function ScanHUD() {
           op: clamp(1 - dist / band, 0.12, 1),
         })
       })
-      // keep the 2 closest to the line — elegance over clutter
+      // Only the 2 closest to the line: elegance over clutter.
       found.sort((a, b) => b.op - a.op)
       setBoxes(found.slice(0, 2))
       setScanning(found.length > 0)
@@ -61,52 +69,31 @@ export function ScanHUD() {
     }
   }, [])
 
-  const acc = color.accent
-  const corner = (cs: React.CSSProperties): React.CSSProperties => ({
-    position: 'absolute', width: 14, height: 14, border: `2px solid ${acc}`, ...cs,
-  })
-
   return (
-    <div aria-hidden style={{ position: 'fixed', inset: 0, zIndex: 140, pointerEvents: 'none', overflow: 'hidden' }}>
-      {/* viewport corner reticles (camera frame) */}
-      <span style={corner({ top: 18, left: 18, borderRight: 'none', borderBottom: 'none', opacity: .35 })} />
-      <span style={corner({ top: 18, right: 18, borderLeft: 'none', borderBottom: 'none', opacity: .35 })} />
-      <span style={corner({ bottom: 18, left: 18, borderRight: 'none', borderTop: 'none', opacity: .35 })} />
-      <span style={corner({ bottom: 18, right: 18, borderLeft: 'none', borderTop: 'none', opacity: .35 })} />
+    <div aria-hidden className="pointer-events-none fixed inset-0 z-[140] overflow-hidden">
+      {RETICLES.map(pos => <span key={pos} className={cn(CORNER, 'opacity-35', pos)} />)}
 
-      {/* the scan line */}
-      <div style={{
-        position: 'absolute', top: '46%', left: 0, right: 0, height: 1,
-        background: `linear-gradient(90deg, transparent, ${acc}, transparent)`,
-        opacity: scanning ? 0.5 : 0.22, transition: 'opacity .3s',
-        boxShadow: scanning ? `0 0 14px 1px ${color.accentBorder}` : 'none',
-      }} />
-      {/* side status tag */}
-      <div style={{
-        position: 'absolute', top: 'calc(46% - 22px)', insetInlineStart: 22,
-        ...{ fontFamily: font.sans }, fontSize: 10, fontWeight: 700, letterSpacing: '.12em',
-        color: acc, opacity: scanning ? 0.75 : 0.3, transition: 'opacity .3s',
-      }}>
+      <div className={cn(
+        'absolute inset-x-0 top-[46%] h-px bg-(image:--mk-scan-line) transition-opacity duration-300 ease-[ease]',
+        scanning ? 'opacity-50 shadow-(--mk-scan-glow)' : 'opacity-22',
+      )} />
+      <div className={cn(
+        'absolute start-[22px] top-[calc(46%-22px)] font-(family-name:--mk-font-sans) text-[10px] font-bold tracking-[.12em] text-sage transition-opacity duration-300 ease-[ease]',
+        scanning ? 'opacity-75' : 'opacity-30',
+      )}>
         ◢ FACE SCAN
       </div>
 
-      {/* detection boxes locked onto elements crossing the line */}
       {boxes.map(b => {
         const pad = 8
-        const x = b.x - pad, y = b.y - pad, w = b.w + pad * 2, h = b.h + pad * 2
         return (
-          <div key={b.key} style={{ position: 'absolute', left: x, top: y, width: w, height: h, opacity: b.op }}>
-            <span style={corner({ top: 0, left: 0, borderRight: 'none', borderBottom: 'none', borderTopLeftRadius: 4 })} />
-            <span style={corner({ top: 0, right: 0, borderLeft: 'none', borderBottom: 'none', borderTopRightRadius: 4 })} />
-            <span style={corner({ bottom: 0, left: 0, borderRight: 'none', borderTop: 'none', borderBottomLeftRadius: 4 })} />
-            <span style={corner({ bottom: 0, right: 0, borderLeft: 'none', borderTop: 'none', borderBottomRightRadius: 4 })} />
-            <span style={{
-              position: 'absolute', top: -9, insetInlineEnd: 6,
-              background: 'rgba(20,20,19,.82)', color: '#E9F0E4',
-              fontSize: 9, fontWeight: 700, letterSpacing: '.04em', fontFamily: font.sans,
-              padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap',
-              border: `1px solid ${color.accentBorder}`,
-            }}>
+          <div
+            key={b.key}
+            className="absolute"
+            style={{ left: b.x - pad, top: b.y - pad, width: b.w + pad * 2, height: b.h + pad * 2, opacity: b.op }}
+          >
+            {BRACKETS.map(pos => <span key={pos} className={cn(CORNER, pos)} />)}
+            <span className="absolute -top-[9px] end-1.5 rounded-full border border-sage/40 bg-ink/82 px-[7px] py-0.5 font-(family-name:--mk-font-sans) text-[9px] font-bold tracking-[.04em] whitespace-nowrap text-(--mk-sage-mist)">
               זוהה · {b.conf}%
             </span>
           </div>
