@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Icon } from '@/shared/ui/Icon'
-import { textMuted, textPrimary } from '../../styles'
 import { useEditor } from '../EditorContext'
 import { SectionRow } from './SectionRow'
 
@@ -11,21 +10,13 @@ export function SectionList() {
   const [sectionDragOverId, setSectionDragOverId] = useState<string | null>(null)
 
   return (
-    <div style={{ padding: '20px 18px 12px' }}>
-      <div style={{
-        fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-        color: textMuted, textTransform: 'uppercase',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: 10, paddingInline: 4,
-      }}>
+    <div className="px-[18px] pt-5 pb-3">
+      <div className="mb-2.5 flex items-center justify-between px-1 text-[9px] font-medium tracking-wide-label text-muted uppercase">
         <span>Photos</span>
-        <button onClick={() => sec.setShowAddSetModal(true)} style={{
-          background: 'transparent', border: 'none', cursor: 'pointer',
-          color: textPrimary, padding: 0, display: 'inline-flex',
-          alignItems: 'center', gap: 4, fontFamily: 'inherit',
-          fontSize: 9, fontWeight: 500, letterSpacing: '0.18em',
-          textTransform: 'uppercase',
-        }}>
+        <button
+          onClick={() => sec.setShowAddSetModal(true)}
+          className="inline-flex cursor-pointer items-center gap-1 bg-transparent p-0 text-[9px] font-medium tracking-label text-ink uppercase"
+        >
           <Icon name="plus" size={11} strokeWidth={2} />
           <span>Add Set</span>
         </button>

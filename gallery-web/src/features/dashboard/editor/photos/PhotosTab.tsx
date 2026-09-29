@@ -17,7 +17,7 @@ export function PhotosTab() {
     <div
       onDragOver={e => { e.preventDefault() }}
       onDrop={e => { e.preventDefault(); handleFileUpload(e.dataTransfer.files) }}
-      style={{ minHeight: '100%' }}
+      className="min-h-full"
     >
       <PhotosToolbar />
 
@@ -27,7 +27,7 @@ export function PhotosTab() {
         <UploadProgressStrip
           label={<span>מעלה {uploadBatch.completed} / {uploadBatch.total}</span>}
           aside={uploadBatch.failed > 0 && (
-            <span style={{ color: '#A67C52' }}>{uploadBatch.failed} נכשלו</span>
+            <span className="text-amber">{uploadBatch.failed} נכשלו</span>
           )}
           pct={Math.round((uploadBatch.completed / Math.max(1, uploadBatch.total)) * 100)}
         />

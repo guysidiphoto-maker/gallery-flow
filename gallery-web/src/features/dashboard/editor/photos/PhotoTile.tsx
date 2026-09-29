@@ -1,6 +1,6 @@
 import { SignedImg } from '@/shared/ui/SignedImg'
+import { cn } from '@/shared/ui'
 import { Icon } from '@/shared/ui/Icon'
-import { bgSubtle, textPrimary } from '../../styles'
 import { orderedSectionImages } from '../../lib/photoOrder'
 import type { GalleryImage } from '../../types'
 import { useEditor } from '../EditorContext'
@@ -74,53 +74,33 @@ export function PhotoTile({ img, visibleImages, currentCoverPath, ui }: {
         // Lightbox navigates within the active section in manual order.
         photos.openViewer(orderedSectionImages(session.galleryImages, session.activeSectionId), img.id)
       }}
-      style={{
-        position: 'relative', aspectRatio: '1',
-        // Unclip while the menu is open so the popup isn't cut at the tile edge.
-        overflow: isMenuOpen ? 'visible' : 'hidden',
-        background: bgSubtle,
-        cursor: dragEnabled ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
-        outline: isSelected
-          ? `2px solid ${textPrimary}`
-          : (isDropTarget ? `2px solid ${textPrimary}` : 'none'),
-        outlineOffset: isSelected || isDropTarget ? -2 : 0,
-        opacity: isDragging ? 0.4 : 1,
-        // Lift the open menu's tile above its neighbours.
-        zIndex: isMenuOpen ? 10 : 'auto',
-        transition: 'transform .25s cubic-bezier(.2,.7,.2,1), opacity .15s',
-      }}
+      className={cn(
+        'relative aspect-square bg-surface [transition:transform_.25s_cubic-bezier(.2,.7,.2,1),opacity_.15s]',
+        // Unclip and lift while the menu is open so the popup isn't cut or covered.
+        isMenuOpen ? 'z-10 overflow-visible' : 'z-auto overflow-hidden',
+        dragEnabled ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-pointer',
+        isSelected || isDropTarget ? 'outline-2 -outline-offset-2 outline-ink' : 'outline-none',
+        isDragging ? 'opacity-40' : 'opacity-100',
+      )}
     >
       {/* Leading-edge bar showing where the dragged image will land. */}
       {isDropTarget && (
-        <div style={{
-          position: 'absolute', top: 0, bottom: 0,
-          insetInlineEnd: -2, width: 3,
-          background: textPrimary, zIndex: 4,
-          pointerEvents: 'none',
-        }} />
+        <div className="pointer-events-none absolute inset-y-0 -end-0.5 z-[4] w-[3px] bg-ink" />
       )}
       <SignedImg
         bucket="gallery-images"
         path={img.thumbnail_path || img.storage_path}
         alt="" loading="lazy"
-        style={{
-          width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-          filter: isSelected ? 'brightness(0.55)' : 'none',
-          transition: 'filter .15s',
-        }}
+        className={cn(
+          'block size-full object-cover transition-[filter] duration-150',
+          isSelected ? 'brightness-[0.55]' : 'filter-none',
+        )}
       />
 
       {isCover && !selectMode && (
         <div
           aria-label="תמונת השער של הגלריה"
-          style={{
-            position: 'absolute', bottom: 8, insetInlineStart: 8,
-            display: 'flex', alignItems: 'center', gap: 4,
-            padding: '3px 8px', borderRadius: 999,
-            background: 'rgba(0,0,0,.62)', color: '#fff',
-            fontSize: 10, fontWeight: 600, letterSpacing: '.04em',
-            pointerEvents: 'none', zIndex: 3,
-          }}
+          className="pointer-events-none absolute start-2 bottom-2 z-[3] flex items-center gap-1 rounded-full bg-black/62 px-2 py-[3px] text-[10px] font-semibold tracking-[.04em] text-white"
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="2.2"
@@ -138,17 +118,13 @@ export function PhotoTile({ img, visibleImages, currentCoverPath, ui }: {
         <button
           onClick={(e) => { e.stopPropagation(); photos.toggleSingleTopPick(img.id) }}
           aria-label={img.is_top_pick ? 'הסר מן המועדפים' : 'הוסף למועדפים'}
-          style={{
-            position: 'absolute', top: 8, insetInlineStart: 8,
-            width: 26, height: 26, borderRadius: '50%',
-            background: img.is_top_pick ? '#fff' : 'rgba(255,255,255,.85)',
-            border: 'none', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: textPrimary, padding: 0,
-          }}
+          className={cn(
+            'absolute start-2 top-2 flex size-[26px] cursor-pointer items-center justify-center rounded-full p-0 text-ink',
+            img.is_top_pick ? 'bg-white' : 'bg-white/85',
+          )}
         >
           <svg width="13" height="13" viewBox="0 0 24 24"
-            fill={img.is_top_pick ? textPrimary : 'none'}
+            fill={img.is_top_pick ? 'currentColor' : 'none'}
             stroke="currentColor" strokeWidth="1.85"
             strokeLinecap="round" strokeLinejoin="round">
             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
@@ -169,30 +145,21 @@ export function PhotoTile({ img, visibleImages, currentCoverPath, ui }: {
           aria-haspopup="menu"
           aria-expanded={isMenuOpen}
           aria-label="תפריט תמונה"
-          style={{
-            position: 'absolute', top: 8, insetInlineEnd: 8,
-            width: 26, height: 26, borderRadius: '50%',
-            background: 'rgba(255,255,255,.85)', border: 'none',
-            cursor: 'pointer', padding: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: textPrimary,
-          }}
+          className="absolute end-2 top-2 flex size-[26px] cursor-pointer items-center justify-center rounded-full bg-white/85 p-0 text-ink"
         >
           <Icon name="menu" size={14} strokeWidth={1.85} />
         </button>
       )}
 
       {selectMode && (
-        <div style={{
-          position: 'absolute', top: 8, insetInlineEnd: 8,
-          width: 22, height: 22, borderRadius: '50%',
-          background: isSelected ? textPrimary : 'rgba(255,255,255,.85)',
-          border: `1.5px solid ${isSelected ? textPrimary : 'rgba(255,255,255,.95)'}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'all .15s',
-        }}>
+        <div
+          className={cn(
+            'absolute end-2 top-2 flex size-[22px] items-center justify-center rounded-full border-[1.5px] transition-all duration-150',
+            isSelected ? 'border-ink bg-ink' : 'border-white/95 bg-white/85',
+          )}
+        >
           {isSelected && (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-white">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
           )}

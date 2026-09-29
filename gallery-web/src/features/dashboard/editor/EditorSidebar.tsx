@@ -28,7 +28,7 @@ export function EditorSidebar() {
       <div
         className={cn(
           'relative aspect-[4/3] w-full overflow-hidden border-b border-line',
-          editorCover ? 'bg-surface' : 'bg-linear-135 from-surface to-line',
+          editorCover ? 'bg-surface' : 'bg-linear-135/srgb from-surface to-line',
         )}
       >
         {editorCover ? (
