@@ -9,8 +9,8 @@ export const STORY_DEFAULT_PHOTO_BUDGET = 30
 export const STORY_MIN_PHOTOS = 12
 export const STORY_MAX_PHOTOS = 60
 
-// Rough render-time estimate for the user. Calibrated to match what Phase 2's
-// Remotion Lambda will produce: a baseline cost per style + ~1.5s per extra
+// Rough render-time estimate for the user, calibrated to the Remotion renderer:
+// a baseline cost per style + ~1.5s per extra
 // photo (transforms, transitions, encoding scale roughly linearly).
 export function estimateRenderSeconds(photoCount: number, style: StoryStyle): number {
   const baselineByStyle: Record<StoryStyle, number> = {

@@ -211,9 +211,8 @@ export async function exportGalleryAsZip(
   const dateStamp = new Date().toISOString().slice(0, 10)
   const filename = `${safeSlug}_export_${dateStamp}.zip`
 
-  // App.tsx pattern — no file-saver dep; createObjectURL + click anchor.
-  // Phase 2 (server-side render to S3) would skip this and hand back a
-  // presigned URL instead, sparing the browser the memory pressure.
+  // A server-side export would hand back a presigned URL instead, sparing the
+  // browser the memory pressure of holding the whole ZIP.
   saveBlob(zipBlob, filename)
   onProgress({ phase: 'saving', current: 1, total: 1 })
 
