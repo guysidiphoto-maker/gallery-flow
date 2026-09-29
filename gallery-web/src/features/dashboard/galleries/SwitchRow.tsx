@@ -1,5 +1,5 @@
 import type React from 'react'
-import { border, textMuted, textPrimary } from '../styles'
+import { cn } from '@/shared/ui'
 
 // Title + description with a charcoal switch knob; the whole row is the click target.
 export function SwitchRow({ title, desc, on, onClick }: {
@@ -9,37 +9,23 @@ export function SwitchRow({ title, desc, on, onClick }: {
   onClick: () => void
 }) {
   return (
-    <div
-      onClick={onClick}
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        cursor: 'pointer', userSelect: 'none', gap: 12,
-      }}
-    >
+    <div onClick={onClick} className="flex cursor-pointer items-center justify-between gap-3 select-none">
       <div>
-        <span style={{
-          fontSize: 13, color: textPrimary, fontWeight: 500, display: 'block',
-          marginBottom: 4,
-        }}>
+        <span className="mb-1 block text-[13px] font-medium text-ink">
           {title}
         </span>
-        <span style={{ fontSize: 12, color: textMuted, lineHeight: 1.5 }}>
+        <span className="text-xs leading-normal text-muted">
           {desc}
         </span>
       </div>
-      <div style={{
-        width: 44, height: 24, borderRadius: 24, padding: 2,
-        background: on ? textPrimary : border,
-        transition: 'background .2s', flexShrink: 0,
-        cursor: 'pointer', position: 'relative',
-      }}>
-        <div style={{
-          width: 20, height: 20, borderRadius: 10,
-          background: '#fff',
-          transition: 'transform .2s',
-          transform: on ? 'translateX(-20px)' : 'translateX(0)',
-          boxShadow: '0 1px 3px rgba(0,0,0,.18)',
-        }} />
+      {/* Knob slides with an explicit -x offset: the dashboard is always RTL. */}
+      <div className={cn('relative h-6 w-11 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200', on ? 'bg-ink' : 'bg-line')}>
+        <div
+          className={cn(
+            'size-5 rounded-full bg-white shadow-[0_1px_3px] shadow-black/18 transition-transform duration-200',
+            on ? '-translate-x-5' : 'translate-x-0',
+          )}
+        />
       </div>
     </div>
   )

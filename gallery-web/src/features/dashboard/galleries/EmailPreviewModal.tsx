@@ -1,52 +1,28 @@
-import { bg, border, textMuted } from '../styles'
-
 // Server-composed email in a sandboxed iframe (styles only, no scripts) so
 // links can't navigate the dashboard tab.
 export function EmailPreviewModal({ html, onClose }: { html: string; onClose: () => void }) {
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 2200,
-        background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(10px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 20, animation: 'overlayIn .2s ease both',
-      }}
-    >
+    <div onClick={onClose} className="z-[2200] fixed inset-0 flex animate-[dash-overlay-in_.2s_ease_both] items-center justify-center bg-black/78 p-5 backdrop-blur-[10px]">
       <div
         role="dialog"
         aria-modal="true"
         aria-label="תצוגה מקדימה של המייל"
         onClick={e => e.stopPropagation()}
-        style={{
-          background: bg, width: '100%', maxWidth: 640,
-          borderRadius: 22, padding: 20,
-          border: `1px solid ${border}`,
-          animation: 'modalIn .3s ease both',
-          boxShadow: '0 30px 100px rgba(0,0,0,.6)',
-          display: 'flex', flexDirection: 'column', gap: 12,
-          maxHeight: '90vh',
-        }}
+        className="flex max-h-[90vh] max-w-[640px] flex-col gap-3 p-5 w-full animate-[dash-modal-in_.3s_ease_both] rounded-[22px] border border-line bg-canvas shadow-[0_30px_100px] shadow-black/60"
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>תצוגה מקדימה</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold">תצוגה מקדימה</h2>
           <button
             onClick={onClose}
             aria-label="סגירה"
-            style={{
-              background: 'transparent', border: 'none', color: textMuted,
-              fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 4,
-            }}
+            className="cursor-pointer border-none bg-transparent p-1 text-xl leading-none text-muted"
           >×</button>
         </div>
         <iframe
           title="email-preview"
           srcDoc={html}
           sandbox="allow-same-origin"
-          style={{
-            width: '100%', flex: 1, minHeight: 480,
-            border: `1px solid ${border}`, borderRadius: 12, background: '#fff',
-          }}
+          className="min-h-[480px] w-full flex-1 rounded-[12px] border border-line bg-raised"
         />
       </div>
     </div>

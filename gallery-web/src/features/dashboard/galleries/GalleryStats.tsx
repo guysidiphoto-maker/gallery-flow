@@ -1,5 +1,5 @@
 import { Icon, type IconName } from '@/shared/ui/Icon'
-import { bgSubtle, border, textMuted, textPrimary } from '../styles'
+import { cn } from '@/shared/ui'
 import type { Gallery } from '../types'
 
 // Editorial stats row: hairline borders, tracked labels, large numbers.
@@ -9,40 +9,22 @@ export function GalleryStats({ galleries }: { galleries: Gallery[] }) {
   const publishedCount = galleries.filter((g) => g.status === 'live').length
   const draftCount = galleries.length - publishedCount
 
-  const statCards: { label: string; value: number | string; icon: IconName; color: string }[] = [
-    { label: 'Galleries',  value: galleries.length, icon: 'gallery', color: textPrimary },
-    { label: 'Photos',     value: totalPhotos,      icon: 'photo',   color: textPrimary },
-    { label: 'Published',  value: publishedCount,   icon: 'check',   color: textPrimary },
-    { label: 'Drafts',     value: draftCount,       icon: 'duplicate', color: textPrimary },
+  const statCards: { label: string; value: number | string; icon: IconName }[] = [
+    { label: 'Galleries',  value: galleries.length, icon: 'gallery' },
+    { label: 'Photos',     value: totalPhotos,      icon: 'photo' },
+    { label: 'Published',  value: publishedCount,   icon: 'check' },
+    { label: 'Drafts',     value: draftCount,       icon: 'duplicate' },
   ]
 
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-      gap: 0, marginBottom: 56,
-      animation: 'fadeInUp .45s ease both',
-      border: `1px solid ${border}`,
-      background: bgSubtle,
-    }}>
+    <div className="mb-14 grid animate-[dash-fade-up_.45s_ease_both] grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-0 border border-line bg-surface">
       {statCards.map((s, i) => (
-        <div key={i} style={{
-          padding: '28px 28px',
-          borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
-          position: 'relative',
-        }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14,
-            fontSize: 10, color: textMuted,
-            fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
-          }}>
+        <div key={i} className={cn('relative p-7', i > 0 && 'border-s border-line')}>
+          <div className="mb-3.5 flex items-center gap-2 text-[10px] font-medium tracking-label text-muted uppercase">
             <Icon name={s.icon} size={12} strokeWidth={1.6} />
             <span>{s.label}</span>
           </div>
-          <div style={{
-            fontSize: 26, fontWeight: 400,
-            letterSpacing: '-0.025em', color: textPrimary, lineHeight: 1,
-            fontFeatureSettings: '"tnum" 1, "lnum" 1',
-          }}>
+          <div className="text-[26px] leading-none font-normal tracking-[-0.025em] text-ink tabular-nums lining-nums">
             {(typeof s.value === 'number' ? s.value : Number(s.value) || 0).toLocaleString('he-IL')}
           </div>
         </div>

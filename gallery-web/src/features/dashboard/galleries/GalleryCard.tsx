@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Icon } from '@/shared/ui/Icon'
+import { cn } from '@/shared/ui'
 import { cardCoverUrl } from '../lib/cardCoverUrl'
 import type { GalleryActions } from '../hooks/useGalleryActions'
-import { bgSubtle, border, card, statusLive, textMuted, textPrimary, textSecondary } from '../styles'
 import type { Gallery } from '../types'
 import { GalleryCardActions } from './GalleryCardActions'
 
@@ -20,48 +20,31 @@ export function GalleryCard({ gallery: g, index: idx, fallbackCover, actions, on
   const cover = explicitCover || fallbackCover || null
   return (
     <div
-      style={{
-        background: card,
-        borderRadius: 4,
-        cursor: 'pointer',
-        // Editorial reveal: 60ms cascade per tile with a gentle "settle" easing.
-        animation: 'fadeInUp .55s cubic-bezier(.2,.7,.2,1) both',
-        animationDelay: `${Math.min(idx, 12) * 0.06}s`,
-        transition: 'transform .35s cubic-bezier(.2,.7,.2,1)',
-        transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
-      }}
+      className="group animate-[dash-fade-up_.55s_cubic-bezier(.2,.7,.2,1)_both] cursor-pointer rounded-[4px] bg-surface transition-transform duration-350 ease-[cubic-bezier(.2,.7,.2,1)] hover:-translate-y-0.5"
+      // Editorial reveal: 60ms cascade per tile.
+      style={{ animationDelay: `${Math.min(idx, 12) * 0.06}s` }}
       onClick={() => onOpen(g)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div style={{
-        aspectRatio: '4 / 3', borderRadius: 2, overflow: 'hidden',
-        background: cover ? bgSubtle : `linear-gradient(135deg, ${bgSubtle}, ${border})`,
-        position: 'relative',
-        boxShadow: isHovered
-          ? '0 1px 2px rgba(0,0,0,.04), 0 12px 32px rgba(0,0,0,.08)'
-          : '0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.04)',
-        transition: 'box-shadow .25s ease',
-      }}>
+      <div
+        className={cn(
+          'relative aspect-[4/3] overflow-hidden rounded-hair transition-shadow duration-250 ease-[ease]',
+          'shadow-[0_1px_2px_--alpha(var(--color-black)/4%),0_6px_18px_--alpha(var(--color-black)/4%)] group-hover:shadow-[0_1px_2px_--alpha(var(--color-black)/4%),0_12px_32px_--alpha(var(--color-black)/8%)]',
+          cover ? 'bg-surface' : 'bg-linear-135 from-surface to-line',
+        )}
+      >
         {cover && (
           <img
             src={cardCoverUrl(cover)}
             alt=""
             loading="lazy"
             decoding="async"
-            style={{
-              width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-              transform: isHovered ? 'scale(1.02)' : 'scale(1)',
-              transition: 'transform .6s cubic-bezier(.2,.7,.2,1)',
-            }}
+            className="block size-full object-cover transition-transform duration-600 ease-[cubic-bezier(.2,.7,.2,1)] group-hover:scale-[1.02]"
           />
         )}
         {!cover && (
-          <div style={{
-            position: 'absolute', inset: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: textMuted,
-          }}>
+          <div className="absolute inset-0 flex items-center justify-center text-muted">
             <Icon name="photo" size={36} strokeWidth={1.2} />
           </div>
         )}
@@ -75,43 +58,33 @@ export function GalleryCard({ gallery: g, index: idx, fallbackCover, actions, on
         )}
       </div>
 
-      <div style={{ padding: '18px 2px 0' }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          fontSize: 10, fontWeight: 500, letterSpacing: '0.18em',
-          textTransform: 'uppercase', color: textMuted, marginBottom: 8,
-        }}>
-          <span style={{
-            width: 6, height: 6, borderRadius: '50%',
-            background: isLive ? statusLive : border,
-          }} />
+      <div className="px-0.5 pt-[18px]">
+        <div className="mb-2 flex items-center gap-2 text-[10px] font-medium tracking-label text-muted uppercase">
+          <span className={cn('size-1.5 rounded-full', isLive ? 'bg-sage' : 'bg-line')} />
           <span>{isLive ? 'Published' : 'Draft'}</span>
           {g.published_at && (
             <>
-              <span style={{ color: border, marginInline: 2 }}>·</span>
+              <span className="mx-0.5 text-line">·</span>
               <span>{new Date(g.published_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
             </>
           )}
         </div>
-        <h3 style={{
-          fontSize: 19, fontWeight: 500, margin: '0 0 6px',
-          letterSpacing: '-0.015em', lineHeight: 1.25, color: textPrimary,
-        }}>
+        <h3 className="mb-1.5 text-[19px] leading-[1.25] font-medium tracking-[-0.015em] text-ink">
           {g.name}
         </h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: textSecondary, lineHeight: 1.4 }}>
+        <div className="flex items-center gap-2.5 text-[13px] leading-[1.4] text-ink-soft">
           <span>{(g.image_count ?? 0).toLocaleString('he-IL')} תמונות</span>
         </div>
         {isLive && ((g.download_count ?? 0) > 0 || (g.favorite_count ?? 0) > 0) && (
-          <div style={{ display: 'flex', gap: 14, fontSize: 12, color: textMuted, marginTop: 8 }}>
+          <div className="mt-2 flex gap-3.5 text-xs text-muted">
             {(g.download_count ?? 0) > 0 && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span className="flex items-center gap-[5px]">
                 <Icon name="download" size={12} strokeWidth={1.85} />
                 {(g.download_count ?? 0).toLocaleString('he-IL')}
               </span>
             )}
             {(g.favorite_count ?? 0) > 0 && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span className="flex items-center gap-[5px]">
                 <Icon name="heart" size={12} strokeWidth={1.85} />
                 {(g.favorite_count ?? 0).toLocaleString('he-IL')}
               </span>

@@ -1,6 +1,5 @@
 import { Icon, type IconName } from '@/shared/ui/Icon'
-import { textMuted, textPrimary } from '../styles'
-import { pickerTile } from './createModalStyles'
+import { cn, Eyebrow } from '@/shared/ui'
 
 // Three-up icon tile picker used by the create-gallery modal.
 export function IconOptionPicker<T extends string>({ eyebrow, options, value, onChange }: {
@@ -10,14 +9,9 @@ export function IconOptionPicker<T extends string>({ eyebrow, options, value, on
   onChange: (v: T) => void
 }) {
   return (
-    <div style={{ marginBottom: 24 }}>
-      <div style={{
-        fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-        color: textMuted, textTransform: 'uppercase', marginBottom: 12,
-      }}>
-        {eyebrow}
-      </div>
-      <div className="dash-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+    <div className="mb-6">
+      <Eyebrow className="mb-3 block text-[9px] font-medium">{eyebrow}</Eyebrow>
+      <div className="dash-grid-3 grid grid-cols-3 gap-2.5">
         {options.map((opt) => {
           const selected = value === opt.value
           return (
@@ -25,14 +19,13 @@ export function IconOptionPicker<T extends string>({ eyebrow, options, value, on
               key={opt.value}
               type="button"
               onClick={() => onChange(opt.value)}
-              style={pickerTile(selected)}
+              className={cn(
+                'flex cursor-pointer flex-col items-center gap-2.5 rounded-hair border px-2 py-[18px] transition-[border-color,background-color] duration-150',
+                selected ? 'border-ink bg-surface' : 'border-line bg-raised',
+              )}
             >
               <Icon name={opt.icon} size={20} strokeWidth={selected ? 1.85 : 1.4} />
-              <span style={{
-                fontSize: 12,
-                fontWeight: selected ? 600 : 500,
-                color: textPrimary, fontFamily: 'inherit',
-              }}>
+              <span className={cn('text-xs text-ink', selected ? 'font-semibold' : 'font-medium')}>
                 {opt.label}
               </span>
             </button>

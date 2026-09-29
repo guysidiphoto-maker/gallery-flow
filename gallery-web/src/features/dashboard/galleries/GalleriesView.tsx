@@ -1,7 +1,7 @@
 import { Icon } from '@/shared/ui/Icon'
+import { Button, Eyebrow } from '@/shared/ui'
 import { GalleryEditor } from '../editor/GalleryEditor'
 import type { GalleryActions } from '../hooks/useGalleryActions'
-import { textMuted, textPrimary } from '../styles'
 import type { Gallery } from '../types'
 import { GalleryStats } from './GalleryStats'
 import { GalleriesSkeleton } from './GalleriesSkeleton'
@@ -24,45 +24,17 @@ export function GalleriesView({
 }) {
   return (
     <>
-      <div style={{
-        display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-        marginBottom: 36, animation: 'fadeInUp .4s ease both',
-        gap: 20, flexWrap: 'wrap',
-      }}>
+      <div className="mb-9 flex animate-[dash-fade-up_.4s_ease_both] flex-wrap items-end justify-between gap-5">
         <div>
-          <div style={{
-            fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-            color: textMuted, textTransform: 'uppercase', marginBottom: 14,
-          }}>
-            Workspace
-          </div>
-          <h1 style={{
-            fontSize: 'clamp(28px, 4vw, 56px)',
-            fontWeight: 500, margin: 0,
-            letterSpacing: '-0.025em', lineHeight: 1.02, color: textPrimary,
-          }}>
+          <Eyebrow className="mb-3.5 block font-medium">Workspace</Eyebrow>
+          <h1 className="text-[clamp(28px,4vw,56px)] leading-[1.02] font-medium tracking-[-0.025em] text-ink">
             הגלריות שלי
           </h1>
         </div>
-        <button
-          onClick={onNewGallery}
-          style={{
-            background: 'transparent',
-            color: textPrimary,
-            border: `1px solid ${textPrimary}`,
-            borderRadius: 2,
-            padding: '13px 26px', fontSize: 12, fontWeight: 500, cursor: 'pointer',
-            fontFamily: 'inherit',
-            transition: 'background .2s, color .2s',
-            letterSpacing: '0.18em', textTransform: 'uppercase',
-            display: 'inline-flex', alignItems: 'center', gap: 10,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = textPrimary; e.currentTarget.style.color = '#fff' }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = textPrimary }}
-        >
+        <Button variant="secondary" size="lg" onClick={onNewGallery} className="gap-2.5 px-[26px] py-[13px] duration-200">
           New Gallery
           <Icon name="plus" size={13} strokeWidth={2} />
-        </button>
+        </Button>
       </div>
 
       {!loadingGalleries && galleries.length > 0 && <GalleryStats galleries={galleries} />}
@@ -72,9 +44,7 @@ export function GalleriesView({
       ) : galleries.length === 0 ? (
         <GalleriesEmptyState onNewGallery={onNewGallery} />
       ) : (
-        <div className="dash-gallery-grid" style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 32,
-        }}>
+        <div className="dash-gallery-grid grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-8">
           {galleries.map((g, idx) => (
             <GalleryCard
               key={g.id}

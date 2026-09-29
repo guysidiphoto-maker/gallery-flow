@@ -1,54 +1,27 @@
-import { accentLight, border, card, textMuted } from '../styles'
-
 // "Coming soon" teaser. Skeleton rows instead of fake emails so nobody
 // mistakes them for real activity.
 export function DownloadTrackingTeaser() {
   return (
-    <div style={{
-      marginTop: 48, padding: 28, borderRadius: 18,
-      background: card, border: `1px solid ${border}`,
-      backdropFilter: 'blur(8px)',
-      animation: 'fadeInUp .5s ease both .2s',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+    <div className="mt-12 animate-[dash-fade-up_.5s_ease_both_.2s] rounded-[18px] border border-line bg-surface p-7 backdrop-blur-[8px]">
+      <div className="mb-5 flex items-center justify-between">
         <div>
-          <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.01em' }}>
+          <h3 className="mb-1 text-lg font-bold tracking-[-0.01em]">
             מעקב הורדות
           </h3>
-          <p style={{ fontSize: 12, color: textMuted, margin: 0 }}>
+          <p className="text-xs text-muted">
             צפו מי הוריד תמונות מהגלריות שלכם
           </p>
         </div>
-        <span style={{
-          padding: '6px 14px', borderRadius: 20,
-          background: 'rgba(45,196,121,.08)', border: '1px solid rgba(45,196,121,.15)',
-          fontSize: 11, color: accentLight, fontWeight: 600,
-        }}>בקרוב</span>
+        <span className="rounded-[20px] border border-sage/15 bg-sage/8 px-3.5 py-1.5 text-[11px] font-semibold text-black">בקרוב</span>
       </div>
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12,
-      }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
         {[0, 1, 2].map((i) => (
-          <div key={i} style={{
-            padding: '14px 16px', borderRadius: 12,
-            background: 'rgba(255,255,255,.02)', border: `1px solid rgba(0,0,0,.03)`,
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            opacity: 0.55,
-          }}>
-            <div style={{ flex: 1 }}>
-              <div style={{
-                height: 10, width: '60%', borderRadius: 4,
-                background: border, marginBottom: 6,
-              }} />
-              <div style={{
-                height: 8, width: '30%', borderRadius: 4,
-                background: border,
-              }} />
+          <div key={i} className="flex items-center justify-between rounded-[12px] border border-black/3 bg-white/2 px-4 py-3.5 opacity-55">
+            <div className="flex-1">
+              <div className="mb-1.5 h-2.5 w-3/5 rounded-[4px] bg-line" />
+              <div className="h-2 w-[30%] rounded-[4px] bg-line" />
             </div>
-            <div style={{
-              height: 22, width: 36, borderRadius: 8,
-              background: 'rgba(45,196,121,.1)',
-            }} />
+            <div className="h-[22px] w-9 rounded-[8px] bg-sage/10" />
           </div>
         ))}
       </div>
