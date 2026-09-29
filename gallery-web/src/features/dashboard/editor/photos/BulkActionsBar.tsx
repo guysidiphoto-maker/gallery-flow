@@ -3,7 +3,7 @@ import { Icon } from '@/shared/ui/Icon'
 import { useEditor } from '../EditorContext'
 
 const barButton =
-  'cursor-pointer rounded-hair border border-white/40 bg-transparent px-3 py-1.5 text-[11px] tracking-[0.14em] text-white uppercase'
+  'inline-flex h-8 cursor-pointer items-center gap-1 rounded-hair border border-white/40 bg-transparent px-3 text-[12px] text-white'
 
 // Sticky select-mode toolbar. Wraps on narrow viewports so the trailing
 // controls are never pushed off-screen.
@@ -23,14 +23,14 @@ export function BulkActionsBar() {
         {selectedImageIds.size} {selectedImageIds.size === 1 ? 'תמונה נבחרה' : 'תמונות נבחרו'}
       </span>
       <button onClick={selectAllImages} className={cn(barButton, 'ms-auto')}>בחר הכל</button>
-      <button onClick={() => bulkToggleTopPick(true)} className={cn(barButton, 'flex items-center gap-1')}>★ Pin</button>
-      <button onClick={() => bulkToggleTopPick(false)} className={barButton}>Unpin</button>
+      <button onClick={() => bulkToggleTopPick(true)} className={barButton}>★ הוספה למועדפים</button>
+      <button onClick={() => bulkToggleTopPick(false)} className={barButton}>הסרה מהמועדפים</button>
       {otherSections.length > 0 && (
         <select
           aria-label="העבר לסט"
           value=""
           onChange={(e) => { if (e.target.value) void bulkMoveToSection(e.target.value) }}
-          className="cursor-pointer rounded-hair border border-white/40 bg-transparent px-2.5 py-1.5 text-[11px] tracking-[0.08em] text-white"
+          className="h-8 cursor-pointer rounded-hair border border-white/40 bg-transparent px-2.5 text-[12px] text-white"
         >
           <option value="" className="text-ink">העבר לסט…</option>
           {otherSections.map(s => (
@@ -38,12 +38,12 @@ export function BulkActionsBar() {
           ))}
         </select>
       )}
-      <button onClick={() => void bulkDownloadSelected()} className={barButton}>Download</button>
+      <button onClick={() => void bulkDownloadSelected()} className={barButton}>הורדה</button>
       <button
         onClick={bulkDeleteSelected}
         className={cn(barButton, 'border-danger-strong bg-danger-strong font-medium')}
-      >Delete</button>
-      <button onClick={exitSelectMode} aria-label="Cancel" className="flex cursor-pointer items-center bg-transparent px-2 py-1.5 text-white">
+      >מחיקה</button>
+      <button onClick={exitSelectMode} aria-label="ביטול בחירה" title="ביטול בחירה" className="flex size-8 cursor-pointer items-center justify-center bg-transparent text-white">
         <Icon name="close" size={14} strokeWidth={2} />
       </button>
     </div>

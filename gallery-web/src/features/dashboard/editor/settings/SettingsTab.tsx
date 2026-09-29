@@ -14,7 +14,7 @@ export function SettingsTab() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <Eyebrow className="mb-2.5 block">Settings</Eyebrow>
+        <Eyebrow className="mb-2.5 block">הגדרות</Eyebrow>
         <h3 className="text-[22px] font-medium tracking-[-0.015em] text-ink">הגדרות גלריה</h3>
       </div>
 

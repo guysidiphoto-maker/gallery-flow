@@ -3,6 +3,7 @@ import { useDismiss } from '@/shared/lib/useDismiss'
 import { cn } from '@/shared/ui'
 import { Icon } from '@/shared/ui/Icon'
 import { useEditor, useOpenGallery } from './EditorContext'
+import { headerAction } from './headerAction'
 
 // Gallery-level actions in one accessible dropdown (role=menu, arrow keys,
 // outside-click / Escape dismiss). Delete is visually separated.
@@ -24,11 +25,11 @@ export function GalleryMoreMenu() {
   }, [open])
 
   const items = [
-    { icon: 'link' as const, label: 'העתק קישור ישיר', danger: false, onClick: () => session.copyDirectLink(actions.shareUrl(gallery), gallery.id) },
+    { icon: 'link' as const, label: 'העתקת קישור ישיר', danger: false, onClick: () => session.copyDirectLink(actions.shareUrl(gallery), gallery.id) },
     { icon: 'share' as const, label: 'שיתוף ומרכז שיתוף', danger: false, onClick: () => actions.openEmailShare(gallery) },
     { icon: 'download' as const, label: 'ייצוא הגלריה (ZIP)', danger: false, onClick: () => { void exporter.handleGalleryExport() } },
-    { icon: 'duplicate' as const, label: 'שכפל גלריה', danger: false, onClick: () => { void actions.duplicateGallery(gallery) } },
-    { icon: 'trash' as const, label: 'מחק גלריה', danger: true, onClick: () => { void actions.deleteGallery(gallery) } },
+    { icon: 'duplicate' as const, label: 'שכפול גלריה', danger: false, onClick: () => { void actions.duplicateGallery(gallery) } },
+    { icon: 'trash' as const, label: 'מחיקת גלריה', danger: true, onClick: () => { void actions.deleteGallery(gallery) } },
   ]
 
   return (
@@ -40,12 +41,14 @@ export function GalleryMoreMenu() {
         aria-expanded={open}
         aria-label="עוד פעולות לגלריה"
         className={cn(
-          'inline-flex cursor-pointer items-center gap-2 rounded-hair border border-line px-4 py-2.5 text-[11px] font-medium tracking-label text-ink uppercase',
+          headerAction,
+          'cursor-pointer border-line text-ink hover:border-ink',
           open ? 'bg-black/4' : 'bg-transparent',
         )}
       >
-        More
-        <Icon name="menu" size={13} strokeWidth={1.85} />
+        <Icon name="more-vertical" size={14} strokeWidth={1.85} />
+        עוד
+
       </button>
       {open && (
         <div
@@ -70,12 +73,12 @@ export function GalleryMoreMenu() {
                 role="menuitem"
                 onClick={() => { setOpen(false); item.onClick() }}
                 className={cn(
-                  'flex w-full cursor-pointer items-center justify-between bg-transparent px-2.5 py-[9px] text-right text-[12px]',
+                  'flex w-full cursor-pointer items-center gap-2.5 bg-transparent px-2.5 py-[9px] text-start text-[12px] hover:bg-sunken',
                   item.danger ? 'text-danger-strong' : 'text-ink',
                 )}
               >
+                <Icon name={item.icon} size={14} strokeWidth={1.85} />
                 <span>{item.label}</span>
-                <Icon name={item.icon} size={13} strokeWidth={1.85} />
               </button>
             </React.Fragment>
           ))}

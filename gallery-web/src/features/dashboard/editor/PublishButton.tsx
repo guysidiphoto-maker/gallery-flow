@@ -1,5 +1,6 @@
 import { cn } from '@/shared/ui'
 import { useEditor, useOpenGallery } from './EditorContext'
+import { headerAction } from './headerAction'
 
 // Publish (draft) / Update (live). Idle live galleries are dashed + muted,
 // pending work is filled black with an amber "dirty" pill, in-flight is
@@ -15,7 +16,7 @@ export function PublishButton() {
     ? 'מפרסם…'
     : justPublished
       ? (isDraft ? '✓ פורסם' : '✓ עודכן')
-      : (isDraft ? 'Publish' : (hasWork ? 'Update' : 'מעודכן'))
+      : (isDraft ? 'פרסום' : (hasWork ? 'עדכון' : 'מעודכן'))
   const filled = hasWork && !justPublished && !publishing
   const successTint = justPublished
 
@@ -32,7 +33,8 @@ export function PublishButton() {
         disabled={disabled}
         aria-live="polite"
         className={cn(
-          'min-w-[110px] rounded-hair border px-[22px] py-2.5 text-[11px] font-medium tracking-label uppercase',
+          headerAction,
+          'min-w-[110px] justify-center px-[22px]',
           'transition-[background-color,border-color,color,opacity,box-shadow] duration-150',
           successTint
             ? 'border-go/50 bg-go/12 text-go-ink'

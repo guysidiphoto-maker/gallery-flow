@@ -3,9 +3,8 @@ import { Icon } from '@/shared/ui/Icon'
 import { useEditor, useOpenGallery } from './EditorContext'
 import { GalleryMoreMenu } from './GalleryMoreMenu'
 import { PublishButton } from './PublishButton'
+import { headerAction } from './headerAction'
 
-const headerAction =
-  'inline-flex items-center gap-2 rounded-hair border px-[18px] py-2.5 text-[11px] font-medium tracking-label uppercase'
 
 // Name + status on the start side; Preview / Copy Link / More / Publish on the end.
 export function EditorHeader() {
@@ -19,8 +18,9 @@ export function EditorHeader() {
       <div className="flex items-center gap-3.5">
         <button
           onClick={() => setEditingGallery(null)}
-          aria-label="חזרה"
-          className="flex cursor-pointer items-center p-1 text-ink-soft"
+          aria-label="סגירת העורך"
+          title="סגירת העורך"
+          className="flex size-9 cursor-pointer items-center justify-center rounded-hair text-ink-soft hover:bg-sunken hover:text-ink"
         >
           <Icon name="close" size={18} strokeWidth={1.85} />
         </button>
@@ -28,9 +28,9 @@ export function EditorHeader() {
           <h2 id="gallery-editor-heading" className="m-0 text-[20px] font-medium tracking-[-0.015em] text-ink">
             {gallery.name}
           </h2>
-          <div className="mt-1 flex items-center gap-2 text-[10px] font-medium tracking-label text-muted uppercase">
+          <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-muted">
             <span className={cn('size-1.5 rounded-full', isLiveStatus ? 'bg-sage' : 'bg-line')} />
-            <span>{isLiveStatus ? 'Published' : 'Draft'}</span>
+            <span>{isLiveStatus ? 'פורסמה' : 'טיוטה'}</span>
             <span className="mx-0.5 text-line">·</span>
             <span>{galleryImages.length} תמונות</span>
           </div>
@@ -40,10 +40,11 @@ export function EditorHeader() {
         <a
           href={actions.shareUrl(gallery)}
           target="_blank"
-          className={cn(headerAction, 'border-line bg-transparent text-ink no-underline')}
+          rel="noopener"
+          className={cn(headerAction, 'border-line bg-transparent text-ink no-underline hover:border-ink')}
         >
-          <Icon name="arrow-out" size={13} strokeWidth={1.85} />
-          Preview
+          <Icon name="eye" size={14} strokeWidth={1.85} />
+          תצוגה מקדימה
         </a>
         {isLiveStatus && (
           <button
@@ -55,8 +56,8 @@ export function EditorHeader() {
               copiedInEditor ? 'border-go/45 bg-go/10 text-go-ink' : 'border-line bg-transparent text-ink',
             )}
           >
-            <Icon name={copiedInEditor ? 'check' : 'copy'} size={13} strokeWidth={1.85} />
-            {copiedInEditor ? 'הקישור הועתק' : 'Copy Link'}
+            <Icon name={copiedInEditor ? 'check' : 'link'} size={14} strokeWidth={1.85} />
+            {copiedInEditor ? 'הקישור הועתק' : 'העתקת קישור'}
           </button>
         )}
         <GalleryMoreMenu />

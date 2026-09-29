@@ -14,23 +14,23 @@ export function ActivityTab() {
 
   return (
     <div>
-      <Eyebrow className="mb-2.5 block">Activity</Eyebrow>
+      <Eyebrow className="mb-2.5 block">פעילות</Eyebrow>
       <h3 className="mb-7 text-[22px] font-medium tracking-[-0.015em] text-ink">
         פעילות בגלריה
       </h3>
 
       {activityLoading && !activitySummary ? (
-        <div className="py-[60px] text-center text-[11px] font-medium tracking-label text-muted uppercase">
-          Loading
+        <div className="py-[60px] text-center text-xs font-medium text-muted">
+          טוען פעילות…
         </div>
       ) : !activitySummary || (activitySummary.downloads_total === 0 && activitySummary.favorites_total === 0 && activitySummary.emails_total === 0) ? (
         <div className="border border-dashed border-line bg-surface px-6 py-20 text-center">
-          <Icon name="activity" size={36} strokeWidth={1.2} className="opacity-40" />
+          <Icon name="activity" size={36} strokeWidth={1.2} className="mx-auto opacity-40" />
           <p className="mt-4 text-[14px] font-medium text-ink-soft">
             עדיין אין פעילות
           </p>
-          <p className="mt-1.5 text-[11px] font-medium tracking-label text-muted uppercase">
-            Share gallery · activity will appear here
+          <p className="mt-1.5 text-xs text-muted">
+            שתפו את הגלריה, וההורדות, המועדפים והמיילים יופיעו כאן
           </p>
         </div>
       ) : (

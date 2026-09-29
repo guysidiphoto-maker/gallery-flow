@@ -11,7 +11,7 @@ export function RecentEmailsList({ emails }: { emails: ActivitySummary['recent_e
             {e.recipient_email}
           </span>
           <span className={cn(activityTagClass, e.status === 'sent' ? 'text-sage' : 'text-muted')}>
-            {e.status === 'sent' ? 'Sent' : 'Failed'}
+            {e.status === 'sent' ? 'נשלח' : 'נכשל'}
           </span>
           <span className={activityTimeClass}>
             {formatActivityTime(e.created_at)}

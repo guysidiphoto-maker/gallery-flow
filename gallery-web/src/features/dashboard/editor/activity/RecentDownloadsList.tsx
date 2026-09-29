@@ -22,7 +22,7 @@ export function RecentDownloadsList({ downloads, images }: {
               </span>
             )}
             <span className={cn(activityTagClass, 'text-muted')}>
-              {d.resolution === 'original' ? 'Original' : 'Web'}
+              {d.resolution === 'original' ? 'מקור' : 'רשת'}
               {d.download_kind === 'batch' ? ' · Batch' : ''}
             </span>
             <span className={activityTimeClass}>

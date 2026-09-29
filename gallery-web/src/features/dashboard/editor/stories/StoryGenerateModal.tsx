@@ -35,8 +35,8 @@ export function StoryGenerateModal() {
       >
         {/* Scrollable body + fixed footer keeps the CTAs reachable on small viewports. */}
         <div className="min-h-0 flex-1 overflow-y-auto px-7 pt-6 pb-3">
-          <div className="mb-3.5 text-[11px] font-medium tracking-wide-label text-muted uppercase">
-            Story generator
+          <div className="mb-3.5 text-xs font-medium text-muted">
+            מחולל סטוריז
           </div>
           <h3 id="story-style-heading" className="mt-0 mb-3.5 text-[22px] leading-[1.15] font-medium tracking-[-0.015em] text-ink">
             איזה סגנון סטורי?

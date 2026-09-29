@@ -9,7 +9,7 @@ export function DomainPendingDns({ domain, token }: { domain: string; token: str
   return (
     <div>
       <div className="mb-1.5 text-[13px] font-medium text-ink">
-        המתנה לאימות DNS — עד 72 שעות
+        ממתינים לאימות DNS (עד 72 שעות)
       </div>
       <div className="mb-4 text-[12px] leading-[1.6] text-muted">
         הוסיפו את רשומת ה־TXT הבאה אצל ספק הדומיין שלכם. ברגע שה־DNS יתעדכן, נאמת את הבעלות אוטומטית.
@@ -35,7 +35,7 @@ export function DomainPendingDns({ domain, token }: { domain: string; token: str
             onClick={() => { void copyVerificationToken(token) }}
             className="shrink-0 rounded-hair border border-line bg-transparent px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-ink uppercase"
           >
-            {domainCopied ? 'הועתק' : 'Copy'}
+            {domainCopied ? 'הועתק' : 'העתקה'}
           </button>
         </div>
       </div>
