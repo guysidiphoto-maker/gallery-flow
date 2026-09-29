@@ -1,11 +1,19 @@
 /* Global element defaults on top of Tailwind preflight. */
+/* Preflight defaults to line-height 1.5; every screen was designed on the
+   browser's "normal", so keep that. Use leading-* where more is wanted. */
 html {
   -webkit-text-size-adjust: 100%;
+  line-height: normal;
 }
 
+/* Pages were designed on this dark default; the gallery viewer overrides the
+   vars (--bg, --text, --font-body) with the gallery's own branding. */
 body {
   min-height: 100vh;
-  font-family: var(--font-sans);
+  background: var(--bg, var(--color-night));
+  color: var(--text, var(--color-white));
+  font-family: var(--font-body, var(--font-sans));
+  letter-spacing: -0.005em;
   font-feature-settings: 'kern', 'liga', 'calt';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
