@@ -61,7 +61,8 @@ export function MasonryTile({
         sizes={imgSizes}
         alt=""
         loading={isAboveFold ? 'eager' : 'lazy'}
-        fetchPriority={isAboveFold ? 'high' : undefined}
+        // Lowercase: React 18 warns on (and doesn't map) the camelCase prop.
+        {...(isAboveFold ? { fetchpriority: 'high' } : {})}
         decoding="async"
         className={cn(
           'gv-tile-placeholder block h-auto w-full cursor-pointer [transition:opacity_.35s_ease,filter_.3s_ease]',

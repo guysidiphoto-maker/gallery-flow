@@ -1,4 +1,5 @@
 import { cn } from '@/shared/ui'
+import { useFocusTrap } from '@/shared/lib/useFocusTrap'
 import './faceSearch.css'
 import { faceTexts } from './faceSearchTexts'
 import type { ServerImageRow } from './serverImageRow'
@@ -39,13 +40,21 @@ export function FaceSearchExperience({
   const ft = faceTexts[lang] || faceTexts.he
   const fs = useFaceSearch({ galleryId, privacyMode, lang, onSelfieCapture })
   const { phase, selfieUrl } = fs
+  // Keyboard: focus moves in, Tab stays inside, Escape closes (not mid-search, like the close button).
+  const dialogRef = useFocusTrap<HTMLDivElement>(true, phase === 'thinking' ? undefined : onClose)
 
   const bgSrc = backgroundImages.length > 0
     ? storageUrl(backgroundImages[0].thumbnail_path || backgroundImages[0].storage_path)
     : null
 
   return (
-    <div className="fixed inset-0 z-[1100] flex flex-col items-center justify-center overflow-hidden bg-black font-(family-name:--fs-font) antialiased">
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={ft.findYourPhotos}
+      className="fixed inset-0 z-[1100] flex flex-col items-center justify-center overflow-hidden bg-black font-(family-name:--fs-font) antialiased"
+    >
       {bgSrc && (
         <div
           className={cn(
@@ -61,7 +70,7 @@ export function FaceSearchExperience({
       {phase !== 'thinking' && (
         <button
           onClick={onClose}
-          aria-label="Close"
+          aria-label={lang === 'he' ? 'סגירה' : 'Close'}
           className="absolute top-5 right-5 z-10 flex size-11 cursor-pointer items-center justify-center rounded-full border border-white/8 bg-white/6 text-[18px] leading-none text-white/50 backdrop-blur-[12px] transition-all duration-250 ease-[cubic-bezier(.4,0,.2,1)] hover:scale-[1.08] hover:bg-white/12 hover:text-white/80"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

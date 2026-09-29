@@ -35,7 +35,6 @@ import { DownloadProgress } from './components/downloads/DownloadProgress'
 import { MobileDownloadBar } from './components/downloads/MobileDownloadBar'
 import { DownloadEmailGate, loadLightbox, RoleSelectScreen, StoryPlayer, TurnstileOverlay, Viewer } from './components/lazyViews'
 
-
 const storyUrl = (st: Story) => storageUrl('gallery-stories', st.storage_path)
 
 export function GalleryViewerPage() {
@@ -208,6 +207,7 @@ export function GalleryViewerPage() {
       <Hero bgUrl={heroBgUrl} hasCustomCover={!!(covers.resolvedCoverUrl || covers.coverUrl)} hidden={settings.isFeedMode}>
         {face.faceMatchIds && face.faceSelfieUrl ? (
           <FaceMatchHeroContent
+            txt={txt}
             selfieUrl={face.faceSelfieUrl}
             studioName={studioName}
             galleryTitle={galleryTitle}
@@ -222,6 +222,7 @@ export function GalleryViewerPage() {
           />
         ) : (
           <DefaultHeroContent
+            txt={txt}
             studioName={studioName}
             galleryTitle={galleryTitle}
             clientName={settings.clientName}
@@ -293,6 +294,7 @@ export function GalleryViewerPage() {
         activeAnchor={nav.activeSectionAnchor}
         viewerRole={client.viewerRole}
         gridProps={gridProps}
+        photoCount={txt.photoCount}
         onOpen={(list, idx) => { setViewerList(list); setViewerIndex(idx) }}
       />
 
@@ -308,6 +310,7 @@ export function GalleryViewerPage() {
             imgBucket={imgBucket}
             allowDownloads={downloadsEnabled}
             downloadLabel={downloadLabel}
+            txt={txt}
             onClose={() => { setViewerIndex(null); setViewerList(null) }}
             onNavigate={setViewerIndex}
             onDownload={downloads.handleImageDownload}

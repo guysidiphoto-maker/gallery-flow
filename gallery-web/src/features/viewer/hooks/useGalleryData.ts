@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { storageUrl } from '@/shared/lib/supabase'
 import {
   getMeta as gcGetMeta,
@@ -46,8 +46,11 @@ export function useGalleryData(route: GalleryRoute | null) {
   const [imagesPending, setImagesPending] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [unlocked, setUnlocked] = useState(false)
+  // Bumped per route load: a superseded load (route change, StrictMode re-run)
+  // stops appending pages, which would otherwise duplicate every row.
+  const loadGen = useRef(0)
 
-  async function loadGallery(id: string, prefetch?: Prefetch) {
+  async function loadGallery(gen: number, id: string, prefetch?: Prefetch) {
     // Section names are not sensitive and don't depend on meta, so fetch them alongside it.
     const sectionsReq = prefetch
       ? Promise.resolve({ data: prefetch.sections })
@@ -96,7 +99,7 @@ export function useGalleryData(route: GalleryRoute | null) {
           // ok=false only on a real failure (transient ones retry inside), so a
           // blip never silently truncates the gallery.
           const res = await gcGetImagesResult<GalleryImage>(id, { offset, limit: REST_PAGE })
-          if (!res.ok) break
+          if (!res.ok || loadGen.current !== gen) break
           if (res.data.length > 0) setImages(prev => [...prev, ...res.data])
           if (res.data.length < REST_PAGE) break
         }
@@ -110,9 +113,10 @@ export function useGalleryData(route: GalleryRoute | null) {
   }
 
   useEffect(() => {
+    const gen = ++loadGen.current
     if (!route) { setError('No gallery ID in URL'); return }
     if (route.type === 'id') {
-      loadGallery(route.value)
+      loadGallery(gen, route.value)
       return
     }
     (async () => {
@@ -123,7 +127,7 @@ export function useGalleryData(route: GalleryRoute | null) {
           route.businessSlug, route.gallerySlug, FIRST_PAGE,
         )
         if (boot.status === 'ok' && boot.galleryId) {
-          loadGallery(boot.galleryId, {
+          loadGallery(gen, boot.galleryId, {
             meta: boot.meta as unknown as GalleryMeta,
             images: boot.images ?? [],
             sections: boot.sections ?? [],
@@ -136,9 +140,9 @@ export function useGalleryData(route: GalleryRoute | null) {
         if (!biz) { setError('Gallery not found'); return }
         // Draft is included so the owner can deep-link into an unpublished gallery.
         const { data: g } = await getGalleryBySlug(biz.id, route.gallerySlug)
-        if (g) { loadGallery(g.id); return }
+        if (g) { loadGallery(gen, g.id); return }
         const { data: byName } = await findGalleryByNameSlug(biz.id, route.gallerySlug)
-        if (byName?.[0]) { loadGallery(byName[0].id); return }
+        if (byName?.[0]) { loadGallery(gen, byName[0].id); return }
         setError('Gallery not found')
       } catch { setError('Gallery not found') }
     })()

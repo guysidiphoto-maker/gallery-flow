@@ -32,7 +32,7 @@ export function GalleryToolbar({
             <circle cx="12" cy="8" r="3" />
             <path d="M5.5 20a7 7 0 0 1 13 0" />
           </svg>
-          Find my photos
+          {txt.findMyPhotos}
         </ToolbarButton>
       )}
       {hasFaceMatches && faceFilterActive && !selectMode && (
