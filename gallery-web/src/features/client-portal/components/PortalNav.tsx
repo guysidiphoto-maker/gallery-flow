@@ -1,16 +1,12 @@
-// PortalNav — the primary portal navigation. Every item has a real text label
-// (no unexplained icon-only controls). Active item uses aria-current="page".
-//
-// Responsive: on wide viewports the items render inline. On narrow viewports
-// (<=760px) they collapse behind an accessible "Menu" button that opens a
-// labelled dropdown. The collapse is driven by a CSS media query toggling two
-// sibling containers, so it works without JS viewport measurement.
+// Primary portal nav. Inline on wide screens; at <=760px it collapses behind a
+// labelled "Menu" dropdown (pure CSS switch, no viewport measurement).
 
 import { useState } from 'react'
 import { Icon, type IconName } from '@/shared/ui/Icon'
+import { cn } from '@/shared/ui'
 import type { PortalLocale } from '@/shared/i18n/portalLocale'
-import { tokens } from './tokens'
 import { useDismiss } from '@/shared/lib/useDismiss'
+import { focusRing } from '../lib/focusRing'
 
 export interface NavItem {
   id: string
@@ -25,26 +21,6 @@ interface Props {
   activeId: string
 }
 
-function itemStyle(active: boolean) {
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '9px 14px',
-    border: 'none',
-    borderRadius: 999,
-    background: active ? tokens.textPrimary : 'transparent',
-    color: active ? '#fff' : tokens.textSecondary,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    fontSize: 12,
-    fontWeight: 500,
-    letterSpacing: '0.02em',
-    whiteSpace: 'nowrap' as const,
-    transition: 'background .15s, color .15s',
-  }
-}
-
 export function PortalNav({ loc, items, activeId }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const ref = useDismiss<HTMLDivElement>(menuOpen, () => setMenuOpen(false))
@@ -52,18 +28,21 @@ export function PortalNav({ loc, items, activeId }: Props) {
 
   return (
     <>
-      {/* Inline nav — hidden on narrow screens */}
-      <nav className="pf-nav-inline" aria-label={loc.t('nav.menu')} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      <nav aria-label={loc.t('nav.menu')} className="flex items-center gap-1 max-[761px]:hidden">
         {items.map(item => {
           const active = item.id === activeId
           return (
             <button
               key={item.id}
               type="button"
-              className="pf-focus pf-anim"
               aria-current={active ? 'page' : undefined}
               onClick={item.onSelect}
-              style={itemStyle(active)}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-full px-3.5 py-[9px] text-xs font-medium tracking-[0.02em] whitespace-nowrap',
+                'transition-colors duration-150',
+                active ? 'bg-ink text-white' : 'bg-transparent text-ink-soft',
+                focusRing,
+              )}
             >
               <Icon name={item.icon} size={14} strokeWidth={1.65} />
               {item.label}
@@ -72,29 +51,17 @@ export function PortalNav({ loc, items, activeId }: Props) {
         })}
       </nav>
 
-      {/* Collapsed menu — shown on narrow screens */}
-      <div className="pf-nav-collapsed" ref={ref} style={{ position: 'relative', display: 'none' }}>
+      <div ref={ref} className="relative hidden max-[761px]:block">
         <button
           type="button"
-          className="pf-focus pf-anim"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           aria-label={loc.t('nav.menu')}
           onClick={() => setMenuOpen(o => !o)}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '9px 14px',
-            border: `1px solid ${tokens.border}`,
-            borderRadius: 999,
-            background: '#fff',
-            color: tokens.textPrimary,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            fontSize: 12,
-            fontWeight: 500,
-          }}
+          className={cn(
+            'inline-flex items-center gap-2 rounded-full border border-line-soft bg-white px-3.5 py-[9px] text-xs font-medium text-ink',
+            focusRing,
+          )}
         >
           <Icon name="menu" size={15} strokeWidth={1.75} />
           {activeItem ? activeItem.label : loc.t('nav.menu')}
@@ -102,19 +69,7 @@ export function PortalNav({ loc, items, activeId }: Props) {
         {menuOpen && (
           <div
             role="menu"
-            style={{
-              position: 'absolute',
-              top: '100%',
-              insetInlineStart: 0,
-              marginTop: 8,
-              background: '#fff',
-              border: `1px solid ${tokens.border}`,
-              borderRadius: 6,
-              minWidth: 220,
-              zIndex: 300,
-              boxShadow: '0 12px 32px rgba(20,20,19,.12)',
-              overflow: 'hidden',
-            }}
+            className="absolute start-0 top-full z-[300] mt-2 min-w-[220px] overflow-hidden rounded-sm border border-line-soft bg-white shadow-card"
           >
             {items.map(item => {
               const active = item.id === activeId
@@ -123,25 +78,13 @@ export function PortalNav({ loc, items, activeId }: Props) {
                   key={item.id}
                   type="button"
                   role="menuitem"
-                  className="pf-focus"
                   aria-current={active ? 'page' : undefined}
                   onClick={() => { item.onSelect(); setMenuOpen(false) }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    width: '100%',
-                    textAlign: 'start',
-                    padding: '12px 16px',
-                    border: 'none',
-                    borderBottom: `1px solid ${tokens.border}`,
-                    background: active ? tokens.bgSubtle : 'transparent',
-                    color: tokens.textPrimary,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    fontSize: 13,
-                    fontWeight: 500,
-                  }}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 border-b border-line-soft px-4 py-3 text-start text-[13px] font-medium text-ink',
+                    active ? 'bg-surface' : 'bg-transparent',
+                    focusRing,
+                  )}
                 >
                   <Icon name={item.icon} size={15} strokeWidth={1.65} />
                   {item.label}

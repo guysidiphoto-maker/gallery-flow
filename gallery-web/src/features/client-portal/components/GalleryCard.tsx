@@ -1,14 +1,7 @@
-// GalleryCard — one responsive gallery card for the client portal.
-//
-// Cover rule (CRITICAL): a broken <img> must NEVER render. When there is no
-// cover URL we draw a designed CoverFallback (monogram + gradient). When a URL
-// exists we render it, but still keep a fallback painted underneath so a failed
-// load degrades to the designed cover instead of a broken-image glyph.
-
-import { useState, type CSSProperties } from 'react'
 import { Icon } from '@/shared/ui/Icon'
-import { CoverFallback } from './CoverFallback'
-import { tokens, serifDisplay } from './tokens'
+import { cn } from '@/shared/ui'
+import { focusRing } from '../lib/focusRing'
+import { PortalCover } from './PortalCover'
 
 export interface GalleryCardData {
   id: string
@@ -28,122 +21,35 @@ interface Props {
 }
 
 export function GalleryCard({ data, href, statusLabel, dateLabel, countLabel, openLabel }: Props) {
-  const [imgFailed, setImgFailed] = useState(false)
-  const [hover, setHover] = useState(false)
-  const showRealCover = !!data.coverUrl && !imgFailed
-
-  const cardStyle: CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    background: '#fff',
-    border: `1px solid ${hover ? tokens.textPrimary : tokens.border}`,
-    borderRadius: 4,
-    overflow: 'hidden',
-    textDecoration: 'none',
-    color: tokens.textPrimary,
-    transition: 'border-color .15s, transform .15s, box-shadow .15s',
-    transform: hover ? 'translateY(-2px)' : 'none',
-    boxShadow: hover ? '0 10px 30px rgba(20,20,19,.08)' : 'none',
-    height: '100%',
-  }
-
   return (
     <a
-      className="pf-focus pf-anim"
       href={href}
       aria-label={`${openLabel} — ${data.name}`}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      onFocus={() => setHover(true)}
-      onBlur={() => setHover(false)}
-      style={cardStyle}
+      className={cn(
+        'group flex h-full flex-col overflow-hidden rounded-[4px] border border-line-soft bg-white text-ink no-underline',
+        'transition-[border-color,transform,box-shadow] duration-150',
+        'hover:-translate-y-0.5 hover:border-ink hover:shadow-card focus:-translate-y-0.5 focus:border-ink focus:shadow-card',
+        focusRing,
+      )}
     >
-      {/* Cover */}
-      <div style={{ position: 'relative' }}>
-        {showRealCover ? (
-          <div style={{ aspectRatio: '3 / 2', overflow: 'hidden', background: tokens.bgSubtle }}>
-            <img
-              src={data.coverUrl!}
-              alt=""
-              loading="lazy"
-              onError={() => setImgFailed(true)}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-            />
-          </div>
-        ) : (
-          <CoverFallback name={data.name} aspectRatio="3 / 2" />
-        )}
-        {/* Status chip */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 12,
-            insetInlineStart: 12,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '4px 10px',
-            background: 'rgba(255,255,255,.92)',
-            border: `1px solid ${tokens.border}`,
-            borderRadius: 999,
-            fontSize: 10,
-            fontWeight: 500,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            color: tokens.textSecondary,
-          }}
-        >
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: tokens.statusLive }} />
+      <div className="relative">
+        <PortalCover coverUrl={data.coverUrl} name={data.name} />
+        <div className="absolute start-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-line-soft bg-white/92 px-2.5 py-1 text-[10px] font-medium tracking-[0.12em] text-ink-soft uppercase">
+          <span className="size-1.5 rounded-full bg-sage" />
           {statusLabel}
         </div>
       </div>
 
-      {/* Body */}
-      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-        <h3
-          style={{
-            ...serifDisplay,
-            fontSize: 18,
-            margin: 0,
-            lineHeight: 1.25,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
+      <div className="flex flex-1 flex-col gap-1.5 p-4">
+        <h3 className="line-clamp-2 font-serif text-lg leading-[1.25] font-medium tracking-[-0.01em] text-ink">
           {data.name}
         </h3>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 12,
-            color: tokens.textMuted,
-            flexWrap: 'wrap',
-          }}
-        >
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {dateLabel && <span>{dateLabel}</span>}
-          {dateLabel && <span aria-hidden style={{ opacity: 0.5 }}>·</span>}
+          {dateLabel && <span aria-hidden className="opacity-50">·</span>}
           <span>{countLabel}</span>
         </div>
-
-        {/* Primary action */}
-        <div
-          style={{
-            marginTop: 'auto',
-            paddingTop: 14,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 11,
-            fontWeight: 500,
-            letterSpacing: '0.16em',
-            textTransform: 'uppercase',
-            color: hover ? tokens.textPrimary : tokens.textSecondary,
-          }}
-        >
+        <div className="mt-auto inline-flex items-center gap-2 pt-3.5 text-[11px] font-medium tracking-[0.16em] text-ink-soft uppercase group-hover:text-ink group-focus:text-ink">
           {openLabel}
           <Icon name="arrow-out" size={13} strokeWidth={1.85} />
         </div>

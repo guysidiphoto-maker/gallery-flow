@@ -1,30 +1,19 @@
-// LocaleToggle — a clean he/en switch that lives in the portal shell. Shows the
-// language you can switch TO (so its own label never mixes into the active UI).
-
+import { cn } from '@/shared/ui'
 import type { PortalLocale } from '@/shared/i18n/portalLocale'
-import { tokens } from './tokens'
+import { focusRing } from '../lib/focusRing'
 
+/** he/en switch; labelled with the language you switch TO. */
 export function LocaleToggle({ loc }: { loc: PortalLocale }) {
   return (
     <button
       type="button"
-      className="pf-focus pf-anim"
       onClick={loc.toggle}
       aria-label={loc.t('lang.label')}
-      style={{
-        padding: '7px 12px',
-        border: `1px solid ${tokens.border}`,
-        borderRadius: 999,
-        background: '#fff',
-        color: tokens.textSecondary,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        fontSize: 11,
-        fontWeight: 500,
-        letterSpacing: '0.06em',
-        transition: 'border-color .15s, color .15s',
-        whiteSpace: 'nowrap',
-      }}
+      className={cn(
+        'rounded-full border border-line-soft bg-white px-3 py-[7px] text-[11px] font-medium tracking-[0.06em] whitespace-nowrap text-ink-soft',
+        'transition-colors duration-150',
+        focusRing,
+      )}
     >
       {loc.t('lang.toggle')}
     </button>

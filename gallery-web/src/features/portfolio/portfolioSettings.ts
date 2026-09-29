@@ -1,8 +1,5 @@
-// Portfolio settings utilities — extracted from PortfolioEditor.tsx so
-// callers can read settings without paying the cost of the (large) editor
-// component bundle. The editor itself stays in PortfolioEditor.tsx and is
-// lazy-loaded; this file keeps zero React/UI imports so it can be in the
-// initial bundle for ~free.
+// Settings live apart from the lazy-loaded editor so the portal can read them
+// cheaply. Keep this file free of React/UI imports.
 
 export interface PortfolioSettings {
   // Branding

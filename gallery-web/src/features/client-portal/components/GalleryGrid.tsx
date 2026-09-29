@@ -1,11 +1,12 @@
-// GalleryGrid — the client-facing galleries screen. A responsive card grid with
-// a subtle, client-friendly search (not an admin toolbar). No keyboard-shortcut
-// hints, no sort/view-mode toggles, no exposed favorite mechanics.
+// Client-facing galleries screen: responsive card grid with a light search
+// (shown only when there are enough galleries to need it).
 
 import { useState } from 'react'
 import { Icon } from '@/shared/ui/Icon'
+import { cn, Eyebrow } from '@/shared/ui'
 import type { PortalLocale } from '@/shared/i18n/portalLocale'
-import { tokens, eyebrow, serifDisplay } from './tokens'
+import { countLabel } from '../lib/countLabel'
+import { focusRing } from '../lib/focusRing'
 import { GalleryCard, type GalleryCardData } from './GalleryCard'
 import { EmptyState } from './EmptyState'
 
@@ -13,13 +14,7 @@ interface Props {
   loc: PortalLocale
   items: GalleryCardData[]
   hrefFor: (id: string) => string
-  /** Show the search field only when there are enough galleries to warrant it. */
   searchable?: boolean
-}
-
-function countLabel(loc: PortalLocale, n: number): string {
-  if (n === 1) return loc.t('galleries.count.one')
-  return loc.t('galleries.count', { n: loc.fmtNum(n) })
 }
 
 export function GalleryGrid({ loc, items, hrefFor, searchable = true }: Props) {
@@ -32,59 +27,29 @@ export function GalleryGrid({ loc, items, hrefFor, searchable = true }: Props) {
 
   return (
     <section>
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          gap: 16,
-          flexWrap: 'wrap',
-          marginBottom: 28,
-        }}
-      >
+      <header className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div style={{ ...eyebrow, marginBottom: 10 }}>{loc.t('nav.galleries')}</div>
-          <h2 style={{ ...serifDisplay, fontSize: 'clamp(24px, 3.4vw, 30px)', margin: '0 0 6px' }}>
+          <Eyebrow className="mb-2.5 block">{loc.t('nav.galleries')}</Eyebrow>
+          <h2 className="mb-1.5 font-serif text-[clamp(24px,3.4vw,30px)] font-medium tracking-[-0.01em] text-ink">
             {loc.t('galleries.title')}
           </h2>
-          <p style={{ fontSize: 14, color: tokens.textSecondary, margin: 0, lineHeight: 1.55 }}>
-            {loc.t('galleries.subtitle')}
-          </p>
+          <p className="text-sm leading-[1.55] text-ink-soft">{loc.t('galleries.subtitle')}</p>
         </div>
 
         {showSearch && (
-          <div style={{ position: 'relative', flex: '0 1 300px', minWidth: 220 }}>
-            <span
-              aria-hidden
-              style={{
-                position: 'absolute',
-                insetInlineStart: 14,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: tokens.textMuted,
-                display: 'flex',
-                pointerEvents: 'none',
-              }}
-            >
+          <div className="relative min-w-[220px] flex-[0_1_300px]">
+            <span aria-hidden className="pointer-events-none absolute start-3.5 top-1/2 flex -translate-y-1/2 text-muted">
               <Icon name="search" size={14} strokeWidth={1.75} />
             </span>
             <input
-              className="pf-focus"
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder={loc.t('galleries.search')}
               aria-label={loc.t('galleries.search')}
-              style={{
-                width: '100%',
-                padding: loc.dir === 'rtl' ? '11px 40px 11px 14px' : '11px 14px 11px 40px',
-                background: '#fff',
-                border: `1px solid ${tokens.border}`,
-                borderRadius: 999,
-                color: tokens.textPrimary,
-                fontSize: 13,
-                fontFamily: 'inherit',
-                outline: 'none',
-              }}
+              className={cn(
+                'w-full rounded-full border border-line-soft bg-white py-[11px] ps-10 pe-3.5 text-[13px] text-ink outline-none',
+                focusRing,
+              )}
             />
           </div>
         )}
@@ -99,13 +64,7 @@ export function GalleryGrid({ loc, items, hrefFor, searchable = true }: Props) {
       ) : filtered.length === 0 ? (
         <EmptyState title={loc.t('galleries.noResults')} />
       ) : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-            gap: 20,
-          }}
-        >
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-5">
           {filtered.map(g => (
             <GalleryCard
               key={g.id}
