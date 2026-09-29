@@ -28,7 +28,7 @@ export function Step3Zip({
   // Skipped collections are not valid ZIP targets.
   const targets = collections.filter(c => c.client_match_status !== 'skip')
 
-  const onFiles = useCallback(async (fileList: FileList | null) => {
+  const onFiles = useCallback(async (fileList: FileList | File[] | null) => {
     if (!fileList || fileList.length === 0) return
     setReading(true)
     const added: ZipSlot[] = []
@@ -64,7 +64,12 @@ export function Step3Zip({
       <div className="mb-4">
         <input
           ref={fileRef} type="file" accept=".zip,application/zip" multiple className="hidden"
-          onChange={e => onFiles(e.target.files)}
+          onChange={e => {
+            // Copy, then reset so re-adding a removed ZIP fires onChange again.
+            const files = e.target.files ? Array.from(e.target.files) : null
+            e.target.value = ''
+            void onFiles(files)
+          }}
         />
         <ImportButton variant="ghost" onClick={() => fileRef.current?.click()}>{t('import.step3.choose')}</ImportButton>
       </div>

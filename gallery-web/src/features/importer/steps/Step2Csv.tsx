@@ -1,6 +1,6 @@
 // CSV is read as text in the browser and dry-run parsed by the server (parse_csv);
 // per-collection mapping choices persist via set_collection_mapping.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { fetchClientsOverview, type ClientOverviewRow } from '@/features/clients/api'
 import type { WizardCommon, ImportCollection } from '../wizardTypes'
 import { parseCsvDryRun, setCollectionMapping, createClientInline, type DryRunResult } from '../importApi'
@@ -20,7 +20,7 @@ export function Step2Csv({
 }: WizardCommon & {
   jobId: string
   collections: ImportCollection[]
-  setCollections: (c: ImportCollection[]) => void
+  setCollections: Dispatch<SetStateAction<ImportCollection[]>>
   onBack: () => void
   onNext: () => void
 }) {
@@ -63,16 +63,19 @@ export function Step2Csv({
     try {
       const server = await setCollectionMapping(col.id, action, clientId)
       if (server.ok) {
-        setCollections(collections.map(c => c.id === col.id
+        // Functional: mappings on other rows may resolve while this one is in flight.
+        setCollections(prev => prev.map(c => c.id === col.id
           ? { ...c, client_match_status: action === 'map' ? 'matched' : action, matched_client_id: clientId ?? null }
           : c))
       } else {
         setError(server.error ?? 'mapping_failed')
       }
+    } catch {
+      setError('mapping_failed')
     } finally {
       setRowBusy(null)
     }
-  }, [collections, setCollections])
+  }, [setCollections])
 
   const createAndMap = useCallback(async (col: ImportCollection) => {
     setRowBusy(col.id)
@@ -80,15 +83,17 @@ export function Step2Csv({
       const name = (col.stats?.client_name as string) || col.source_name
       const newId = await createClientInline(name)
       if (newId) {
-        setClients(await fetchClientsOverview())
+        setClients(await fetchClientsOverview().catch(() => clients))
         await applyMapping(col, 'map', newId)
       } else {
         setError('create_client_failed')
       }
+    } catch {
+      setError('create_client_failed')
     } finally {
       setRowBusy(null)
     }
-  }, [applyMapping])
+  }, [applyMapping, clients])
 
   const unresolvedCount = collections.filter(
     c => c.client_match_status === 'ambiguous' || c.client_match_status === 'unmatched',
@@ -103,7 +108,11 @@ export function Step2Csv({
       <div className="mb-4">
         <input
           ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
-          onChange={e => onFile(e.target.files?.[0])}
+          onChange={e => {
+            const file = e.target.files?.[0]
+            e.target.value = '' // so re-picking the same CSV after an error fires again
+            void onFile(file)
+          }}
         />
         <ImportButton variant="ghost" onClick={() => fileRef.current?.click()}>{t('import.step2.choose')}</ImportButton>
       </div>

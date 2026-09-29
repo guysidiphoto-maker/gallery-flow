@@ -33,6 +33,8 @@ export function Step4Run({
   const [progress, setProgress] = useState<Record<string, CollectionProgress>>({})
   const pausedRef = useRef(false)
   const cancelledRef = useRef(false)
+  // True while the collection loop runs; a pause only takes effect at the next chunk.
+  const loopActiveRef = useRef(false)
 
   // Collections that have a mapped ZIP with accepted files.
   const runnable = collections
@@ -41,65 +43,82 @@ export function Step4Run({
     .filter((x): x is { col: ImportCollection; slot: ZipSlot } => !!x.slot)
 
   const run = useCallback(async () => {
+    if (loopActiveRef.current) return
+    loopActiveRef.current = true
     setError(null)
     pausedRef.current = false
     cancelledRef.current = false
     setRunState('running')
 
-    const totalFiles = runnable.reduce((n, r) => n + (r.slot.listing?.summary.accepted.length ?? 0), 0)
-    const totalBytes = runnable.reduce((n, r) => n + (r.slot.listing?.summary.totalUncompressedBytes ?? 0), 0)
-    const started = await startJob(jobId, { files: totalFiles, bytes: totalBytes })
-    if (!started.ok) { setError(started.error ?? 'start_failed'); setRunState('idle'); return }
+    try {
+      const totalFiles = runnable.reduce((n, r) => n + (r.slot.listing?.summary.accepted.length ?? 0), 0)
+      const totalBytes = runnable.reduce((n, r) => n + (r.slot.listing?.summary.totalUncompressedBytes ?? 0), 0)
+      const started = await startJob(jobId, { files: totalFiles, bytes: totalBytes })
+      if (!started.ok) { setError(started.error ?? 'start_failed'); setRunState('idle'); return }
 
-    const outcomes: CollectionOutcome[] = []
-    const knownHashes = new Set<string>() // cross-collection dedupe within this run
+      const outcomes: CollectionOutcome[] = []
+      const knownHashes = new Set<string>() // cross-collection dedupe within this run
 
-    for (const { col, slot } of runnable) {
-      if (cancelledRef.current) break
-      const res = await runCollection({
-        jobId,
-        collection: col,
-        listing: slot.listing!,
-        business,
-        clientId: col.matched_client_id,
-        alreadyUploadedNames: new Set<string>(),
-        knownHashes,
-        controls: { isPaused: () => pausedRef.current, isCancelled: () => cancelledRef.current },
-        onProgress: p => setProgress(prev => ({ ...prev, [col.id]: p })),
-      })
-      outcomes.push({
-        collectionId: col.id, sourceName: col.source_name,
-        galleryId: res.galleryId, gallerySlug: null,
-        uploaded: res.uploaded, skippedDuplicate: res.skippedDuplicate,
-        failed: res.failed, failures: res.failures,
-      })
-      if (res.stopped === 'cancelled') { cancelledRef.current = true; break }
-      if (res.stopped === 'paused') {
-        setRunState('paused')
-        onFinished(outcomes)
-        return
+      for (const { col, slot } of runnable) {
+        if (cancelledRef.current) break
+        const res = await runCollection({
+          jobId,
+          collection: col,
+          listing: slot.listing!,
+          business,
+          clientId: col.matched_client_id,
+          alreadyUploadedNames: new Set<string>(),
+          knownHashes,
+          controls: { isPaused: () => pausedRef.current, isCancelled: () => cancelledRef.current },
+          onProgress: p => setProgress(prev => ({ ...prev, [col.id]: p })),
+        })
+        outcomes.push({
+          collectionId: col.id, sourceName: col.source_name,
+          galleryId: res.galleryId, gallerySlug: null,
+          uploaded: res.uploaded, skippedDuplicate: res.skippedDuplicate,
+          failed: res.failed, failures: res.failures,
+        })
+        if (res.stopped === 'cancelled') { cancelledRef.current = true; break }
+        if (res.stopped === 'paused') {
+          setRunState('paused')
+          onFinished(outcomes)
+          return
+        }
       }
-    }
 
-    setRunState(cancelledRef.current ? 'cancelled' : 'done')
-    onFinished(outcomes)
+      setRunState(cancelledRef.current ? 'cancelled' : 'done')
+      onFinished(outcomes)
+    } catch (err) {
+      console.warn('[import] run failed', err)
+      setError('run_failed')
+      setRunState('idle')
+    } finally {
+      loopActiveRef.current = false
+    }
   }, [runnable, jobId, business, onFinished])
 
   const doPause = useCallback(async () => {
     pausedRef.current = true
     setRunState('paused')
-    await pauseJob(jobId)
+    await pauseJob(jobId).catch(() => setError('pause_failed'))
   }, [jobId])
 
+  // Resuming before the loop reached its pause point just un-pauses it; starting
+  // a second loop would import the same collections twice.
   const doResume = useCallback(async () => {
-    await resumeJob(jobId)
-    void run()
+    try { await resumeJob(jobId) } catch { setError('resume_failed'); return }
+    if (loopActiveRef.current) {
+      pausedRef.current = false
+      setRunState('running')
+    } else {
+      void run()
+    }
   }, [jobId, run])
 
   const doCancel = useCallback(async () => {
     cancelledRef.current = true
     setRunState('cancelled')
-    await cancelJob(jobId)
+    await cancelJob(jobId).catch(() => setError('cancel_failed'))
   }, [jobId])
 
   const running = runState === 'running'
