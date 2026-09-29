@@ -4,8 +4,6 @@ const translations = {
   en: {
     viewGallery: 'View Gallery',
     findMyPhotos: 'Find My Photos',
-    photos: 'photos',
-    allImages: 'All Images',
     downloadAll: 'Download all',
     saveAll: 'Save All',
     select: 'Select',
@@ -45,8 +43,6 @@ const translations = {
   he: {
     viewGallery: 'צפה בגלריה',
     findMyPhotos: 'מצא את התמונות שלי',
-    photos: 'תמונות',
-    allImages: 'כל התמונות',
     downloadAll: 'הורד הכל',
     saveAll: 'שמור הכל',
     select: 'בחירה',

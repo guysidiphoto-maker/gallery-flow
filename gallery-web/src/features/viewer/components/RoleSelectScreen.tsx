@@ -54,7 +54,7 @@ export function RoleSelectScreen({
             autoFocus
           />
           <button onClick={onCodeSubmit} className="rounded-[8px] bg-brand px-5 py-2.5 text-[13px] font-semibold text-white">
-            Enter
+            {txt.enter}
           </button>
         </div>
         {codeError && <p className="mt-1.5 text-[11px] text-(--viewer-danger)">{txt.invalidCode}</p>}

@@ -10,8 +10,8 @@ const BUCKET = 'gallery-images'
 const WARM_COUNT = 250 // first N thumbnails — covers the opening screens
 const CONCURRENCY = 6  // gentle on the photographer's connection
 
-// Shared with the grid so warming populates exactly the variants it requests.
-export const GRID_WIDTHS: number[] = [320, 640, 960, 1280]
+// Transform widths the preload asks for.
+const GRID_WIDTHS: number[] = [320, 640, 960, 1280]
 const THUMB_SIZES =
   '(max-width: 479px) 50vw, (max-width: 767px) 50vw, (max-width: 1099px) 33vw, 25vw'
 const TRANSFORMABLE = new Set(['gallery-images', 'demo-uploads'])

@@ -5,7 +5,7 @@ import type { Lang } from '@/shared/i18n/viewerStrings'
 import { ensureWebFonts } from '../lib/webFonts'
 
 /** Marks <html> so viewer.css can apply the page base (body bg/text/font) only while mounted. */
-export const VIEWER_ROOT_ATTR = 'data-gallery-viewer'
+const VIEWER_ROOT_ATTR = 'data-gallery-viewer'
 
 /**
  * Applies the resolved gallery branding as raw CSS vars on <html> (backing the
