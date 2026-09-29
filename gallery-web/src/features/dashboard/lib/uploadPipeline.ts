@@ -28,7 +28,7 @@ export type ProgressFn = (p: UploadProgress) => void
 // Drag-and-drop bypasses the input's accept filter, so uploadMany enforces these too.
 // JPEG/PNG/WebP only (HEIC can't be transformed yet); the batch cap is a guardrail, not a gallery limit.
 
-export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024 // 200 MB per image
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024 // 200 MB per image
 export const MAX_UPLOAD_BATCH = 5000             // files per selection (concurrency is 8)
 
 const ALLOWED_UPLOAD_MIME = new Set(['image/jpeg', 'image/png', 'image/webp'])
@@ -142,7 +142,7 @@ export interface UploadOptions {
 
 /** Upload one original and record it. Every display size is an on-the-fly,
  *  CDN-cached transform of this object, so no client-side resizing. */
-export async function uploadOneImage(file: File, opts: UploadOptions): Promise<UploadResult> {
+async function uploadOneImage(file: File, opts: UploadOptions): Promise<UploadResult> {
   const { galleryId, businessSlug, sectionId, sortOrder, onProgress } = opts
   const hash     = pathHash(`${galleryId}/${file.name}/${file.size}/${file.lastModified}`)
   const origPath = buildPath(businessSlug, galleryId, 'originals', hash, file.name)

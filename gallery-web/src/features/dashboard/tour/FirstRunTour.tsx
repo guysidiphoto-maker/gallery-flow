@@ -23,7 +23,7 @@ export interface TourStep {
 
 // Default steps for the owner dashboard. Targets are data-tour attribute
 // values the integrator adds to the matching nav/actions (see INTEGRATION.md).
-export const OWNER_TOUR_STEPS: TourStep[] = [
+const OWNER_TOUR_STEPS: TourStep[] = [
   { id: 'overview', target: 'overview', titleKey: 'tour.overview.title', bodyKey: 'tour.overview.body' },
   { id: 'clients', target: 'clients', titleKey: 'tour.clients.title', bodyKey: 'tour.clients.body' },
   { id: 'galleries', target: 'galleries', titleKey: 'tour.galleries.title', bodyKey: 'tour.galleries.body' },
