@@ -1,15 +1,9 @@
-// Toast — minimal in-app notification for visible failure/success surfaces.
-//
-// Usage:
-//   const { showToast, ToastContainer } = useToast()
-//   <ToastContainer />
-//   showToast({ kind: 'error', text: 'שמירה נכשלה. נסה שוב.' })
-//
-// Design language: matches FeedStudio dark theme + RTL. No external deps.
-// Stack pinned to bottom-left (RTL "bottom-end"), max 3 visible, auto-dismiss
-// after 4 seconds.
+// Minimal in-app notification: `const { showToast, ToastContainer } = useToast()`.
+// Max 3 visible, auto-dismiss after 4s, click to dismiss.
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { cn } from './cn'
+import './toast.css'
 
 export type ToastKind = 'success' | 'error' | 'info'
 
@@ -25,10 +19,10 @@ interface ToastItem extends ToastInput {
 const MAX_VISIBLE = 3
 const AUTO_DISMISS_MS = 4000
 
-const KIND_COLOR: Record<ToastKind, string> = {
-  success: '#3DDC84',
-  error:   '#ff6b6b',
-  info:    '#D4FF00',
+const KIND_CLASS: Record<ToastKind, string> = {
+  success: 'toast-success',
+  error: 'toast-error',
+  info: 'toast-info',
 }
 
 export function useToast() {
@@ -46,7 +40,6 @@ export function useToast() {
     const id = nextId.current++
     setToasts(prev => {
       const next = [...prev, { ...input, id }]
-      // Drop oldest if exceeding cap.
       while (next.length > MAX_VISIBLE) {
         const dropped = next.shift()
         if (dropped) {
@@ -60,7 +53,6 @@ export function useToast() {
     timers.current.set(id, timer)
   }, [dismiss])
 
-  // Cleanup all timers on unmount.
   useEffect(() => {
     const map = timers.current
     return () => {
@@ -70,74 +62,31 @@ export function useToast() {
   }, [])
 
   const ToastContainer = useCallback(() => (
-    <div style={containerStyle} aria-live="polite" aria-atomic="false">
+    // Pinned bottom-left: the visual "bottom-end" of the RTL UI.
+    <div
+      dir="rtl"
+      aria-live="polite"
+      aria-atomic="false"
+      className="pointer-events-none fixed bottom-5 left-5 z-[200] flex flex-col gap-2 font-[Heebo,Inter,sans-serif]"
+    >
       {toasts.map(t => (
         <div
           key={t.id}
           role={t.kind === 'error' ? 'alert' : 'status'}
           onClick={() => dismiss(t.id)}
-          style={{ ...itemStyle, borderColor: KIND_COLOR[t.kind] }}
+          className={cn(
+            KIND_CLASS[t.kind],
+            'pointer-events-auto inline-flex max-w-[380px] cursor-pointer items-center gap-2.5 rounded-[8px] border',
+            'border-(--toast-accent) bg-night px-3.5 py-2.5 text-[13px] leading-[1.4] text-white/92',
+            'shadow-card shadow-black/50 animate-[toast-in_0.25s_var(--ease-out-expo)_both]',
+          )}
         >
-          <span style={{ ...dotStyle, background: KIND_COLOR[t.kind] }} />
-          <span style={textStyle}>{t.text}</span>
+          <span className="size-2 shrink-0 rounded-full bg-(--toast-accent)" />
+          <span className="flex-1 whitespace-pre-wrap">{t.text}</span>
         </div>
       ))}
     </div>
   ), [toasts, dismiss])
 
   return { showToast, ToastContainer }
-}
-
-// ── Styles ──────────────────────────────────────────────────────────────
-const containerStyle: CSSProperties = {
-  position: 'fixed',
-  bottom: 20,
-  // RTL: visual "bottom-end" sits at bottom-left of the viewport.
-  left: 20,
-  right: 'auto',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 8,
-  zIndex: 200,
-  pointerEvents: 'none',
-  direction: 'rtl',
-  fontFamily: 'Heebo, Inter, sans-serif',
-}
-
-const itemStyle: CSSProperties = {
-  pointerEvents: 'auto',
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 10,
-  background: '#0a0a0f',
-  color: 'rgba(255,255,255,.92)',
-  border: '1px solid rgba(255,255,255,.12)',
-  borderRadius: 8,
-  padding: '10px 14px',
-  fontSize: 13,
-  lineHeight: 1.4,
-  boxShadow: '0 8px 24px rgba(0,0,0,.5)',
-  maxWidth: 380,
-  cursor: 'pointer',
-  animation: 'toast-in .25s cubic-bezier(.16,1,.3,1) both',
-}
-
-const dotStyle: CSSProperties = {
-  width: 8,
-  height: 8,
-  borderRadius: 4,
-  flexShrink: 0,
-}
-
-const textStyle: CSSProperties = {
-  flex: 1,
-  whiteSpace: 'pre-wrap',
-}
-
-// Inject the keyframe once at module load (idempotent).
-if (typeof document !== 'undefined' && !document.getElementById('toast-keyframes')) {
-  const style = document.createElement('style')
-  style.id = 'toast-keyframes'
-  style.textContent = `@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`
-  document.head.appendChild(style)
 }

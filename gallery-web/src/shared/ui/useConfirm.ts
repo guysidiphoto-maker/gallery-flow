@@ -1,24 +1,5 @@
-// useConfirm — Promise-based wrapper around <ConfirmModal />.
-//
-// Lets a caller swap a native `if (!confirm('…')) return` line for an
-// equally linear `if (!(await confirm({…}))) return`, without manually
-// wiring open-state, onConfirm, and onCancel handlers at each call site.
-//
-// Usage:
-//   const { confirm, ConfirmHost } = useConfirm()
-//   …
-//   if (!(await confirm({
-//     title: 'למחוק את הגלריה?',
-//     body: 'פעולה זו לא ניתנת לביטול.',
-//     confirmLabel: 'מחק',
-//     danger: true,
-//   }))) return
-//   …
-//   return <>{/* dashboard tree */}<ConfirmHost /></>
-//
-// Only one pending confirm is supported at a time. If a second confirm() is
-// invoked while the first is still open, the first resolves to false and is
-// replaced — same behavior native `confirm()` cannot offer.
+// Promise-based confirm: `if (!(await confirm({ title, confirmLabel }))) return`,
+// with `<ConfirmHost />` rendered once. A second confirm() cancels the first.
 
 import { createElement, useCallback, useRef, useState } from 'react'
 import { ConfirmModal } from './ConfirmModal'
@@ -36,9 +17,7 @@ interface PendingConfirm extends ConfirmOptions {
 }
 
 export function useConfirm() {
-  // The currently-open confirm (if any). State is the source of truth for
-  // rendering; the ref mirrors it so async resolve() inside the close
-  // handler can fire even after React batches the setState.
+  // State drives rendering; the ref lets close() resolve synchronously despite batching.
   const [pending, setPending] = useState<PendingConfirm | null>(null)
   const pendingRef = useRef<PendingConfirm | null>(null)
 
@@ -52,10 +31,7 @@ export function useConfirm() {
 
   const confirm = useCallback((opts: ConfirmOptions) => {
     return new Promise<boolean>((resolve) => {
-      // If a confirm is already open, resolve it as cancelled before
-      // opening the next one. This matches what would happen if a user
-      // clicked the backdrop on the first dialog, and avoids leaking
-      // unresolved promises.
+      // Resolve a still-open confirm as cancelled so its promise never leaks.
       if (pendingRef.current) {
         const prev = pendingRef.current
         pendingRef.current = null
@@ -67,10 +43,7 @@ export function useConfirm() {
     })
   }, [])
 
-  // ConfirmHost is intentionally a function (not a memoized component) so
-  // the consumer can render it inline: `<ConfirmHost />`. Wrapped in
-  // useCallback so its identity is stable across renders and React's
-  // reconciler doesn't tear down the modal on every parent render.
+  // Stable identity so React doesn't remount the modal on every parent render.
   const ConfirmHost = useCallback(() => {
     return createElement(ConfirmModal, {
       open: pending !== null,

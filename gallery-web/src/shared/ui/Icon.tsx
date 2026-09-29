@@ -1,9 +1,8 @@
-// Minimal stroke icon set. Single component, no dep, consistent visual
-// language across the dashboard so the UI doesn't read like a 2010 emoji
-// soup. Stroke-based, currentColor, 1.75 default — matches the rest of the
-// product's accent-on-dark aesthetic.
+// Minimal stroke icon set (currentColor, 1.75 stroke) so the UI speaks one
+// visual language instead of emoji.
 
 import type { CSSProperties } from 'react'
+import { cn } from './cn'
 
 export type IconName =
   | 'gallery' | 'sections' | 'stories' | 'activity' | 'settings'
@@ -62,7 +61,7 @@ const PATHS: Record<IconName, string> = {
 export function Icon({ name, size = 16, strokeWidth = 1.75, style, className }: IconProps) {
   return (
     <svg
-      className={className}
+      className={cn('shrink-0', className)}
       width={size}
       height={size}
       viewBox="0 0 24 24"
@@ -71,7 +70,7 @@ export function Icon({ name, size = 16, strokeWidth = 1.75, style, className }: 
       strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ flexShrink: 0, ...style }}
+      style={style}
       aria-hidden
       dangerouslySetInnerHTML={{ __html: PATHS[name] }}
     />

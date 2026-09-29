@@ -1,21 +1,5 @@
-// TurnstileWidget — Phase 4.5.D
-//
-// Renders the Cloudflare Turnstile invisible challenge widget. In Managed
-// mode, the vast majority of legitimate viewers see nothing — Cloudflare
-// scores the request silently and resolves a token within a second. Bots
-// or sketchy IPs get an interactive challenge.
-//
-// Flow:
-//   1. App.tsx's public-session useEffect calls ensurePublicSession()
-//   2. If the server returns 429 with `turnstile_required` + a site key,
-//      App.tsx renders <TurnstileWidget siteKey={...} onToken={...} />
-//   3. Cloudflare's invisible challenge runs; on success we call onToken()
-//   4. App.tsx re-calls ensurePublicSession({turnstileToken}) and stores
-//      the resulting public-viewer token
-//
-// We load the Cloudflare turnstile.js script dynamically. It only mounts
-// when the widget actually renders, so non-rate-limited gallery loads
-// pay zero JS-loading cost.
+// Cloudflare Turnstile in managed mode: invisible for most visitors, interactive
+// only for suspicious ones. The script loads lazily on first mount.
 
 import { useEffect, useRef } from 'react'
 
@@ -55,7 +39,6 @@ function loadTurnstileScript(): Promise<void> {
   scriptLoadingPromise = new Promise<void>((resolve, reject) => {
     const existing = document.querySelector(`script[src^="${SCRIPT_SRC}"]`)
     if (existing) {
-      // Another mount started loading; wait until it's ready.
       const check = () => {
         if (window.turnstile) resolve()
         else setTimeout(check, 50)
@@ -112,19 +95,11 @@ export function TurnstileWidget({
       } catch { /* ignore */ }
       widgetIdRef.current = null
     }
-  // siteKey is stable per render; siteKey/onToken/onError changes drop the widget
+  // Only a siteKey change re-renders the widget; callback identity changes are ignored.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteKey])
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        margin: '12px 0',
-      }}
-    />
+    <div ref={containerRef} className="my-3 flex items-center justify-center" />
   )
 }
