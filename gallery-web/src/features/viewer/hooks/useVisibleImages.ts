@@ -38,11 +38,16 @@ export function useVisibleImages(opts: {
   return { visibleImages, unsectionedImages, anySectionHasContent }
 }
 
-/** While the cover screen shows, warm the first grid thumbnails so the grid appears instantly on enter. */
+/**
+ * While the cover screen shows, warm the first grid thumbnails so the grid appears instantly on enter.
+ * Starts after a beat so the cover and mosaic, which are on screen, get the bandwidth first.
+ */
 export function usePreloadThumbs(showWelcome: boolean, images: GalleryImage[], bucket: string) {
   useEffect(() => {
     if (!showWelcome || images.length === 0) return
-    return preloadGalleryThumbs(images, { bucket, count: 150 })
+    let cancel: (() => void) | undefined
+    const id = setTimeout(() => { cancel = preloadGalleryThumbs(images, { bucket, count: 150 }) }, 1500)
+    return () => { clearTimeout(id); cancel?.() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showWelcome, images.length, bucket])
 }

@@ -204,7 +204,8 @@
   50% { box-shadow: 0 0 48px rgba(99, 102, 241, 0.5), 0 0 80px rgba(99, 102, 241, 0.15); }
 }
 @keyframes wcFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
-@keyframes wcLine { from { left: -30%; } to { left: 130%; } }
+/* Transform, not `left`: a moving `left` re-lays out every frame and reports layout shift. */
+@keyframes wcLine { from { transform: translateX(-150%); } to { transform: translateX(650%); } }
 @keyframes wcReveal {
   from { opacity: 0; transform: translateY(30px) scale(0.97); clip-path: inset(100% 0 0 0); }
   to { opacity: 1; transform: translateY(0) scale(1); clip-path: inset(0 0 0 0); }

@@ -19,6 +19,8 @@ function seededShuffle(arr: GalleryImage[], seed: number) {
  * is paused (iOS Low Power Mode). Capped at 40 tiles for mobile WebKit.
  */
 function mosaicColumns(images: GalleryImage[]) {
+  // Empty while the first image page is still loading; tiles fade in once it lands.
+  if (images.length === 0) return []
   return Array.from({ length: MOSAIC_COLUMNS }, (_, ci) => {
     const col: GalleryImage[] = []
     const shuffled = seededShuffle(images, ci * 7919 + 1)

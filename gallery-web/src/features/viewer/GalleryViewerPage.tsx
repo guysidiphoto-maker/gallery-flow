@@ -40,7 +40,7 @@ const storyUrl = (st: Story) => storageUrl('gallery-stories', st.storage_path)
 
 export function GalleryViewerPage() {
   const route = useGalleryRoute()
-  const { gallery, images, setImages, sections, stories, error, unlocked, handleUnlock } = useGalleryData(route)
+  const { gallery, images, setImages, imagesPending, sections, stories, error, unlocked, handleUnlock } = useGalleryData(route)
   const settings = resolveViewerSettings(gallery)
   const { lang, imgBucket, galleryTitle, studioName, downloadsEnabled, faceSearchAvailable, facePrivacyMode } = settings
   const txt = t(lang)
@@ -104,12 +104,15 @@ export function GalleryViewerPage() {
     onBrowseAll: face.onBrowseAll,
   }
 
-  if (showWelcome && (images.length > 0 || isPrivateFaceMode)) {
+  // The welcome screen opens while the first image page loads (image_count is a
+  // cached hint); its mosaic / cover fill in when the rows land.
+  const expectingImages = imagesPending && (gallery.image_count ?? 0) > 0
+  if (showWelcome && (images.length > 0 || isPrivateFaceMode || expectingImages)) {
     const bounded = (path: string) => displayUrl(imgBucket, path, 1280, 65)
     return (
       <>
         <WelcomeScreen
-          style={images.length === 0 ? 'cinematic' : settings.welcomeStyle}
+          style={images.length === 0 && !expectingImages ? 'cinematic' : settings.welcomeStyle}
           galleryTitle={galleryTitle}
           galleryDescription={settings.galleryDescription}
           welcomeMessage={settings.welcomeMessage || ''}
@@ -137,6 +140,8 @@ export function GalleryViewerPage() {
       </>
     )
   }
+
+  if (imagesPending) return <GalleryLoading />
 
   if (settings.clientSelectionEnabled && client.viewerRole === 'none') {
     return (

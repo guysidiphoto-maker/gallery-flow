@@ -26,17 +26,15 @@ type Prefetch = { meta: GalleryMeta; images: GalleryImage[]; sections: GallerySe
 const isPrivateFace = (g: Gallery | GalleryMeta) =>
   ((g as Gallery).delivery_settings as { facePrivacyMode?: string } | null)?.facePrivacyMode === 'private'
 
-/** Keep only stories whose file actually exists in storage. */
+/** Keep only stories whose file actually exists in storage (checked in parallel). */
 async function verifyStories(stories: Story[]): Promise<Story[]> {
-  const verified: Story[] = []
-  for (const story of stories) {
-    const url = storageUrl('gallery-stories', story.storage_path)
+  const checks = await Promise.all(stories.map(async story => {
     try {
-      const res = await fetch(url, { method: 'HEAD' })
-      if (res.ok) verified.push(story)
-    } catch { /* skip */ }
-  }
-  return verified
+      const res = await fetch(storageUrl('gallery-stories', story.storage_path), { method: 'HEAD' })
+      return res.ok
+    } catch { return false }
+  }))
+  return stories.filter((_, i) => checks[i])
 }
 
 /** Resolves the gallery from the URL and loads meta, images (paged), sections and stories. */
@@ -45,10 +43,15 @@ export function useGalleryData(route: GalleryRoute | null) {
   const [images, setImages] = useState<GalleryImage[]>([])
   const [sections, setSections] = useState<GallerySection[]>([])
   const [stories, setStories] = useState<Story[]>([])
+  const [imagesPending, setImagesPending] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [unlocked, setUnlocked] = useState(false)
 
   async function loadGallery(id: string, prefetch?: Prefetch) {
+    // Section names are not sensitive and don't depend on meta, so fetch them alongside it.
+    const sectionsReq = prefetch
+      ? Promise.resolve({ data: prefetch.sections })
+      : listGallerySections(id)
     const meta = prefetch?.meta ?? await gcGetMeta(id)
     if (!meta) {
       setError('Gallery not found')
@@ -66,25 +69,25 @@ export function useGalleryData(route: GalleryRoute | null) {
     const skipImages = isPrivateFace(g) || mustWaitForUnlock
 
     // The bootstrap ran without an unlock token, so its images are only valid
-    // for non-gated galleries. Section names are not sensitive: always usable.
+    // for non-gated galleries.
     const canUsePrefetchImages = !!prefetch && !skipImages && !gateOn
-    const [firstImgs, secsRes] = await Promise.all([
-      canUsePrefetchImages
-        ? Promise.resolve(prefetch!.images)
-        : skipImages
-          ? Promise.resolve([] as GalleryImage[])
-          : gcGetImages<GalleryImage>(id, { offset: 0, limit: FIRST_PAGE }),
-      prefetch
-        ? Promise.resolve({ data: prefetch.sections })
-        : listGallerySections(id),
-    ])
+    const imagesReq = canUsePrefetchImages
+      ? Promise.resolve(prefetch!.images)
+      : skipImages
+        ? Promise.resolve([] as GalleryImage[])
+        : gcGetImages<GalleryImage>(id, { offset: 0, limit: FIRST_PAGE })
 
+    // The snapshot overlay runs while the first image page loads; the shell
+    // (gate / welcome screen) renders as soon as settings are final.
+    const secsRes = await sectionsReq
     const publishedRevisionId = (meta as { published_revision_id?: string | null }).published_revision_id ?? null
     const resolved = await applyPublishedSnapshot(id, publishedRevisionId, g, (secsRes.data || []) as GallerySection[])
-
-    setImages(firstImgs)
     setSections(resolved.sections)
     setGallery(resolved.gallery)
+
+    const firstImgs = await imagesReq
+    setImages(firstImgs)
+    setImagesPending(false)
 
     // Stream the remaining pages while the guest is still on the cover screen.
     if (!skipImages && firstImgs.length === FIRST_PAGE) {
@@ -144,7 +147,7 @@ export function useGalleryData(route: GalleryRoute | null) {
 
   // After unlock, fetch the content loadGallery deferred. No-op once images exist.
   useEffect(() => {
-    if (!gallery || !unlocked || images.length > 0) return
+    if (!gallery || !unlocked || imagesPending || images.length > 0) return
     if (isPrivateFace(gallery)) return
     ;(async () => {
       const out: GalleryImage[] = []
@@ -158,9 +161,9 @@ export function useGalleryData(route: GalleryRoute | null) {
       if (found.length > 0) setStories(await verifyStories(found))
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gallery?.id, unlocked])
+  }, [gallery?.id, unlocked, imagesPending])
 
   const handleUnlock = useCallback(() => setUnlocked(true), [])
 
-  return { gallery, images, setImages, sections, stories, error, unlocked, handleUnlock }
+  return { gallery, images, setImages, imagesPending, sections, stories, error, unlocked, handleUnlock }
 }
