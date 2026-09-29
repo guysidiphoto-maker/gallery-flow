@@ -6,7 +6,7 @@
 // from a WhatsApp/Slack link — they have no PIN and no login.
 //
 // Token: 43-char base64url, gallery-scoped, IP-bound, 60-min TTL. Issued
-// by /api/append-event-posts action=public_gallery_session. Cached in
+// by /api/gallery-access action=public_gallery_session. Cached in
 // sessionStorage (tab-scoped, dies on tab close).
 //
 // Refresh strategy: callers should re-call ensurePublicSession before each
@@ -104,7 +104,7 @@ export async function ensurePublicSession(
 
   const fetchPromise = (async (): Promise<EnsureResult> => {
     try {
-      const res = await fetch('/api/append-event-posts', {
+      const res = await fetch('/api/gallery-access', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

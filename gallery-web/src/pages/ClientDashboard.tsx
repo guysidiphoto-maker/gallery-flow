@@ -1,34 +1,14 @@
-import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { supabase, storageUrl } from '../supabase'
-import { signedStorageUrl } from '../lib/signedStorage'
-import { SignedImg } from '../components/SignedImg'
-// Heavy panels are only rendered when their tab is active. Lazy-loading
-// them strips ~220KB (html2canvas + jsPDF in TenderBuilder, plus the rest
-// of PortfolioEditor + SocialManager) from the initial bundle most clients
-// land on. The settings utility (loadPortfolioSettings) lives in a
-// dependency-free file so the eager import below stays light.
-const TenderBuilder    = lazy(() => import('../components/TenderBuilder').then(m => ({ default: m.TenderBuilder })))
-const SocialManager    = lazy(() => import('../components/SocialManager').then(m => ({ default: m.SocialManager })))
-const PortfolioEditor  = lazy(() => import('../components/PortfolioEditor').then(m => ({ default: m.PortfolioEditor })))
-const FeedStudio       = lazy(() => import('../components/FeedStudio').then(m => ({ default: m.FeedStudio })))
-const CreativeEngineDialog = lazy(() => import('../components/CreativeEngineDialog').then(m => ({ default: m.CreativeEngineDialog })))
 import { loadPortfolioSettings } from '../components/portfolioSettings'
-import { Icon } from '../components/Icon'
 import { usePortalLocale } from '../lib/portalLocale'
-import { SOCIAL_STUDIO_ENABLED } from '../lib/features'
-import SocialComingSoon from '../components/social-lock/SocialComingSoon'
 import { PortalShell } from '../components/portal/PortalShell'
 import { type NavItem } from '../components/portal/PortalNav'
 import { OverviewScreen } from '../components/portal/OverviewScreen'
 import { GalleryGrid } from '../components/portal/GalleryGrid'
 import { type GalleryCardData } from '../components/portal/GalleryCard'
-const ClientHome = lazy(() => import('../components/ClientHome').then(m => ({ default: m.ClientHome })))
 
-// PR1 — "Social OS" simplified navigation (Dashboard / Social Studio / Library).
-// Behind a flag so the legacy 7-tab structure stays fully recoverable: when the
-// flag is off, the client dashboard renders exactly as before. Enable per-env
-// (e.g. Vercel preview) with VITE_FEATURE_NEW_IA=true.
-const SOCIAL_OS = import.meta.env.VITE_FEATURE_NEW_IA === 'true'
+const PortfolioEditor = lazy(() => import('../components/PortfolioEditor').then(m => ({ default: m.PortfolioEditor })))
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -36,11 +16,6 @@ interface GalleryRow {
   id: string; name: string; client_name: string | null; image_count: number
   published_at: string | null; delivery_settings: Record<string, unknown> | null
 }
-interface ImageRow {
-  id: string; gallery_id: string; filename: string
-  storage_path: string; thumbnail_path: string | null; is_top_pick: boolean
-}
-interface StoryRow { id: string; gallery_id: string; style: string; storage_path: string }
 
 // ─── Client Portal V2 — authenticated bootstrap contract ────────────────────
 // Self-scoped RPC: resolves auth.uid() → active memberships + published
@@ -66,22 +41,12 @@ function isPortalBootstrap(v: unknown): v is PortalBootstrap {
     && Array.isArray(o.memberships) && Array.isArray(o.galleries)
 }
 
-// Social / Feed-studio tabs. These stay LOCKED behind the Social feature flag
-// (Social is a more complex feature, not ready yet) — hidden for everyone,
-// entitled members included, until the flag is turned on.
-const SOCIAL_TABS = ['feed-studio', 'content', 'calendar', 'stories'] as const
-// 'tender' is a SEPARATE Production capability for production-company clients.
-// It is gated by the `production_suite` entitlement ALONE (not the Social flag),
-// so entitled clients can use the tender library now while Social stays locked.
-// The legacy PIN path has no membership → not entitled → tender hidden.
-
 // ─── Editorial design tokens (Pic-Time aesthetic) ─────────────────────────
 // Same palette + spacing system used throughout Dashboard.tsx so the
 // public client view feels like the same product as the photographer admin.
 // Retained for the Production module content blocks (Content Studio, Stories)
 // that keep their original presentation.
 const bg          = '#F2EFE9' // cream canvas
-const bgSubtle    = '#FAF9F5' // section panels
 const border      = '#D0D0D0' // hairline 1px
 const textPrimary = '#141413' // charcoal
 const textSecondary = '#333333'
@@ -89,66 +54,6 @@ const textMuted   = '#767470'  // WCAG-AA accessible muted on cream
 
 function readStr(obj: Record<string, unknown> | null, key: string): string {
   if (!obj) return ''; const v = obj[key]; return typeof v === 'string' ? v : ''
-}
-
-// ─── Scroll Reveal ─────────────────────────────────────────────────────────
-
-function useReveal() {
-  const obs = useRef<IntersectionObserver | null>(null)
-  return useCallback((el: HTMLElement | null) => {
-    if (!el) return
-    if (!obs.current) {
-      obs.current = new IntersectionObserver(entries => {
-        entries.forEach(e => {
-          if (e.isIntersecting) {
-            (e.target as HTMLElement).style.opacity = '1';
-            (e.target as HTMLElement).style.transform = 'translateY(0)'
-            obs.current?.unobserve(e.target)
-          }
-        })
-      }, { threshold: 0.08, rootMargin: '0px 0px -30px 0px' })
-    }
-    el.style.opacity = '0'; el.style.transform = 'translateY(20px)'
-    el.style.transition = 'opacity .5s ease, transform .5s ease'
-    obs.current.observe(el)
-  }, [])
-}
-
-// ─── Download Helper ───────────────────────────────────────────────────────
-
-async function downloadImage(url: string, filename: string) {
-  const res = await fetch(url)
-  const blob = await res.blob()
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(a.href)
-}
-
-// ─── Story Player ──────────────────────────────────────────────────────────
-// Story player stays dark on purpose — full-screen video lightbox feels
-// most natural over a near-black scrim, not over cream.
-
-function StoryPlayer({ url, onClose }: { url: string; onClose: () => void }) {
-  return (
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, zIndex: 2000,
-      background: 'rgba(0,0,0,.92)', backdropFilter: 'blur(20px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
-      <video src={url} autoPlay controls playsInline onClick={e => e.stopPropagation()}
-        style={{ maxWidth: '90vw', maxHeight: '85vh' }} />
-      <button onClick={onClose} aria-label="Close" style={{
-        position: 'absolute', top: 24, right: 24, width: 40, height: 40,
-        background: 'transparent', border: '1px solid rgba(255,255,255,.4)',
-        borderRadius: 2, color: '#fff', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Icon name="close" size={16} strokeWidth={1.85} />
-      </button>
-    </div>
-  )
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────
@@ -265,11 +170,6 @@ export function ClientDashboard() {
   // Production/social suite entitlement. Default deny: only true when the active
   // membership explicitly carries production_suite. Legacy PIN path → false.
   const productionEnabled = activeMembership?.production_suite === true
-  // Feature availability (contract C1): the Social/Production studio renders
-  // ONLY when the global feature flag AND the entitlement are both true. The
-  // flag is off in every environment today, so this is false for everyone —
-  // entitled members included. Entitlement architecture stays intact above.
-  const socialAllowed = SOCIAL_STUDIO_ENABLED && productionEnabled
 
   const [codeInput, setCodeInput] = useState('')
   const [codeError, setCodeError] = useState<string | null>(null)
@@ -301,86 +201,12 @@ export function ClientDashboard() {
   // State
   const [galleries, setGalleries] = useState<GalleryRow[]>([])
   const [covers, setCovers] = useState<Map<string, string>>(new Map())
-  const [topPicks, setTopPicks] = useState<ImageRow[]>([])
-  const [allImages, setAllImages] = useState<ImageRow[]>([])
-  const [stories, setStories] = useState<Map<string, StoryRow[]>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'home' | 'feed-studio' | 'content' | 'calendar' | 'galleries' | 'stories' | 'page' | 'tender'>(SOCIAL_OS ? 'home' : 'feed-studio')
+  const [tab, setTab] = useState<'overview' | 'galleries' | 'page'>('overview')
   const [signingOut, setSigningOut] = useState(false)
-
-  // ── Client Portal V2 presentation state ──────────────────────────────────
-  // Locale (he default / en) drives the entire interface — never mixed. Called
-  // here with the other hooks so the value is available to the loading/gate
-  // screens below (hooks must precede the early returns).
+  // Locale drives the whole portal; hooks must precede the early returns.
   const loc = usePortalLocale()
-  // Presentation-only Overview flag for NON-ENTITLED clients. Their `tab` is
-  // pinned to a gated-safe value ('galleries') by the preserved redirect guard,
-  // so `home` (a Production tab) cannot back a non-entitled Overview. This flag
-  // toggles between MY Overview screen and the Galleries screen WITHOUT touching
-  // `tab` or the entitlement guard. Entitled clients ignore it (they use `tab`).
-  const [nonEntitledOverview, setNonEntitledOverview] = useState(true)
-  // Presentation state for the LOCKED Social Studio nav item (feature flag
-  // off). Selecting it shows the Coming-soon panel — never the studio. Like
-  // `nonEntitledOverview` it NEVER touches `tab`, so the redirect guard keeps
-  // `tab` pinned to a safe value the whole time.
-  const [socialLockOpen, setSocialLockOpen] = useState(false)
-
-  // Production-tab safety: the non-SOCIAL_OS default tab is 'feed-studio' (a
-  // Production tab). Once we know the entitlement, if Production is disabled and
-  // the active tab is a Production module, redirect to a safe section so the
-  // module never renders. Runs whenever entitlement or tab changes.
-  useEffect(() => {
-    if (!bootstrapChecked) return
-    // Social/Feed tabs + 'home' (the content-engine dashboard) stay locked
-    // behind the Social flag: with the flag off, even entitled members are
-    // redirected out of them.
-    if (!socialAllowed && ((SOCIAL_TABS as readonly string[]).includes(tab) || tab === 'home')) {
-      setTab('galleries')
-    } else if (tab === 'tender' && !productionEnabled) {
-      // Tender is available to entitled production-company clients only. A
-      // non-entitled (or tampered) client on the tender tab is sent to a safe
-      // section so the module never renders.
-      setTab('galleries')
-    }
-  }, [bootstrapChecked, socialAllowed, productionEnabled, tab])
-  const [selectedPicks, setSelectedPicks] = useState<Set<string>>(() => {
-    // Hydrate from sessionStorage so the user's selection survives refresh
-    // within the same browser session. Real persistence (a
-    // `client_post_selections` table) is Phase 3+ work.
-    try {
-      const raw = sessionStorage.getItem('selectedPicks-' + clientId)
-      if (raw) {
-        const arr = JSON.parse(raw)
-        if (Array.isArray(arr)) return new Set(arr.filter((x): x is string => typeof x === 'string'))
-      }
-    } catch { /* ignore */ }
-    return new Set()
-  })
-  const [playingStory, setPlayingStory] = useState<string | null>(null)
-  const [downloading, setDownloading] = useState<string | null>(null)
-  const [creativeGallery, setCreativeGallery] = useState<{ id: string; name: string; topPicksCount: number } | null>(null)
-  const reveal = useReveal()
-
-  // Re-hydrate selectedPicks from sessionStorage when the active client
-  // changes (initial state ran with possibly-stale clientId on the very
-  // first render). Empty set if no key exists yet — the data loader will
-  // seed from photographer top picks.
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem('selectedPicks-' + clientId)
-      if (raw) {
-        const arr = JSON.parse(raw)
-        if (Array.isArray(arr)) {
-          setSelectedPicks(new Set(arr.filter((x): x is string => typeof x === 'string')))
-          return
-        }
-      }
-      setSelectedPicks(new Set())
-    } catch {
-      setSelectedPicks(new Set())
-    }
-  }, [clientId])
 
   // ── Load data ──────────────────────────────────────────────────────────
 
@@ -403,54 +229,15 @@ export function ClientDashboard() {
       // Extract client code from first gallery's settings
       const s = (data[0].delivery_settings || {}) as Record<string, unknown>
       if (typeof s.clientCode === 'string' && s.clientCode) setClientCode(s.clientCode)
-      const ids = data.map(g => g.id)
-
-      // PostgREST alias: the actual column is `web_preview_path`, but the
-      // ImageRow type + every render call site refers to it as
-      // `storage_path`. Keep the wire query honest while preserving the
-      // existing type contract — same pattern used in Dashboard.tsx.
-      const [coverRes, picksRes, allRes, storiesRes] = await Promise.all([
-        Promise.all(data.map(async g => {
-          const { data: img } = await supabase.from('images').select('thumbnail_path, storage_path:web_preview_path')
-            .eq('gallery_id', g.id).order('sort_order', { ascending: true }).limit(1).maybeSingle()
-          return { id: g.id, url: img ? storageUrl('gallery-images', img.thumbnail_path || img.storage_path) : null }
-        })),
-        supabase.from('images').select('id, gallery_id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick')
-          .in('gallery_id', ids).eq('is_top_pick', true).order('sort_order', { ascending: true }).limit(120),
-        supabase.from('images').select('id, gallery_id, filename, storage_path:web_preview_path, thumbnail_path, is_top_pick')
-          .in('gallery_id', ids).order('sort_order', { ascending: true }),
-        supabase.from('stories').select('id, gallery_id, style, storage_path').in('gallery_id', ids),
-      ])
-
+      // First image of each gallery is its cover.
+      const coverRes = await Promise.all(data.map(async g => {
+        const { data: img } = await supabase.from('images').select('thumbnail_path, web_preview_path')
+          .eq('gallery_id', g.id).order('sort_order', { ascending: true }).limit(1).maybeSingle()
+        return { id: g.id, url: img ? storageUrl('gallery-images', img.thumbnail_path || img.web_preview_path) : null }
+      }))
       const cm = new Map<string, string>()
       coverRes.forEach(c => { if (c.url) cm.set(c.id, c.url) })
       setCovers(cm)
-      if (picksRes.data) setTopPicks(picksRes.data)
-      if (allRes.data) setAllImages(allRes.data)
-
-      // Initialize selected picks with photographer's top picks — but only
-      // if the user doesn't already have a session-persisted selection.
-      if (picksRes.data) {
-        const existing = sessionStorage.getItem('selectedPicks-' + clientId)
-        if (!existing) {
-          const seeded = new Set(picksRes.data.map(p => p.id))
-          setSelectedPicks(seeded)
-          try {
-            sessionStorage.setItem('selectedPicks-' + clientId, JSON.stringify(Array.from(seeded)))
-          } catch { /* ignore quota */ }
-        }
-      }
-
-      if (storiesRes.data?.length) {
-        const sm = new Map<string, StoryRow[]>()
-        await Promise.all(storiesRes.data.map(async s => {
-          try {
-            const r = await fetch(storageUrl('gallery-stories', s.storage_path), { method: 'HEAD' })
-            if (r.ok) { const arr = sm.get(s.gallery_id) || []; arr.push(s); sm.set(s.gallery_id, arr) }
-          } catch {}
-        }))
-        setStories(sm)
-      }
       setLoading(false)
     }
   }, [clientId, resolveErr])
@@ -534,7 +321,7 @@ export function ClientDashboard() {
     setSubmitting(true)
     setCodeError(null)
     try {
-      const res = await fetch('/api/append-event-posts', {
+      const res = await fetch('/api/gallery-access', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'verify_code', clientId, code: codeInput }),
@@ -708,23 +495,8 @@ export function ClientDashboard() {
   const portfolioSettings = loadPortfolioSettings(clientId)
   const displayTitle = portfolioSettings.pageTitle || clientName
   const galleryUrl = (id: string) => slug ? `/${slug}/gallery/${id}` : `/gallery/${id}`
-  const hasStories = stories.size > 0
 
-  const togglePick = (id: string) => {
-    setSelectedPicks(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      try {
-        sessionStorage.setItem('selectedPicks-' + clientId, JSON.stringify(Array.from(next)))
-      } catch { /* ignore quota */ }
-      return next
-    })
-  }
-
-  const selectedImages = allImages.filter(img => selectedPicks.has(img.id))
-
-  // Log out an authenticated member. Clears any legacy session cache too so a
-  // stale PIN flag can't re-open the dashboard, then routes to the login page.
+  // Sign out a member; also clears legacy PIN session keys.
   const handleSignOut = async () => {
     if (signingOut) return
     setSigningOut(true)
@@ -739,22 +511,6 @@ export function ClientDashboard() {
     window.location.href = '/client-login'
   }
 
-  // ── Client Portal V2 navigation model ────────────────────────────────────
-  // The information architecture is driven ENTIRELY by `productionEnabled`.
-  //
-  //   Non-entitled client: Overview · Galleries        (Account lives in shell)
-  //   Entitled client:     Overview · Galleries · Content Library ·
-  //                        Social Studio · Content Calendar · My Page
-  //
-  // Production areas map onto the EXISTING gated `tab` content blocks — nothing
-  // is rebuilt. Production nav items are appended ONLY when `productionEnabled`,
-  // so a non-entitled client can NEVER see a Production entry point. The
-  // preserved redirect guard keeps `tab` on a safe value for non-entitled
-  // clients; their Overview↔Galleries switch is presentation-only
-  // (`nonEntitledOverview`) and never touches `tab`.
-
-  // Gallery data adapted for the new card components. Covers may be absent (the
-  // common case in the test env) — GalleryCard/CoverFallback handle that.
   const galleryCards: GalleryCardData[] = galleries.map(g => ({
     id: g.id,
     name: g.name,
@@ -763,71 +519,14 @@ export function ClientDashboard() {
     publishedIso: g.published_at,
   }))
 
-  // Which nav item is visually active.
-  const activeNavId: string = socialAllowed
-    ? (tab === 'home' ? 'overview'
-      : tab === 'galleries' ? 'galleries'
-      : tab === 'content' ? 'library'
-      : (tab === 'feed-studio' || tab === 'calendar') ? (tab === 'calendar' ? 'calendar' : 'social')
-      : tab === 'page' ? 'mypage'
-      : 'overview')
-    : (socialLockOpen ? 'social'
-      : tab === 'tender' ? 'tender'
-      : tab === 'page' ? 'mypage'
-      : nonEntitledOverview ? 'overview'
-      : 'galleries')
-
-  // Selecting a non-entitled area is presentation-only; `tab` stays put.
-  const goOverview = () => {
-    if (socialAllowed) { setTab('home'); return }
-    setSocialLockOpen(false); setNonEntitledOverview(true)
-  }
-  const goGalleries = () => { setSocialLockOpen(false); setNonEntitledOverview(false); setTab('galleries') }
-
-  // Contract C1 navigation:
-  //   flag ON + entitled  → full Production nav (prior behavior).
-  //   flag OFF (everyone) → Overview · Galleries · Social Studio (LOCKED,
-  //                         "Coming soon", opens a panel, never the studio)
-  //                         · My Page only for entitled members (not Social).
-  //   flag ON + not entitled → Overview · Galleries (prior behavior).
-  const navItems: NavItem[] = socialAllowed
-    ? [
-        { id: 'overview',  label: loc.t('nav.overview'),        icon: 'activity', onSelect: () => setTab('home') },
-        { id: 'galleries', label: loc.t('nav.galleries'),       icon: 'sections', onSelect: () => setTab('galleries') },
-        { id: 'library',   label: loc.t('nav.contentLibrary'),  icon: 'gallery',  onSelect: () => setTab('content') },
-        { id: 'social',    label: loc.t('nav.socialStudio'),    icon: 'stories',  onSelect: () => setTab('feed-studio') },
-        { id: 'calendar',  label: loc.t('nav.calendar'),        icon: 'calendar', onSelect: () => setTab('calendar') },
-        { id: 'mypage',    label: loc.t('nav.myPage'),          icon: 'palette',  onSelect: () => setTab('page') },
-      ]
-    : [
-        { id: 'overview',  label: loc.t('nav.overview'),  icon: 'activity', onSelect: goOverview },
-        { id: 'galleries', label: loc.t('nav.galleries'), icon: 'sections', onSelect: goGalleries },
-        ...(productionEnabled ? [{
-          id: 'tender',
-          label: loc.t('nav.tenderLibrary'),
-          icon: 'search' as const,
-          onSelect: () => { setSocialLockOpen(false); setNonEntitledOverview(false); setTab('tender') },
-        }] : []),
-        ...(!SOCIAL_STUDIO_ENABLED ? [{
-          id: 'social',
-          label: `${loc.t('nav.socialStudio')} · ${loc.t('nav.comingSoon')}`,
-          icon: 'stories' as const,
-          onSelect: () => { setNonEntitledOverview(false); setSocialLockOpen(true) },
-        }] : []),
-        ...(productionEnabled ? [{
-          id: 'mypage',
-          label: loc.t('nav.myPage'),
-          icon: 'palette' as const,
-          onSelect: () => { setSocialLockOpen(false); setNonEntitledOverview(false); setTab('page') },
-        }] : []),
-      ]
-
-  // Whether to render the presentation-only Overview screen instead of the
-  // Galleries screen. Applies to every client while `socialAllowed` is false
-  // (today: everyone). The Coming-soon panel takes over the content area when
-  // the locked Social item is selected.
-  const showNonEntitledOverview = !socialAllowed && nonEntitledOverview && !socialLockOpen
-  const showSocialLock = !socialAllowed && socialLockOpen
+  // "My Page" is only offered to production-entitled members.
+  const navItems: NavItem[] = [
+    { id: 'overview',  label: loc.t('nav.overview'),  icon: 'activity', onSelect: () => setTab('overview') },
+    { id: 'galleries', label: loc.t('nav.galleries'), icon: 'sections', onSelect: () => setTab('galleries') },
+    ...(productionEnabled ? [{
+      id: 'page', label: loc.t('nav.myPage'), icon: 'palette' as const, onSelect: () => setTab('page'),
+    }] : []),
+  ]
 
   return (
     <PortalShell
@@ -835,476 +534,25 @@ export function ClientDashboard() {
       studioName={studioName}
       clientTitle={displayTitle}
       navItems={navItems}
-      activeNavId={activeNavId}
+      activeNavId={tab}
       showAccount={memberAuthorized}
       email={memberEmail}
       clientName={activeMembership?.client_name ?? clientName}
       signingOut={signingOut}
       onSignOut={() => { void handleSignOut() }}
     >
-    <div dir={loc.dir}>
-
-        {/* ── Overview (non-entitled clients) ──────────────────────────────
-            Presentation-only Overview backed by `nonEntitledOverview`. Never a
-            Production surface — a simple, honest welcome + galleries. */}
-        {showNonEntitledOverview && (
+      <div dir={loc.dir}>
+        {tab === 'overview' && (
           <OverviewScreen
             loc={loc}
             clientName={activeMembership?.client_name || clientName}
             galleries={galleryCards}
             hrefFor={galleryUrl}
-            onViewAll={goGalleries}
+            onViewAll={() => setTab('galleries')}
           />
         )}
-
-        {/* ── Social Studio locked (feature flag off, contract C1) ─────────
-            An elegant Coming-soon panel. Presentation-only: `tab` stays on a
-            safe value, no studio module mounts, no Instagram flow reachable. */}
-        {showSocialLock && (
-          <SocialComingSoon loc={loc} onGoGalleries={goGalleries} />
-        )}
-
-        {/* ── Production module unavailable (defensive) ────────────────────
-            If a Production tab is somehow active without the entitlement (e.g.
-            a transient state before the redirect effect fires, or a tampered
-            value), render a safe notice instead of the Production module. The
-            module content blocks are ALSO individually gated on
-            `productionEnabled`, so they never mount here. */}
-        {bootstrapChecked && !socialAllowed && !showNonEntitledOverview && !showSocialLock && (SOCIAL_TABS as readonly string[]).includes(tab) && (
-          <div style={{
-            padding: '48px 40px', textAlign: 'center',
-            background: '#fff', border: `1px solid ${border}`, maxWidth: 480, margin: '0 auto',
-          }}>
-            <div style={{
-              fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-              color: textMuted, textTransform: 'uppercase', marginBottom: 14,
-            }}>{loc.t('gate.notAvailable.badge')}</div>
-            <p style={{ fontSize: 15, color: textPrimary, margin: '0 0 6px', lineHeight: 1.5 }}>
-              {loc.t('gate.notAvailable.title')}
-            </p>
-            <p style={{ fontSize: 13, color: textSecondary, margin: 0, lineHeight: 1.5 }}>
-              {loc.t('gate.notAvailable.body')}
-            </p>
-          </div>
-        )}
-
-        {/* ── Overview (entitled clients) — personalized content-engine home ──
-            Production-gated: only entitled businesses see this surface. */}
-        {tab === 'home' && socialAllowed && (
-          <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>{loc.t('loading')}…</div>}>
-            <ClientHome
-              loc={loc}
-              clientName={activeMembership?.client_name || clientName}
-              galleries={galleries}
-              covers={covers}
-              galleryHref={galleryUrl}
-              onGoSocial={() => setTab('feed-studio')}
-              onGoLibrary={() => setTab('galleries')}
-            />
-          </Suspense>
-        )}
-
-        {/* ── Feed Studio Tab — the AI Visual OS surface (Production) ──── */}
-        {tab === 'feed-studio' && socialAllowed && (
-          <Suspense fallback={<div style={{ padding: 96, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', textAlign: 'center' }}>Loading Feed Studio…</div>}>
-            <FeedStudio
-              clientId={clientId}
-              topPicks={topPicks}
-              galleries={galleries}
-            />
-          </Suspense>
-        )}
-
-        {/* ── Content Studio Tab (Production) ─────────────────────────── */}
-        {tab === 'content' && socialAllowed && (
-          <div>
-            {/* Stats bar — single hairline-bordered grid row */}
-            <div ref={reveal} style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: 0, marginBottom: 56,
-              border: `1px solid ${border}`, background: bgSubtle,
-            }}>
-              {[
-                { label: 'Selected', value: selectedPicks.size },
-                { label: 'Top Picks', value: topPicks.length },
-                { label: 'Galleries', value: galleries.length },
-                { label: 'Stories', value: Array.from(stories.values()).flat().length },
-              ].map((stat, i) => (
-                <div key={i} style={{
-                  padding: '24px 28px',
-                  borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
-                }}>
-                  <div style={{
-                    fontSize: 11, color: textMuted, fontWeight: 500,
-                    letterSpacing: '0.18em', textTransform: 'uppercase',
-                    marginBottom: 14,
-                  }}>{stat.label}</div>
-                  <div style={{
-                    fontSize: 28, fontWeight: 400, color: textPrimary,
-                    letterSpacing: '-0.025em', lineHeight: 1,
-                    fontFeatureSettings: '"tnum" 1, "lnum" 1',
-                  }}>{stat.value.toLocaleString('he-IL')}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Section: Instagram Posts */}
-            <div ref={reveal} style={{ marginBottom: 56 }}>
-              <div style={{
-                display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-                marginBottom: 24, gap: 16, flexWrap: 'wrap',
-              }}>
-                <div>
-                  <div style={{
-                    fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-                    color: textMuted, textTransform: 'uppercase', marginBottom: 10,
-                  }}>For Instagram</div>
-                  <h2 style={{
-                    fontSize: 26, fontWeight: 500, margin: '0 0 6px',
-                    letterSpacing: '-0.02em', color: textPrimary,
-                  }}>Posts</h2>
-                  <p style={{ fontSize: 13, color: textSecondary, margin: 0, lineHeight: 1.5 }}>
-                    Click to select / deselect · Download ready-to-post images
-                  </p>
-                </div>
-                {selectedPicks.size > 0 && (
-                  <button
-                    onClick={async () => {
-                      setDownloading('all')
-                      for (const img of selectedImages.slice(0, 20)) {
-                        const url = await signedStorageUrl('gallery-images', img.storage_path)
-                        await downloadImage(url, `post_${img.filename}`)
-                        await new Promise(r => setTimeout(r, 300))
-                      }
-                      setDownloading(null)
-                    }}
-                    style={{
-                      padding: '11px 22px', borderRadius: 2,
-                      background: textPrimary, border: `1px solid ${textPrimary}`,
-                      color: '#fff', fontSize: 11, fontWeight: 500, cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      letterSpacing: '0.18em', textTransform: 'uppercase',
-                      display: 'flex', alignItems: 'center', gap: 8,
-                    }}
-                  >
-                    <Icon name="download" size={13} strokeWidth={1.85} />
-                    {downloading === 'all' ? 'Downloading…' : `Download ${selectedPicks.size}`}
-                  </button>
-                )}
-              </div>
-
-              {/* Instagram grid — Pixieset-tight packing, no card wrappers */}
-              <div style={{
-                display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4,
-              }}>
-                {allImages.filter(img => img.is_top_pick || selectedPicks.has(img.id)).slice(0, 60).map(img => {
-                  const selected = selectedPicks.has(img.id)
-                  const gallery = galleries.find(g => g.id === img.gallery_id)
-                  return (
-                    <div
-                      key={img.id}
-                      onClick={() => togglePick(img.id)}
-                      style={{
-                        aspectRatio: '1', overflow: 'hidden', position: 'relative',
-                        cursor: 'pointer', background: bgSubtle,
-                        outline: selected ? `2px solid ${textPrimary}` : 'none',
-                        outlineOffset: selected ? -2 : 0,
-                      }}
-                    >
-                      <SignedImg
-                        bucket="gallery-images"
-                        path={img.thumbnail_path || img.storage_path}
-                        alt="" loading="lazy"
-                        style={{
-                          width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                          opacity: selected ? 1 : 0.45,
-                          transition: 'opacity .15s',
-                        }}
-                      />
-                      {/* Selection chip — circular cream/charcoal */}
-                      <div style={{
-                        position: 'absolute', top: 8, insetInlineEnd: 8,
-                        width: 22, height: 22, borderRadius: '50%',
-                        background: selected ? textPrimary : 'rgba(255,255,255,.85)',
-                        border: `1.5px solid ${selected ? textPrimary : 'rgba(255,255,255,.95)'}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        transition: 'background .15s',
-                        color: '#fff',
-                      }}>
-                        {selected && <Icon name="check" size={11} strokeWidth={3} />}
-                      </div>
-                      {/* Gallery label — bottom strip */}
-                      {gallery && (
-                        <div style={{
-                          position: 'absolute', bottom: 0, insetInline: 0,
-                          background: 'linear-gradient(to top, rgba(20,20,19,.7), transparent)',
-                          padding: '20px 10px 8px',
-                          fontSize: 10, fontWeight: 500, color: '#fff',
-                          letterSpacing: '0.04em',
-                        }}>
-                          {gallery.name}
-                        </div>
-                      )}
-                      {/* Per-tile download — only when selected, on hover */}
-                      {selected && (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation()
-                            setDownloading(img.id)
-                            const url = await signedStorageUrl('gallery-images', img.storage_path)
-                            await downloadImage(url, `post_${img.filename}`)
-                            setDownloading(null)
-                          }}
-                          aria-label="Download"
-                          style={{
-                            position: 'absolute', bottom: 8, insetInlineStart: 8,
-                            width: 26, height: 26, borderRadius: '50%',
-                            background: 'rgba(255,255,255,.9)', border: 'none', cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            color: textPrimary, padding: 0,
-                          }}
-                        >
-                          <Icon name="download" size={12} strokeWidth={1.85} />
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Browse more from galleries — quiet horizontal chip row */}
-              <div style={{
-                marginTop: 28, padding: '20px 22px',
-                background: bgSubtle, border: `1px solid ${border}`,
-              }}>
-                <div style={{
-                  fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-                  color: textMuted, textTransform: 'uppercase', marginBottom: 14,
-                }}>Browse more</div>
-                <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-                  {galleries.map(g => (
-                    <button
-                      key={g.id}
-                      onClick={() => setTab('galleries')}
-                      style={{
-                        flexShrink: 0, padding: '8px 16px', borderRadius: 2,
-                        background: '#fff', border: `1px solid ${border}`,
-                        color: textPrimary, fontSize: 11, fontFamily: 'inherit',
-                        cursor: 'pointer', whiteSpace: 'nowrap',
-                        letterSpacing: '0.04em', fontWeight: 500,
-                        transition: 'border-color .15s',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = textPrimary }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = border }}
-                    >
-                      {g.name} · {g.image_count}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Section: Story Reels */}
-            {hasStories && (
-              <div ref={reveal} style={{ marginBottom: 56 }}>
-                <div style={{
-                  fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-                  color: textMuted, textTransform: 'uppercase', marginBottom: 10,
-                }}>For Stories</div>
-                <h2 style={{
-                  fontSize: 26, fontWeight: 500, margin: '0 0 6px',
-                  letterSpacing: '-0.02em', color: textPrimary,
-                }}>Story Reels</h2>
-                <p style={{ fontSize: 13, color: textSecondary, margin: '0 0 24px', lineHeight: 1.5 }}>
-                  Download and share on Instagram Stories
-                </p>
-                <div style={{ display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8 }}>
-                  {galleries.filter(g => stories.has(g.id)).map(g => {
-                    const cover = covers.get(g.id)
-                    const galleryStories = stories.get(g.id) || []
-                    return (
-                      <div key={g.id} style={{ flexShrink: 0, width: 140 }}>
-                        {/* Phone-shaped preview */}
-                        <div
-                          onClick={() => setPlayingStory(storageUrl('gallery-stories', galleryStories[0].storage_path))}
-                          style={{
-                            aspectRatio: '9 / 16', overflow: 'hidden',
-                            border: `1px solid ${border}`, cursor: 'pointer',
-                            background: bgSubtle, position: 'relative',
-                            transition: 'border-color .15s',
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = textPrimary }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = border }}
-                        >
-                          {cover && <img src={cover} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.7 }} />}
-                          <div style={{
-                            position: 'absolute', inset: 0,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}>
-                            <div style={{
-                              width: 36, height: 36, borderRadius: '50%',
-                              background: 'rgba(255,255,255,.92)',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              color: textPrimary,
-                            }}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                                <polygon points="5 3 19 12 5 21" />
-                              </svg>
-                            </div>
-                          </div>
-                        </div>
-                        <div style={{
-                          marginTop: 10, fontSize: 12, fontWeight: 500, color: textPrimary,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>{g.name}</div>
-                        <button
-                          onClick={async () => {
-                            setDownloading(g.id)
-                            const url = storageUrl('gallery-stories', galleryStories[0].storage_path)
-                            await downloadImage(url, `story_${g.name.replace(/\s+/g, '_')}.mp4`)
-                            setDownloading(null)
-                          }}
-                          style={{
-                            marginTop: 8, width: '100%', padding: '8px 0',
-                            background: 'transparent', border: `1px solid ${border}`,
-                            borderRadius: 2, color: textPrimary,
-                            fontSize: 10, fontWeight: 500,
-                            letterSpacing: '0.18em', textTransform: 'uppercase',
-                            fontFamily: 'inherit', cursor: 'pointer',
-                            transition: 'border-color .15s, background .15s',
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = textPrimary; e.currentTarget.style.background = textPrimary; e.currentTarget.style.color = '#fff' }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = textPrimary }}
-                        >
-                          {downloading === g.id ? 'Downloading…' : 'Download'}
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Content Calendar Tab (Production) ────────────────────── */}
-        {tab === 'calendar' && socialAllowed && (
-          <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
-            <SocialManager
-              galleries={galleries}
-              allImages={allImages}
-              topPicks={topPicks}
-              clientId={clientId}
-              storageUrl={storageUrl}
-            />
-          </Suspense>
-        )}
-
-        {/* ── Galleries Tab ───────────────────────────────────────────── */}
-        {tab === 'galleries' && !showNonEntitledOverview && !showSocialLock && (
-          <GalleryGrid
-            loc={loc}
-            items={galleryCards}
-            hrefFor={galleryUrl}
-          />
-        )}
-
-        {/* ── Stories Tab ──────────────────────────────────────────────── */}
-        {tab === 'stories' && hasStories && socialAllowed && (
-          <div>
-            <div ref={reveal} style={{ marginBottom: 32 }}>
-              <div style={{
-                fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-                color: textMuted, textTransform: 'uppercase', marginBottom: 10,
-              }}>Reels</div>
-              <h2 style={{
-                fontSize: 28, fontWeight: 500, margin: '0 0 6px',
-                letterSpacing: '-0.02em', color: textPrimary,
-              }}>Stories</h2>
-              <p style={{ fontSize: 13, color: textSecondary, margin: 0, lineHeight: 1.5 }}>
-                Preview and download your story reels
-              </p>
-            </div>
-            <div ref={reveal} style={{
-              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 24,
-            }}>
-              {galleries.filter(g => stories.has(g.id)).map(g => {
-                const cover = covers.get(g.id)
-                const galleryStories = stories.get(g.id) || []
-                return (
-                  <div key={g.id} style={{ textAlign: 'center' }}>
-                    <div
-                      onClick={() => setPlayingStory(storageUrl('gallery-stories', galleryStories[0].storage_path))}
-                      style={{
-                        aspectRatio: '9 / 16', overflow: 'hidden',
-                        border: `1px solid ${border}`, cursor: 'pointer',
-                        background: bgSubtle, position: 'relative',
-                        transition: 'border-color .15s',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = textPrimary }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = border }}
-                    >
-                      {cover && <img src={cover} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.6 }} />}
-                      <div style={{
-                        position: 'absolute', inset: 0,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <div style={{
-                          width: 48, height: 48, borderRadius: '50%',
-                          background: 'rgba(255,255,255,.92)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          color: textPrimary,
-                        }}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21" /></svg>
-                        </div>
-                      </div>
-                      <div style={{
-                        position: 'absolute', bottom: 0, insetInline: 0,
-                        background: 'linear-gradient(to top, rgba(20,20,19,.78), transparent)',
-                        padding: '24px 14px 14px', textAlign: 'right',
-                      }}>
-                        <div style={{
-                          fontSize: 14, fontWeight: 500, color: '#fff',
-                          letterSpacing: '-0.01em',
-                        }}>{g.name}</div>
-                        <div style={{
-                          fontSize: 11, fontWeight: 500, letterSpacing: '0.18em',
-                          textTransform: 'uppercase', color: 'rgba(255,255,255,.9)', marginTop: 4,
-                        }}>{galleryStories.length} {galleryStories.length === 1 ? 'story' : 'stories'}</div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        setDownloading(g.id)
-                        for (const s of galleryStories) {
-                          await downloadImage(storageUrl('gallery-stories', s.storage_path), `story_${g.name.replace(/\s+/g, '_')}_${s.style}.mp4`)
-                        }
-                        setDownloading(null)
-                      }}
-                      style={{
-                        marginTop: 12, padding: '10px 20px', borderRadius: 2,
-                        background: 'transparent', border: `1px solid ${textPrimary}`,
-                        color: textPrimary,
-                        fontSize: 10, fontWeight: 500,
-                        letterSpacing: '0.18em', textTransform: 'uppercase',
-                        cursor: 'pointer', fontFamily: 'inherit',
-                        transition: 'background .15s, color .15s',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = textPrimary; e.currentTarget.style.color = '#fff' }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = textPrimary }}
-                    >
-                      {downloading === g.id ? 'Downloading…' : 'Download Stories'}
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ── My Page Tab ─────────────────────────────────────────────── */}
-        {tab === 'page' && (
+        {tab === 'galleries' && <GalleryGrid loc={loc} items={galleryCards} hrefFor={galleryUrl} />}
+        {tab === 'page' && productionEnabled && (
           <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
             <PortfolioEditor
               clientId={clientId}
@@ -1316,40 +564,7 @@ export function ClientDashboard() {
             />
           </Suspense>
         )}
-
-        {/* ── Tender Library (production-company clients) ──────────────────
-            Gated by the `production_suite` entitlement ALONE (NOT the Social
-            flag), so entitled clients get the tender library now while Social
-            stays locked. TenderBuilder is self-contained (client-side filter +
-            ZIP/PDF over galleries the client can already see); it calls none of
-            the locked Social APIs. */}
-        {tab === 'tender' && productionEnabled && !showNonEntitledOverview && !showSocialLock && (
-          <Suspense fallback={<div style={{ padding: 40, color: textMuted, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Loading…</div>}>
-            <TenderBuilder
-              galleries={galleries}
-              allImages={allImages}
-              covers={covers}
-              businessName={studioName || 'Studio'}
-            />
-          </Suspense>
-        )}
-      {/* Story player */}
-      {playingStory && <StoryPlayer url={playingStory} onClose={() => setPlayingStory(null)} />}
-
-      {/* Creative Engine — per-gallery AI design campaign */}
-      {creativeGallery && (
-        <Suspense fallback={null}>
-          <CreativeEngineDialog
-            clientId={clientId}
-            galleryId={creativeGallery.id}
-            galleryName={creativeGallery.name}
-            topPicksCount={creativeGallery.topPicksCount}
-            imageById={new Map(topPicks.map(p => [p.id, { id: p.id, thumbnail_path: p.thumbnail_path, storage_path: p.storage_path }]))}
-            onClose={() => setCreativeGallery(null)}
-          />
-        </Suspense>
-      )}
-    </div>
+      </div>
     </PortalShell>
   )
 }

@@ -34,7 +34,7 @@ const SIGNED_URLS_ENABLED =
 
 // Buckets where the consumer (<SignedImg>) renders a /render/image/public/...
 // transform URL anyway — the signed `baseSrc` is unused. Hitting
-// /api/append-event-posts?action=signed_url 900× on gallery load saturated the
+// /api/gallery-access?action=signed_url 900× on gallery load saturated the
 // Vercel function and surfaced as 500s in production. Skip the roundtrip for
 // these buckets.
 const TRANSFORMABLE_BUCKETS = new Set(['gallery-images', 'demo-uploads'])

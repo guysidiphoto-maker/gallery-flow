@@ -3,7 +3,7 @@
 // Today, every <img src={storageUrl(bucket, path)} /> uses a permanent public
 // URL because the bucket is public. Phase 4 will flip the bucket private;
 // this helper is the swap-in replacement that requests a short-lived signed
-// URL from /api/append-event-posts (action='signed_url') and falls back to
+// URL from /api/gallery-access (action='signed_url') and falls back to
 // the public URL if the request fails.
 //
 // P4.5.C: also reads the public-viewer session token (set by publicSession.ts
@@ -107,7 +107,7 @@ export async function signedStorageUrl(
       const token = options.token ?? readSessionToken()
       const pvt = options.pvt ?? readPublicViewerToken()
       const unlockToken = options.unlockToken
-      const res = await fetch('/api/append-event-posts', {
+      const res = await fetch('/api/gallery-access', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

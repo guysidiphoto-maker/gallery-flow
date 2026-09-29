@@ -7,7 +7,7 @@
 // ZIP back to the browser.
 //
 // Auth model:
-//   1. Origin allowlist (existing guard, mirrors append-event-posts).
+//   1. Origin allowlist (existing guard, mirrors gallery-access).
 //   2. Public-viewer token (pvt) — must be alive, scoped to the galleryId
 //      passed in the request. Verified via the same RPC the signed_url
 //      action uses (verify_public_gallery_session).
