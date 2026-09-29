@@ -10,7 +10,11 @@ export interface EditorPageActions {
   deleteGallery: (g: Gallery) => Promise<void>
 }
 
-export type EditorContextValue = GalleryEditorState & { actions: EditorPageActions }
+export type EditorContextValue = GalleryEditorState & {
+  actions: EditorPageActions
+  // Grid cover fallback (first photo) for galleries without an explicit cover.
+  coverFallback: Record<string, string>
+}
 
 export const EditorContext = createContext<EditorContextValue | null>(null)
 
