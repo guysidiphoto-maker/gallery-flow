@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Icon } from '@/shared/ui/Icon'
 import { cn } from '@/shared/ui'
 import { cardCoverUrl } from '../lib/cardCoverUrl'
@@ -14,7 +13,6 @@ export function GalleryCard({ gallery: g, index: idx, fallbackCover, actions, on
   onOpen: (g: Gallery) => void
   onOpenEmailShare: (g: Gallery) => void
 }) {
-  const [isHovered, setIsHovered] = useState(false)
   const isLive = g.status === 'live'
   const explicitCover = ((g.delivery_settings as Record<string, unknown> | undefined)?.coverImageUrl as string | undefined) || null
   const cover = explicitCover || fallbackCover || null
@@ -24,8 +22,6 @@ export function GalleryCard({ gallery: g, index: idx, fallbackCover, actions, on
       // Editorial reveal: 60ms cascade per tile.
       style={{ animationDelay: `${Math.min(idx, 12) * 0.06}s` }}
       onClick={() => onOpen(g)}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
       <div
         className={cn(
@@ -48,20 +44,18 @@ export function GalleryCard({ gallery: g, index: idx, fallbackCover, actions, on
             <Icon name="photo" size={36} strokeWidth={1.2} />
           </div>
         )}
-        {isHovered && (
-          <GalleryCardActions
-            gallery={g}
-            isLive={isLive}
-            actions={actions}
-            onOpenEmailShare={onOpenEmailShare}
-          />
-        )}
+        <GalleryCardActions
+          gallery={g}
+          isLive={isLive}
+          actions={actions}
+          onOpenEmailShare={onOpenEmailShare}
+        />
       </div>
 
-      <div className="px-0.5 pt-[18px]">
-        <div className="mb-2 flex items-center gap-2 text-[10px] font-medium tracking-label text-muted uppercase">
+      <div className="px-4 pt-4 pb-[18px]">
+        <div className="mb-2 flex items-center gap-2 text-[11px] font-medium text-muted">
           <span className={cn('size-1.5 rounded-full', isLive ? 'bg-sage' : 'bg-line')} />
-          <span>{isLive ? 'Published' : 'Draft'}</span>
+          <span>{isLive ? 'פורסמה' : 'טיוטה'}</span>
           {g.published_at && (
             <>
               <span className="mx-0.5 text-line">·</span>
