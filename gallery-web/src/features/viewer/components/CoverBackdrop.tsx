@@ -1,14 +1,8 @@
 import { useState } from 'react'
+import { cn } from '@/shared/ui'
 
-// Cinematic cover background — the premium private-entry treatment (elegant
-// blur + dark scrim + soft vignette + slow zoom, reduced-motion aware). Shared
-// by the PasswordGate and the private face-search locked welcome screen so both
-// use ONE implementation (styles live in .cover-backdrop* in styles.css).
-//
-// Decorative only (aria-hidden). Fades in once the image decodes; a cached
-// image that finishes before React attaches onLoad is caught by the ref check.
-// On load failure it renders null and calls onFailed so the parent can fall
-// back to its flat background.
+// Blurred, scrimmed, slowly zooming cover behind the password gate and the
+// private face-search entry. Decorative; renders null (and calls onFailed) on error.
 
 export interface CoverBackdropProps {
   /** Optimized, small render URL (see gateCoverBackgroundUrl) — never the
@@ -24,19 +18,23 @@ export function CoverBackdrop({ coverUrl, onFailed }: CoverBackdropProps) {
   if (!coverUrl || failed) return null
 
   return (
-    <div className={`cover-backdrop${ready ? ' cover-backdrop--ready' : ''}`} aria-hidden="true">
+    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
       <img
-        className="cover-backdrop__img"
+        className={cn(
+          'absolute inset-0 size-full object-cover [transform:scale(1.08)]',
+          'blur-[10px] brightness-[.92] saturate-[1.03] transition-opacity duration-[1.1s] ease-[ease]',
+          'animate-[gv-cover-zoom_18s_ease-in-out_infinite_alternate] motion-reduce:animate-none',
+          ready ? 'opacity-100' : 'opacity-0',
+        )}
         src={coverUrl}
         alt=""
         decoding="async"
-        // A cached cover can finish before React attaches onLoad — the ref
-        // check catches that so it still fades in (else it stays invisible).
+        // A cached cover can finish before onLoad is attached; catch it so it still fades in.
         ref={el => { if (el && el.complete && el.naturalWidth > 0) setReady(true) }}
         onLoad={() => setReady(true)}
         onError={() => { setFailed(true); onFailed?.() }}
       />
-      <div className="cover-backdrop__scrim" />
+      <div className="gv-cover-scrim pointer-events-none absolute inset-0 z-0" />
     </div>
   )
 }

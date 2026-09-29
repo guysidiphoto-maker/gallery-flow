@@ -29,7 +29,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
   <link rel="preconnect" href="https://vlyiqfawkrjvqcmkpfvs.supabase.co" />
 </head>
-<body>
+<body style="background:#0a0a0f">
   <div id="root">
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:20px;background:#0a0a0f">
       <div style="font-family:'Playfair Display',Georgia,serif;font-size:18px;font-weight:600;letter-spacing:0.08em;color:rgba(255,255,255,.15)">pixflow</div>
