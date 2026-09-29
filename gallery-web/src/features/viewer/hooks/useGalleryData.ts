@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase, storageUrl } from '@/shared/lib/supabase'
+import { storageUrl } from '@/shared/lib/supabase'
 import {
   getMeta as gcGetMeta,
   getImages as gcGetImages,
@@ -7,7 +7,10 @@ import {
   getStories as gcGetStories,
   bootstrapGallery as gcBootstrap,
   type GalleryMeta,
-} from '@/shared/gallery/galleryClient'
+} from '@/shared/data/publicGallery'
+import { getBusinessBySlug } from '@/shared/data/businesses'
+import { findGalleryByNameSlug, getGalleryBySlug } from '@/shared/data/galleries'
+import { listGallerySections } from '@/shared/data/sections'
 import type { Gallery, GalleryImage, GallerySection, Story } from '@/shared/types'
 import { isGalleryUnlocked } from '../components/PasswordGate'
 import { applyPublishedSnapshot } from '../lib/publishedSnapshot'
@@ -73,11 +76,7 @@ export function useGalleryData(route: GalleryRoute | null) {
           : gcGetImages<GalleryImage>(id, { offset: 0, limit: FIRST_PAGE }),
       prefetch
         ? Promise.resolve({ data: prefetch.sections })
-        : supabase
-            .from('gallery_sections')
-            .select('id, name, slug, sort_order, description')
-            .eq('gallery_id', id)
-            .order('sort_order', { ascending: true }),
+        : listGallerySections(id),
     ])
 
     const publishedRevisionId = (meta as { published_revision_id?: string | null }).published_revision_id ?? null
@@ -129,17 +128,13 @@ export function useGalleryData(route: GalleryRoute | null) {
           return
         }
         if (boot.status === 'not_found') { setError('Gallery not found'); return }
-        const { data: bizRows } = await supabase.rpc('get_business_by_slug', { p_slug: route.businessSlug })
+        const { data: bizRows } = await getBusinessBySlug(route.businessSlug)
         const biz = bizRows?.[0]
         if (!biz) { setError('Gallery not found'); return }
         // Draft is included so the owner can deep-link into an unpublished gallery.
-        const { data: g } = await supabase.from('galleries').select('*')
-          .eq('business_id', biz.id).eq('slug', route.gallerySlug)
-          .in('status', ['live', 'draft']).single()
+        const { data: g } = await getGalleryBySlug(biz.id, route.gallerySlug)
         if (g) { loadGallery(g.id); return }
-        const { data: byName } = await supabase.from('galleries').select('*')
-          .eq('business_id', biz.id).in('status', ['live', 'draft'])
-          .ilike('name', route.gallerySlug.replace(/-/g, '%')).limit(1)
+        const { data: byName } = await findGalleryByNameSlug(biz.id, route.gallerySlug)
         if (byName?.[0]) { loadGallery(byName[0].id); return }
         setError('Gallery not found')
       } catch { setError('Gallery not found') }

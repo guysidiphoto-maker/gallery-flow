@@ -8,7 +8,7 @@
 //     naive loop stops one page early or loops forever.
 
 import { partitionUploadFiles, MAX_UPLOAD_BATCH } from '../src/features/dashboard/lib/uploadPipeline.ts'
-import { paginateAll, IMAGES_PAGE } from '../src/shared/gallery/fetchAllImages.ts'
+import { paginateAll, IMAGES_PAGE } from '../src/shared/data/images.ts'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, detail = '') {

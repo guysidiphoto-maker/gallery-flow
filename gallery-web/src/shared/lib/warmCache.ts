@@ -2,7 +2,8 @@
 // photographer's browser (same region as guests), so the first guest doesn't pay
 // the cold origin round-trip.
 
-import { supabase, storageUrl, displayUrl } from './supabase'
+import { storageUrl, displayUrl } from './supabase'
+import { fetchImagesPage } from '@/shared/data/publicGallery'
 
 const BUCKET = 'gallery-images'
 const WARM_COUNT = 250 // first N thumbnails — covers the opening screens
@@ -43,12 +44,7 @@ async function runPool(urls: string[], concurrency: number): Promise<void> {
  */
 export async function warmGalleryCache(galleryId: string): Promise<void> {
   try {
-    const { data, error } = await supabase.rpc('gallery_get_images', {
-      p_gallery_id: galleryId,
-      p_token: null,
-      p_limit: WARM_COUNT,
-      p_offset: 0,
-    })
+    const { data, error } = await fetchImagesPage(galleryId, null, 0, WARM_COUNT)
     if (error || !data) return
     const urls = (data as Array<{ thumbnail_path?: string; web_preview_path?: string }>)
       .map(r => r.thumbnail_path || r.web_preview_path)
