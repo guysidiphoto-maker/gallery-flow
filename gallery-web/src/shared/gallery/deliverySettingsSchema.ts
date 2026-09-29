@@ -1,30 +1,8 @@
-// Single source of truth for the shape of `galleries.delivery_settings`.
-//
-// Phase 6 step 4 (server-side update_gallery_settings RPC + Zod) will use
-// this same shape on both sides — the RPC validates the JSON patch against
-// these rules before merging into the row, and the dashboard's writers go
-// through the RPC.
-//
-// Hand-rolled validator (no `zod` dep) — the schema is small enough that the
-// extra bundle weight isn't worth it, and the RPC will re-validate server-
-// side anyway. Returns a typed result instead of throwing so call sites can
-// surface friendly errors via the existing toast pattern.
+// Client-side validator for `galleries.delivery_settings` patches; the
+// update_gallery_settings RPC re-validates server-side. Hand-rolled to avoid a zod dep.
 
-export type DeliveryAccessType = 'public' | 'password' | 'code'
-export type DeliveryDownloadQuality = 'web' | 'high' | 'original'
-export type DeliveryLayoutMode = '1-col' | '2-col' | '3-col'
-export type DeliveryImageSpacing = 'none' | 'small' | 'medium'
-export type DeliveryCornerStyle = 'sharp' | 'rounded'
-export type DeliveryFacePrivacyMode = 'open' | 'private'
-export type DeliveryFeedLayout = 'grid' | 'masonry' | 'carousel'
-export type DeliveryWelcomeStyle = 'mosaic' | 'cinematic' | 'minimal'
-
-// Per-field validation rule. Each rule returns null on success or a Hebrew
-// error message on failure. The validator runs every rule and collects every
-// failure, so the user sees all issues at once rather than one-at-a-time.
+// Returns null or a Hebrew error; all failures are collected so users see every issue at once.
 type FieldRule = (value: unknown) => string | null
-
-// Helpers ----------------------------------------------------------------
 
 const isString = (v: unknown): v is string => typeof v === 'string'
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -73,8 +51,6 @@ function isoDate(name: string): FieldRule {
   return (v) => {
     if (v === null || v === undefined || v === '') return null
     if (!isString(v)) return `${name}: תאריך לא תקין`
-    // Accept YYYY-MM-DD or any ISO-8601. Date.parse forgives more than we'd
-    // like but flags truly garbage strings.
     if (Number.isNaN(Date.parse(v))) return `${name}: תאריך לא חוקי`
     return null
   }
@@ -92,12 +68,7 @@ function coverCrop(name: string): FieldRule {
   }
 }
 
-// Allowlist ---------------------------------------------------------------
-//
-// Keys not in this map are REJECTED. Drift like `coverImageURL` vs
-// `coverImageUrl` (the bug Phase 6 was opened to fix) silently persisted
-// forever because there was no allowlist. The RPC will use the same set;
-// the dashboard pre-validates so the round-trip isn't wasted on typos.
+// Allowlist: unknown keys are rejected so typos like `coverImageURL` can't persist silently.
 
 const RULES: Record<string, FieldRule> = {
   // Display
@@ -144,8 +115,7 @@ const RULES: Record<string, FieldRule> = {
   headingFont:          maxLength('פונט כותרות', 60),
   bodyFont:             maxLength('פונט גוף', 60),
 
-  // Watermark — overrides the studio Brand Kit per-gallery. Accept legacy
-  // single-text key plus the brand-kit shape (source/scale/opacity/contrast).
+  // Watermark (per-gallery Brand Kit override)
   watermarkEnabled:     boolean('סימן מים מופעל'),
   watermarkText:        maxLength('טקסט סימן מים', 120),
   watermarkPosition:    oneOf('מיקום סימן מים', ['tl','tc','tr','cl','cc','cr','bl','bc','br'] as const),
@@ -164,11 +134,7 @@ const RULES: Record<string, FieldRule> = {
   layoutMode:           oneOf('פריסה', ['1-col', '2-col', '3-col'] as const),
   navStyle:             oneOf('סגנון ניווט', ['top', 'side'] as const),
   imageSpacing:         oneOf('רווח תמונות', ['none', 'small', 'medium', 'wide'] as const),
-  // Design → Grid spacing control. Was MISSING here (and from the server
-  // allowlist), so the value was silently rejected on save and the control did
-  // nothing. Added on both sides; maps to imageSpacing in the viewer.
   gridSpacing:          oneOf('מרווח בין תמונות', ['regular', 'large'] as const),
-  // Gallery appearance (background + text). Curated, contrast-safe themes.
   appearance:           oneOf('מראה', ['editorial', 'light', 'dark'] as const),
   cornerStyle:          oneOf('סגנון פינות', ['sharp', 'rounded'] as const),
   feedLayout:           oneOf('פריסת פיד', ['grid', 'masonry', 'carousel'] as const),
@@ -187,10 +153,8 @@ const RULES: Record<string, FieldRule> = {
   clientHidePhotosEnabled: boolean('הסתרת תמונות ע"י לקוח'),
   clientSelectionEnabled:  boolean('בחירת תמונות ע"י לקוח'),
 
-  // Misc / legacy — keys real galleries store and the viewer reads. Kept in
-  // sync with the server validator's allowlist (migration: widen_delivery_
-  // settings_allowlist). Permissive rules so existing values never get
-  // rejected on save.
+  // Legacy keys existing galleries store; permissive so saved values are never rejected.
+  // Keep in sync with the server allowlist.
   language:               maxLength('שפה', 8),
   thumbnailSize:          maxLength('גודל תמונה ממוזערת', 16),
   welcomeTextAnimation:   maxLength('אנימציית טקסט פתיחה', 24),
@@ -204,11 +168,6 @@ export type ValidationResult =
   | { ok: true; patch: Record<string, unknown> }
   | { ok: false; errors: Array<{ key: string; message: string }> }
 
-/**
- * Validate a delivery_settings patch (subset of keys, one or many).
- * Unknown keys produce an "unknown_key" error instead of being silently
- * dropped — that's exactly the drift the Phase 6 plan calls out.
- */
 export function validateDeliverySettingsPatch(patch: Record<string, unknown>): ValidationResult {
   const errors: Array<{ key: string; message: string }> = []
   const out: Record<string, unknown> = {}
@@ -231,8 +190,7 @@ export function validateDeliverySettingsPatch(patch: Record<string, unknown>): V
   return { ok: true, patch: out }
 }
 
-// Convenience for the rendering layer: short human summary of errors for a
-// toast. Joins the first 3 errors with line breaks; trailing "…ועוד N" if more.
+// Toast text: first 3 errors plus a count of the rest.
 export function summarizeValidationErrors(errors: Array<{ key: string; message: string }>): string {
   const head = errors.slice(0, 3).map(e => `• ${e.message}`)
   const more = errors.length > 3 ? `\n…ועוד ${errors.length - 3} שגיאות` : ''

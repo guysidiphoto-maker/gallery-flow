@@ -1,11 +1,6 @@
-// galleryLayout.ts — the ONE place that turns a gallery's saved delivery_settings
-// into resolved grid layout values (column mode + spacing + pixel gap). The
-// public viewer, the editor preview, and the Preview route all resolve layout
-// through here so the editor can never show a grid that differs from Live.
-//
-// Design tab keys (thumbnailSize / gridSpacing) take precedence; legacy keys
-// (layoutMode / imageSpacing) are the fallback so galleries created before the
-// Design tab keep their exact appearance.
+// Single grid-layout resolver so the editor preview can never differ from Live.
+// Design-tab keys (thumbnailSize/gridSpacing) win; legacy layoutMode/imageSpacing
+// are the fallback so older galleries keep their look.
 
 export type LayoutMode = '1-col' | '2-col' | '3-col'
 export type ImageSpacing = 'none' | 'small' | 'medium' | 'wide'
@@ -20,12 +15,7 @@ function str(raw: Record<string, unknown> | null | undefined, key: string): stri
   return typeof v === 'string' && v.length > 0 ? v : null
 }
 
-/**
- * Resolve the grid layout for a gallery.
- *
- * @param raw        gallery.delivery_settings
- * @param isFeedMode mobile single-column "feed" override (wins over everything)
- */
+/** `isFeedMode` (mobile single-column feed) overrides everything. */
 export function resolveGridLayout(
   raw: Record<string, unknown> | null | undefined,
   isFeedMode = false,
@@ -33,13 +23,8 @@ export function resolveGridLayout(
   const thumbnailSize = str(raw, 'thumbnailSize')
   const gridSpacing = str(raw, 'gridSpacing')
 
-  // thumbnailSize → column mode. 'regular' = more, smaller columns (3-col →
-  // 4 desktop cols); 'large' = fewer, bigger (2-col → 3 desktop cols);
-  // 'full' = one image per row on every device (1-col — big on mobile).
   const layoutFromThumb: LayoutMode | null =
     thumbnailSize === 'full' ? '1-col' : thumbnailSize === 'large' ? '2-col' : thumbnailSize === 'regular' ? '3-col' : null
-  // gridSpacing → gap tier. 'large' maps to a genuinely wide gap so the choice
-  // is obvious on desktop; 'regular' stays tight.
   const spacingFromGrid: ImageSpacing | null =
     gridSpacing === 'large' ? 'wide' : gridSpacing === 'regular' ? 'small' : null
 

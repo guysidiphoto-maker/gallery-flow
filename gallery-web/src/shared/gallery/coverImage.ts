@@ -1,8 +1,5 @@
-// Shared cover-image resolution — single source of truth for "does this
-// gallery have a cover, where does it come from, and what URL should each
-// surface load". Used by the public hero/welcome and the private password
-// gate so both agree on the same rules (incl. backward-compat defaults for
-// galleries created before the cover toggle existed).
+// Cover-image resolution shared by the public hero and the password gate so both
+// apply the same rules, including defaults for galleries predating the cover toggle.
 
 import { renderUrl } from '@/shared/lib/supabase'
 
@@ -23,16 +20,7 @@ export interface CoverConfig {
 const isHttpUrl = (v: unknown): v is string =>
   typeof v === 'string' && /^https?:\/\//i.test(v)
 
-/**
- * Read cover config from a raw `delivery_settings` object.
- *
- * Backward compatibility is the whole point of this function. `coverEnabled`
- * and `coverSource` did not exist before this feature, so:
- *  - coverEnabled === false      → OFF (owner explicitly disabled)
- *  - coverEnabled === true        → ON
- *  - coverEnabled === undefined   → ON iff a cover was already chosen
- *                                   (legacy galleries keep their current look)
- */
+/** An unset `coverEnabled` means ON iff a cover was already chosen, so older galleries keep their look. */
 export function readCoverConfig(
   raw: Record<string, unknown> | null | undefined,
 ): CoverConfig {
@@ -47,9 +35,7 @@ export function readCoverConfig(
     typeof r.coverEnabled === 'boolean' ? (r.coverEnabled as boolean) : undefined
   const enabled = explicit === undefined ? hasAny : explicit
 
-  // Infer source when the explicit discriminator is absent (legacy rows). A
-  // path under a `covers/` folder is a separately-uploaded cover; anything
-  // else that has a value came from an existing gallery asset.
+  // Legacy rows lack coverSource: a `covers/` path is a custom upload, else a gallery asset.
   const source: CoverSource =
     rawSource ??
     (hasAny
@@ -64,7 +50,6 @@ export function readCoverConfig(
   return { enabled, source, path, url, crop }
 }
 
-/** Convenience: is a cover effectively shown for this gallery? */
 export function coverIsEnabled(
   raw: Record<string, unknown> | null | undefined,
 ): boolean {
@@ -72,14 +57,8 @@ export function coverIsEnabled(
 }
 
 /**
- * Ownership guard for a gallery-photo cover. Gallery image storage paths are
- * laid out as `{business-slug}/{galleryId}/originals|thumbnails|web/...`, so a
- * photo that belongs to this gallery always carries the gallery id as a path
- * segment. A cover path missing that segment points at another gallery (or
- * another business) and must be rejected. The update_gallery_settings RPC is
- * already owner-checked, so a cover from another BUSINESS is impossible; this
- * guard additionally blocks a cross-GALLERY path within the same business and
- * keeps the UI from ever offering one.
+ * Image paths are `{business}/{galleryId}/...`, so a cover without the gallery id
+ * segment belongs to another gallery. Blocks cross-gallery covers within a business.
  */
 export function coverPathBelongsToGallery(
   path: string | null | undefined,
@@ -90,16 +69,8 @@ export function coverPathBelongsToGallery(
 }
 
 /**
- * Background URL for the PRIVATE gate (password / private face-search).
- *
- * Deliberately small + low quality: the gate blurs the image hard, so extra
- * detail is wasted bytes on mobile networks — and, critically, a low-res
- * source means a face cannot be recognised before the gallery is unlocked
- * (privacy). One transform per gallery cover, cached a year at the edge.
- *
- * Falls back to an absolute cover URL only when no storage path is known
- * (e.g. an externally-hosted cover). Returns null when the cover is disabled
- * or unset, so the gate keeps its current flat-dark look.
+ * Private-gate background. Deliberately small and low quality so faces can't be
+ * recognised before unlock (privacy) and the heavy blur doesn't waste bytes.
  */
 export function gateCoverBackgroundUrl(
   raw: Record<string, unknown> | null | undefined,

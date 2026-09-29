@@ -1,18 +1,12 @@
 import { supabase } from '@/shared/lib/supabase'
 
-// PostgREST returns at most ~1000 rows per request unless an explicit range is
-// given. Unbounded `.from('images').select()` calls therefore SILENTLY cap at
-// 1000, which made a 1,165-image gallery show/operate on only 1,000 rows in the
-// dashboard (grid, counts, and storage purge). This helper pages past that cap.
+// PostgREST silently caps unranged selects at ~1000 rows; page past it so large
+// galleries aren't truncated.
 export const IMAGES_PAGE = 1000
 
 export interface Page<T> { data: T[] | null; error: unknown }
 
-/**
- * Generic "fetch every page" loop. Pure and injectable so the boundary
- * behavior (exactly 1000, 1001, etc.) is unit-testable without a live DB.
- * Stops when a page returns fewer than pageSize rows.
- */
+/** Injectable page loop so page-boundary behavior is testable without a DB. */
 export async function paginateAll<T>(
   fetchPage: (from: number, to: number) => Promise<Page<T>>,
   pageSize = IMAGES_PAGE,
@@ -28,11 +22,7 @@ export async function paginateAll<T>(
   return out
 }
 
-/**
- * Fetch ALL image rows for a gallery, across every page. A unique tiebreaker
- * (id) is added to the sort so page boundaries can't skip or duplicate rows
- * when many images share a sort_order.
- */
+/** The `id` tiebreaker keeps page boundaries stable when rows share a sort_order. */
 export async function fetchAllGalleryImages<T = Record<string, unknown>>(
   galleryId: string,
   columns: string,

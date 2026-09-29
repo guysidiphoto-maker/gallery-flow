@@ -1,17 +1,9 @@
-// Gallery presets — owner-scoped reusable delivery + appearance bundles.
-//
-// A preset NEVER carries gallery identity: no title, client assignment, event
-// metadata, passwords/codes, cover image, published status or URLs. The
-// PRESET_ALLOWED_KEYS list below is the single client-side source of truth for
-// what a preset may contain; the server re-filters to the same set in the
-// migration 111 trigger (_sanitize_preset_settings), so the two must stay in
-// sync. Applying a preset routes through update_gallery_settings, which
-// validates every key against the same allowlist/constraints as a normal edit.
+// Reusable delivery/appearance bundles. A preset never carries gallery identity
+// (title, client, passwords, cover, URLs); the server re-filters to the same keys.
 
 import { supabase } from '@/shared/lib/supabase'
 
-/** The reusable, non-identity delivery_settings keys a preset may capture.
- *  MUST match the allowlist in supabase/migrations/111_gallery_presets.sql. */
+/** Must match the server allowlist in _sanitize_preset_settings. */
 export const PRESET_ALLOWED_KEYS = [
   // Downloads
   'downloadsEnabled', 'bulkDownloadEnabled', 'trackDownloads', 'downloadQuality',
@@ -40,9 +32,7 @@ export interface GalleryPreset {
   updated_at: string
 }
 
-/** Reduce a gallery's delivery_settings to only the reusable preset keys.
- *  Identity/secret keys are dropped — the same defensive filter the server
- *  applies, so a preset saved from the UI is clean before it ever leaves. */
+/** Keep only preset-allowed keys so a preset is clean before it leaves the client. */
 export function capturePresetSettings(deliverySettings: Record<string, unknown> | null | undefined): PresetSettings {
   const src = deliverySettings ?? {}
   const out: PresetSettings = {}
@@ -106,8 +96,7 @@ export async function deletePreset(id: string): Promise<boolean> {
 }
 
 export async function setDefaultPreset(id: string): Promise<boolean> {
-  // The single-default invariant is enforced by the DB trigger; we only flag
-  // this row and let the trigger clear the others.
+  // A DB trigger clears the previous default.
   const { error } = await supabase
     .from('gallery_presets')
     .update({ is_default: true })
