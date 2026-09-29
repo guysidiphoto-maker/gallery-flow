@@ -1,4 +1,4 @@
-import { border, textMuted, textPrimary } from '../../styles'
+import { Input } from '@/shared/ui'
 import { useEditor, useOpenGallery } from '../EditorContext'
 import { SettingsSection } from './SettingsSection'
 import { SettingsToggleRow } from './SettingsToggleRow'
@@ -19,26 +19,20 @@ export function PrivacySection() {
         last={!enabled}
       />
       {enabled && (
-        <div style={{ paddingTop: 14 }}>
-          <label htmlFor="client-code-input" style={{ display: 'block', fontSize: 12, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+        <div className="pt-3.5">
+          <label htmlFor="client-code-input" className="mb-1.5 block text-[12px] font-medium text-ink">
             קוד הזדהות ללקוח
           </label>
-          <input
+          <Input
             id="client-code-input"
             type="text"
             dir="ltr"
             value={(ds.clientCode as string) ?? ''}
             onChange={e => updateGallerySetting('clientCode', e.target.value.toUpperCase().slice(0, 32))}
             placeholder="לדוגמה: DAVID2026"
-            style={{
-              width: '100%', boxSizing: 'border-box', padding: '11px 13px',
-              borderRadius: 2, border: `1px solid ${border}`,
-              background: '#fff', color: textPrimary, fontSize: 14,
-              letterSpacing: '0.08em', textAlign: 'left' as const, outline: 'none',
-              fontFamily: 'inherit',
-            }}
+            className="px-[13px] py-[11px] text-left text-[14px] tracking-[0.08em]"
           />
-          <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.5, marginTop: 6 }}>
+          <div className="mt-1.5 text-[11px] leading-normal text-muted">
             {(ds.clientCode as string)?.trim()
               ? 'מסרו את הקוד הזה ללקוח בלבד. ללא הקוד הוא ייכנס כאורח רגיל.'
               : 'הזינו קוד. כל עוד השדה ריק, הלקוח לא יוכל להזדהות כאדמין.'}

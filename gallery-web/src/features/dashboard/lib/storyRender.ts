@@ -1,21 +1,10 @@
-// storyRender.ts — client helper for kicking off automated story generation
-// and polling the resulting render.
-//
-// Phase 1 wrapped only the POST to /api/stories/render with a queued stub.
-// Phase 2 also exposes `pollStoryRender(renderId)` which the Dashboard calls
-// every 5s after a successful render request — it lets the JSX render the
-// "in progress" toast while the photographer keeps working.
-//
-// Keeping all the network shape in this module means the Dashboard doesn't
-// hard-code endpoint paths or response shapes — Phase 3 could swap polling
-// for SSE / Workflow DevKit without touching the JSX.
+// Client helper for story generation: request a render and poll its status.
+// Keeps endpoint paths and response shapes out of the dashboard JSX.
 
 import { supabase } from '@/shared/lib/supabase'
 
-// Default photo budget when the photographer hasn't curated favorites. Tuned
-// to the 30s clip length — under 12 photos looks like a slideshow, over 30
-// rushes past faces. Aligns with the photo-source rule in the dashboard:
-// "favorites if any, otherwise the first 30".
+// Default photo budget without curated favorites, tuned to the 30s clip
+// ("favorites if any, otherwise the first 30").
 export const STORY_DEFAULT_PHOTO_BUDGET = 30
 export const STORY_MIN_PHOTOS = 12
 export const STORY_MAX_PHOTOS = 60
@@ -44,10 +33,7 @@ export function formatStoryDuration(sec: number): string {
   return `כ-${minutes}:${String(rem).padStart(2, '0')} דקות`
 }
 
-// All five styles ported from the desktop FFmpeg renderer
-// (src/main/storyRenderer.ts). The Lambda invocation in Phase 2 will pick the
-// Remotion composition matching the style id. Order here is the order shown
-// in the dashboard's style picker.
+// Style ids match the Remotion compositions; order is the picker order.
 export type StoryStyle = 'clean' | 'cinematic' | 'fast-social' | 'elegant' | 'vintage'
 
 export interface StoryStyleMeta {
@@ -122,10 +108,8 @@ export interface RequestStoryGenerationResult {
   userError?: string
 }
 
-// Map server-side error codes → Hebrew copy the Dashboard toast can show
-// verbatim. The point is to avoid leaking infrastructure details ("Lambda",
-// "Chromium", "Vercel") to non-technical photographers. New codes default to
-// a generic message + the raw code in the console for debugging.
+// Server error codes → Hebrew toast copy, so infra details never reach
+// photographers. Unknown codes get a generic message (raw code in console).
 function localizeRenderError(code?: string): string {
   switch (code) {
     case 'unauthenticated':
@@ -152,22 +136,12 @@ function localizeRenderError(code?: string): string {
   }
 }
 
-/**
- * POST `/api/stories/render` with the caller's Supabase access token. The
- * server-side endpoint will reject the request if the user isn't the gallery
- * owner. Returns a normalized result so the caller (Dashboard) just toasts
- * success vs error without parsing HTTP shape.
- *
- * Phase 2: `photoIds` optional. When provided, the server uses exactly those
- * images for the render (curated stories). Omit to use the full gallery.
- */
+/** POST `/api/stories/render` with the owner's token; returns a normalized
+ *  result. Pass `photoIds` for a curated story, omit for auto-selection. */
 export async function requestStoryGeneration(
   galleryId: string,
   style: StoryStyle,
-  // Optional photoIds in render order. When omitted the server falls back
-  // to the same auto-selection rule the dashboard surfaces (favorites if
-  // any, otherwise first 30). Passing IDs gives the photographer manual
-  // curation: pick the cover, the order, the cut.
+  // Render order; omitted → server auto-selects (favorites, else first 30).
   photoIds?: string[],
 ): Promise<RequestStoryGenerationResult> {
   // Pull the session token so the server can identify the caller. The
@@ -227,9 +201,7 @@ export async function requestStoryGeneration(
 }
 
 // ─── Polling helper ─────────────────────────────────────────────────────────
-// The Dashboard polls this every 5s after a successful render request.
-// Network errors are coerced to a 'failed' status so the JSX has exactly one
-// decision tree to walk.
+// Polled every 5s; network errors become 'failed' so callers have one path.
 
 export interface StoryRenderStatusResponse {
   ok: boolean
@@ -240,11 +212,7 @@ export interface StoryRenderStatusResponse {
   error?: string
 }
 
-/**
- * GET `/api/stories/status?renderId=<id>` with the caller's access token.
- * Returns a normalized status snapshot. Callers should keep polling until
- * `status` is `ready` or `failed`.
- */
+/** GET the render status; keep polling until `ready` or `failed`. */
 export async function pollStoryRender(
   renderId: string,
 ): Promise<StoryRenderStatusResponse> {

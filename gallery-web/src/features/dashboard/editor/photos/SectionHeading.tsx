@@ -1,4 +1,4 @@
-import { border, textMuted, textPrimary, textSecondary } from '../../styles'
+import { cn } from '@/shared/ui'
 import { sectionImages } from '../../lib/photoOrder'
 import { useEditor } from '../EditorContext'
 
@@ -13,16 +13,10 @@ export function SectionHeading() {
   const editingDesc = activeSec && editingSectionDescId === activeSec.id
 
   return (
-    <div style={{ minWidth: 0, flex: 1 }}>
-      <h3 style={{
-        fontSize: 22, fontWeight: 500, margin: 0,
-        letterSpacing: '-0.015em', color: textPrimary,
-      }}>
+    <div className="min-w-0 flex-1">
+      <h3 className="m-0 text-[22px] font-medium tracking-[-0.015em] text-ink">
         {activeSec ? activeSec.name : 'תמונות'}
-        <span style={{
-          marginInlineStart: 12, color: textMuted,
-          fontSize: 14, fontWeight: 400,
-        }}>
+        <span className="ms-3 text-[14px] font-normal text-muted">
           {visibleImages.length}
         </span>
       </h3>
@@ -43,13 +37,7 @@ export function SectionHeading() {
           placeholder="תיאור לסקשן (מוצג ללקוח מתחת לכותרת הפרק)"
           rows={2}
           maxLength={500}
-          style={{
-            marginTop: 8, width: '100%', maxWidth: 560,
-            padding: '8px 10px', borderRadius: 2,
-            border: `1px solid ${border}`, background: '#fff',
-            color: textPrimary, fontSize: 13, lineHeight: 1.45,
-            fontFamily: 'inherit', outline: 'none', resize: 'vertical' as const,
-          }}
+          className="mt-2 w-full max-w-[560px] resize-y rounded-hair border border-line bg-raised px-2.5 py-2 text-[13px] leading-[1.45] text-ink outline-none"
         />
       ) : (
         <button
@@ -58,14 +46,10 @@ export function SectionHeading() {
             setSectionDescDraft(activeSec.description ?? '')
             setEditingSectionDescId(activeSec.id)
           }}
-          style={{
-            display: 'block', marginTop: 6,
-            padding: 0, background: 'transparent', border: 'none',
-            textAlign: 'right' as const, cursor: 'text',
-            color: activeSec.description ? textSecondary : textMuted,
-            fontSize: 13, lineHeight: 1.45, fontFamily: 'inherit',
-            maxWidth: 560,
-          }}
+          className={cn(
+            'mt-1.5 block max-w-[560px] cursor-text bg-transparent p-0 text-right text-[13px] leading-[1.45]',
+            activeSec.description ? 'text-ink-soft' : 'text-muted',
+          )}
         >
           {activeSec.description || '+ הוסף תיאור לסקשן'}
         </button>

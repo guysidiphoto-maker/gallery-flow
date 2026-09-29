@@ -1,5 +1,5 @@
 import { Icon, type IconName } from '@/shared/ui/Icon'
-import { bgSubtle, border, card, textMuted, textPrimary, textSecondary } from '../styles'
+import { cn, Eyebrow } from '@/shared/ui'
 
 const FEATURES: { icon: IconName; title: string; desc: string }[] = [
   { icon: 'bolt',        title: 'מהיר במיוחד', desc: 'שלוש שכבות איכות לכל תמונה — גלריות נטענות מהר אצל הלקוח, לא משנה כמה תמונות' },
@@ -10,58 +10,22 @@ const FEATURES: { icon: IconName; title: string; desc: string }[] = [
 // First-run onboarding: quiet hero, two CTAs, three feature tiles.
 export function GalleriesEmptyState({ onNewGallery }: { onNewGallery: () => void }) {
   return (
-    <div style={{
-      textAlign: 'center', padding: '40px 24px 100px',
-      animation: 'fadeInUp .5s ease both',
-      position: 'relative',
-    }}>
-      <div style={{
-        maxWidth: 720, margin: '0 auto 56px',
-        padding: '64px 32px 56px',
-        background: bgSubtle,
-        border: `1px solid ${border}`,
-        borderRadius: 2,
-      }}>
-        <div style={{
-          fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-          color: textMuted, textTransform: 'uppercase', marginBottom: 18,
-        }}>
-          Welcome
-        </div>
-        <h2 style={{
-          fontSize: 38, fontWeight: 500, marginBottom: 18, color: textPrimary,
-          letterSpacing: '-0.02em', lineHeight: 1.05,
-        }}>
+    <div className="relative animate-[dash-fade-up_.5s_ease_both] px-6 pt-10 pb-[100px] text-center">
+      <div className="mx-auto mb-14 max-w-[720px] rounded-hair border border-line bg-surface px-8 pt-16 pb-14">
+        <Eyebrow className="mb-[18px] block font-medium">Welcome</Eyebrow>
+        <h2 className="mb-[18px] text-[38px] leading-[1.05] font-medium tracking-[-0.02em] text-ink">
           ברוך הבא ל-Pixflow
         </h2>
-        <p style={{
-          color: textSecondary, fontSize: 16, marginBottom: 14, lineHeight: 1.65,
-          maxWidth: 480, marginInline: 'auto',
-        }}>
+        <p className="mx-auto mb-3.5 max-w-[480px] text-base leading-[1.65] text-ink-soft">
           גלריות מהירות, פרטיות ויפות לאירועים. עם זיהוי פנים אופציונלי שמאפשר לאורחים למצוא את עצמם בסלפי.
         </p>
-        <p style={{
-          color: textMuted, fontSize: 11, marginBottom: 36,
-          fontWeight: 500, letterSpacing: '0.18em', textTransform: 'uppercase',
-        }}>
+        <p className="mb-9 text-[11px] font-medium tracking-label text-muted uppercase">
           100 free tokens · 100 photos
         </p>
-        <div style={{
-          display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap',
-        }}>
+        <div className="flex flex-wrap justify-center gap-3">
           <button
             onClick={onNewGallery}
-            style={{
-              background: textPrimary, color: '#fff',
-              border: `1px solid ${textPrimary}`, borderRadius: 2,
-              padding: '14px 28px', fontSize: 12,
-              fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-              transition: 'background .2s',
-              letterSpacing: '0.18em', textTransform: 'uppercase',
-              display: 'flex', alignItems: 'center', gap: 10,
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#000' }}
-            onMouseLeave={e => { e.currentTarget.style.background = textPrimary }}
+            className="flex items-center gap-2.5 rounded-hair border border-ink px-7 py-3.5 text-xs font-medium tracking-label no-underline uppercase transition-colors duration-200 cursor-pointer bg-ink text-white hover:bg-black"
           >
             Create first gallery
             <Icon name="plus" size={13} strokeWidth={2} />
@@ -70,18 +34,7 @@ export function GalleriesEmptyState({ onNewGallery }: { onNewGallery: () => void
             href="/demo"
             target="_blank"
             rel="noopener"
-            style={{
-              textDecoration: 'none',
-              background: 'transparent', color: textPrimary,
-              border: `1px solid ${textPrimary}`, borderRadius: 2,
-              padding: '14px 28px', fontSize: 12,
-              fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-              transition: 'background .2s, color .2s',
-              letterSpacing: '0.18em', textTransform: 'uppercase',
-              display: 'flex', alignItems: 'center', gap: 10,
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = textPrimary; e.currentTarget.style.color = '#fff' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = textPrimary }}
+            className="flex items-center gap-2.5 rounded-hair border border-ink px-7 py-3.5 text-xs font-medium tracking-label no-underline uppercase transition-colors duration-200 bg-transparent text-ink hover:bg-ink hover:text-white"
           >
             Try demo
             <Icon name="arrow-out" size={13} strokeWidth={2} />
@@ -89,36 +42,19 @@ export function GalleriesEmptyState({ onNewGallery }: { onNewGallery: () => void
         </div>
       </div>
 
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: 0, maxWidth: 720, margin: '0 auto',
-        border: `1px solid ${border}`,
-        background: card,
-      }}>
+      <div className="mx-auto grid max-w-[720px] grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-0 border border-line bg-surface">
         {FEATURES.map((f, i) => (
-          <div key={f.title} style={{
-            padding: '32px 28px', textAlign: 'right' as const,
-            borderInlineStart: i > 0 ? `1px solid ${border}` : 'none',
-          }}>
-            <div style={{
-              color: textPrimary, marginBottom: 18,
-              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-            }}>
+          <div key={f.title} className={cn('px-7 py-8 text-right', i > 0 && 'border-s border-line')}>
+            <div className="mb-[18px] flex items-center justify-end text-ink">
               <Icon name={f.icon} size={20} strokeWidth={1.4} />
             </div>
-            <div style={{
-              fontSize: 10, fontWeight: 500, letterSpacing: '0.18em',
-              textTransform: 'uppercase', color: textMuted, marginBottom: 8,
-            }}>
+            <div className="mb-2 text-[10px] font-medium tracking-label text-muted uppercase">
               Feature
             </div>
-            <div style={{
-              fontSize: 16, fontWeight: 500, color: textPrimary,
-              marginBottom: 8, letterSpacing: '-0.01em',
-            }}>
+            <div className="mb-2 text-base font-medium tracking-[-0.01em] text-ink">
               {f.title}
             </div>
-            <div style={{ fontSize: 13, color: textSecondary, lineHeight: 1.6 }}>
+            <div className="text-[13px] leading-[1.6] text-ink-soft">
               {f.desc}
             </div>
           </div>

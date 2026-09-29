@@ -32,6 +32,10 @@
   --color-warning: #a67c52;
   --color-danger: #b4524a;        /* destructive text/borders on cream */
   --color-danger-strong: #dc2626; /* error states on white */
+  --color-go: #2dc479;            /* copied / just-published confirmation */
+  --color-go-ink: #1b8a4e;
+  --color-pending: #d97706;       /* unpublished-changes dot */
+  --color-pending-ink: #b45309;
 
   /* ── Dark surfaces (guest-facing viewer chrome, overlays, toasts) ── */
   --color-night: #0a0a0f;

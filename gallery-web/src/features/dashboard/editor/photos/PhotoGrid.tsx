@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { readCoverConfig } from '@/shared/gallery/coverImage'
 import { sectionImages, sortPhotos } from '../../lib/photoOrder'
 import { useEditor } from '../EditorContext'
@@ -26,11 +27,10 @@ export function PhotoGrid({ ui }: { ui: PhotoGridUI }) {
   if (!visibleImages.length) return null
   if (visibleImages.length <= VIRTUALIZE_THRESHOLD) {
     return (
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(auto-fill, minmax(${minCell}px, 1fr))`,
-        gap: 4,
-      }}>
+      <div
+        className="grid grid-cols-[repeat(auto-fill,minmax(var(--cell),1fr))] gap-1"
+        style={{ '--cell': `${minCell}px` } as CSSProperties}
+      >
         {visibleImages.map(img => (
           <PhotoTile key={img.id} img={img} visibleImages={visibleImages} currentCoverPath={currentCoverPath} ui={ui} />
         ))}

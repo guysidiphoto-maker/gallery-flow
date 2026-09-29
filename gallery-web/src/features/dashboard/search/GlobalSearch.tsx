@@ -1,16 +1,11 @@
-// GlobalSearch — owner-side global search surface (Client Portal V2, C5).
-//
-// Mounted by the integrator as a Dashboard view (see INTEGRATION.md). Calls
-// the self-scoped RPC `search_owner_content` (migration 098; needs 097 first)
-// with a 300ms debounce. supabase.rpc cannot be aborted, so stale responses
-// are dropped with a request-sequence guard instead of an AbortController.
-// Navigation is delegated to the integrator via onOpenGallery / onOpenClient.
-// Photos render THUMBNAILS ONLY via the existing displayUrl() pattern; the
-// component never loads a full image collection.
+// Owner-side global search over the self-scoped `search_owner_content` RPC.
+// supabase.rpc can't be aborted, so stale responses are dropped with a
+// sequence guard; photos render thumbnails only (displayUrl).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { supabase, displayUrl } from '@/shared/lib/supabase'
+import { cn, Input, Select } from '@/shared/ui'
 import {
   EMPTY_FILTER_STATE, EMPTY_RESULT,
   buildFilterPayload, createDebouncer, createSequenceGuard,
@@ -24,20 +19,6 @@ import { dirFor, t } from './strings'
 
 const IMAGE_BUCKET = 'gallery-images'
 const DEBOUNCE_MS = 300
-
-// Editorial-minimal palette, copied from the Dashboard constants (same values
-// as components/clients/theme.ts; kept local so wave-1 dirs stay independent).
-const c = {
-  accent: '#141413',
-  bgSubtle: '#FAF9F5',
-  card: '#FBFBF9',
-  cardSolid: '#FFFFFF',
-  border: '#D0D0D0',
-  textPrimary: '#141413',
-  textSecondary: '#333333',
-  textMuted: '#767470',
-  statusLive: '#7B8F6E',
-} as const
 
 export interface GlobalSearchProps {
   /** Open a gallery in the Dashboard's in-page gallery view. */
@@ -116,39 +97,32 @@ export default function GlobalSearch({
   const activeFilterCount = Object.keys(payload).length
 
   return (
-    <div dir={dir} style={{ maxWidth: 960, margin: '0 auto', color: c.textPrimary }}>
+    <div dir={dir} className="mx-auto max-w-[960px] text-ink">
       {/* Header */}
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 26, fontWeight: 500, letterSpacing: '-0.02em', margin: '0 0 6px' }}>
+      <div className="mb-5">
+        <h2 className="mb-1.5 text-[26px] font-medium tracking-[-0.02em]">
           {tr('search.title')}
         </h2>
-        <p style={{ fontSize: 13, color: c.textMuted, margin: 0 }}>{tr('search.subtitle')}</p>
+        <p className="text-[13px] text-muted">{tr('search.subtitle')}</p>
       </div>
 
       {/* Search input */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
-        <input
+      <div className="mb-3 flex items-center gap-2.5">
+        <Input
           type="search"
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder={tr('search.placeholder')}
           aria-label={tr('search.title')}
-          style={{
-            flex: 1, padding: '12px 14px', fontSize: 15,
-            background: c.cardSolid, color: c.textPrimary,
-            border: `1px solid ${c.border}`, borderRadius: 4, outline: 'none',
-          }}
+          className="flex-1 rounded-[4px] py-3 text-[15px]"
         />
         <button
           type="button"
           onClick={() => setShowFilters(v => !v)}
-          style={{
-            padding: '11px 16px', fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
-            background: showFilters || activeFilterCount > 0 ? c.accent : c.cardSolid,
-            color: showFilters || activeFilterCount > 0 ? c.bgSubtle : c.textPrimary,
-            border: `1px solid ${showFilters || activeFilterCount > 0 ? c.accent : c.border}`,
-            borderRadius: 4,
-          }}
+          className={cn(
+            'cursor-pointer rounded-[4px] border px-4 py-[11px] text-[13px] whitespace-nowrap',
+            showFilters || activeFilterCount > 0 ? 'border-ink bg-ink text-surface' : 'border-line bg-raised text-ink',
+          )}
         >
           {tr('search.filters')}{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
         </button>
@@ -177,11 +151,7 @@ export default function GlobalSearch({
             <button
               type="button"
               onClick={() => setReloadTick(n => n + 1)}
-              style={{
-                padding: '9px 18px', fontSize: 13, cursor: 'pointer',
-                background: 'transparent', color: c.textPrimary,
-                border: `1px solid ${c.accent}`, borderRadius: 4,
-              }}
+              className="cursor-pointer rounded-[4px] border border-ink bg-transparent px-[18px] py-[9px] text-[13px] text-ink"
             >
               {tr('search.retry')}
             </button>
@@ -194,7 +164,7 @@ export default function GlobalSearch({
       )}
 
       {phase === 'done' && !isEmptyResult(result) && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+        <div className="flex flex-col gap-7">
           {result.clients.length > 0 && (
             <Section title={tr('search.section.clients')} count={result.clients.length}>
               {result.clients.map(hit => (
@@ -215,10 +185,7 @@ export default function GlobalSearch({
               count={result.images.length}
               note={result.images.length >= 60 ? tr('search.imagesCap') : undefined}
             >
-              <div style={{
-                display: 'grid', gap: 10,
-                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-              }}>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5">
                 {result.images.map(hit => (
                   <ImageCard key={hit.id} hit={hit} locale={locale} onOpen={onOpenGallery} />
                 ))}
@@ -243,64 +210,51 @@ function FilterPanel({ filters, onChange, clientOptions, locale }: {
   const set = <K extends keyof SearchFilterState>(key: K, value: SearchFilterState[K]) =>
     onChange({ ...filters, [key]: value })
 
-  const fieldStyle: CSSProperties = {
-    width: '100%', padding: '8px 10px', fontSize: 13, boxSizing: 'border-box',
-    background: c.cardSolid, color: c.textPrimary,
-    border: `1px solid ${c.border}`, borderRadius: 4,
-  }
-  const labelStyle: CSSProperties = {
-    display: 'block', fontSize: 11, fontWeight: 500, letterSpacing: '0.06em',
-    color: c.textMuted, marginBottom: 5, textTransform: 'uppercase',
-  }
+  const field = 'rounded-[4px] px-2.5 py-2 text-[13px]'
+  const label = 'mb-[5px] block text-[11px] font-medium tracking-[0.06em] text-muted uppercase'
 
   return (
-    <div style={{
-      background: c.card, border: `1px solid ${c.border}`, borderRadius: 4,
-      padding: 16, marginBottom: 18,
-    }}>
-      <div style={{
-        display: 'grid', gap: 14,
-        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-      }}>
+    <div className="mb-[18px] rounded-[4px] border border-line bg-surface p-4">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3.5">
         {clientOptions.length > 0 && (
           <label>
-            <span style={labelStyle}>{tr('filter.client')}</span>
-            <select style={fieldStyle} value={filters.clientId}
+            <span className={label}>{tr('filter.client')}</span>
+            <Select className={field} value={filters.clientId}
               onChange={e => set('clientId', e.target.value)}>
               <option value="">{tr('filter.any')}</option>
               {clientOptions.map(opt => (
                 <option key={opt.id} value={opt.id}>{opt.name}</option>
               ))}
-            </select>
+            </Select>
           </label>
         )}
         <label>
-          <span style={labelStyle}>{tr('filter.status')}</span>
-          <select style={fieldStyle} value={filters.status}
+          <span className={label}>{tr('filter.status')}</span>
+          <Select className={field} value={filters.status}
             onChange={e => set('status', e.target.value as SearchFilterState['status'])}>
             <option value="">{tr('filter.any')}</option>
             <option value="live">{tr('filter.status.live')}</option>
             <option value="draft">{tr('filter.status.draft')}</option>
-          </select>
+          </Select>
         </label>
         <label>
-          <span style={labelStyle}>{tr('filter.assigned')}</span>
-          <select style={fieldStyle} value={filters.assigned}
+          <span className={label}>{tr('filter.assigned')}</span>
+          <Select className={field} value={filters.assigned}
             onChange={e => set('assigned', e.target.value as SearchFilterState['assigned'])}>
             <option value="all">{tr('filter.any')}</option>
             <option value="yes">{tr('filter.assigned.yes')}</option>
             <option value="no">{tr('filter.assigned.no')}</option>
-          </select>
+          </Select>
         </label>
         <label>
-          <span style={labelStyle}>{tr('filter.eventType')}</span>
-          <input style={fieldStyle} type="text" value={filters.eventType} maxLength={60}
+          <span className={label}>{tr('filter.eventType')}</span>
+          <Input className={field} type="text" value={filters.eventType} maxLength={60}
             placeholder={tr('filter.eventType.ph')}
             onChange={e => set('eventType', e.target.value)} />
         </label>
         <label>
-          <span style={labelStyle}>{tr('filter.size')}</span>
-          <select style={fieldStyle} value={filters.eventSizeBucket}
+          <span className={label}>{tr('filter.size')}</span>
+          <Select className={field} value={filters.eventSizeBucket}
             onChange={e => set('eventSizeBucket', e.target.value as SearchFilterState['eventSizeBucket'])}>
             <option value="">{tr('filter.any')}</option>
             <option value="intimate">{tr('filter.size.intimate')}</option>
@@ -308,73 +262,69 @@ function FilterPanel({ filters, onChange, clientOptions, locale }: {
             <option value="medium">{tr('filter.size.medium')}</option>
             <option value="large">{tr('filter.size.large')}</option>
             <option value="massive">{tr('filter.size.massive')}</option>
-          </select>
+          </Select>
         </label>
         <label>
-          <span style={labelStyle}>{tr('filter.industry')}</span>
-          <input style={fieldStyle} type="text" value={filters.industry} maxLength={60}
+          <span className={label}>{tr('filter.industry')}</span>
+          <Input className={field} type="text" value={filters.industry} maxLength={60}
             placeholder={tr('filter.industry.ph')}
             onChange={e => set('industry', e.target.value)} />
         </label>
         <label>
-          <span style={labelStyle}>{tr('filter.venue')}</span>
-          <select style={fieldStyle} value={filters.venueType}
+          <span className={label}>{tr('filter.venue')}</span>
+          <Select className={field} value={filters.venueType}
             onChange={e => set('venueType', e.target.value as SearchFilterState['venueType'])}>
             <option value="">{tr('filter.any')}</option>
             <option value="indoor">{tr('filter.venue.indoor')}</option>
             <option value="outdoor">{tr('filter.venue.outdoor')}</option>
             <option value="mixed">{tr('filter.venue.mixed')}</option>
-          </select>
+          </Select>
         </label>
         <label>
-          <span style={labelStyle}>{tr('filter.time')}</span>
-          <select style={fieldStyle} value={filters.timeOfDay}
+          <span className={label}>{tr('filter.time')}</span>
+          <Select className={field} value={filters.timeOfDay}
             onChange={e => set('timeOfDay', e.target.value as SearchFilterState['timeOfDay'])}>
             <option value="">{tr('filter.any')}</option>
             <option value="day">{tr('filter.time.day')}</option>
             <option value="night">{tr('filter.time.night')}</option>
             <option value="mixed">{tr('filter.time.mixed')}</option>
-          </select>
+          </Select>
         </label>
         <label>
-          <span style={labelStyle}>{tr('filter.yearFrom')}</span>
-          <input style={fieldStyle} type="number" inputMode="numeric" min={2000} max={2100}
+          <span className={label}>{tr('filter.yearFrom')}</span>
+          <Input className={field} type="number" inputMode="numeric" min={2000} max={2100}
             value={filters.yearFrom} placeholder="2024"
             onChange={e => set('yearFrom', e.target.value)} />
         </label>
         <label>
-          <span style={labelStyle}>{tr('filter.yearTo')}</span>
-          <input style={fieldStyle} type="number" inputMode="numeric" min={2000} max={2100}
+          <span className={label}>{tr('filter.yearTo')}</span>
+          <Input className={field} type="number" inputMode="numeric" min={2000} max={2100}
             value={filters.yearTo} placeholder="2026"
             onChange={e => set('yearTo', e.target.value)} />
         </label>
         <label>
-          <span style={labelStyle}>{tr('filter.keywords')}</span>
-          <input style={fieldStyle} type="text" value={filters.keywords}
+          <span className={label}>{tr('filter.keywords')}</span>
+          <Input className={field} type="text" value={filters.keywords}
             placeholder={tr('filter.keywords.ph')}
             onChange={e => set('keywords', e.target.value)} />
         </label>
         <label>
-          <span style={labelStyle}>{tr('filter.imported')}</span>
-          <select style={fieldStyle} value={filters.importedSource}
+          <span className={label}>{tr('filter.imported')}</span>
+          <Select className={field} value={filters.importedSource}
             onChange={e => set('importedSource', e.target.value as SearchFilterState['importedSource'])}>
             <option value="">{tr('filter.any')}</option>
             <option value="pixieset">{tr('filter.imported.pixieset')}</option>
             <option value="generic_csv">{tr('filter.imported.generic_csv')}</option>
             <option value="local_folder">{tr('filter.imported.local_folder')}</option>
-          </select>
+          </Select>
         </label>
       </div>
-      <div style={{ marginTop: 14, textAlign: 'end' }}>
+      <div className="mt-3.5 text-end">
         <button
           type="button"
           onClick={() => onChange(EMPTY_FILTER_STATE)}
           disabled={!hasActiveFilters(buildFilterPayload(filters))}
-          style={{
-            padding: '8px 14px', fontSize: 12, cursor: 'pointer',
-            background: 'transparent', color: c.textSecondary,
-            border: `1px solid ${c.border}`, borderRadius: 4,
-          }}
+          className="cursor-pointer rounded-[4px] border border-line bg-transparent px-3.5 py-2 text-xs text-ink-soft"
         >
           {t(locale, 'search.clearFilters')}
         </button>
@@ -393,17 +343,14 @@ function Section({ title, count, note, children }: {
 }) {
   return (
     <section>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
-        <h3 style={{
-          fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
-          textTransform: 'uppercase', color: c.textMuted, margin: 0,
-        }}>
+      <div className="mb-2.5 flex items-baseline gap-2.5">
+        <h3 className="text-xs font-semibold tracking-[0.14em] text-muted uppercase">
           {title}
         </h3>
-        <span style={{ fontSize: 12, color: c.textMuted }}>{count}</span>
-        {note && <span style={{ fontSize: 11, color: c.textMuted }}>{note}</span>}
+        <span className="text-xs text-muted">{count}</span>
+        {note && <span className="text-[11px] text-muted">{note}</span>}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{children}</div>
+      <div className="flex flex-col gap-2">{children}</div>
     </section>
   )
 }
@@ -411,13 +358,10 @@ function Section({ title, count, note, children }: {
 function MatchChips({ reasons, locale }: { reasons: string[]; locale: SearchLocale }) {
   if (reasons.length === 0) return null
   return (
-    <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-      <span style={{ fontSize: 11, color: c.textMuted }}>{t(locale, 'search.matched')}</span>
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] text-muted">{t(locale, 'search.matched')}</span>
       {reasons.map(reason => (
-        <span key={reason} style={{
-          fontSize: 11, padding: '2px 8px', borderRadius: 999,
-          background: c.bgSubtle, border: `1px solid ${c.border}`, color: c.textSecondary,
-        }}>
+        <span key={reason} className="rounded-full border border-line bg-surface px-2 py-0.5 text-[11px] text-ink-soft">
           {t(locale, matchReasonStringKey(reason))}
         </span>
       ))}
@@ -425,12 +369,8 @@ function MatchChips({ reasons, locale }: { reasons: string[]; locale: SearchLoca
   )
 }
 
-const rowStyle: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 14, width: '100%',
-  padding: '12px 14px', textAlign: 'start', cursor: 'pointer',
-  background: c.card, border: `1px solid ${c.border}`, borderRadius: 4,
-  color: c.textPrimary, font: 'inherit',
-}
+const row =
+  'flex w-full cursor-pointer items-center gap-3.5 rounded-[4px] border border-line bg-surface px-3.5 py-3 text-start text-ink'
 
 function ClientRow({ hit, locale, onOpen }: {
   hit: ClientHit
@@ -438,9 +378,9 @@ function ClientRow({ hit, locale, onOpen }: {
   onOpen: (clientId: string) => void
 }) {
   return (
-    <button type="button" style={rowStyle} onClick={() => onOpen(hit.id)}
+    <button type="button" className={row} onClick={() => onOpen(hit.id)}
       aria-label={`${t(locale, 'search.openClient')}: ${hit.name}`}>
-      <span style={{ fontSize: 14, fontWeight: 500, flex: 1 }}>{hit.name}</span>
+      <span className="flex-1 text-sm font-medium">{hit.name}</span>
       <MatchChips reasons={hit.match_reason} locale={locale} />
     </button>
   )
@@ -460,26 +400,24 @@ function GalleryRow({ hit, locale, onOpen }: {
   ].filter(Boolean).join(' · ')
 
   return (
-    <button type="button" style={rowStyle} onClick={() => onOpen(hit.id)}
+    <button type="button" className={row} onClick={() => onOpen(hit.id)}
       aria-label={`${t(locale, 'search.openGallery')}: ${hit.name}`}>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14, fontWeight: 500 }}>{hit.name}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="text-sm font-medium">{hit.name}</span>
           {(hit.status === 'live' || hit.status === 'draft') && (
-            <span style={{
-              fontSize: 11, padding: '1px 8px', borderRadius: 999,
-              border: `1px solid ${hit.status === 'live' ? c.statusLive : c.border}`,
-              color: hit.status === 'live' ? c.statusLive : c.textMuted,
-            }}>
+            <span
+              className={cn(
+                'rounded-full border px-2 py-px text-[11px]',
+                hit.status === 'live' ? 'border-sage text-sage' : 'border-line text-muted',
+              )}
+            >
               {t(locale, hit.status === 'live' ? 'search.status.live' : 'search.status.draft')}
             </span>
           )}
         </span>
         {meta && (
-          <span style={{
-            display: 'block', fontSize: 12, color: c.textMuted, marginTop: 3,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
+          <span className="mt-[3px] block truncate text-xs text-muted">
             {meta}
           </span>
         )}
@@ -503,27 +441,18 @@ function ImageCard({ hit, locale, onOpen }: {
   return (
     <button type="button" onClick={() => onOpen(hit.gallery_id)}
       aria-label={`${t(locale, 'search.openGallery')}: ${hit.gallery_name ?? hit.filename}`}
-      style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 8, padding: 10 }}>
-      <span style={{
-        display: 'block', width: '100%', aspectRatio: '3 / 2', overflow: 'hidden',
-        borderRadius: 3, background: c.bgSubtle,
-      }}>
+      className={cn(row, 'flex-col items-stretch gap-2 p-2.5')}>
+      <span className="block aspect-[3/2] w-full overflow-hidden rounded-[3px] bg-surface">
         {thumbUrl && (
           <img src={thumbUrl} alt={hit.filename} loading="lazy"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            className="block size-full object-cover" />
         )}
       </span>
-      <span style={{
-        fontSize: 12, color: c.textPrimary, overflow: 'hidden',
-        textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'ltr', textAlign: 'start',
-      }}>
+      <span className="truncate text-start text-xs text-ink [direction:ltr]">
         {hit.filename}
       </span>
       {hit.gallery_name && (
-        <span style={{
-          fontSize: 11, color: c.textMuted, overflow: 'hidden',
-          textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
+        <span className="truncate text-[11px] text-muted">
           {hit.gallery_name}
         </span>
       )}
@@ -540,36 +469,28 @@ function CenteredNote({ title, body, action }: {
   action?: ReactNode
 }) {
   return (
-    <div style={{
-      textAlign: 'center', padding: '56px 24px', background: c.bgSubtle,
-      border: `1px solid ${c.border}`, borderRadius: 4,
-    }}>
-      <div style={{ fontSize: 17, fontWeight: 500, color: c.textPrimary, marginBottom: 8 }}>
+    <div className="rounded-[4px] border border-line bg-surface px-6 py-14 text-center">
+      <div className="mb-2 text-[17px] font-medium text-ink">
         {title}
       </div>
       {body && (
-        <p style={{ fontSize: 13, color: c.textMuted, margin: '0 auto', maxWidth: 420, lineHeight: 1.6 }}>
+        <p className="mx-auto max-w-[420px] text-[13px] leading-[1.6] text-muted">
           {body}
         </p>
       )}
-      {action && <div style={{ marginTop: 18 }}>{action}</div>}
+      {action && <div className="mt-[18px]">{action}</div>}
     </div>
   )
 }
 
 function Skeletons() {
-  const bar = (width: string, height: number): CSSProperties => ({
-    width, height, borderRadius: 4, background: c.border, opacity: 0.35,
-  })
+  const bar = 'rounded-[4px] bg-line opacity-35'
   return (
-    <div aria-hidden style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div aria-hidden className="flex flex-col gap-2.5">
       {[0, 1, 2, 3].map(i => (
-        <div key={i} style={{
-          display: 'flex', flexDirection: 'column', gap: 8, padding: '14px',
-          background: c.card, border: `1px solid ${c.border}`, borderRadius: 4,
-        }}>
-          <div style={bar(i % 2 === 0 ? '40%' : '55%', 14)} />
-          <div style={bar('70%', 10)} />
+        <div key={i} className="flex flex-col gap-2 rounded-[4px] border border-line bg-surface p-3.5">
+          <div className={cn(bar, 'h-3.5', i % 2 === 0 ? 'w-2/5' : 'w-[55%]')} />
+          <div className={cn(bar, 'h-2.5 w-[70%]')} />
         </div>
       ))}
     </div>

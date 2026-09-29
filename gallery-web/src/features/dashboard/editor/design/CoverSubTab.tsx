@@ -1,9 +1,10 @@
 import type { IconName } from '@/shared/ui/Icon'
 import { Icon } from '@/shared/ui/Icon'
-import { textMuted, textPrimary } from '../../styles'
+import { OptionTile } from '@/shared/ui/OptionTile'
+import { Eyebrow, Input, Textarea, cn } from '@/shared/ui'
 import { useEditor, useOpenGallery } from '../EditorContext'
 import { CoverImageSection } from './CoverImageSection'
-import { inputBase, labelStyle, tileStyle, focusBorder, blurBorder } from './designStyles'
+import { fieldClass, labelClass, tileClass } from './designStyles'
 
 const WELCOME_STYLES = [
   { id: 'mosaic' as const,    label: 'מוזאיקה', desc: 'תמונות גוללות ברקע',           icon: 'sections' as IconName },
@@ -17,18 +18,18 @@ export function CoverSubTab() {
   const gallery = useOpenGallery()
   const ds = (gallery.delivery_settings ?? {}) as Record<string, unknown>
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+    <div className="flex flex-col gap-7">
       <div>
-        <div style={{ ...labelStyle }}>סגנון מסך פתיחה</div>
-        <div className="dash-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+        <Eyebrow className={labelClass}>סגנון מסך פתיחה</Eyebrow>
+        <div className="grid grid-cols-3 gap-2.5 max-sm:grid-cols-1">
           {WELCOME_STYLES.map(s => {
             const selected = ((ds.welcomeStyle as string) || 'mosaic') === s.id
             return (
-              <button key={s.id} onClick={() => updateGallerySetting('welcomeStyle', s.id)} style={tileStyle(selected)}>
+              <OptionTile key={s.id} selected={selected} onClick={() => updateGallerySetting('welcomeStyle', s.id)} className={tileClass}>
                 <Icon name={s.icon} size={22} strokeWidth={selected ? 1.85 : 1.4} />
-                <div style={{ fontSize: 13, fontWeight: selected ? 600 : 500, color: textPrimary }}>{s.label}</div>
-                <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4, textAlign: 'center' }}>{s.desc}</div>
-              </button>
+                <div className={cn('text-[13px] text-ink', selected ? 'font-semibold' : 'font-medium')}>{s.label}</div>
+                <div className="text-center text-[11px] leading-[1.4] text-muted">{s.desc}</div>
+              </OptionTile>
             )
           })}
         </div>
@@ -36,40 +37,34 @@ export function CoverSubTab() {
 
       <CoverImageSection />
 
-      <label style={{ display: 'block' }}>
-        <span style={{ ...labelStyle }}>כותרת הגלריה</span>
-        <input
+      <label className="block">
+        <Eyebrow className={labelClass}>כותרת הגלריה</Eyebrow>
+        <Input
           type="text"
           value={(ds.galleryTitle as string) || gallery.name}
           onChange={e => renameGalleryTitle(e.target.value)}
-          style={inputBase}
-          onFocus={focusBorder}
-          onBlur={blurBorder}
+          className={fieldClass}
         />
       </label>
-      <label style={{ display: 'block' }}>
-        <span style={{ ...labelStyle }}>שם לקוח / אירוע</span>
-        <input
+      <label className="block">
+        <Eyebrow className={labelClass}>שם לקוח / אירוע</Eyebrow>
+        <Input
           type="text"
           value={(ds.clientName as string) || ''}
           onChange={e => updateGallerySetting('clientName', e.target.value)}
           placeholder="לדוגמה: יוסי ומיכל"
-          style={inputBase}
-          onFocus={focusBorder}
-          onBlur={blurBorder}
+          className={fieldClass}
         />
       </label>
-      <label style={{ display: 'block' }}>
-        <span style={{ ...labelStyle }}>תיאור האלבום</span>
-        <textarea
+      <label className="block">
+        <Eyebrow className={labelClass}>תיאור האלבום</Eyebrow>
+        <Textarea
           value={(ds.galleryDescription as string) || ''}
           onChange={e => updateGallerySetting('galleryDescription', e.target.value)}
           placeholder="טקסט קצר שמופיע ללקוח על הגלריה — מקום, סיפור, הוקרה."
           rows={3}
           maxLength={500}
-          style={{ ...inputBase, resize: 'vertical' as const, minHeight: 72, fontFamily: 'inherit', lineHeight: 1.45 }}
-          onFocus={focusBorder}
-          onBlur={blurBorder}
+          className={cn(fieldClass, 'min-h-[72px] leading-[1.45]')}
         />
       </label>
     </div>

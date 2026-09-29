@@ -26,12 +26,8 @@ export async function startCheckout(planId: PlanId): Promise<string | null> {
   return (data as { checkoutUrl?: string })?.checkoutUrl ?? null
 }
 
-// NOTE: the one-time "$150 gallery unlock" client-payment feature has been
-// retired. Its checkout starter (startGalleryCheckout) and price constant were
-// removed; the create-checkout edge function no longer creates a session for a
-// bare galleryId, and gallery_is_locked() is neutralized so historical
-// requires_payment=true galleries never lock. Subscription checkout
-// (startCheckout, above) and the token economy are unaffected.
+// The retired one-time gallery unlock checkout was removed; subscription
+// checkout (startCheckout) and the token economy are unaffected.
 
 /** Token package metadata for the buy modal. Source of truth is the `plans`
  *  table; this is just the display copy. */

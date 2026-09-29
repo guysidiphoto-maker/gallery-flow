@@ -1,18 +1,13 @@
-import type React from 'react'
+import { cn } from '@/shared/ui'
 import { Icon } from '@/shared/ui/Icon'
-import { border, cardSolid, textMuted, textPrimary } from '../../styles'
 import type { GalleryImage } from '../../types'
 import { useEditor } from '../EditorContext'
 import type { PhotoGridUI } from './usePhotoGridUI'
 
-const itemStyle: React.CSSProperties = {
-  width: '100%', textAlign: 'right' as const, padding: '8px 10px',
-  background: 'transparent', border: 'none', cursor: 'pointer',
-  fontFamily: 'inherit', fontSize: 12, color: textPrimary,
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-}
+const plainItem = 'w-full cursor-pointer bg-transparent px-2.5 py-2 text-right text-[12px] text-ink'
+const item = cn(plainItem, 'flex items-center justify-between')
 
-const divider = <div style={{ height: 1, background: border, margin: '4px 0' }} />
+const divider = <div className="my-1 h-px bg-line" />
 
 // Per-tile action menu. Anchored to the tile's physical right edge so in RTL
 // it grows into the grid instead of clipping at the screen edge.
@@ -47,33 +42,19 @@ export function PhotoMenu({ img, visibleImages, isCover, ui }: {
           : (cur - 1 + items.length) % items.length
         items[next]?.focus({ preventScroll: true })
       }}
-      style={{
-        position: 'absolute',
-        top: menuOpenUpward ? undefined : 38,
-        bottom: menuOpenUpward ? 38 : undefined,
-        right: 8,
-        background: cardSolid, border: `1px solid ${border}`,
-        boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 5,
-        minWidth: 180, padding: 4, direction: 'rtl' as const,
-        maxHeight: 'min(60vh, 360px)', overflowY: 'auto',
-      }}
+      className={cn(
+        'absolute right-2 z-[5] max-h-[min(60vh,360px)] min-w-[180px] overflow-y-auto border border-line bg-raised p-1 shadow-card [direction:rtl]',
+        menuOpenUpward ? 'bottom-[38px]' : 'top-[38px]',
+      )}
     >
       {sections.length > 0 && (
         <>
-          <div style={{
-            padding: '8px 10px 4px', fontSize: 9, fontWeight: 500,
-            letterSpacing: '0.18em', textTransform: 'uppercase', color: textMuted,
-          }}>העבר לסט</div>
+          <div className="px-2.5 pt-2 pb-1 text-[9px] font-medium tracking-label text-muted uppercase">העבר לסט</div>
           {/* The photo's current set is not offered as a destination. */}
           {sections.filter(s => s.id !== img.section_id).map(s => (
             <button key={s.id} role="menuitem"
               onClick={() => { photos.moveImageToSection(img.id, s.id); setImageMenuOpenId(null) }}
-              style={{
-                width: '100%', textAlign: 'right' as const, padding: '8px 10px',
-                background: 'transparent',
-                border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                fontSize: 12, color: textPrimary,
-              }}>{s.name}</button>
+              className={plainItem}>{s.name}</button>
           ))}
           {divider}
         </>
@@ -83,13 +64,13 @@ export function PhotoMenu({ img, visibleImages, isCover, ui }: {
         <>
           <button role="menuitem"
             onClick={() => { photos.moveImageStep(img.id, 'up'); setImageMenuOpenId(null) }}
-            style={itemStyle}>
+            className={item}>
             <span>הזז קדימה</span>
             <span aria-hidden="true">↑</span>
           </button>
           <button role="menuitem"
             onClick={() => { photos.moveImageStep(img.id, 'down'); setImageMenuOpenId(null) }}
-            style={itemStyle}>
+            className={item}>
             <span>הזז אחורה</span>
             <span aria-hidden="true">↓</span>
           </button>
@@ -105,7 +86,7 @@ export function PhotoMenu({ img, visibleImages, isCover, ui }: {
               showToast({ kind: 'success', text: 'תמונת השער הוסרה' })
             })()
           }}
-          style={itemStyle}>
+          className={item}>
           <span>הסר תמונת קאבר</span>
           <Icon name="close" size={13} strokeWidth={1.85} />
         </button>
@@ -118,7 +99,7 @@ export function PhotoMenu({ img, visibleImages, isCover, ui }: {
               if (ok) showToast({ kind: 'success', text: 'הוגדר כתמונת השער' })
             })()
           }}
-          style={itemStyle}>
+          className={item}>
           <span>הגדר כתמונת קאבר</span>
           <Icon name="photo" size={13} strokeWidth={1.85} />
         </button>
@@ -129,38 +110,34 @@ export function PhotoMenu({ img, visibleImages, isCover, ui }: {
           setImageMenuOpenId(null)
           photos.openViewer(visibleImages, img.id)
         }}
-        style={itemStyle}>
+        className={item}>
         <span>פתח</span>
         <Icon name="eye" size={13} strokeWidth={1.85} />
       </button>
       <button role="menuitem"
         onClick={() => { photos.downloadOriginal(img.id); setImageMenuOpenId(null) }}
-        style={itemStyle}>
+        className={item}>
         <span>הורדה</span>
         <Icon name="download" size={13} strokeWidth={1.85} />
       </button>
       <button role="menuitem"
         onClick={() => { void photos.copyImageFilename(img.id); setImageMenuOpenId(null) }}
         title={img.filename || undefined}
-        style={itemStyle}>
+        className={item}>
         <span>העתק שם קובץ</span>
         <Icon name="copy" size={13} strokeWidth={1.85} />
       </button>
       <button role="menuitem"
         disabled={replacing}
         onClick={() => { setImageMenuOpenId(null); photos.openReplacePicker(img.id) }}
-        style={{
-          ...itemStyle,
-          cursor: replacing ? 'default' : 'pointer',
-          opacity: replacing ? 0.5 : 1,
-        }}>
+        className={cn(item, replacing && 'cursor-default opacity-50')}>
         <span>{replacing ? 'מחליף…' : 'החלף תמונה'}</span>
         <Icon name="refresh" size={13} strokeWidth={1.85} />
       </button>
       {divider}
       <button role="menuitem"
         onClick={() => { photos.deleteSingleImage(img.id); setImageMenuOpenId(null) }}
-        style={{ ...itemStyle, color: '#dc2626' }}>
+        className={cn(item, 'text-danger-strong')}>
         <span>מחיקה</span>
         <Icon name="trash" size={13} strokeWidth={1.85} />
       </button>

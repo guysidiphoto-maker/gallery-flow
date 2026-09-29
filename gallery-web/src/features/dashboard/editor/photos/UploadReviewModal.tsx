@@ -1,4 +1,4 @@
-import { border, textMuted, textPrimary } from '../../styles'
+import { cn } from '@/shared/ui'
 import { MAX_UPLOAD_BATCH } from '../../lib/uploadPipeline'
 import { useEditor } from '../EditorContext'
 import { UploadReviewRow } from './UploadReviewRow'
@@ -12,37 +12,36 @@ export function UploadReviewModal() {
   const { newFiles, duplicates, review, droppedOverLimit } = pendingUpload
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="סיכום העלאה" style={{
-      position: 'fixed', inset: 0, zIndex: 4000, direction: 'rtl',
-      background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
-    }}>
-      <div style={{ width: '100%', maxWidth: 440, background: '#FBFAF8', borderRadius: 16, padding: 24, boxShadow: '0 24px 70px rgba(0,0,0,.35)' }}>
-        <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700, color: textPrimary }}>סיכום לפני העלאה</h2>
-        <p style={{ margin: '0 0 16px', fontSize: 12.5, color: textMuted, lineHeight: 1.5 }}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="סיכום העלאה"
+      className="fixed inset-0 z-[4000] flex items-center justify-center bg-black/50 p-5 backdrop-blur-[4px] [direction:rtl]"
+    >
+      <div className="w-full max-w-[440px] rounded-lg bg-surface p-6 shadow-[0_24px_70px_color-mix(in_srgb,var(--color-black)_35%,transparent)]">
+        <h2 className="mt-0 mb-1 text-[18px] font-bold text-ink">סיכום לפני העלאה</h2>
+        <p className="mt-0 mb-4 text-[12.5px] leading-normal text-muted">
           חלק מהקבצים כבר קיימים בגלריה. כדי לא ליצור כפילויות, נעלה רק את החדשים.
         </p>
-        <UploadReviewRow label="חדשות (יועלו)" n={newFiles.length} tone={textPrimary} />
-        <UploadReviewRow label="כבר קיימות (יידולגו)" n={duplicates.length} tone={textMuted} />
-        {review.length > 0 && <UploadReviewRow label="שם זהה, קובץ שונה — לבדיקה" n={review.length} tone="#b45309" />}
-        {droppedOverLimit > 0 && <UploadReviewRow label={`מעל המגבלה (${MAX_UPLOAD_BATCH})`} n={droppedOverLimit} tone="#dc2626" />}
+        <UploadReviewRow label="חדשות (יועלו)" n={newFiles.length} toneClass="text-ink" />
+        <UploadReviewRow label="כבר קיימות (יידולגו)" n={duplicates.length} toneClass="text-muted" />
+        {review.length > 0 && <UploadReviewRow label="שם זהה, קובץ שונה — לבדיקה" n={review.length} toneClass="text-pending-ink" />}
+        {droppedOverLimit > 0 && <UploadReviewRow label={`מעל המגבלה (${MAX_UPLOAD_BATCH})`} n={droppedOverLimit} toneClass="text-danger-strong" />}
         {review.length > 0 && (
-          <p style={{ margin: '12px 0 0', fontSize: 11.5, color: '#b45309', lineHeight: 1.5 }}>
+          <p className="mt-3 mb-0 text-[11.5px] leading-normal text-pending-ink">
             קבצים ״לבדיקה״ נושאים שם של תמונה קיימת אך הם קובץ אחר — ייתכן שאלו תמונות שונות. הם לא יידלגו אוטומטית.
           </p>
         )}
-        <div style={{ display: 'flex', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
+        <div className="mt-5 flex flex-wrap gap-2">
           {(newFiles.length > 0 || review.length === 0) && (
             <button
               type="button"
               onClick={() => confirmPendingUpload(false)}
               disabled={newFiles.length === 0}
-              style={{
-                flex: 1, minWidth: 120, padding: '11px 16px', borderRadius: 10, border: 'none',
-                cursor: newFiles.length === 0 ? 'default' : 'pointer', fontFamily: 'inherit',
-                fontSize: 13.5, fontWeight: 600, color: '#fff',
-                background: newFiles.length === 0 ? '#cfcdc9' : textPrimary,
-              }}>
+              className={cn(
+                'min-w-[120px] flex-1 rounded-md px-4 py-[11px] text-[13.5px] font-semibold text-white',
+                newFiles.length === 0 ? 'cursor-default bg-line' : 'cursor-pointer bg-ink',
+              )}>
               {newFiles.length > 0 ? `העלה ${newFiles.length} חדשות` : 'אין חדשות להעלאה'}
             </button>
           )}
@@ -50,22 +49,14 @@ export function UploadReviewModal() {
             <button
               type="button"
               onClick={() => confirmPendingUpload(true)}
-              style={{
-                flex: 1, minWidth: 120, padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
-                border: `1px solid ${border}`, background: 'transparent', color: textPrimary,
-                fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
-              }}>
+              className="min-w-[120px] flex-1 cursor-pointer rounded-md border border-line bg-transparent px-4 py-[11px] text-[13.5px] font-semibold text-ink">
               כלול גם {review.length} לבדיקה
             </button>
           )}
           <button
             type="button"
             onClick={() => setPendingUpload(null)}
-            style={{
-              padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
-              border: `1px solid ${border}`, background: 'transparent', color: textMuted,
-              fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500,
-            }}>
+            className="cursor-pointer rounded-md border border-line bg-transparent px-4 py-[11px] text-[13.5px] font-medium text-muted">
             ביטול
           </button>
         </div>

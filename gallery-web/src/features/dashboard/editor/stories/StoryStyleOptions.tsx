@@ -1,4 +1,4 @@
-import { bgSubtle, border, textMuted, textPrimary } from '../../styles'
+import { cn } from '@/shared/ui'
 import { STORY_STYLES } from '../../lib/storyRender'
 import { useEditor } from '../EditorContext'
 
@@ -7,30 +7,30 @@ export function StoryStyleOptions() {
   const { storyGenStyle, setStoryGenStyle } = storyGen
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 18 }}>
+    <div className="mb-[18px] flex flex-col gap-1.5">
       {STORY_STYLES.map(s => {
         const selected = storyGenStyle === s.id
         return (
-          <label key={s.id} style={{
-            display: 'flex', alignItems: 'flex-start', gap: 12,
-            padding: '12px 14px',
-            border: `1px solid ${selected ? textPrimary : border}`,
-            background: selected ? bgSubtle : '#fff',
-            cursor: 'pointer', transition: 'background .15s, border-color .15s',
-          }}>
+          <label
+            key={s.id}
+            className={cn(
+              'flex cursor-pointer items-start gap-3 border px-3.5 py-3 transition-[background-color,border-color] duration-150',
+              selected ? 'border-ink bg-surface' : 'border-line bg-raised',
+            )}
+          >
             <input
               type="radio"
               name="story-style"
               value={s.id}
               checked={selected}
               onChange={() => setStoryGenStyle(s.id)}
-              style={{ marginTop: 3 }}
+              className="mt-[3px]"
             />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 500, color: textPrimary, marginBottom: 2 }}>
-                {s.label} <span style={{ color: textMuted, fontWeight: 400 }}>— {s.description}</span>
+            <div className="flex-1">
+              <div className="mb-0.5 text-[14px] font-medium text-ink">
+                {s.label} <span className="font-normal text-muted">— {s.description}</span>
               </div>
-              <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.55 }}>
+              <div className="text-[11px] leading-[1.55] text-muted">
                 {s.hint} · ~{s.approxDurationSec} שניות
               </div>
             </div>

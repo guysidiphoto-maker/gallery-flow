@@ -1,5 +1,4 @@
 import type React from 'react'
-import { bgSubtle, border, textPrimary } from '../styles'
 
 // Inline single-row progress strip shared by the Photos and Stories tabs.
 export function UploadProgressStrip({ label, aside, pct }: {
@@ -8,24 +7,13 @@ export function UploadProgressStrip({ label, aside, pct }: {
   pct: number
 }) {
   return (
-    <div style={{
-      marginBottom: 20, padding: '14px 18px',
-      background: bgSubtle, border: `1px solid ${border}`,
-    }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        fontSize: 12, color: textPrimary, marginBottom: 8,
-        fontWeight: 500, letterSpacing: '0.04em',
-      }}>
+    <div className="mb-5 border border-line bg-surface px-[18px] py-3.5">
+      <div className="mb-2 flex items-center justify-between text-[12px] font-medium tracking-[0.04em] text-ink">
         {label}
         {aside}
       </div>
-      <div style={{ width: '100%', height: 2, background: border, overflow: 'hidden' }}>
-        <div style={{
-          width: `${pct}%`,
-          height: '100%', background: textPrimary,
-          transition: 'width .3s',
-        }} />
+      <div className="h-0.5 w-full overflow-hidden bg-line">
+        <div className="h-full bg-ink transition-[width] duration-300" style={{ width: `${pct}%` }} />
       </div>
     </div>
   )

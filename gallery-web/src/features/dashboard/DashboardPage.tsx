@@ -10,7 +10,6 @@ import ImportCenter from '@/features/importer/ImportCenter'
 import FirstRunTour from './tour/FirstRunTour'
 import OwnerOverview from './overview/OwnerOverview'
 import GlobalSearch from './search/GlobalSearch'
-import { bg, border, textPrimary } from './styles'
 import { TOKEN_BILLING_ON } from './lib/billing'
 import type { DashboardView } from './types'
 import { useBusiness } from './hooks/useBusiness'
@@ -33,6 +32,7 @@ import { useGalleryEditor } from './editor/useGalleryEditor'
 import { UploadReviewModal } from './editor/photos/UploadReviewModal'
 import { PhotoLightbox } from './editor/photos/PhotoLightbox'
 import { StoryGenerateModal } from './editor/stories/StoryGenerateModal'
+import './dashboard.css'
 
 // Photographer dashboard: auth gate, business bootstrap, shell and the
 // in-page view switch (overview / galleries / clients / search / import).
@@ -97,11 +97,7 @@ export function Dashboard() {
 
   return (
     <EditorContext.Provider value={editorValue}>
-      <div className="dash" style={{
-        background: bg, minHeight: '100vh', fontFamily: 'inherit',
-        direction: 'rtl', color: textPrimary,
-        display: 'flex',
-      }}>
+      <div className="dash flex min-h-screen bg-canvas text-ink [direction:rtl]">
         <ToastContainer />
 
         {/* Owner-only first-run tour; renders nothing until the business resolves. */}
@@ -123,25 +119,16 @@ export function Dashboard() {
           ownerT={ownerT}
         />
 
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="min-w-0 flex-1">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="dash-hamburger"
             aria-label="Open menu"
-            style={{
-              display: 'none', alignItems: 'center', justifyContent: 'center',
-              position: 'fixed', top: 16, insetInlineStart: 16, zIndex: 50,
-              width: 40, height: 40, borderRadius: 10,
-              background: '#fff',
-              border: `1px solid ${border}`,
-              color: textPrimary, cursor: 'pointer', padding: 0,
-              boxShadow: '0 2px 8px rgba(15,23,42,.08)',
-            }}
+            className="fixed start-4 top-4 z-50 hidden size-10 cursor-pointer items-center justify-center rounded-md border border-line bg-raised p-0 text-ink shadow-[0_2px_8px] shadow-ink/8 max-[900px]:flex"
           >
             <Icon name="menu" size={18} strokeWidth={2} />
           </button>
 
-          <main style={{ maxWidth: 1180, margin: '0 auto', padding: '56px 40px 96px' }}>
+          <main className="mx-auto max-w-[1180px] px-10 pt-14 pb-24">
             {activeView === 'overview' ? (
               <OwnerOverview
                 businessId={businessId}

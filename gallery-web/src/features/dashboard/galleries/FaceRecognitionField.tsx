@@ -1,5 +1,5 @@
 import type { CreateGalleryState } from '../hooks/useCreateGallery'
-import { bgSubtle, border, textMuted, textPrimary } from '../styles'
+import { cn, Eyebrow } from '@/shared/ui'
 import { SwitchRow } from './SwitchRow'
 
 const PRIVACY_MODES = [
@@ -12,7 +12,7 @@ const PRIVACY_MODES = [
 export function FaceRecognitionField({ form }: { form: CreateGalleryState }) {
   const { faceRecognition, setFaceRecognition, facePrivacyMode, setFacePrivacyMode, setShowFaceConfirm } = form
   return (
-    <div style={{ marginBottom: 18 }}>
+    <div className="mb-[18px]">
       <SwitchRow
         title="זיהוי פנים"
         desc="אורחים מצלמים סלפי ומקבלים את התמונות שלהם בלבד"
@@ -28,17 +28,9 @@ export function FaceRecognitionField({ form }: { form: CreateGalleryState }) {
       />
 
       {faceRecognition && (
-        <div style={{
-          marginTop: 14, padding: 14,
-          background: bgSubtle, border: `1px solid ${border}`,
-        }}>
-          <div style={{
-            fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-            color: textMuted, textTransform: 'uppercase', marginBottom: 12,
-          }}>
-            מצב פרטיות
-          </div>
-          <div className="dash-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div className="mt-3.5 border border-line bg-surface p-3.5">
+          <Eyebrow className="mb-3 block text-[9px] font-medium">מצב פרטיות</Eyebrow>
+          <div className="dash-grid-2 grid grid-cols-2 gap-2">
             {PRIVACY_MODES.map(m => {
               const selected = facePrivacyMode === m.id
               return (
@@ -46,19 +38,13 @@ export function FaceRecognitionField({ form }: { form: CreateGalleryState }) {
                   key={m.id}
                   type="button"
                   onClick={() => setFacePrivacyMode(m.id)}
-                  style={{
-                    background: selected ? '#fff' : 'transparent',
-                    border: `1px solid ${selected ? textPrimary : border}`,
-                    borderRadius: 2, padding: '12px 14px', cursor: 'pointer',
-                    fontFamily: 'inherit', textAlign: 'right' as const,
-                    transition: 'border-color .15s, background .15s',
-                  }}
+                  className={cn(
+                    'cursor-pointer rounded-hair border px-3.5 py-3 text-right transition-[border-color,background-color] duration-150',
+                    selected ? 'border-ink bg-raised' : 'border-line bg-transparent',
+                  )}
                 >
-                  <div style={{
-                    fontSize: 13, fontWeight: selected ? 600 : 500,
-                    color: textPrimary, marginBottom: 4,
-                  }}>{m.label}</div>
-                  <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4 }}>
+                  <div className={cn('mb-1 text-[13px] text-ink', selected ? 'font-semibold' : 'font-medium')}>{m.label}</div>
+                  <div className="text-[11px] leading-[1.4] text-muted">
                     {m.desc}
                   </div>
                 </button>

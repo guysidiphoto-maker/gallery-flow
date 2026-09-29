@@ -1,11 +1,9 @@
-import type React from 'react'
 import { useFocusTrap } from '@/shared/lib/useFocusTrap'
 import type { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import { Icon, type IconName } from '@/shared/ui/Icon'
+import { Button, cn, Eyebrow, Input } from '@/shared/ui'
 import AssignClientField from '@/features/clients/assignment/AssignClientField'
 import type { CreateGalleryState } from '../hooks/useCreateGallery'
-import { bg, border, textMuted, textPrimary, textSecondary } from '../styles'
-import { inputBase, labelStyle } from './createModalStyles'
 import { IconOptionPicker } from './IconOptionPicker'
 import { FaceRecognitionField } from './FaceRecognitionField'
 import { SwitchRow } from './SwitchRow'
@@ -25,8 +23,7 @@ const FEED_OPTIONS = [
   { value: 'carousel' as const, label: 'קרוסלה', icon: 'arrow-out' as IconName },
 ]
 
-const focusBorder = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = textPrimary }
-const blurBorder = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = border }
+const labelClass = 'mb-2 block text-[13px] font-medium text-ink'
 
 export function CreateGalleryModal({ form, tokenBalance, locale, ownerT }: {
   form: CreateGalleryState
@@ -46,13 +43,7 @@ export function CreateGalleryModal({ form, tokenBalance, locale, ownerT }: {
 
   return (
     <div
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(20,20,19,.55)',
-        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 1000, animation: 'overlayIn .2s ease both',
-      }}
+      className="fixed inset-0 z-[1000] flex animate-[dash-overlay-in_.2s_ease_both] items-center justify-center bg-ink/55 backdrop-blur-[6px]"
       onClick={close}
     >
       <div
@@ -60,72 +51,48 @@ export function CreateGalleryModal({ form, tokenBalance, locale, ownerT }: {
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-gallery-heading"
-        style={{
-          background: bg,
-          borderRadius: 4, padding: '40px 44px 36px', width: '90%', maxWidth: 560,
-          maxHeight: '90vh', overflowY: 'auto' as const,
-          border: `1px solid ${border}`, direction: 'rtl',
-          animation: 'modalIn .3s ease both',
-        }}
+        className="max-h-[90vh] w-[90%] max-w-[560px] animate-[dash-modal-in_.3s_ease_both] overflow-y-auto rounded-[4px] border border-line bg-canvas px-11 pt-10 pb-9 [direction:rtl]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          marginBottom: 18,
-        }}>
-          <div style={{
-            fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-            color: textMuted, textTransform: 'uppercase',
-          }}>
-            New Gallery
-          </div>
-          <button onClick={close} aria-label="סגירה" style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            color: textSecondary, padding: 4, display: 'flex',
-          }}>
+        <div className="mb-[18px] flex items-center justify-between">
+          <Eyebrow className="font-medium">New Gallery</Eyebrow>
+          <button onClick={close} aria-label="סגירה" className="flex cursor-pointer border-none bg-transparent p-1 text-ink-soft">
             <Icon name="close" size={16} strokeWidth={1.85} />
           </button>
         </div>
 
-        <h2 id="new-gallery-heading" style={{
-          fontSize: 28, fontWeight: 500, margin: '0 0 10px',
-          color: textPrimary, letterSpacing: '-0.02em', lineHeight: 1.1,
-        }}>
+        <h2 id="new-gallery-heading" className="mb-2.5 text-[28px] leading-[1.1] font-medium tracking-[-0.02em] text-ink">
           יצירת גלריה חדשה
         </h2>
-        <p style={{ color: textSecondary, fontSize: 14, margin: '0 0 32px', lineHeight: 1.55 }}>
+        <p className="mb-8 text-sm leading-[1.55] text-ink-soft">
           מלאו את הפרטים כדי להתחיל
         </p>
 
-        <label style={{ display: 'block', marginBottom: 22 }}>
-          <span style={labelStyle}>שם הגלריה</span>
-          <input
+        <label className="mb-[22px] block">
+          <span className={labelClass}>שם הגלריה</span>
+          <Input
             type="text"
             value={newName}
             onChange={(e) => form.setNewName(e.target.value)}
             placeholder="לדוגמה: החתונה של יוסי ומיכל"
             autoFocus
-            style={inputBase}
-            onFocus={focusBorder}
-            onBlur={blurBorder}
+            className="py-3"
           />
         </label>
 
-        <label style={{ display: 'block', marginBottom: 28 }}>
-          <span style={labelStyle}>תאריך אירוע</span>
-          <input
+        <label className="mb-7 block">
+          <span className={labelClass}>תאריך אירוע</span>
+          <Input
             type="date"
             value={form.newDate}
             onChange={(e) => form.setNewDate(e.target.value)}
-            style={inputBase}
-            onFocus={focusBorder}
-            onBlur={blurBorder}
+            className="py-3"
           />
         </label>
 
         {/* Optional client connection; "no client yet" never blocks creation. */}
-        <div data-tour="assign-gallery" style={{ display: 'block', marginBottom: 28 }}>
-          <span style={{ ...labelStyle, marginBottom: 8 }}>{ownerT('assign.modalLabel')}</span>
+        <div data-tour="assign-gallery" className="mb-7 block">
+          <span className={labelClass}>{ownerT('assign.modalLabel')}</span>
           <AssignClientField
             value={form.newGalleryClientId}
             onChange={(clientId) => form.setNewGalleryClientId(clientId)}
@@ -134,63 +101,45 @@ export function CreateGalleryModal({ form, tokenBalance, locale, ownerT }: {
           />
         </div>
 
-        <div style={{ height: 1, background: border, margin: '4px 0 24px' }} />
+        <div className="mt-1 mb-6 h-px bg-line" />
 
         <IconOptionPicker eyebrow="סגנון מסך פתיחה" options={WELCOME_OPTIONS} value={form.welcomeStyle} onChange={form.setWelcomeStyle} />
         <IconOptionPicker eyebrow="תצוגת פיד" options={FEED_OPTIONS} value={form.feedLayout} onChange={form.setFeedLayout} />
 
-        <div style={{ height: 1, background: border, margin: '4px 0 24px' }} />
+        <div className="mt-1 mb-6 h-px bg-line" />
 
         <FaceRecognitionField form={form} />
 
         {privacyRows.map((row, i, arr) => (
-          <div key={row.key} style={{ marginBottom: i === arr.length - 1 ? 0 : 18 }}>
+          <div key={row.key} className={i === arr.length - 1 ? undefined : 'mb-[18px]'}>
             <SwitchRow title={row.title} desc={row.desc} on={row.on} onClick={() => row.set(!row.on)} />
             {row.key === 'code' && row.on && (
-              <input
+              <Input
                 type="text"
                 value={form.galleryCode}
                 onChange={(e) => form.setGalleryCode(e.target.value)}
                 placeholder="הזינו קוד גישה"
-                style={{ ...inputBase, marginTop: 10 }}
-                onFocus={focusBorder}
-                onBlur={blurBorder}
+                className="mt-2.5 py-3"
               />
             )}
           </div>
         ))}
 
-        <div className="dash-modal-actions" style={{ display: 'flex', gap: 10, marginTop: 32, justifyContent: 'flex-end' }}>
-          <button
-            onClick={close}
-            style={{
-              background: 'transparent', color: textPrimary,
-              border: `1px solid ${border}`,
-              borderRadius: 2, padding: '12px 24px', fontSize: 11, cursor: 'pointer',
-              fontFamily: 'inherit', transition: 'border-color .15s',
-              letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = textPrimary }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = border }}
-          >
+        <div className="dash-modal-actions mt-8 flex justify-end gap-2.5">
+          <Button variant="ghost" onClick={close} className="px-6 py-3">
             Cancel
-          </button>
+          </Button>
           <button
             onClick={form.createGallery}
             disabled={creating || !newName.trim()}
-            style={{
-              background: !newName.trim() || creating ? border : textPrimary,
-              color: '#fff', border: `1px solid ${!newName.trim() || creating ? border : textPrimary}`,
-              borderRadius: 2, padding: '12px 32px', fontSize: 11, fontWeight: 500,
-              cursor: creating || !newName.trim() ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              letterSpacing: '0.18em', textTransform: 'uppercase',
-              display: 'inline-flex', alignItems: 'center', gap: 10,
-            }}
+            className={cn(
+              'inline-flex items-center gap-2.5 rounded-hair border px-8 py-3 text-eyebrow font-medium tracking-label text-white uppercase',
+              !newName.trim() || creating ? 'cursor-not-allowed border-line bg-line' : 'cursor-pointer border-ink bg-ink',
+            )}
           >
             {creating ? (
               <>
-                <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', border: '1.5px solid rgba(255,255,255,.4)', borderTopColor: '#fff', animation: 'spin .6s linear infinite' }} />
+                <span className="inline-block size-3 animate-[spin_.6s_linear_infinite] rounded-full border-[1.5px] border-white/40 border-t-white" />
                 Creating
               </>
             ) : 'Create Gallery'}

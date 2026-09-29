@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useDismiss } from '@/shared/lib/useDismiss'
+import { cn } from '@/shared/ui'
 import { Icon } from '@/shared/ui/Icon'
-import { border, cardSolid, textPrimary } from '../styles'
 import { useEditor, useOpenGallery } from './EditorContext'
 
 // Gallery-level actions in one accessible dropdown (role=menu, arrow keys,
@@ -32,20 +32,17 @@ export function GalleryMoreMenu() {
   ]
 
   return (
-    <div ref={menuRef} style={{ position: 'relative' }}>
+    <div ref={menuRef} className="relative">
       <button
         ref={triggerRef}
         onClick={() => setOpen(o => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="עוד פעולות לגלריה"
-        style={{
-          padding: '10px 16px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-          background: open ? 'rgba(0,0,0,.04)' : 'transparent',
-          border: `1px solid ${border}`, color: textPrimary, cursor: 'pointer',
-          fontFamily: 'inherit', letterSpacing: '0.18em', textTransform: 'uppercase',
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-        }}
+        className={cn(
+          'inline-flex cursor-pointer items-center gap-2 rounded-hair border border-line px-4 py-2.5 text-[11px] font-medium tracking-label text-ink uppercase',
+          open ? 'bg-black/4' : 'bg-transparent',
+        )}
       >
         More
         <Icon name="menu" size={13} strokeWidth={1.85} />
@@ -64,26 +61,18 @@ export function GalleryMoreMenu() {
             const next = e.key === 'ArrowDown' ? (cur + 1) % buttons.length : (cur - 1 + buttons.length) % buttons.length
             buttons[next]?.focus({ preventScroll: true })
           }}
-          style={{
-            position: 'absolute', top: 40, insetInlineEnd: 0, zIndex: 20,
-            minWidth: 220, padding: 4, direction: 'rtl',
-            background: cardSolid, border: `1px solid ${border}`,
-            boxShadow: '0 8px 24px rgba(0,0,0,.12)',
-          }}
+          className="absolute end-0 top-10 z-20 min-w-[220px] border border-line bg-raised p-1 shadow-card [direction:rtl]"
         >
           {items.map(item => (
             <React.Fragment key={item.label}>
-              {item.danger && <div style={{ height: 1, background: border, margin: '4px 0' }} />}
+              {item.danger && <div className="my-1 h-px bg-line" />}
               <button
                 role="menuitem"
                 onClick={() => { setOpen(false); item.onClick() }}
-                style={{
-                  width: '100%', textAlign: 'right', padding: '9px 10px',
-                  background: 'transparent', border: 'none', cursor: 'pointer',
-                  fontFamily: 'inherit', fontSize: 12,
-                  color: item.danger ? '#dc2626' : textPrimary,
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                }}
+                className={cn(
+                  'flex w-full cursor-pointer items-center justify-between bg-transparent px-2.5 py-[9px] text-right text-[12px]',
+                  item.danger ? 'text-danger-strong' : 'text-ink',
+                )}
               >
                 <span>{item.label}</span>
                 <Icon name={item.icon} size={13} strokeWidth={1.85} />

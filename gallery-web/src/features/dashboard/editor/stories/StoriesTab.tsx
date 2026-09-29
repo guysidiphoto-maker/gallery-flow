@@ -1,4 +1,3 @@
-import { bgSubtle, border, textMuted, textPrimary, textSecondary } from '../../styles'
 import { useEditor } from '../EditorContext'
 import { UploadProgressStrip } from '../UploadProgressStrip'
 import { StoryActions } from './StoryActions'
@@ -10,40 +9,24 @@ export function StoriesTab() {
   const { storyUploading, storyUploadProgress } = stories
 
   return (
-    <div style={{ padding: '0 4px' }}>
+    <div className="px-1">
       {/* First render after a cold start takes ~60-90s. */}
-      <div style={{
-        marginBottom: 18, padding: '10px 14px',
-        border: `1px dashed ${border}`, background: bgSubtle,
-        fontSize: 12, color: textSecondary, lineHeight: 1.55,
-      }}>
-        <strong style={{ color: textPrimary }}>✓ יצירה אוטומטית מופעלת.</strong>
+      <div className="mb-[18px] border border-dashed border-line bg-surface px-3.5 py-2.5 text-[12px] leading-[1.55] text-ink-soft">
+        <strong className="text-ink">✓ יצירה אוטומטית מופעלת.</strong>
         &nbsp;לחיצה על "צור סטורי אוטומטית" תרכיב סרטון מהתמונות שלך תוך 60-90 שניות.
         רוצה לעלות סרטון מוכן? השתמשי בכפתור <strong>העלאת סטורי</strong> משמאל.
       </div>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: 24,
-      }}>
-        <h3 style={{
-          fontSize: 22, fontWeight: 500, margin: 0,
-          letterSpacing: '-0.015em', color: textPrimary,
-        }}>
+      <div className="mb-6 flex items-center justify-between">
+        <h3 className="m-0 text-[22px] font-medium tracking-[-0.015em] text-ink">
           סטורי
-          <span style={{
-            marginInlineStart: 12, color: textMuted,
-            fontSize: 14, fontWeight: 400,
-          }}>
+          <span className="ms-3 text-[14px] font-normal text-muted">
             {session.stories.length}
           </span>
         </h3>
         <StoryActions />
       </div>
 
-      <p style={{
-        fontSize: 13, color: textSecondary,
-        marginBottom: 22, lineHeight: 1.6,
-      }}>
+      <p className="mb-[22px] text-[13px] leading-[1.6] text-ink-soft">
         העלו סרטון MP4 שיוצג בנגן הסטורי המלא של הגלריה.
         גודל מקסימלי: 100MB.
       </p>
@@ -51,10 +34,7 @@ export function StoriesTab() {
       {storyUploading && storyUploadProgress && (
         <UploadProgressStrip
           label={
-            <span style={{
-              overflow: 'hidden', textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap', maxWidth: '70%',
-            }}>
+            <span className="max-w-[70%] truncate">
               מעלה: {storyUploadProgress.filename}
             </span>
           }
@@ -66,11 +46,7 @@ export function StoriesTab() {
       {session.stories.length === 0 && !storyUploading ? (
         <StoriesEmptyState />
       ) : (
-        <div className="dash-stories-grid" style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-          gap: 12,
-        }}>
+        <div className="dash-stories-grid grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
           {session.stories.map(st => <StoryTile key={st.id} story={st} />)}
         </div>
       )}

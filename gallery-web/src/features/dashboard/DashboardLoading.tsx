@@ -1,16 +1,9 @@
-import { bg, border, accent, textSecondary } from './styles'
-
 export function DashboardLoading() {
   return (
-    <div style={{ background: bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: '50%',
-          border: `3px solid ${border}`, borderTopColor: accent,
-          animation: 'spin 0.8s linear infinite',
-        }} />
-        <div style={{ color: textSecondary, fontSize: 14, fontFamily: 'inherit', letterSpacing: '0.02em' }}>Loading...</div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div className="flex min-h-screen items-center justify-center bg-canvas">
+      <div className="flex flex-col items-center gap-4">
+        <div className="size-10 animate-spin-slow rounded-full border-3 border-line border-t-ink" />
+        <div className="text-sm tracking-[0.02em] text-ink-soft">Loading...</div>
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { textMuted, textPrimary } from '../../styles'
+import { Eyebrow } from '@/shared/ui'
 import { EventDetailsSection } from './EventDetailsSection'
 import { PresetsSection } from './PresetsSection'
 import { DownloadsSection } from './DownloadsSection'
@@ -12,16 +12,10 @@ import { CustomDomainSection } from './CustomDomainSection'
 
 export function SettingsTab() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-4">
       <div>
-        <div style={{
-          fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-          color: textMuted, textTransform: 'uppercase', marginBottom: 10,
-        }}>Settings</div>
-        <h3 style={{
-          fontSize: 22, fontWeight: 500, margin: 0,
-          letterSpacing: '-0.015em', color: textPrimary,
-        }}>הגדרות גלריה</h3>
+        <Eyebrow className="mb-2.5 block">Settings</Eyebrow>
+        <h3 className="text-[22px] font-medium tracking-[-0.015em] text-ink">הגדרות גלריה</h3>
       </div>
 
       <EventDetailsSection />

@@ -1,7 +1,9 @@
+import { cn } from '@/shared/ui'
 import { Icon } from '@/shared/ui/Icon'
-import { bgSubtle, border, cardSolid, textMuted, textPrimary } from '../../styles'
 import type { GallerySection } from '../../types'
 import { useEditor } from '../EditorContext'
+
+const menuItem = 'w-full cursor-pointer rounded-hair bg-transparent px-2.5 py-2 text-right text-[12px]'
 
 // One set in the sidebar: drag handle, name (or rename input), count, "…" menu.
 // Select and menu are sibling buttons (nested buttons are invalid HTML).
@@ -52,28 +54,21 @@ export function SectionRow({ section: s, draggedSectionId, setDraggedSectionId, 
         if (src && src !== s.id) void reorderSection(src, s.id)
       }}
       onDragEnd={() => { setDraggedSectionId(null); setSectionDragOverId(null) }}
-      style={{
-        position: 'relative',
-        background: isDropTarget ? bgSubtle : (isActive ? bgSubtle : 'transparent'),
-        opacity: isDragSource ? 0.4 : 1,
-        transition: 'background .15s, opacity .15s',
-        cursor: isRenaming ? 'text' : 'grab',
-        borderTop: isDropTarget ? `1px solid ${textPrimary}` : '1px solid transparent',
-      }}>
-      <button onClick={() => { setActiveSectionId(s.id); setSectionMenuOpenId(null) }} style={{
-        width: '100%', textAlign: 'right' as const,
-        padding: '10px 36px 10px 12px', borderRadius: 2,
-        background: 'transparent', border: 'none', cursor: 'pointer',
-        fontFamily: 'inherit', fontSize: 13,
-        fontWeight: isActive ? 600 : 500,
-        color: textPrimary,
-        display: 'flex', alignItems: 'center', gap: 8,
-      }}>
-        <span aria-hidden="true" style={{
-          opacity: 0.4, color: textMuted,
-          display: 'inline-flex',
-          fontSize: 12, lineHeight: 1,
-        }}>≡</span>
+      className={cn(
+        'relative border-t transition-[background-color,opacity] duration-150',
+        isDropTarget || isActive ? 'bg-surface' : 'bg-transparent',
+        isDragSource ? 'opacity-40' : 'opacity-100',
+        isRenaming ? 'cursor-text' : 'cursor-grab',
+        isDropTarget ? 'border-ink' : 'border-transparent',
+      )}>
+      <button
+        onClick={() => { setActiveSectionId(s.id); setSectionMenuOpenId(null) }}
+        className={cn(
+          'flex w-full cursor-pointer items-center gap-2 rounded-hair bg-transparent py-2.5 pr-9 pl-3 text-right text-[13px] text-ink',
+          isActive ? 'font-semibold' : 'font-medium',
+        )}
+      >
+        <span aria-hidden="true" className="inline-flex text-[12px] leading-none text-muted opacity-40">≡</span>
         {isRenaming ? (
           <input
             autoFocus
@@ -88,19 +83,14 @@ export function SectionRow({ section: s, draggedSectionId, setDraggedSectionId, 
                 ;(e.target as HTMLInputElement).blur()
               }
             }}
-            style={{
-              flex: 1, minWidth: 0,
-              border: 'none', background: 'transparent',
-              fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
-              color: textPrimary, outline: 'none', padding: 0,
-            }}
+            className="min-w-0 flex-1 bg-transparent p-0 text-[13px] font-semibold text-ink outline-none"
           />
         ) : (
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span className="flex-1 truncate">
             {s.name}
           </span>
         )}
-        <span style={{ color: textMuted, fontSize: 12, fontWeight: 400 }}>
+        <span className="text-[12px] font-normal text-muted">
           {count}
         </span>
       </button>
@@ -110,38 +100,20 @@ export function SectionRow({ section: s, draggedSectionId, setDraggedSectionId, 
         aria-label="עוד פעולות לסקשן"
         aria-haspopup="menu"
         aria-expanded={isMenuOpen}
-        style={{
-          position: 'absolute', top: 8, insetInlineEnd: 6,
-          width: 24, height: 24, borderRadius: 2,
-          background: 'transparent', border: 'none', cursor: 'pointer',
-          color: textMuted,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        }}
+        className="absolute end-1.5 top-2 inline-flex size-6 cursor-pointer items-center justify-center rounded-hair bg-transparent text-muted"
       >
         <Icon name="menu" size={14} strokeWidth={1.85} />
       </button>
       {isMenuOpen && (
-        <div style={{
-          position: 'absolute', top: '100%', insetInlineStart: 8,
-          background: cardSolid, border: `1px solid ${border}`,
-          boxShadow: '0 8px 24px rgba(0,0,0,.08)', zIndex: 5,
-          minWidth: 140, padding: 4,
-        }}>
+        <div className="absolute start-2 top-full z-[5] min-w-[140px] border border-line bg-raised p-1 shadow-card">
           <button
             onClick={() => startRename(s.id, s.name)}
-            style={{
-              width: '100%', textAlign: 'right' as const,
-              padding: '8px 10px', borderRadius: 2,
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 12, color: textPrimary,
-            }}
+            className={cn(menuItem, 'text-ink')}
           >שינוי שם</button>
-          <button onClick={() => { deleteSection(s.id); setSectionMenuOpenId(null) }} style={{
-            width: '100%', textAlign: 'right' as const,
-            padding: '8px 10px', borderRadius: 2,
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            fontFamily: 'inherit', fontSize: 12, color: '#dc2626',
-          }}>מחיקה</button>
+          <button
+            onClick={() => { deleteSection(s.id); setSectionMenuOpenId(null) }}
+            className={cn(menuItem, 'text-danger-strong')}
+          >מחיקה</button>
         </div>
       )}
     </div>

@@ -1,9 +1,5 @@
-// searchLogic — pure, DOM-free helpers behind GlobalSearch.
-//
-// Everything here is intentionally free of React / Supabase imports so the
-// offline test suite (tests/search.test.ts, run with `npx tsx`) can exercise
-// the exact production logic: filter payload building, the debounce timer,
-// the stale-response sequence guard and result normalization.
+// Pure, DOM-free helpers behind GlobalSearch (filter payload, debounce,
+// stale-response guard, normalization) so tests/search.test.ts runs them directly.
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -111,11 +107,7 @@ export function parseKeywords(raw: string): string[] {
   return out
 }
 
-/**
- * Turn the raw filter UI state into the jsonb payload for the RPC.
- * Only meaningful values are emitted: empty strings, 'all', malformed years
- * and empty keyword lists are dropped so the RPC sees "filter not set".
- */
+/** UI filter state → RPC jsonb payload; unset/empty/malformed values are dropped. */
 export function buildFilterPayload(state: SearchFilterState): SearchFilterPayload {
   const p: SearchFilterPayload = {}
   const clientId = state.clientId.trim()
@@ -150,12 +142,8 @@ export function shouldSearch(query: string, payload: SearchFilterPayload): boole
 }
 
 // ─── Debounce + stale-response guard ────────────────────────────────────────
-//
-// supabase.rpc() cannot be aborted mid-flight, so cancellation is emulated:
-// every dispatched request takes a monotonically increasing ticket and only
-// the holder of the LATEST ticket may commit its response to state. Older
-// responses that resolve late are silently dropped (AbortController-style
-// behavior without the controller).
+// supabase.rpc() can't be aborted: each request takes a ticket and only the
+// latest ticket may commit its response.
 
 export interface SequenceGuard {
   /** Take a new ticket; invalidates all previously issued tickets. */
@@ -197,11 +185,7 @@ export function createDebouncer(delayMs: number): Debouncer {
 
 // ─── Match-reason mapping ───────────────────────────────────────────────────
 
-/**
- * Field name from the RPC's match_reason array → strings.ts key.
- * Unknown reasons fall back to a generic key so a future RPC field never
- * renders a raw identifier in the UI.
- */
+/** match_reason field → strings.ts key; unknown reasons get a generic key. */
 export function matchReasonStringKey(reason: string): string {
   switch (reason) {
     case 'name':           return 'search.reason.name'
@@ -227,10 +211,7 @@ function str(v: unknown): string | null {
   return typeof v === 'string' ? v : null
 }
 
-/**
- * Defensive normalization of the RPC's jsonb response. Never throws; rows
- * missing an id are dropped, missing fields become null / [].
- */
+/** Defensive RPC normalization: never throws, drops rows without an id. */
 export function normalizeSearchResult(raw: unknown): SearchResult {
   if (raw === null || typeof raw !== 'object') return EMPTY_RESULT
   const r = raw as Record<string, unknown>

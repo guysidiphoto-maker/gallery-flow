@@ -1,4 +1,4 @@
-import { border, textMuted, textPrimary } from '../styles'
+import { cn } from '@/shared/ui'
 import { useEditor, useOpenGallery } from './EditorContext'
 
 // Publish (draft) / Update (live). Idle live galleries are dashed + muted,
@@ -22,16 +22,8 @@ export function PublishButton() {
   return (
     <>
       {hasWork && !justPublished && !publishing && (
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          fontSize: 11, fontWeight: 500, color: '#b45309',
-          letterSpacing: '0.06em',
-        }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: '#d97706',
-            boxShadow: '0 0 0 3px rgba(217,119,6,.18)',
-          }} />
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium tracking-[0.06em] text-pending-ink">
+          <span className="size-2 rounded-full bg-pending shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-pending)_18%,transparent)]" />
           {isDraft ? 'טיוטה' : 'שינויים שטרם פורסמו'}
         </span>
       )}
@@ -39,27 +31,18 @@ export function PublishButton() {
         onClick={publishGallery}
         disabled={disabled}
         aria-live="polite"
-        style={{
-          padding: '10px 22px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-          background: successTint
-            ? 'rgba(45,196,121,.12)'
-            : filled ? textPrimary : 'transparent',
-          border: successTint
-            ? `1px solid rgba(45,196,121,.5)`
+        className={cn(
+          'min-w-[110px] rounded-hair border px-[22px] py-2.5 text-[11px] font-medium tracking-label uppercase',
+          'transition-[background-color,border-color,color,opacity,box-shadow] duration-150',
+          successTint
+            ? 'border-go/50 bg-go/12 text-go-ink'
             : filled
-              ? `1px solid ${textPrimary}`
-              : `1px dashed ${border}`,
-          color: successTint
-            ? '#1b8a4e'
-            : filled ? '#fff' : textMuted,
-          cursor: disabled ? 'default' : 'pointer',
-          opacity: disabled && !successTint && !publishing ? 0.45 : 1,
-          fontFamily: 'inherit',
-          letterSpacing: '0.18em', textTransform: 'uppercase',
-          transition: 'background .15s, border-color .15s, color .15s, opacity .15s, box-shadow .15s',
-          minWidth: 110,
-          boxShadow: filled && !publishing ? '0 1px 0 rgba(20,20,19,.18), 0 4px 14px rgba(20,20,19,.12)' : 'none',
-        }}
+              ? 'border-ink bg-ink text-white'
+              : 'border-dashed border-line bg-transparent text-muted',
+          disabled ? 'cursor-default' : 'cursor-pointer',
+          disabled && !successTint && !publishing ? 'opacity-45' : 'opacity-100',
+          filled && !publishing ? 'shadow-[0_1px_0_color-mix(in_srgb,var(--color-ink)_18%,transparent),0_4px_14px_color-mix(in_srgb,var(--color-ink)_12%,transparent)]' : 'shadow-none',
+        )}
       >{baseLabel}</button>
     </>
   )

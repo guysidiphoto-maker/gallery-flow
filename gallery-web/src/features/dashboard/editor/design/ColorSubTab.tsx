@@ -1,71 +1,57 @@
-import { border, textMuted, textPrimary, textSecondary } from '../../styles'
+import { APPEARANCE_THEMES } from '@/shared/gallery/galleryBranding'
+import { Eyebrow, cn } from '@/shared/ui'
+import { OptionTile } from '@/shared/ui/OptionTile'
 import { useEditor, useOpenGallery } from '../EditorContext'
 import { THEME_COLORS } from '../themeColors'
-import { labelStyle } from './designStyles'
+import { labelClass } from './designStyles'
 
 const APPEARANCES = [
-  { id: 'editorial', label: 'אדיטוריאל', sw: '#0a0a0f' },
-  { id: 'light',     label: 'בהיר',       sw: '#faf9f7' },
-  { id: 'dark',      label: 'כהה',        sw: '#111114' },
+  { id: 'editorial', label: 'אדיטוריאל' },
+  { id: 'light',     label: 'בהיר' },
+  { id: 'dark',      label: 'כהה' },
 ] as const
 
-// Appearance (contrast-safe bg + text theme) and accent palette.
+// Appearance (contrast-safe bg + text theme) and accent palette. Swatch colors are
+// the gallery palettes themselves, so they stay inline.
 export function ColorSubTab() {
   const { settings: { updateGallerySetting } } = useEditor()
   const ds = (useOpenGallery().delivery_settings ?? {}) as Record<string, unknown>
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="flex flex-col gap-6">
       <div>
-        <div style={{ ...labelStyle }}>מראה הגלריה</div>
-        <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4, margin: '0 0 8px' }}>
+        <Eyebrow className={labelClass}>מראה הגלריה</Eyebrow>
+        <div className="mb-2 text-[11px] leading-[1.4] text-muted">
           רקע וצבע טקסט — נגישים תמיד. ברירת המחדל מגיעה ממותג העסק.
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="flex gap-2">
           {APPEARANCES.map(a => {
             const active = ((ds.appearance as string) || 'editorial') === a.id
             return (
-              <button key={a.id} onClick={() => updateGallerySetting('appearance', a.id)}
-                style={{
-                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  padding: '12px 10px', borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
-                  border: `1px solid ${active ? textPrimary : border}`,
-                  background: active ? '#fff' : 'transparent',
-                  fontSize: 12, fontWeight: active ? 600 : 500, color: textPrimary,
-                  transition: 'border-color .15s, background .15s',
-                }}>
-                <span style={{ width: 16, height: 16, borderRadius: '50%', background: a.sw, border: `1px solid ${border}` }} />
+              <OptionTile key={a.id} selected={active} onClick={() => updateGallerySetting('appearance', a.id)}
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-2 px-2.5 py-3 text-[12px] text-ink',
+                  active ? 'font-semibold' : 'font-medium',
+                )}>
+                <span className="size-4 rounded-full border border-line" style={{ background: APPEARANCE_THEMES[a.id].bg }} />
                 {a.label}
-              </button>
+              </OptionTile>
             )
           })}
         </div>
       </div>
-      <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.5 }}>
+      <div className="text-[12px] leading-normal text-ink-soft">
         צבע ההדגשה — משפיע על כפתורים, קישורים ומצבים פעילים בגלריה הציבורית.
         טקסט הכפתור מתכוונן אוטומטית לניגודיות קריאה.
       </div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <div className="flex flex-wrap gap-2.5">
         {THEME_COLORS.map(c => {
           const active = ((ds.themeColor as string) || 'charcoal') === c.id
           return (
-            <button key={c.id} onClick={() => updateGallerySetting('themeColor', c.id)}
-              style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                padding: '10px 14px',
-                border: `1px solid ${active ? textPrimary : border}`,
-                background: active ? '#fff' : 'transparent',
-                borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
-                transition: 'border-color .15s, background .15s',
-              }}>
-              <div style={{
-                width: 32, height: 32, borderRadius: '50%',
-                background: c.color,
-              }} />
-              <span style={{
-                fontSize: 10, fontWeight: 500, color: textPrimary,
-                letterSpacing: '0.04em',
-              }}>{c.label}</span>
-            </button>
+            <OptionTile key={c.id} selected={active} onClick={() => updateGallerySetting('themeColor', c.id)}
+              className="flex flex-col items-center gap-2 px-3.5 py-2.5">
+              <div className="size-8 rounded-full" style={{ background: c.color }} />
+              <span className="text-[10px] font-medium tracking-[0.04em] text-ink">{c.label}</span>
+            </OptionTile>
           )
         })}
       </div>

@@ -1,18 +1,11 @@
-import type React from 'react'
 import { Icon } from '@/shared/ui/Icon'
 import type { GalleryActions } from '../hooks/useGalleryActions'
-import { textPrimary } from '../styles'
+import { cn } from '@/shared/ui'
 import type { Gallery } from '../types'
 
-const actionButton: React.CSSProperties = {
-  width: 34, height: 34, borderRadius: 2,
-  background: 'rgba(255,255,255,.96)',
-  border: `1px solid rgba(20,20,19,.08)`,
-  color: textPrimary, cursor: 'pointer',
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  backdropFilter: 'blur(8px)',
-  boxShadow: '0 1px 3px rgba(0,0,0,.06)',
-}
+const actionButton =
+  'flex size-[34px] cursor-pointer items-center justify-center rounded-hair border border-ink/8 bg-white/96 text-ink ' +
+  'shadow-[0_1px_3px] shadow-black/6 backdrop-blur-[8px]'
 
 // Hover overlay on a gallery card: delete (every gallery) and, for live
 // galleries, copy link / email share / duplicate.
@@ -25,28 +18,23 @@ export function GalleryCardActions({ gallery: g, isLive, actions, onOpenEmailSha
   const { copyGalleryLink, copiedGalleryId, duplicateGallery, duplicatingId, deleteGallery } = actions
   return (
     <>
-      <div style={{
-        position: 'absolute', top: 12, insetInlineEnd: 12,
-      }}>
+      <div className="absolute end-3 top-3">
         <button
           onClick={(e) => { e.stopPropagation(); void deleteGallery(g) }}
           title="מחק גלריה"
           aria-label="מחק גלריה"
-          style={{ ...actionButton, color: '#c0392b' }}
+          className={cn(actionButton, 'text-danger')}
         >
           <Icon name="trash" size={14} strokeWidth={1.85} />
         </button>
       </div>
       {isLive && (
-        <div style={{
-          position: 'absolute', bottom: 12, insetInlineStart: 12,
-          display: 'flex', gap: 6,
-        }}>
+        <div className="absolute start-3 bottom-3 flex gap-1.5">
           <button
             onClick={(e) => copyGalleryLink(g.id, e)}
             title="העתק קישור"
             aria-label={copiedGalleryId === g.id ? 'הקישור הועתק' : 'העתק קישור'}
-            style={actionButton}
+            className={actionButton}
           >
             <Icon name={copiedGalleryId === g.id ? 'check' : 'copy'} size={14} strokeWidth={1.85} />
           </button>
@@ -54,7 +42,7 @@ export function GalleryCardActions({ gallery: g, isLive, actions, onOpenEmailSha
             onClick={(e) => { e.stopPropagation(); onOpenEmailShare(g) }}
             title="שלח במייל ללקוח"
             aria-label="שלח במייל ללקוח"
-            style={actionButton}
+            className={actionButton}
           >
             <Icon name="mail" size={14} strokeWidth={1.85} />
           </button>
@@ -63,11 +51,7 @@ export function GalleryCardActions({ gallery: g, isLive, actions, onOpenEmailSha
             disabled={duplicatingId === g.id}
             title="שכפל גלריה"
             aria-label="שכפל גלריה"
-            style={{
-              ...actionButton,
-              cursor: duplicatingId === g.id ? 'wait' : 'pointer',
-              opacity: duplicatingId === g.id ? 0.6 : 1,
-            }}
+            className={cn(actionButton, duplicatingId === g.id && 'cursor-wait opacity-60')}
           >
             <Icon name="duplicate" size={14} strokeWidth={1.85} />
           </button>

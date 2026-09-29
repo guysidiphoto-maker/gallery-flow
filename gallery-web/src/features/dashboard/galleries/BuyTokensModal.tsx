@@ -1,6 +1,6 @@
 import { useFocusTrap } from '@/shared/lib/useFocusTrap'
 import { startCheckout, TOKEN_PACKAGES } from '../lib/tokenClient'
-import { accent, accentLight, bg, border, card, textMuted, textPrimary, textSecondary } from '../styles'
+import { cn } from '@/shared/ui'
 import type { Toast } from '../types'
 
 // Token subscription packages. Only mounted when checkout is live.
@@ -21,84 +21,55 @@ export function BuyTokensModal({ tokenBalance, onClose, showToast }: {
   }
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 2000,
-        background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(10px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 20, animation: 'overlayIn .2s ease both',
-      }}
-    >
+    <div onClick={onClose} className="z-[2000] fixed inset-0 flex animate-[dash-overlay-in_.2s_ease_both] items-center justify-center bg-black/78 p-5 backdrop-blur-[10px]">
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby="buy-tokens-heading"
         onClick={e => e.stopPropagation()}
-        style={{
-          background: bg, width: '100%', maxWidth: 920,
-          borderRadius: 24, padding: 36,
-          border: `1px solid ${border}`,
-          animation: 'modalIn .3s ease both',
-          boxShadow: '0 30px 100px rgba(0,0,0,.6)',
-        }}
+        className="max-w-[920px] rounded-xl p-9 w-full animate-[dash-modal-in_.3s_ease_both] border border-line bg-canvas shadow-[0_30px_100px] shadow-black/60"
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-          <h2 id="buy-tokens-heading" style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+        <div className="mb-2 flex items-start justify-between">
+          <h2 id="buy-tokens-heading" className="text-[26px] font-bold tracking-[-0.02em]">
             קנה טוקנים
           </h2>
-          <button onClick={onClose} aria-label="סגירה" style={{
-            background: 'transparent', border: 'none', color: textMuted, fontSize: 22,
-            cursor: 'pointer', lineHeight: 1, padding: 4,
-          }}>×</button>
+          <button onClick={onClose} aria-label="סגירה" className="cursor-pointer border-none bg-transparent p-1 text-[22px] leading-none text-muted">×</button>
         </div>
-        <p style={{ fontSize: 14, color: textSecondary, margin: '0 0 24px', lineHeight: 1.5 }}>
-          טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong style={{ color: tokenBalance < 50 ? '#fca5a5' : '#16a274' }}>{tokenBalance.toLocaleString('he-IL')}</strong>
+        <p className="mb-6 text-sm leading-normal text-ink-soft">
+          טוקן אחד = העלאת תמונה אחת. יתרה נוכחית: <strong className={tokenBalance < 50 ? 'text-danger' : 'text-success'}>{tokenBalance.toLocaleString('he-IL')}</strong>
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
           {TOKEN_PACKAGES.map(pkg => (
             <button
               key={pkg.planId}
               onClick={() => { void checkout(pkg.planId) }}
-              style={{
-                position: 'relative',
-                background: pkg.highlight
-                  ? `linear-gradient(135deg, rgba(45,196,121,.12), rgba(61,214,139,.06))`
-                  : card,
-                border: `1px solid ${pkg.highlight ? 'rgba(45,196,121,.4)' : border}`,
-                borderRadius: 18, padding: 24, textAlign: 'right' as const,
-                cursor: 'pointer', transition: 'all .2s',
-                color: textPrimary, fontFamily: 'inherit',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 32px rgba(45,196,121,.18)` }}
-              onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}
+              className={cn(
+                'relative cursor-pointer rounded-[18px] border p-6 text-right text-ink transition-all duration-200',
+                'hover:-translate-y-0.5 hover:shadow-[0_12px_32px] hover:shadow-success/18',
+                pkg.highlight ? 'border-success/40 bg-linear-135 from-success/12 to-success/6' : 'border-line bg-surface',
+              )}
             >
               {pkg.highlight && (
-                <div style={{
-                  position: 'absolute', top: -10, right: 16,
-                  padding: '4px 12px', borderRadius: 10,
-                  background: `linear-gradient(135deg, ${accent}, ${accentLight})`,
-                  fontSize: 11, fontWeight: 700, letterSpacing: '.04em',
-                }}>
+                <div className="absolute -top-2.5 right-4 rounded-md bg-linear-135 from-ink to-black px-3 py-1 text-[11px] font-bold tracking-[.04em]">
                   {pkg.highlight}
                 </div>
               )}
-              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{pkg.name}</div>
-              <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 4, letterSpacing: '-0.02em' }}>
+              <div className="mb-1.5 text-base font-bold">{pkg.name}</div>
+              <div className="mb-1 text-[32px] font-extrabold tracking-[-0.02em]">
                 {pkg.tokens.toLocaleString('he-IL')}
               </div>
-              <div style={{ fontSize: 12, color: textMuted, marginBottom: 12 }}>טוקנים בחודש</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#16a274' }}>
+              <div className="mb-3 text-xs text-muted">טוקנים בחודש</div>
+              <div className="text-lg font-bold text-success">
                 ${pkg.pricePerMonthIls}
-                <span style={{ fontSize: 12, fontWeight: 500, color: textMuted }}> / חודש</span>
+                <span className="text-xs font-medium text-muted"> / חודש</span>
               </div>
             </button>
           ))}
         </div>
 
-        <p style={{ fontSize: 11, color: textMuted, margin: '20px 0 0', textAlign: 'center', lineHeight: 1.5 }}>
+        <p className="mt-5 text-center text-[11px] leading-normal text-muted">
           חיוב חודשי דרך LemonSqueezy. אפשר לבטל בכל זמן.<br />
           המכסה מתחדשת בתחילת כל חודש (טוקנים שלא נוצלו אינם מצטברים).
         </p>

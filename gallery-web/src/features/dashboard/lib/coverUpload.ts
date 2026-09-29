@@ -1,20 +1,6 @@
-// Separate cover-image upload — a cover that lives in the gallery bucket but
-// is NOT a gallery photo (no `images` row, so it never appears in the grid).
-//
-// Path scheme keeps the gallery id as the SECOND segment so the existing
-// storage RLS applies unchanged:
-//   {slug}/{galleryId}/covers/{hash8}_{filename}
-//   • gallery_storage_owner_write  → only the owning business can upload/delete
-//   • gallery_storage_public_read  → anon can read once the gallery is 'live'
-// (both policies key on (storage.foldername(name))[2] = galleryId).
-//
-// We deliberately do NOT call record_image_upload(): no token is consumed and
-// no images row is created. The path is stored in delivery_settings.
-//
-// The file is downscaled client-side before upload. Covers under `covers/`
-// are served as plain public objects (displayUrl only transforms `/originals/`),
-// so the stored size IS what the public hero downloads — capping it keeps the
-// hero fast. The private gate uses a separate small render transform.
+// Cover upload that lives in the gallery bucket but is not a gallery photo:
+// {slug}/{galleryId}/covers/… keeps the galleryId segment the storage RLS keys on,
+// never calls record_image_upload (no token, no images row) and is downscaled first.
 
 import { supabase, storageUrl } from '@/shared/lib/supabase'
 import {
@@ -93,11 +79,7 @@ async function downscaleToJpeg(file: File, maxDim: number, quality: number): Pro
   return { blob, width: dstW, height: dstH }
 }
 
-/**
- * Upload a separate cover image for a gallery. Validates (same rules as photo
- * uploads), downscales, uploads to `covers/`, and returns the path + public
- * URL. Does not create an images row and does not consume a token.
- */
+/** Validate, downscale and upload a cover to `covers/`; returns path + public URL. */
 export async function uploadCoverImage(
   file: File,
   opts: { galleryId: string; businessSlug: string; onPhase?: (p: CoverUploadPhase) => void },
@@ -134,13 +116,8 @@ export async function uploadCoverImage(
   throw new CoverUploadError('upload_failed', lastErr instanceof Error ? lastErr.message : String(lastErr))
 }
 
-/**
- * Delete a previously-uploaded custom cover object. GUARDED: only removes
- * paths under a `covers/` folder, so a real gallery photo can never be deleted
- * through this path even if a stale value is passed. Best-effort — a failed
- * delete (already gone, transient) resolves quietly; the owner's RLS gates the
- * actual permission server-side.
- */
+/** Best-effort delete of a custom cover; refuses any path outside `covers/`
+ *  so a real gallery photo can never be removed through here. */
 export async function deleteCoverObject(path: string | null | undefined): Promise<void> {
   if (!path || !/\/covers\//.test(path)) return
   try {

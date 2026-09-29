@@ -1,4 +1,4 @@
-import { border, textMuted, textPrimary } from '../styles'
+import { cn } from '@/shared/ui'
 import type { ActivitySummary } from '../types'
 
 // Real send history from the gallery email log; never fabricated.
@@ -7,34 +7,25 @@ export function RecentRecipients({ activitySummary, activityLoading }: {
   activityLoading: boolean
 }) {
   return (
-    <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid ${border}` }}>
-      <div style={{
-        fontSize: 10, fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase',
-        color: textMuted, marginBottom: 10,
-      }}>נמענים אחרונים</div>
+    <div className="mt-[22px] border-t border-line pt-[18px]">
+      <div className="mb-2.5 text-[10px] font-semibold tracking-[0.16em] text-muted uppercase">נמענים אחרונים</div>
       {activityLoading && !activitySummary ? (
-        <div style={{ fontSize: 12, color: textMuted, padding: '8px 0' }}>טוען…</div>
+        <div className="py-2 text-xs text-muted">טוען…</div>
       ) : (activitySummary?.recent_emails?.length ?? 0) === 0 ? (
-        <div style={{ fontSize: 12, color: textMuted, padding: '8px 0', lineHeight: 1.5 }}>
+        <div className="py-2 text-xs leading-normal text-muted">
           עדיין לא נשלחו מיילים לגלריה זו. שליחה ראשונה תופיע כאן.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 180, overflowY: 'auto' }}>
+        <div className="flex max-h-[180px] flex-col gap-2 overflow-y-auto">
           {activitySummary!.recent_emails.slice(0, 8).map(row => {
             const failed = row.status === 'failed'
             return (
-              <div key={row.id} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-                fontSize: 12,
-              }}>
-                <span style={{ direction: 'ltr', textAlign: 'left', color: textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div key={row.id} className="flex items-center justify-between gap-2.5 text-xs">
+                <span className="truncate text-left text-ink [direction:ltr]">
                   {row.recipient_email}
                 </span>
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
-                  color: failed ? '#b4544b' : textMuted,
-                }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: failed ? '#b4544b' : '#22c55e' }} />
+                <span className={cn('inline-flex shrink-0 items-center gap-[5px]', failed ? 'text-danger' : 'text-muted')}>
+                  <span className={cn('size-1.5 rounded-full', failed ? 'bg-danger' : 'bg-success')} />
                   {failed ? 'נכשל' : 'נשלח'}
                 </span>
               </div>

@@ -1,27 +1,12 @@
-// Browser-side 3-tier upload pipeline.
-//
-// Per image:
-//   1) Resize to a web preview (~1600px max side, jpeg 82%) via canvas
-//   2) Resize to a thumbnail (~360px max side, jpeg 75%) via canvas
-//   3) Upload thumbnail + web preview + the original to gallery-images
-//   4) Call record_image_upload() — atomic: token consumed + images row
-//
-// Path scheme matches the desktop pipeline:
-//   {slug}/{galleryId}/{thumbs|web|originals}/{hash8}_{filename}
-//
-// Token consumption is enforced server-side inside record_image_upload(); a
-// failure there ('insufficient_tokens') aborts the storage cleanup the same
-// way a network error would (we leave the orphaned objects for the next
-// upload retry — the path is filename-deterministic so the same key gets
-// overwritten on retry, no garbage accrues).
+// Browser upload pipeline: {slug}/{galleryId}/{tier}/{hash8}_{filename} objects
+// recorded via record_image_upload(), which consumes the token server-side.
+// Keys are deterministic, so a retry overwrites orphans instead of piling up.
 
 import { supabase } from '@/shared/lib/supabase'
 
 const BUCKET = 'gallery-images'
-// Phase 4.2: thumbs are dual-written here (public bucket) for crawlers / OG /
-// public previews. Same key as in `gallery-images`. Best-effort — failure here
-// must NOT block the upload; the row is committed with public_thumb_present=false
-// and the backfill function reconciles it later.
+// Thumbs are dual-written to the public bucket for crawlers/OG. Best-effort:
+// failure never blocks the upload; a backfill reconciles public_thumb_present.
 const THUMB_PUBLIC_BUCKET = 'gallery-images-thumbs-public'
 
 const WEB_MAX_DIM       = 1600
@@ -46,32 +31,11 @@ export interface UploadProgress {
 
 export type ProgressFn = (p: UploadProgress) => void
 
-// ── Upload validation (SINGLE SOURCE OF TRUTH for all upload limits) ──────────
-//
-// The file <input> carries accept="image/*", but drag-and-drop bypasses it —
-// so validation is enforced HERE (defensively, inside uploadMany, the one choke
-// point every file passes) AND surfaced up-front in the Dashboard for clear
-// user messages. Both layers call THESE functions/constants; nothing redefines
-// a limit locally. See the reconciliation report for the value rationale.
-//
-//   • Supported formats: JPEG / PNG / WebP. HEIC/HEIF is explicitly REJECTED
-//     (with its own reason) because the on-the-fly transform pipeline can't
-//     decode it yet — accepting it would produce broken gallery images.
-//   • MAX_UPLOAD_BYTES: 200 MB. Covers max-quality JPEGs from 45-61MP bodies
-//     (a7R V, R5, Z8/Z9 run 25-60 MB) and 100MP GFX, plus Pixieset "Original"
-//     exports (Pixieset caps uploads at 100 MB). The prior 40 MB cap SILENTLY
-//     rejected legitimate high-res photography. RAW/TIFF/HEIC are still
-//     unsupported (JPEG/PNG/WebP only) and need server-side transcode — see
-//     docs/PIXIESET-IMPORT-PRODUCTION-ARCHITECTURE.md.
-//   • MAX_UPLOAD_BATCH: high guardrail against a pathological drag-drop only.
-//     It is NOT a per-gallery limit — uploadMany streams with bounded
-//     concurrency (~8 in flight), so a real wedding selection (often
-//     1,000–3,000) uploads in one go. It used to be 1,000, which SILENTLY
-//     dropped everything past the first 1,000 (e.g. 1,165 selected → 1,000
-//     uploaded, 165 lost). Raised so normal large galleries are never
-//     truncated; anything beyond this still surfaces a visible warning.
+// ── Upload validation: the single source of truth for upload limits ─────────
+// Drag-and-drop bypasses the input's accept filter, so uploadMany enforces these too.
+// JPEG/PNG/WebP only (HEIC can't be transformed yet); the batch cap is a guardrail, not a gallery limit.
 
-export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024 // 200 MB per image (was 40 MB — silently rejected valid high-res)
+export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024 // 200 MB per image
 export const MAX_UPLOAD_BATCH = 5000             // files per selection (concurrency is 8)
 
 const ALLOWED_UPLOAD_MIME = new Set(['image/jpeg', 'image/png', 'image/webp'])
@@ -183,11 +147,8 @@ function loadImageElement(file: File): Promise<HTMLImageElement> {
 
 // ── Storage uploads ─────────────────────────────────────────────────────────
 
-// Gallery assets are content-addressed (the path embeds an FNV hash of the
-// file), so a given URL always points at the same bytes — it can be cached
-// effectively forever. Supabase's default is only 3600s (1h), which let the
-// CDN edge "cool off" hourly and forced slow origin re-fetches (~1.5s each)
-// for every gallery viewer. 1 year matches what Pic-Time / Pixieset serve.
+// Content-addressed paths never change bytes, so cache for a year instead of
+// Supabase's 1h default (which forced slow hourly origin re-fetches).
 const ONE_YEAR_CACHE = '31536000'
 
 // Upload one object with a few retries. A transient network/throttle blip on
@@ -218,13 +179,8 @@ export interface UploadOptions {
   onProgress?: ProgressFn
 }
 
-/** Upload one ORIGINAL file and record it — the Pixieset model.
- *
- *  No client-side compression and no thumb/web uploads: every display size is
- *  a Supabase on-the-fly transform of this single object (see renderUrl /
- *  SignedImg), generated server-side and cached on the CDN for a year. This is
- *  what makes uploads fast — the browser streams one file per photo instead of
- *  burning CPU on canvas resizes and pushing three objects. */
+/** Upload one original and record it. Every display size is an on-the-fly,
+ *  CDN-cached transform of this object, so no client-side resizing. */
 export async function uploadOneImage(file: File, opts: UploadOptions): Promise<UploadResult> {
   const { galleryId, businessSlug, sectionId, sortOrder, onProgress } = opts
   const hash     = pathHash(`${galleryId}/${file.name}/${file.size}/${file.lastModified}`)
@@ -234,10 +190,8 @@ export async function uploadOneImage(file: File, opts: UploadOptions): Promise<U
   await uploadOne(BUCKET, origPath, file, file.type || 'image/jpeg')
 
   onProgress?.({ phase: 'record' })
-  // All three path columns point at the original. The viewer transforms
-  // whatever path it gets, so thumbnail/web are derived on demand; and
-  // original_uploaded becomes true (p_original_path IS NOT NULL) so HD
-  // downloads resolve immediately.
+  // All path columns point at the original; sizes are derived on demand and
+  // original_uploaded becomes true so HD downloads resolve immediately.
   const { data, error } = await supabase.rpc('record_image_upload', {
     p_gallery_id:            galleryId,
     p_filename:              file.name,
@@ -261,12 +215,8 @@ export async function uploadOneImage(file: File, opts: UploadOptions): Promise<U
   }
 }
 
-/** Upload a single ORIGINAL object to storage WITHOUT recording an images row
- *  or consuming a token. Used by the "Replace photo" flow, which reuses an
- *  existing row rather than inserting one. Content-addressed key (hash embeds
- *  size + lastModified) so a genuinely different replacement never collides
- *  with the object it replaces — the old bytes stay intact until the caller
- *  explicitly deletes them AFTER the DB flip. Returns the storage path. */
+/** Upload an original without recording a row or consuming a token (photo
+ *  replace). Content-addressed, so it never collides with the object it replaces. */
 export async function uploadReplacementOriginal(
   file: File,
   opts: { galleryId: string; businessSlug: string; onProgress?: ProgressFn },

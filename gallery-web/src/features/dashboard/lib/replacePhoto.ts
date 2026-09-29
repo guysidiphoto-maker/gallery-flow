@@ -1,20 +1,6 @@
-// "Replace photo" orchestration — swap the pixels behind an existing images row
-// while preserving its logical identity (section, sort position, top-pick,
-// favourites, references, cover role).
-//
-// Order of operations is chosen so a failure at ANY step leaves the original
-// image completely usable and never orphans the live object:
-//
-//   1. Validate the replacement file (same gate as upload).
-//   2. Upload the NEW original to a fresh content-addressed key. The old object
-//      is still the one the row points at, so a failure here changes nothing.
-//   3. Call replace_image() — the owner-checked, transactional DB flip. Only
-//      after this succeeds does the row point at the new pixels.
-//   4. Delete the OLD storage object(s), now unreferenced. Best-effort: a
-//      failure here leaves a harmless orphan, never a broken gallery.
-//
-// If step 3 fails we attempt to delete the object we uploaded in step 2 so a
-// failed replace does not accrue garbage either.
+// Replace the pixels behind an existing images row, keeping its identity.
+// Upload new → transactional DB flip → delete old: any failure leaves the original
+// usable, and a failed flip removes the freshly uploaded object.
 
 import { supabase } from '@/shared/lib/supabase'
 import {
@@ -48,19 +34,12 @@ export interface ReplacePhotoOptions {
   businessSlug: string
   file: File
   onProgress?: (phase: ReplacePhotoPhase) => void
-  /** Called after the DB flip succeeds and BEFORE the old storage objects are
-   *  deleted, only when the replaced image was the gallery cover. The cover
-   *  reference lives in delivery_settings (outside the RPC's transaction) and
-   *  is keyed by the OLD storage path, so it must be re-pointed to newPath
-   *  before the old object is removed — otherwise a crash between the flip and
-   *  the cover write would leave the cover pointing at a deleted object. */
+  /** Runs after the DB flip and before old objects are deleted, only for the
+   *  cover: its delivery_settings reference must move to newPath first. */
   onRepointCover?: (newPath: string) => Promise<void>
 }
 
-// Buckets a replacement object may leave stale copies in. Originals live in
-// `gallery-images`; the original upload path (uploadOneImage) may have
-// dual-written a public thumbnail under the same key in the public thumbs
-// bucket, so we best-effort remove the old key from there too.
+// Old keys may also exist as dual-written public thumbnails; clean both buckets.
 const CLEANUP_BUCKETS = [BUCKET, 'gallery-images-thumbs-public'] as const
 
 async function removeObjects(paths: Array<string | null | undefined>): Promise<void> {
@@ -119,12 +98,8 @@ export async function replacePhoto(opts: ReplacePhotoOptions): Promise<ReplacePh
     was_cover: boolean
   }
 
-  // If this photo was the gallery cover, re-point the cover to the new object
-  // BEFORE deleting the old one. The cover reference lives in delivery_settings
-  // (keyed by the old path), so deleting first would leave a broken cover if
-  // anything interrupted the flow. A cover re-point failure is swallowed — the
-  // grid row is already correct and the cover can be re-set manually; we do not
-  // block cleanup on it, but we do attempt it first.
+  // Re-point the cover before deleting the old object so an interruption can't
+  // leave a broken cover. A re-point failure is swallowed; cleanup still runs.
   if (result.was_cover && opts.onRepointCover) {
     try { await opts.onRepointCover(newPath) } catch { /* cover re-point best-effort */ }
   }

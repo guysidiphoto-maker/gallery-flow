@@ -1,10 +1,4 @@
-// strings — local locale dictionary for the owner Global Search (contract C8).
-//
-// `src/lib/ownerLocale.ts` is being created concurrently by another agent, so
-// this module follows the agreed wave-1 pattern: a local `{he,en}` flat-key
-// dictionary with the same shape as portalLocale's STRINGS. The component
-// receives `locale` as a prop (default 'he'); in wave 2 the integrator wires
-// that prop from `useOwnerLocale()`. Every key exists in BOTH languages.
+// Local {he,en} dictionary for Global Search; every key exists in both languages.
 // Copy rules: no internal jargon, no long dashes, no mixed-direction strings.
 
 import type { SearchLocale } from './searchLogic'

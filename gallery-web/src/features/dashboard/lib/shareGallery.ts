@@ -1,10 +1,6 @@
-// Photographer-side wrapper for the share-gallery edge function. Sends an
-// email via Resend on the server, logs to gallery_email_log either way.
-//
-// Pulls the studio's brand_kit (logo, primary color, voice, signature, socials)
-// off the businesses row and forwards it to the edge so the rendered email
-// looks like it came from the studio — not from Pixflow. Falls back to the
-// legacy plain-text template when the brand kit is unset.
+// Wrapper for the share-gallery edge function (Resend send + gallery_email_log).
+// Forwards the studio's brand kit so the email looks like the studio's, with the
+// plain-text template as fallback.
 
 import { supabase } from '@/shared/lib/supabase'
 
@@ -31,10 +27,8 @@ export interface ShareGalleryEmailInput {
   recipientEmail: string
   subject?: string
   message?: string
-  // Optional override. When omitted the wrapper loads the kit off the
-  // photographer's businesses row. Callers that already hold the kit (e.g.
-  // the Dashboard share modal, which fetches it for the preview iframe)
-  // pass it through to avoid a duplicate round-trip.
+  // Optional; loaded from the businesses row when omitted. Callers that already
+  // hold the kit pass it to skip a round-trip.
   studioBrand?: BrandKit | null
 }
 
@@ -105,10 +99,8 @@ export async function sendGalleryShareEmail(
     : { ok: false, error: res.error ?? 'unknown_error' }
 }
 
-// Render the email without sending. Used by the Dashboard share modal's
-// "תצוגה מקדימה" button so the photographer sees exactly what the client
-// will get before clicking send. Same composer runs on the server in both
-// preview and send paths — no risk of drift.
+// Render the email without sending (share modal preview); the server uses the
+// same composer for preview and send, so they can't drift.
 export async function previewGalleryShareEmail(
   input: Omit<ShareGalleryEmailInput, 'recipientEmail'> & { recipientEmail?: string },
 ): Promise<ShareGalleryPreviewResult> {

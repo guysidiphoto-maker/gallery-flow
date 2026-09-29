@@ -1,6 +1,6 @@
-import { border, textMuted, textPrimary, textSecondary } from '../../styles'
+import { cn } from '@/shared/ui'
 import type { ActivitySummary, GalleryImage } from '../../types'
-import { ActivitySection, activityTimeStyle, formatActivityTime } from './ActivitySection'
+import { ActivitySection, activityRowClass, activityTagClass, activityTimeClass, formatActivityTime, truncateLtrEnd } from './ActivitySection'
 
 export function RecentDownloadsList({ downloads, images }: {
   downloads: ActivitySummary['recent_downloads']
@@ -11,35 +11,21 @@ export function RecentDownloadsList({ downloads, images }: {
       {downloads.slice(0, 10).map(d => {
         const img = images.find(g => g.id === d.image_id)
         return (
-          <div key={d.id} style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '12px 4px', borderBottom: `1px solid ${border}`,
-            fontSize: 13, color: textPrimary,
-          }}>
-            <span style={{
-              flex: 1, direction: 'ltr', textAlign: 'right' as const,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
+          <div key={d.id} className={activityRowClass}>
+            <span className={truncateLtrEnd}>
               {img?.filename ?? '(תמונה נמחקה)'}
             </span>
             {d.guest_email && (
-              <span style={{
-                direction: 'ltr', fontSize: 12, color: textSecondary,
-                maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }} title={d.guest_name ? `${d.guest_name} · ${d.guest_email}` : d.guest_email}>
+              <span className="max-w-[180px] truncate text-[12px] text-ink-soft [direction:ltr]"
+                title={d.guest_name ? `${d.guest_name} · ${d.guest_email}` : d.guest_email}>
                 {d.guest_name || d.guest_email}
               </span>
             )}
-            <span style={{
-              fontSize: 10, fontWeight: 500,
-              letterSpacing: '0.18em', textTransform: 'uppercase',
-              color: textMuted,
-            }}>
+            <span className={cn(activityTagClass, 'text-muted')}>
               {d.resolution === 'original' ? 'Original' : 'Web'}
               {d.download_kind === 'batch' ? ' · Batch' : ''}
             </span>
-            <span style={activityTimeStyle}>
+            <span className={activityTimeClass}>
               {formatActivityTime(d.created_at)}
             </span>
           </div>

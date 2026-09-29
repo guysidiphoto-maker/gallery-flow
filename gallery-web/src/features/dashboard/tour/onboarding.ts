@@ -1,16 +1,6 @@
-// onboarding: read/write per-user onboarding progress (contract C2).
-//
-// One record per (user, surface, version). Persistence is layered:
-//   1. DB table `onboarding_progress` (migration 096, self-only RLS) so
-//      progress follows the owner across devices.
-//   2. localStorage fallback `pixflow-onboarding:<surface>:v<version>` so the
-//      feature still works on a Preview without the migration, offline, or
-//      when the table read fails for any reason.
-// Every public function is fail-soft: it NEVER throws. A broken DB or a
-// blocked localStorage degrades to in-memory defaults, never to a crash.
-//
-// The decision logic (should the tour show? at which step?) lives here as
-// pure helpers so tests/tour.test.ts can prove it without any DOM.
+// Per-user onboarding progress per (surface, version): DB table first,
+// localStorage fallback, never throws. Visibility logic is pure so
+// tests/tour.test.ts can cover it without a DOM.
 
 export const TOUR_VERSION = 1
 
@@ -56,13 +46,9 @@ export function clampStep(step: number, totalSteps: number): number {
   return Math.min(Math.max(0, Math.floor(step)), totalSteps - 1)
 }
 
-// Visibility rule (the heart of "when does the tour appear"):
-//   • no saved progress               → show, from step 0
-//   • saved for an OLDER version      → show again, from step 0 (version bump)
-//   • pending / in_progress (current) → show, resume at the saved step
-//   • completed / dismissed (current) → hide
-// The caller ANDs this with its own `enabled` gate (owner only, never on
-// portal routes); this helper only reasons about the stored state.
+// Show when there's no progress, an older version, or pending/in_progress
+// (resuming at the saved step); hide when completed/dismissed. The caller
+// ANDs this with its own owner-only `enabled` gate.
 export function resolveVisibility(
   progress: OnboardingProgress | null,
   currentVersion: number = TOUR_VERSION,

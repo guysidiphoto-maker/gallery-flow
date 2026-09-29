@@ -1,6 +1,9 @@
+import { cn } from '@/shared/ui'
 import { Icon } from '@/shared/ui/Icon'
-import { textPrimary } from '../../styles'
 import { useEditor } from '../EditorContext'
+
+const barButton =
+  'cursor-pointer rounded-hair border border-white/40 bg-transparent px-3 py-1.5 text-[11px] tracking-[0.14em] text-white uppercase'
 
 // Sticky select-mode toolbar. Wraps on narrow viewports so the trailing
 // controls are never pushed off-screen.
@@ -15,66 +18,32 @@ export function BulkActionsBar() {
   const otherSections = sections.filter(s => s.id !== activeSectionId)
 
   return (
-    <div style={{
-      position: 'sticky', top: 0, zIndex: 10,
-      marginBottom: 16, padding: '10px 16px',
-      background: textPrimary, color: '#fff',
-      display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12,
-      fontSize: 12,
-    }}>
-      <span style={{ fontWeight: 500, letterSpacing: '0.04em' }}>
+    <div className="sticky top-0 z-10 mb-4 flex flex-wrap items-center gap-3 bg-ink px-4 py-2.5 text-[12px] text-white">
+      <span className="font-medium tracking-[0.04em]">
         {selectedImageIds.size} {selectedImageIds.size === 1 ? 'תמונה נבחרה' : 'תמונות נבחרו'}
       </span>
-      <button onClick={selectAllImages} style={{
-        marginInlineStart: 'auto',
-        background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
-        color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
-        fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
-      }}>בחר הכל</button>
-      <button onClick={() => bulkToggleTopPick(true)} style={{
-        background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
-        color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
-        fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
-        display: 'flex', alignItems: 'center', gap: 4,
-      }}>★ Pin</button>
-      <button onClick={() => bulkToggleTopPick(false)} style={{
-        background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
-        color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
-        fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
-      }}>Unpin</button>
+      <button onClick={selectAllImages} className={cn(barButton, 'ms-auto')}>בחר הכל</button>
+      <button onClick={() => bulkToggleTopPick(true)} className={cn(barButton, 'flex items-center gap-1')}>★ Pin</button>
+      <button onClick={() => bulkToggleTopPick(false)} className={barButton}>Unpin</button>
       {otherSections.length > 0 && (
         <select
           aria-label="העבר לסט"
           value=""
           onChange={(e) => { if (e.target.value) void bulkMoveToSection(e.target.value) }}
-          style={{
-            background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
-            color: '#fff', padding: '6px 10px', fontSize: 11, cursor: 'pointer',
-            fontFamily: 'inherit', letterSpacing: '0.08em',
-          }}
+          className="cursor-pointer rounded-hair border border-white/40 bg-transparent px-2.5 py-1.5 text-[11px] tracking-[0.08em] text-white"
         >
-          <option value="" style={{ color: '#111' }}>העבר לסט…</option>
+          <option value="" className="text-ink">העבר לסט…</option>
           {otherSections.map(s => (
-            <option key={s.id} value={s.id} style={{ color: '#111' }}>{s.name}</option>
+            <option key={s.id} value={s.id} className="text-ink">{s.name}</option>
           ))}
         </select>
       )}
-      <button onClick={() => void bulkDownloadSelected()} style={{
-        background: 'transparent', border: `1px solid rgba(255,255,255,.4)`, borderRadius: 2,
-        color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
-        fontFamily: 'inherit', letterSpacing: '0.14em', textTransform: 'uppercase',
-      }}>Download</button>
-      <button onClick={bulkDeleteSelected} style={{
-        background: '#dc2626', border: `1px solid #dc2626`, borderRadius: 2,
-        color: '#fff', padding: '6px 12px', fontSize: 11, cursor: 'pointer',
-        fontFamily: 'inherit', fontWeight: 500,
-        letterSpacing: '0.14em', textTransform: 'uppercase',
-      }}>Delete</button>
-      <button onClick={exitSelectMode} aria-label="Cancel" style={{
-        background: 'transparent', border: 'none',
-        color: '#fff', padding: '6px 8px', cursor: 'pointer',
-        fontFamily: 'inherit', display: 'flex', alignItems: 'center',
-      }}>
+      <button onClick={() => void bulkDownloadSelected()} className={barButton}>Download</button>
+      <button
+        onClick={bulkDeleteSelected}
+        className={cn(barButton, 'border-danger-strong bg-danger-strong font-medium')}
+      >Delete</button>
+      <button onClick={exitSelectMode} aria-label="Cancel" className="flex cursor-pointer items-center bg-transparent px-2 py-1.5 text-white">
         <Icon name="close" size={14} strokeWidth={2} />
       </button>
     </div>

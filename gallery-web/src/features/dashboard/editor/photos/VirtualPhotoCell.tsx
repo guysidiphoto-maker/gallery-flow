@@ -17,7 +17,7 @@ export function VirtualPhotoCell({ columnIndex, rowIndex, style, data }: GridChi
   const img = data.visibleImages[idx]
   if (!img) return <div style={style} />
   return (
-    <div style={{ ...style, padding: 2 }}>
+    <div style={style} className="p-0.5">
       <PhotoTile img={img} visibleImages={data.visibleImages} currentCoverPath={data.currentCoverPath} ui={data.ui} />
     </div>
   )

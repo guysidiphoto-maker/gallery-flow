@@ -1,18 +1,12 @@
 import { Icon } from '@/shared/ui/Icon'
-import { bgSubtle, border, textMuted } from '../../styles'
 
 export function StoriesEmptyState() {
   return (
-    <div style={{
-      textAlign: 'center', padding: '52px 20px',
-      color: textMuted,
-      border: `1px dashed ${border}`,
-      background: bgSubtle,
-    }}>
-      <div style={{ marginBottom: 14, color: textMuted, opacity: 0.55, display: 'flex', justifyContent: 'center' }}>
+    <div className="border border-dashed border-line bg-surface px-5 py-[52px] text-center text-muted">
+      <div className="mb-3.5 flex justify-center text-muted opacity-55">
         <Icon name="stories" size={36} strokeWidth={1.4} />
       </div>
-      <div style={{ fontSize: 14 }}>
+      <div className="text-[14px]">
         עדיין אין סטוריז. הוסף את הראשון בלחיצה על "העלאת סטורי".
       </div>
     </div>

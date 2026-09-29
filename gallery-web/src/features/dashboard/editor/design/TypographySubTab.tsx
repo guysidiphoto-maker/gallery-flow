@@ -1,6 +1,6 @@
-import { bgSubtle, border, textPrimary, textSecondary } from '../../styles'
+import { Eyebrow, Select, cn } from '@/shared/ui'
 import { useEditor, useOpenGallery } from '../EditorContext'
-import { inputBase, labelStyle, focusBorder, blurBorder } from './designStyles'
+import { fieldClass, labelClass } from './designStyles'
 
 const FONT_FIELDS = [
   { key: 'headingFont', label: 'פונט כותרות', defaultV: 'Inter Tight' },
@@ -16,18 +16,17 @@ const FONTS = [
   'Playfair Display',
 ]
 
+const previewClass = 'mt-3 w-full border border-line bg-surface px-[18px] py-5 text-ink outline-none focus:border-ink'
+
 // Heading + body font, each with an editable preview rendered in that font.
 export function TypographySubTab() {
   const { settings: { updateGallerySetting }, cover: { resetGalleryBrandingToBrand } } = useEditor()
   const gallery = useOpenGallery()
   const ds = (gallery.delivery_settings ?? {}) as Record<string, unknown>
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 12, flexWrap: 'wrap',
-      }}>
-        <div style={{ fontSize: 12, color: textSecondary, lineHeight: 1.5, maxWidth: 300 }}>
+    <div className="flex flex-col gap-7">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="max-w-[300px] text-[12px] leading-normal text-ink-soft">
           הגלריה יורשת את הגופנים מערכת המותג. אפשר לשנות עבור הגלריה הזו בלבד.
           הגופנים חלים על כל הגלריה — כותרות וטקסט.
         </div>
@@ -35,32 +34,27 @@ export function TypographySubTab() {
           type="button"
           onClick={() => void resetGalleryBrandingToBrand()}
           title="החזרת הצבע והגופנים לברירת המחדל של המותג"
-          style={{
-            background: 'transparent', color: textSecondary, cursor: 'pointer',
-            border: `1px solid ${border}`, borderRadius: 8,
-            padding: '8px 12px', fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
-            whiteSpace: 'nowrap',
-          }}
+          className="rounded-[8px] border border-line bg-transparent px-3 py-2 text-[12px] font-medium whitespace-nowrap text-ink-soft"
         >
           אפס לברירת מותג
         </button>
       </div>
       {FONT_FIELDS.map(f => {
         const current = (ds[f.key] as string) || f.defaultV
+        // The preview renders in the photographer's picked font (runtime data).
+        const fontStyle = { fontFamily: `'${current}', sans-serif` }
         return (
           <div key={f.key}>
-            <div style={{ ...labelStyle }}>{f.label}</div>
-            <select
+            <Eyebrow className={labelClass}>{f.label}</Eyebrow>
+            <Select
               value={current}
               onChange={e => updateGallerySetting(f.key, e.target.value)}
-              style={{ ...inputBase, cursor: 'pointer' }}
-              onFocus={focusBorder}
-              onBlur={blurBorder}
+              className={fieldClass}
             >
               {FONTS.map(name => (
                 <option key={name} value={name}>{name}</option>
               ))}
-            </select>
+            </Select>
             {f.key === 'headingFont' ? (
               <input
                 type="text"
@@ -69,17 +63,8 @@ export function TypographySubTab() {
                 placeholder={gallery.name || 'הקלידי כותרת לגלריה'}
                 maxLength={120}
                 dir="auto"
-                style={{
-                  marginTop: 12, padding: '20px 18px', width: '100%',
-                  background: bgSubtle, border: `1px solid ${border}`,
-                  fontFamily: `'${current}', sans-serif`,
-                  fontSize: 24, fontWeight: 500,
-                  color: textPrimary, letterSpacing: '-0.015em',
-                  lineHeight: 1.15, outline: 'none',
-                  boxSizing: 'border-box' as const,
-                }}
-                onFocus={focusBorder}
-                onBlur={blurBorder}
+                className={cn(previewClass, 'text-[24px] leading-[1.15] font-medium tracking-[-0.015em]')}
+                style={fontStyle}
               />
             ) : (
               <textarea
@@ -89,18 +74,8 @@ export function TypographySubTab() {
                 rows={3}
                 maxLength={500}
                 dir="auto"
-                style={{
-                  marginTop: 12, padding: '20px 18px', width: '100%',
-                  background: bgSubtle, border: `1px solid ${border}`,
-                  fontFamily: `'${current}', sans-serif`,
-                  fontSize: 14, fontWeight: 400,
-                  color: textPrimary, letterSpacing: '0',
-                  lineHeight: 1.5, outline: 'none',
-                  resize: 'vertical' as const, minHeight: 72,
-                  boxSizing: 'border-box' as const,
-                }}
-                onFocus={focusBorder}
-                onBlur={blurBorder}
+                className={cn(previewClass, 'min-h-[72px] resize-y text-[14px] leading-normal font-normal tracking-normal')}
+                style={fontStyle}
               />
             )}
           </div>

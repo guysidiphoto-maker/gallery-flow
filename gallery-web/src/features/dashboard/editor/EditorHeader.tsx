@@ -1,8 +1,11 @@
+import { cn } from '@/shared/ui'
 import { Icon } from '@/shared/ui/Icon'
-import { bgSubtle, border, statusLive, textMuted, textPrimary, textSecondary } from '../styles'
 import { useEditor, useOpenGallery } from './EditorContext'
 import { GalleryMoreMenu } from './GalleryMoreMenu'
 import { PublishButton } from './PublishButton'
+
+const headerAction =
+  'inline-flex items-center gap-2 rounded-hair border px-[18px] py-2.5 text-[11px] font-medium tracking-label uppercase'
 
 // Name + status on the start side; Preview / Copy Link / More / Publish on the end.
 export function EditorHeader() {
@@ -12,47 +15,33 @@ export function EditorHeader() {
   const isLiveStatus = gallery.status === 'live'
 
   return (
-    <div
-      className="dash-editor-header"
-      style={{
-        padding: '18px 32px', borderBottom: `1px solid ${border}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        background: bgSubtle,
-      }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <button onClick={() => setEditingGallery(null)} aria-label="חזרה" style={{
-          background: 'none', border: 'none', color: textSecondary, cursor: 'pointer',
-          padding: 4, display: 'flex', alignItems: 'center',
-        }}>
+    <div className="dash-editor-header flex items-center justify-between border-b border-line bg-surface px-8 py-[18px]">
+      <div className="flex items-center gap-3.5">
+        <button
+          onClick={() => setEditingGallery(null)}
+          aria-label="חזרה"
+          className="flex cursor-pointer items-center p-1 text-ink-soft"
+        >
           <Icon name="close" size={18} strokeWidth={1.85} />
         </button>
         <div>
-          <h2 id="gallery-editor-heading" style={{ fontSize: 20, fontWeight: 500, margin: 0, letterSpacing: '-0.015em', color: textPrimary }}>
+          <h2 id="gallery-editor-heading" className="m-0 text-[20px] font-medium tracking-[-0.015em] text-ink">
             {gallery.name}
           </h2>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, marginTop: 4,
-            fontSize: 10, fontWeight: 500, letterSpacing: '0.18em',
-            textTransform: 'uppercase', color: textMuted,
-          }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%',
-              background: isLiveStatus ? statusLive : border,
-            }} />
+          <div className="mt-1 flex items-center gap-2 text-[10px] font-medium tracking-label text-muted uppercase">
+            <span className={cn('size-1.5 rounded-full', isLiveStatus ? 'bg-sage' : 'bg-line')} />
             <span>{isLiveStatus ? 'Published' : 'Draft'}</span>
-            <span style={{ color: border, marginInline: 2 }}>·</span>
+            <span className="mx-0.5 text-line">·</span>
             <span>{galleryImages.length} תמונות</span>
           </div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <a href={actions.shareUrl(gallery)} target="_blank" style={{
-          padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-          background: 'transparent', border: `1px solid ${border}`, color: textPrimary,
-          textDecoration: 'none', fontFamily: 'inherit',
-          letterSpacing: '0.18em', textTransform: 'uppercase',
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-        }}>
+      <div className="flex items-center gap-2.5">
+        <a
+          href={actions.shareUrl(gallery)}
+          target="_blank"
+          className={cn(headerAction, 'border-line bg-transparent text-ink no-underline')}
+        >
           <Icon name="arrow-out" size={13} strokeWidth={1.85} />
           Preview
         </a>
@@ -60,16 +49,11 @@ export function EditorHeader() {
           <button
             onClick={() => copyEditorLink(actions.shareUrl(gallery), gallery.id)}
             aria-live="polite"
-            style={{
-              padding: '10px 18px', borderRadius: 2, fontSize: 11, fontWeight: 500,
-              background: copiedInEditor ? 'rgba(45,196,121,.10)' : 'transparent',
-              border: `1px solid ${copiedInEditor ? 'rgba(45,196,121,.45)' : border}`,
-              color: copiedInEditor ? '#1b8a4e' : textPrimary,
-              cursor: 'pointer', fontFamily: 'inherit',
-              letterSpacing: '0.18em', textTransform: 'uppercase',
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              transition: 'background .15s, border-color .15s, color .15s',
-            }}
+            className={cn(
+              headerAction,
+              'cursor-pointer transition-[background-color,border-color,color] duration-150',
+              copiedInEditor ? 'border-go/45 bg-go/10 text-go-ink' : 'border-line bg-transparent text-ink',
+            )}
           >
             <Icon name={copiedInEditor ? 'check' : 'copy'} size={13} strokeWidth={1.85} />
             {copiedInEditor ? 'הקישור הועתק' : 'Copy Link'}

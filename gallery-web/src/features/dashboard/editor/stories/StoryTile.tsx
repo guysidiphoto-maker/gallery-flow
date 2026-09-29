@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { storageUrl } from '@/shared/lib/supabase'
-import { bgSubtle, border, cardSolid, textPrimary } from '../../styles'
+import { cn } from '@/shared/ui'
 import type { Story } from '../../types'
 import { useEditor } from '../EditorContext'
 import { STORY_BUCKET } from './useStories'
+
+const confirmButton = 'cursor-pointer rounded-hair px-3.5 py-1.5 text-[11px] font-medium tracking-[0.1em] text-white uppercase'
 
 // 9:16 preview that plays on hover, with a "…" menu and an inline delete confirm.
 export function StoryTile({ story: st }: { story: Story }) {
@@ -18,12 +20,7 @@ export function StoryTile({ story: st }: { story: Story }) {
     <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      style={{
-        position: 'relative', aspectRatio: '9 / 16',
-        background: bgSubtle, overflow: 'hidden',
-        border: `1px solid ${border}`,
-        borderRadius: 4,
-      }}
+      className="relative aspect-[9/16] overflow-hidden rounded-[4px] border border-line bg-surface"
     >
       <video
         src={url}
@@ -36,10 +33,7 @@ export function StoryTile({ story: st }: { story: Story }) {
           const v = e.target as HTMLVideoElement
           v.pause(); v.currentTime = 0
         }}
-        style={{
-          width: '100%', height: '100%',
-          objectFit: 'cover', display: 'block',
-        }}
+        className="block size-full object-cover"
       />
 
       {(isHovered || isMenuOpen || isConfirming) && (
@@ -51,15 +45,7 @@ export function StoryTile({ story: st }: { story: Story }) {
           aria-label="עוד"
           aria-haspopup="menu"
           aria-expanded={isMenuOpen}
-          style={{
-            position: 'absolute', top: 8, insetInlineEnd: 8,
-            width: 28, height: 28, borderRadius: '50%',
-            background: 'rgba(255,255,255,0.92)',
-            border: 'none', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: textPrimary, padding: 0,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
-          }}
+          className="absolute end-2 top-2 flex size-7 cursor-pointer items-center justify-center rounded-full bg-white/92 p-0 text-ink shadow-[0_2px_8px_color-mix(in_srgb,var(--color-black)_18%,transparent)]"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
             <circle cx="5" cy="12" r="2" />
@@ -70,24 +56,14 @@ export function StoryTile({ story: st }: { story: Story }) {
       )}
 
       {isMenuOpen && !isConfirming && (
-        <div style={{
-          position: 'absolute', top: 40, insetInlineEnd: 8,
-          background: cardSolid, border: `1px solid ${border}`,
-          boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 5,
-          minWidth: 140, padding: 4, borderRadius: 4,
-        }}>
+        <div className="absolute end-2 top-10 z-[5] min-w-[140px] rounded-[4px] border border-line bg-raised p-1 shadow-card">
           <button
             onClick={(e) => {
               e.stopPropagation()
               setStoryMenuOpenId(null)
               setConfirmDeleteStoryId(st.id)
             }}
-            style={{
-              width: '100%', textAlign: 'right' as const,
-              padding: '8px 10px', borderRadius: 2,
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 12, color: '#dc2626',
-            }}
+            className="w-full cursor-pointer rounded-hair bg-transparent px-2.5 py-2 text-right text-[12px] text-danger-strong"
           >
             מחיקה
           </button>
@@ -96,31 +72,17 @@ export function StoryTile({ story: st }: { story: Story }) {
 
       {/* Inline confirm replaces the menu so a delete can't happen by accident. */}
       {isConfirming && (
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'rgba(20,20,19,0.86)',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          gap: 10, padding: 12,
-          textAlign: 'center', color: '#fff',
-        }}>
-          <div style={{ fontSize: 12, fontWeight: 500 }}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-ink/86 p-3 text-center text-white">
+          <div className="text-[12px] font-medium">
             למחוק את הסטורי?
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="flex gap-1.5">
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 void handleStoryDelete(st.id)
               }}
-              style={{
-                padding: '6px 14px', borderRadius: 2,
-                background: '#dc2626', border: 'none',
-                color: '#fff', cursor: 'pointer',
-                fontFamily: 'inherit', fontSize: 11,
-                fontWeight: 500, letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-              }}
+              className={cn(confirmButton, 'bg-danger-strong')}
             >
               מחק
             </button>
@@ -129,15 +91,7 @@ export function StoryTile({ story: st }: { story: Story }) {
                 e.stopPropagation()
                 setConfirmDeleteStoryId(null)
               }}
-              style={{
-                padding: '6px 14px', borderRadius: 2,
-                background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.4)',
-                color: '#fff', cursor: 'pointer',
-                fontFamily: 'inherit', fontSize: 11,
-                fontWeight: 500, letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-              }}
+              className={cn(confirmButton, 'border border-white/40 bg-transparent')}
             >
               ביטול
             </button>
@@ -145,20 +99,8 @@ export function StoryTile({ story: st }: { story: Story }) {
         </div>
       )}
 
-      <div style={{
-        position: 'absolute', bottom: 0, insetInline: 0,
-        padding: '20px 10px 8px',
-        background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)',
-        color: '#fff', fontSize: 10,
-        letterSpacing: '0.14em', textTransform: 'uppercase',
-        fontWeight: 500,
-        display: 'flex', justifyContent: 'space-between',
-        pointerEvents: 'none',
-      }}>
-        <span style={{
-          overflow: 'hidden', textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap', maxWidth: '70%',
-        }}>
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between bg-linear-to-t/srgb from-black/60 to-transparent px-2.5 pt-5 pb-2 text-[10px] font-medium tracking-[0.14em] text-white uppercase">
+        <span className="max-w-[70%] truncate">
           {st.style ?? 'manual'}
         </span>
         {st.duration ? <span>{st.duration}s</span> : null}

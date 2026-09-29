@@ -1,31 +1,10 @@
-// TEMPORARY inline-style objects shared by the Design sub-tabs (Tailwind wave removes them).
-import { border, textMuted, textPrimary } from '../../styles'
+// Class strings shared by the Design sub-tabs (merged onto shared primitives via cn).
 
-export const inputBase = {
-  width: '100%', padding: '12px 14px', borderRadius: 2,
-  border: `1px solid ${border}`,
-  background: '#fff', color: textPrimary, fontSize: 14,
-  fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const,
-  transition: 'border-color .15s', direction: 'rtl' as const,
-}
+/** Overrides for the shared Input/Select/Textarea to match the design panel's larger fields. */
+export const fieldClass = 'py-3 text-[14px] [direction:rtl]'
 
-export const labelStyle = {
-  fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-  color: textMuted, textTransform: 'uppercase' as const,
-  display: 'block' as const, marginBottom: 8,
-}
+/** 9px eyebrow above each design control (pass to <Eyebrow>). */
+export const labelClass = 'mb-2 block text-[9px] font-medium'
 
-// Selected = white surface with a 1px charcoal border.
-export const tileStyle = (selected: boolean) => ({
-  background: selected ? '#fff' : 'transparent',
-  border: `1px solid ${selected ? textPrimary : border}`,
-  borderRadius: 2, padding: '16px 12px', cursor: 'pointer',
-  fontFamily: 'inherit', textAlign: 'right' as const,
-  transition: 'border-color .15s, background .15s',
-  display: 'flex' as const, flexDirection: 'column' as const,
-  alignItems: 'center' as const, gap: 8,
-})
-
-type FocusEl = { currentTarget: HTMLElement }
-export const focusBorder = (e: FocusEl) => { e.currentTarget.style.borderColor = textPrimary }
-export const blurBorder = (e: FocusEl) => { e.currentTarget.style.borderColor = border }
+/** Icon-over-label tile layout (pass to <OptionTile>). */
+export const tileClass = 'flex flex-col items-center gap-2 px-3 py-4 text-right'

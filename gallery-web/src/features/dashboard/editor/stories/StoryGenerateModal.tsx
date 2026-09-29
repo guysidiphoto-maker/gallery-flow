@@ -1,10 +1,11 @@
 import { useFocusTrap } from '@/shared/lib/useFocusTrap'
-import { border, textMuted, textPrimary } from '../../styles'
+import { cn } from '@/shared/ui'
 import { useEditor } from '../EditorContext'
 import { StoryCurator } from './StoryCurator'
 import { StoryStyleOptions } from './StoryStyleOptions'
 import { StoryRenderEstimate } from './StoryRenderEstimate'
 import { STORY_GENERATE_MAX_PHOTOS, STORY_GENERATE_MIN_PHOTOS } from './useStoryGeneration'
+import '../editor.css'
 
 // Style picker + shot-list curator before requesting a render.
 export function StoryGenerateModal() {
@@ -22,12 +23,7 @@ export function StoryGenerateModal() {
         e.stopPropagation()
         closeGenerateModal()
       }}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1200,
-        background: 'rgba(20,20,19,.55)', backdropFilter: 'blur(6px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        animation: 'overlayIn .2s ease both',
-      }}
+      className="fixed inset-0 z-[1200] flex animate-[fade-in_.2s_ease_both] items-center justify-center bg-ink/55 backdrop-blur-[6px]"
     >
       <div
         ref={dialogRef}
@@ -35,68 +31,39 @@ export function StoryGenerateModal() {
         aria-modal="true"
         aria-labelledby="story-style-heading"
         onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#fff', width: 'calc(100vw - 40px)', maxWidth: 460,
-          maxHeight: 'calc(100vh - 32px)',
-          display: 'flex', flexDirection: 'column',
-          border: `1px solid ${border}`,
-          animation: 'modalIn .25s ease both',
-        }}
+        className="flex max-h-[calc(100vh-32px)] w-[calc(100vw-40px)] max-w-[460px] animate-[editor-modal-in_.25s_ease_both] flex-col border border-line bg-raised"
       >
         {/* Scrollable body + fixed footer keeps the CTAs reachable on small viewports. */}
-        <div style={{
-          flex: 1, minHeight: 0, overflowY: 'auto',
-          padding: '24px 28px 12px',
-        }}>
-          <div style={{
-            fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-            color: textMuted, textTransform: 'uppercase', marginBottom: 14,
-          }}>
+        <div className="min-h-0 flex-1 overflow-y-auto px-7 pt-6 pb-3">
+          <div className="mb-3.5 text-[11px] font-medium tracking-wide-label text-muted uppercase">
             Story generator
           </div>
-          <h3 id="story-style-heading" style={{
-            fontSize: 22, fontWeight: 500, margin: '0 0 14px',
-            color: textPrimary, letterSpacing: '-0.015em', lineHeight: 1.15,
-          }}>
+          <h3 id="story-style-heading" className="mt-0 mb-3.5 text-[22px] leading-[1.15] font-medium tracking-[-0.015em] text-ink">
             איזה סגנון סטורי?
           </h3>
           <StoryCurator />
           <StoryStyleOptions />
           <StoryRenderEstimate />
         </div>
-        <div style={{
-          display: 'flex', gap: 10, justifyContent: 'flex-end',
-          padding: '14px 28px 18px',
-          borderTop: `1px solid ${border}`, background: '#fff',
-          flexShrink: 0,
-        }}>
+        <div className="flex shrink-0 justify-end gap-2.5 border-t border-line bg-raised px-7 pt-3.5 pb-[18px]">
           <button
             onClick={closeGenerateModal}
             disabled={storyGenerating}
-            style={{
-              background: 'transparent', color: textPrimary,
-              border: `1px solid ${border}`,
-              borderRadius: 2, padding: '11px 22px', fontSize: 11,
-              cursor: storyGenerating ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500,
-              opacity: storyGenerating ? 0.5 : 1,
-            }}
+            className={cn(
+              'rounded-hair border py-[11px] text-[11px] font-medium tracking-label uppercase border-line bg-transparent px-[22px] text-ink',
+              storyGenerating ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+            )}
           >
             ביטול
           </button>
           <button
             onClick={() => { void storyGen.handleGenerateStoryConfirm() }}
             disabled={confirmDisabled}
-            style={{
-              background: textPrimary, color: '#fff',
-              border: `1px solid ${textPrimary}`,
-              borderRadius: 2, padding: '11px 26px', fontSize: 11,
-              cursor: storyGenerating ? 'wait' : blocked ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit', fontWeight: 500,
-              letterSpacing: '0.18em', textTransform: 'uppercase',
-              opacity: confirmDisabled ? 0.55 : 1,
-            }}
+            className={cn(
+              'rounded-hair border py-[11px] text-[11px] font-medium tracking-label uppercase border-ink bg-ink px-[26px] text-white',
+              storyGenerating ? 'cursor-wait' : blocked ? 'cursor-not-allowed' : 'cursor-pointer',
+              confirmDisabled && 'opacity-55',
+            )}
           >
             {storyGenerating ? 'מייצר…' : `צור סטורי · ${count}`}
           </button>

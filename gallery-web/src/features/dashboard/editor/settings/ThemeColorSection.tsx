@@ -1,4 +1,4 @@
-import { border, textMuted, textPrimary } from '../../styles'
+import { OptionTile } from '@/shared/ui/OptionTile'
 import { useEditor, useOpenGallery } from '../EditorContext'
 import { THEME_COLORS } from '../themeColors'
 import { SettingsSection } from './SettingsSection'
@@ -8,32 +8,19 @@ export function ThemeColorSection() {
   const ds = (useOpenGallery().delivery_settings ?? {}) as Record<string, unknown>
   return (
     <SettingsSection eyebrow="צבע ראשי">
-      <div style={{ fontSize: 12, color: textMuted, marginBottom: 14, lineHeight: 1.5 }}>
+      <div className="mb-3.5 text-[12px] leading-normal text-muted">
         הצבע שמופיע בכפתורים ומסגרות בגלריה הציבורית
       </div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <div className="flex flex-wrap gap-2.5">
         {THEME_COLORS.map(c => {
           const active = ((ds.themeColor as string) || 'charcoal') === c.id
           return (
-            <button key={c.id} onClick={() => updateGallerySetting('themeColor', c.id)} style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-              padding: '10px 14px',
-              border: `1px solid ${active ? textPrimary : border}`,
-              background: active ? '#fff' : 'transparent',
-              borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
-              transition: 'border-color .15s, background .15s',
-            }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: '50%',
-                background: c.color,
-              }} />
-              <span style={{
-                fontSize: 10, fontWeight: 500, color: textPrimary,
-                letterSpacing: '0.04em',
-              }}>
-                {c.label}
-              </span>
-            </button>
+            <OptionTile key={c.id} selected={active} onClick={() => updateGallerySetting('themeColor', c.id)}
+              className="flex flex-col items-center gap-2 px-3.5 py-2.5">
+              {/* Swatch color is the palette entry itself (data, not a UI token). */}
+              <div className="size-7 rounded-full" style={{ background: c.color }} />
+              <span className="text-[10px] font-medium tracking-[0.04em] text-ink">{c.label}</span>
+            </OptionTile>
           )
         })}
       </div>

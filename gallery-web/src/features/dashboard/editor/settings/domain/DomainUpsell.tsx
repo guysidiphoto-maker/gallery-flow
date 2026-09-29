@@ -1,27 +1,20 @@
-import { textMuted, textPrimary } from '../../../styles'
+import { Button } from '@/shared/ui'
 
 export function DomainUpsell() {
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: textPrimary, marginBottom: 6 }}>
+      <div className="mb-1.5 text-[13px] font-medium text-ink">
         תכנית עסקית בלבד
       </div>
-      <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.6, marginBottom: 16 }}>
+      <div className="mb-4 text-[12px] leading-[1.6] text-muted">
         חברו דומיין משלכם — למשל photos.studio-shem.co.il — ושלחו ללקוחות קישור ממותג במקום pixflow-ai.com.
       </div>
-      <button
-        type="button"
+      <Button
         onClick={() => { window.location.href = '/#pricing' }}
-        style={{
-          padding: '10px 18px', borderRadius: 2,
-          background: textPrimary, color: '#fff',
-          border: `1px solid ${textPrimary}`,
-          fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
-          textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'inherit',
-        }}
+        className="px-[18px] py-2.5 text-[12px] font-semibold tracking-[0.14em]"
       >
         שדרוג לתכנית עסקית
-      </button>
+      </Button>
     </div>
   )
 }
