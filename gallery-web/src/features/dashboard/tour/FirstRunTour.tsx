@@ -1,24 +1,11 @@
-// FirstRunTour: a lightweight, dependency-free spotlight tour for the OWNER
-// dashboard (the business operator). Never rendered on client-portal routes;
-// the integrator gates it with the `enabled` prop (see INTEGRATION.md).
-//
-// How it works:
-//   • Each step points at a DOM node marked with data-tour="<target>". The
-//     node is highlighted with a "spotlight" (a rounded box whose huge
-//     box-shadow dims the rest of the page, zero libraries).
-//   • A positioned card shows the step's title/body with Next/Back/Skip/Close,
-//     step dots and a progress line. On phones it becomes a bottom sheet.
-//   • Missing target → the card centers itself and the tour still progresses.
-//   • Progress persists per step via src/lib/onboarding.ts (DB first,
-//     localStorage fallback), so the tour resumes where the user left off and
-//     re-appears after a TOUR_VERSION bump.
-//   • Accessibility: role="dialog", aria-modal, aria-labelledby, focus trap
-//     (reuses src/lib/useFocusTrap), Esc closes, ArrowRight/ArrowLeft/Enter
-//     navigate (arrows flip in RTL), focus is restored on close.
+// Dependency-free spotlight tour for the owner dashboard: highlights
+// [data-tour] targets, persists progress per step (DB, localStorage fallback),
+// becomes a bottom sheet on phones and is a focus-trapped, keyboard-navigable dialog.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOwnerLocale, type OwnerStringKey } from '@/shared/i18n/ownerLocale'
 import { useFocusTrap } from '@/shared/lib/useFocusTrap'
+import { cn } from '@/shared/ui'
 import {
   getProgress,
   saveProgress,
@@ -71,7 +58,7 @@ function measureTarget(target?: string): TargetRect | null {
   return { top: r.top, left: r.left, width: r.width, height: r.height }
 }
 
-const Z_BASE = 12000
+// Keep in sync with the card's w-[340px].
 const CARD_WIDTH = 340
 const SPOT_PAD = 6
 
@@ -198,55 +185,26 @@ export default function FirstRunTour({ enabled, steps = OWNER_TOUR_STEPS, surfac
   const bodyId = `pixflow-tour-body-${surface}`
   const isLast = step >= total - 1
 
-  // ── Card placement ─────────────────────────────────────────────────────
-  const cardStyle: React.CSSProperties = {
-    position: 'fixed',
-    zIndex: Z_BASE + 2,
-    width: CARD_WIDTH,
-    maxWidth: 'calc(100vw - 24px)',
-    background: '#ffffff',
-    color: '#0f172a',
-    borderRadius: 14,
-    boxShadow: '0 18px 48px rgba(15, 23, 42, 0.35)',
-    padding: '18px 20px 16px',
-    boxSizing: 'border-box',
-  }
-  if (isMobile) {
-    // Bottom sheet on phones.
-    Object.assign(cardStyle, {
-      left: 12, right: 12, bottom: 12, width: 'auto',
-      borderRadius: 16,
-    })
-  } else if (rect) {
+  // ── Card placement: only the anchored offsets are computed at runtime ──
+  const placement: React.CSSProperties = {}
+  if (!isMobile && rect) {
     const vw = window.innerWidth
     const vh = window.innerHeight
     const estCardHeight = 250
     const below = rect.top + rect.height + estCardHeight + 24 < vh
-    if (below) cardStyle.top = Math.max(12, rect.top + rect.height + SPOT_PAD + 12)
-    else cardStyle.bottom = Math.max(12, vh - rect.top + SPOT_PAD + 12)
+    if (below) placement.top = Math.max(12, rect.top + rect.height + SPOT_PAD + 12)
+    else placement.bottom = Math.max(12, vh - rect.top + SPOT_PAD + 12)
     if (dir === 'rtl') {
       const fromRight = vw - (rect.left + rect.width)
-      cardStyle.right = Math.min(Math.max(12, fromRight), Math.max(12, vw - CARD_WIDTH - 12))
+      placement.right = Math.min(Math.max(12, fromRight), Math.max(12, vw - CARD_WIDTH - 12))
     } else {
-      cardStyle.left = Math.min(Math.max(12, rect.left), Math.max(12, vw - CARD_WIDTH - 12))
+      placement.left = Math.min(Math.max(12, rect.left), Math.max(12, vw - CARD_WIDTH - 12))
     }
-  } else {
-    // No target on this page → centered card, tour still progresses.
-    Object.assign(cardStyle, {
-      top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-    })
   }
 
-  const btnBase: React.CSSProperties = {
-    font: 'inherit', fontSize: 14, borderRadius: 10, cursor: 'pointer',
-    padding: '8px 16px', border: '1px solid transparent',
-  }
-  const btnPrimary: React.CSSProperties = {
-    ...btnBase, background: '#0f172a', color: '#ffffff', fontWeight: 600,
-  }
-  const btnGhost: React.CSSProperties = {
-    ...btnBase, background: 'transparent', color: '#475569',
-  }
+  const btnBase = 'cursor-pointer rounded-md border border-transparent px-4 py-2 text-sm'
+  const btnPrimary = cn(btnBase, 'bg-ink font-semibold text-white')
+  const btnGhost = cn(btnBase, 'bg-transparent text-ink-soft')
 
   return (
     <>
@@ -256,33 +214,20 @@ export default function FirstRunTour({ enabled, steps = OWNER_TOUR_STEPS, surfac
       {rect && !isMobile ? (
         <div
           aria-hidden="true"
+          className="pointer-events-none fixed z-[12000] rounded-md shadow-[0_0_0_200vmax] shadow-ink/60 transition-[top,left,width,height] duration-250 ease-[ease]"
           style={{
-            position: 'fixed',
             top: rect.top - SPOT_PAD,
             left: rect.left - SPOT_PAD,
             width: rect.width + SPOT_PAD * 2,
             height: rect.height + SPOT_PAD * 2,
-            borderRadius: 10,
-            boxShadow: '0 0 0 200vmax rgba(15, 23, 42, 0.6)',
-            zIndex: Z_BASE,
-            pointerEvents: 'none',
-            transition: 'top .25s ease, left .25s ease, width .25s ease, height .25s ease',
           }}
         />
       ) : (
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'fixed', inset: 0,
-            background: 'rgba(15, 23, 42, 0.6)',
-            zIndex: Z_BASE,
-            pointerEvents: 'none',
-          }}
-        />
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-[12000] bg-ink/60" />
       )}
       {/* Click catcher: swallows stray background clicks (no accidental page
           actions under the dim), never closes or advances anything. */}
-      <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: Z_BASE + 1 }} />
+      <div aria-hidden="true" className="fixed inset-0 z-[12001]" />
 
       <div
         ref={cardRef}
@@ -291,33 +236,40 @@ export default function FirstRunTour({ enabled, steps = OWNER_TOUR_STEPS, surfac
         aria-labelledby={titleId}
         aria-describedby={bodyId}
         dir={dir}
-        style={cardStyle}
+        className={cn(
+          'fixed z-[12002] box-border w-[340px] max-w-[calc(100vw-24px)] rounded-[14px] bg-raised px-5 pt-[18px] pb-4 text-ink',
+          'shadow-[0_18px_48px] shadow-ink/35',
+          // Phones: bottom sheet. No target: centered card, tour still progresses.
+          isMobile ? 'right-3 bottom-3 left-3 w-auto rounded-lg'
+            : !rect && 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2',
+        )}
+        style={placement}
         onKeyDown={onKeyDown}
       >
         {/* Header: progress + close */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-semibold text-slate">
             {t('tour.stepOf', { n: step + 1, total })}
           </span>
           <button
             type="button"
             onClick={dismiss}
             aria-label={t('tour.close')}
-            style={{ ...btnGhost, padding: '4px 8px', fontSize: 16, lineHeight: 1 }}
+            className={cn(btnGhost, 'px-2 py-1 text-base leading-none')}
           >
             ×
           </button>
         </div>
 
-        <h2 id={titleId} style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 700, lineHeight: 1.3 }}>
+        <h2 id={titleId} className="mb-1.5 text-[17px] leading-[1.3] font-bold">
           {t(current.titleKey)}
         </h2>
-        <p id={bodyId} style={{ margin: '0 0 14px', fontSize: 14, lineHeight: 1.55, color: '#334155' }}>
+        <p id={bodyId} className="mb-3.5 text-sm leading-[1.55] text-ink-soft">
           {t(current.bodyKey)}
         </p>
 
         {/* Step dots */}
-        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 14 }}>
+        <div className="mb-3.5 flex justify-center gap-1.5">
           {steps.map((s, i) => (
             <button
               key={s.id}
@@ -325,28 +277,26 @@ export default function FirstRunTour({ enabled, steps = OWNER_TOUR_STEPS, surfac
               onClick={() => goTo(i)}
               aria-label={t('tour.stepDot', { n: i + 1 })}
               aria-current={i === step ? 'step' : undefined}
-              style={{
-                width: i === step ? 18 : 8, height: 8, borderRadius: 999,
-                border: 'none', padding: 0, cursor: 'pointer',
-                background: i === step ? '#0f172a' : '#cbd5e1',
-                transition: 'width .2s ease, background .2s ease',
-              }}
+              className={cn(
+                'h-2 cursor-pointer rounded-full border-none p-0 transition-[width,background-color] duration-200 ease-[ease]',
+                i === step ? 'w-[18px] bg-ink' : 'w-2 bg-line',
+              )}
             />
           ))}
         </div>
 
         {/* Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <button type="button" onClick={dismiss} style={btnGhost}>
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" onClick={dismiss} className={btnGhost}>
             {t('tour.skip')}
           </button>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="flex gap-2">
             {step > 0 && (
-              <button type="button" onClick={back} style={{ ...btnGhost, border: '1px solid #e2e8f0' }}>
+              <button type="button" onClick={back} className={cn(btnGhost, 'border-line-soft')}>
                 {t('tour.back')}
               </button>
             )}
-            <button type="button" onClick={next} style={btnPrimary}>
+            <button type="button" onClick={next} className={btnPrimary}>
               {isLast ? t('tour.done') : t('tour.next')}
             </button>
           </div>

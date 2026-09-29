@@ -1,17 +1,6 @@
-// OwnerOverview: the operator "what do I do next" home for the business owner.
-//
-// It answers two questions at a glance:
-//   1. What are my next steps? (a dismissible first-run checklist)
-//   2. What is the current state of my studio? (a compact status grid + a
-//      short "recently added" list)
-//
-// Data comes ONLY from the existing self-scoped owner RPCs, reused through
-// src/components/clients/api.ts (fetchClientsOverview / fetchAssignableGalleries).
-// No new RPC, no new endpoint, no business_id ever passed from the browser.
-//
-// Copy is action-oriented, jargon-free (no membership/entitlement/RLS/tenant),
-// no em-dashes, he+en via ownerLocale, RTL-correct. Every state is handled:
-// loading skeletons, empty states, and error + retry.
+// Owner home: a dismissible first-run checklist plus a compact studio status
+// grid, built only from the existing self-scoped owner RPCs (no business_id
+// from the browser). Handles loading, empty and error + retry states.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -21,6 +10,7 @@ import {
   type AssignableGalleryRow,
 } from '@/features/clients/api'
 import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
+import { cn, Eyebrow } from '@/shared/ui'
 import { getProgress, saveProgress } from '../tour/onboarding'
 
 // The set of Dashboard views OwnerOverview can send the operator to.
@@ -35,19 +25,6 @@ export interface OwnerOverviewProps {
 }
 
 const CHECKLIST_SURFACE = 'owner_checklist'
-
-// ── Editorial palette (matches the Dashboard shell tones) ────────────────────
-const C = {
-  bg: '#FBFAF8',
-  card: '#FFFFFF',
-  border: '#E7E2DA',
-  textPrimary: '#1A1712',
-  textSecondary: '#5C554B',
-  textMuted: '#9B9488',
-  accent: '#1A1712',
-  good: '#2D7D5A',
-  warn: '#A67C52',
-}
 
 interface DerivedStats {
   activeClients: number
@@ -210,39 +187,24 @@ export default function OwnerOverview({
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
-    <div dir={dir} style={{ animation: 'fadeInUp .4s ease both' }}>
+    <div dir={dir} className="animate-[dash-fade-up_.4s_ease_both]">
       {/* Heading */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{
-          fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-          color: C.textMuted, textTransform: 'uppercase', marginBottom: 14,
-        }}>
-          {t('nav.overview')}
-        </div>
-        <h1 style={{
-          fontSize: 'clamp(28px, 4vw, 52px)', fontWeight: 500, margin: 0,
-          letterSpacing: '-0.025em', lineHeight: 1.02, color: C.textPrimary,
-        }}>
+      <div className="mb-8">
+        <Eyebrow className="mb-3.5 block font-medium">{t('nav.overview')}</Eyebrow>
+        <h1 className="text-[clamp(28px,4vw,52px)] leading-[1.02] font-medium tracking-[-0.025em] text-ink">
           {t('overview.title')}
         </h1>
-        <p style={{ color: C.textSecondary, fontSize: 15, margin: '14px 0 0', lineHeight: 1.55, maxWidth: 560 }}>
+        <p className="mt-3.5 max-w-[560px] text-[15px] leading-[1.55] text-ink-soft">
           {t('overview.subtitle')}
         </p>
       </div>
 
       {error && (
-        <div style={{
-          border: `1px solid ${C.border}`, background: C.card, borderRadius: 6,
-          padding: '20px 22px', marginBottom: 28,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
-        }}>
-          <span style={{ color: C.textSecondary, fontSize: 14 }}>{t('overview.error')}</span>
+        <div className="mb-7 flex flex-wrap items-center justify-between gap-4 rounded-sm border border-line-soft bg-raised px-[22px] py-5">
+          <span className="text-sm text-ink-soft">{t('overview.error')}</span>
           <button
             onClick={() => void load()}
-            style={{
-              background: C.accent, color: '#fff', border: 'none', borderRadius: 4,
-              padding: '9px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-            }}
+            className="cursor-pointer rounded-[4px] border-none bg-ink px-[18px] py-[9px] text-[13px] font-semibold text-white"
           >
             {t('overview.retry')}
           </button>
@@ -251,19 +213,13 @@ export default function OwnerOverview({
 
       {/* First-run checklist */}
       {!error && !checklistDismissed && !allDone && (
-        <section style={{
-          border: `1px solid ${C.border}`, background: C.card, borderRadius: 8,
-          padding: '26px 26px 20px', marginBottom: 32,
-        }}>
-          <div style={{
-            display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-            gap: 12, flexWrap: 'wrap', marginBottom: 18,
-          }}>
+        <section className="mb-8 rounded-[8px] border border-line-soft bg-raised px-[26px] pt-[26px] pb-5">
+          <div className="mb-[18px] flex flex-wrap items-baseline justify-between gap-3">
             <div>
-              <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, color: C.textPrimary }}>
+              <h2 className="text-lg font-semibold text-ink">
                 {t('overview.checklist.title')}
               </h2>
-              <p style={{ fontSize: 13, color: C.textMuted, margin: '6px 0 0' }}>
+              <p className="mt-1.5 text-[13px] text-muted">
                 {loading
                   ? t('overview.loading')
                   : t('overview.checklist.progress', { done: doneCount, total: checklist.length })}
@@ -271,10 +227,7 @@ export default function OwnerOverview({
             </div>
             <button
               onClick={dismissChecklist}
-              style={{
-                background: 'none', border: 'none', color: C.textMuted, fontSize: 12,
-                cursor: 'pointer', fontFamily: 'inherit', padding: '4px 6px',
-              }}
+              className="cursor-pointer border-none bg-transparent px-1.5 py-1 text-xs text-muted"
             >
               {t('overview.checklist.dismiss')}
             </button>
@@ -283,36 +236,25 @@ export default function OwnerOverview({
           {loading ? (
             <SkeletonRows count={3} />
           ) : (
-            <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <ol className="flex flex-col gap-0.5">
               {checklist.map(item => (
-                <li key={item.key} style={{
-                  display: 'flex', alignItems: 'center', gap: 14,
-                  padding: '13px 0', borderTop: `1px solid ${C.border}`,
-                }}>
-                  <span aria-hidden style={{
-                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    border: `1.5px solid ${item.done ? C.good : C.border}`,
-                    background: item.done ? C.good : 'transparent',
-                    color: '#fff', fontSize: 13, fontWeight: 700,
-                  }}>
+                <li key={item.key} className="flex items-center gap-3.5 border-t border-line-soft py-[13px]">
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'flex size-[22px] shrink-0 items-center justify-center rounded-full border-[1.5px] text-[13px] font-bold text-white',
+                      item.done ? 'border-success bg-success' : 'border-line-soft bg-transparent',
+                    )}
+                  >
                     {item.done ? '✓' : ''}
                   </span>
-                  <span style={{
-                    flex: 1, fontSize: 14,
-                    color: item.done ? C.textMuted : C.textPrimary,
-                    textDecoration: item.done ? 'line-through' : 'none',
-                  }}>
+                  <span className={cn('flex-1 text-sm', item.done ? 'text-muted line-through' : 'text-ink')}>
                     {item.label}
                   </span>
                   {!item.done && (
                     <button
                       onClick={item.action}
-                      style={{
-                        background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 4,
-                        padding: '7px 14px', fontSize: 12, fontWeight: 600, color: C.textPrimary,
-                        cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-                      }}
+                      className="cursor-pointer rounded-[4px] border border-line-soft bg-transparent px-3.5 py-[7px] text-xs font-semibold whitespace-nowrap text-ink"
                     >
                       {item.actionLabel}
                     </button>
@@ -325,26 +267,18 @@ export default function OwnerOverview({
       )}
 
       {/* Status grid */}
-      <section style={{ marginBottom: 36 }}>
-        <div style={{
-          fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-          color: C.textMuted, textTransform: 'uppercase', marginBottom: 16,
-        }}>
-          {t('overview.status.title')}
-        </div>
+      <section className="mb-9">
+        <Eyebrow className="mb-4 block text-[9px] font-medium">{t('overview.status.title')}</Eyebrow>
         {loading && !stats ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3.5">
             {[0, 1, 2, 3].map(i => (
-              <div key={i} style={{
-                border: `1px solid ${C.border}`, background: C.card, borderRadius: 8,
-                padding: 22, height: 96,
-              }}>
+              <div key={i} className="h-24 rounded-[8px] border border-line-soft bg-raised p-[22px]">
                 <SkeletonRows count={2} />
               </div>
             ))}
           </div>
         ) : stats ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3.5">
             <StatCard
               value={fmtNum(stats.activeClients)}
               label={t('overview.card.activeClients')}
@@ -384,54 +318,36 @@ export default function OwnerOverview({
 
       {/* Recently added galleries */}
       {stats && stats.recent.length > 0 && (
-        <section style={{ marginBottom: 12 }}>
-          <div style={{
-            display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12,
-            marginBottom: 16,
-          }}>
-            <div style={{
-              fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-              color: C.textMuted, textTransform: 'uppercase',
-            }}>
-              {t('overview.recent.title')}
-            </div>
+        <section className="mb-3">
+          <div className="mb-4 flex items-baseline justify-between gap-3">
+            <Eyebrow className="text-[9px] font-medium">{t('overview.recent.title')}</Eyebrow>
             <button
               onClick={() => onNavigate('galleries')}
-              style={{
-                background: 'none', border: 'none', color: C.textSecondary, fontSize: 12,
-                cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
-              }}
+              className="cursor-pointer border-none bg-transparent text-xs font-semibold text-ink-soft"
             >
               {t('overview.recent.all')}
             </button>
           </div>
-          <div style={{ border: `1px solid ${C.border}`, background: C.card, borderRadius: 8, overflow: 'hidden' }}>
+          <div className="overflow-hidden rounded-[8px] border border-line-soft bg-raised">
             {stats.recent.map((g, i) => (
-              <div key={g.gallery_id} style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '14px 18px',
-                borderTop: i === 0 ? 'none' : `1px solid ${C.border}`,
-              }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 14, fontWeight: 500, color: C.textPrimary,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
+              <div key={g.gallery_id} className={cn('flex items-center gap-3 px-[18px] py-3.5', i > 0 && 'border-t border-line-soft')}>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-ink">
                     {g.name}
                   </div>
-                  <div style={{ fontSize: 12, color: C.textMuted, marginTop: 3 }}>
+                  <div className="mt-[3px] text-xs text-muted">
                     {g.client_name
                       ? g.client_name
                       : t('overview.recent.noClient')}
                     {g.event_date ? ` · ${fmtDate(g.event_date)}` : ''}
                   </div>
                 </div>
-                <span style={{
-                  fontSize: 10, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase',
-                  padding: '4px 9px', borderRadius: 3,
-                  color: g.status === 'live' ? C.good : C.textMuted,
-                  border: `1px solid ${g.status === 'live' ? C.good : C.border}`,
-                }}>
+                <span
+                  className={cn(
+                    'rounded-[3px] border px-[9px] py-1 text-[10px] font-semibold tracking-[0.12em] uppercase',
+                    g.status === 'live' ? 'border-success text-success' : 'border-line-soft text-muted',
+                  )}
+                >
                   {g.status === 'live' ? t('overview.recent.live') : t('overview.recent.draft')}
                 </span>
               </div>
@@ -442,19 +358,13 @@ export default function OwnerOverview({
 
       {/* Empty state: no galleries at all */}
       {stats && stats.totalGalleries === 0 && (
-        <div style={{
-          border: `1px dashed ${C.border}`, background: C.card, borderRadius: 8,
-          padding: '32px 24px', textAlign: 'center',
-        }}>
-          <p style={{ color: C.textSecondary, fontSize: 15, margin: '0 0 18px' }}>
+        <div className="rounded-[8px] border border-dashed border-line-soft bg-raised px-6 py-8 text-center">
+          <p className="mb-[18px] text-[15px] text-ink-soft">
             {t('overview.empty')}
           </p>
           <button
             onClick={onNewGallery}
-            style={{
-              background: C.accent, color: '#fff', border: 'none', borderRadius: 4,
-              padding: '11px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-            }}
+            className="cursor-pointer rounded-[4px] border-none bg-ink px-[22px] py-[11px] text-sm font-semibold text-white"
           >
             {t('overview.empty.cta')}
           </button>
@@ -478,40 +388,30 @@ function StatCard({
   return (
     <button
       onClick={onClick}
-      style={{
-        border: `1px solid ${C.border}`, background: C.card, borderRadius: 8,
-        padding: '20px 22px', textAlign: 'start', cursor: onClick ? 'pointer' : 'default',
-        fontFamily: 'inherit', display: 'flex', flexDirection: 'column', gap: 6,
-        transition: 'border-color .15s',
-      }}
-      onMouseEnter={onClick ? (e => { e.currentTarget.style.borderColor = C.accent }) : undefined}
-      onMouseLeave={onClick ? (e => { e.currentTarget.style.borderColor = C.border }) : undefined}
+      className={cn(
+        'flex flex-col gap-1.5 rounded-[8px] border border-line-soft bg-raised px-[22px] py-5 text-start transition-colors duration-150',
+        onClick ? 'cursor-pointer hover:border-ink' : 'cursor-default',
+      )}
     >
-      <span style={{
-        fontSize: 30, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1,
-        color: tone === 'warn' ? C.warn : C.textPrimary,
-      }}>
+      <span className={cn('text-[30px] leading-none font-medium tracking-[-0.02em]', tone === 'warn' ? 'text-warning' : 'text-ink')}>
         {value}
       </span>
-      <span style={{ fontSize: 13, color: C.textSecondary }}>{label}</span>
-      {hint && <span style={{ fontSize: 11, color: C.textMuted }}>{hint}</span>}
+      <span className="text-[13px] text-ink-soft">{label}</span>
+      {hint && <span className="text-[11px] text-muted">{hint}</span>}
     </button>
   )
 }
 
 function SkeletonRows({ count }: { count: number }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="flex flex-col gap-2.5">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} style={{
-          height: 14, borderRadius: 4,
-          background: 'linear-gradient(90deg, #F0EDE7 25%, #E7E2DA 37%, #F0EDE7 63%)',
-          backgroundSize: '400% 100%',
-          animation: 'ownerSkeleton 1.4s ease infinite',
-          width: `${90 - i * 12}%`,
-        }} />
+        <div
+          key={i}
+          className="h-3.5 animate-[dash-skeleton_1.4s_ease_infinite] rounded-[4px] bg-linear-90 from-sunken from-25% via-line-soft via-37% to-sunken to-63% bg-size-[400%_100%]"
+          style={{ width: `${90 - i * 12}%` }}
+        />
       ))}
-      <style>{`@keyframes ownerSkeleton { 0% { background-position: 100% 50% } 100% { background-position: 0 50% } }`}</style>
     </div>
   )
 }
