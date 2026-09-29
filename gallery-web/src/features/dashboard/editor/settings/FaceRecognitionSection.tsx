@@ -1,4 +1,4 @@
-import { border, textMuted, textPrimary } from '../../styles'
+import { Eyebrow, cn } from '@/shared/ui'
 import { useEditor, useOpenGallery } from '../EditorContext'
 import { SettingsSection } from './SettingsSection'
 import { SettingsToggleRow } from './SettingsToggleRow'
@@ -22,18 +22,15 @@ export function FaceRecognitionSection() {
         last
       />
       {Boolean(ds.faceIndexEnabled) && (
-        <div style={{ marginTop: 12, paddingTop: 16, borderTop: `1px solid ${border}` }}>
-          <div style={{
-            fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-            color: textMuted, textTransform: 'uppercase', marginBottom: 12,
-          }}>מצב פרטיות</div>
-          <div style={{ display: 'flex', gap: 8 }}>
+        <div className="mt-3 border-t border-line pt-4">
+          <Eyebrow className="mb-3 block text-[9px] font-medium">מצב פרטיות</Eyebrow>
+          <div className="flex gap-2">
             {PRIVACY_MODES.map(m => {
               const active = ((ds.facePrivacyMode as string) || 'open') === m.id
               return (
                 <PickerTile key={m.id} active={active} onClick={() => updateGallerySetting('facePrivacyMode', m.id)}>
-                  <div style={{ fontSize: 13, fontWeight: active ? 600 : 500, color: textPrimary, marginBottom: 4 }}>{m.label}</div>
-                  <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4 }}>{m.desc}</div>
+                  <div className={cn('mb-1 text-[13px] text-ink', active ? 'font-semibold' : 'font-medium')}>{m.label}</div>
+                  <div className="text-[11px] leading-[1.4] text-muted">{m.desc}</div>
                 </PickerTile>
               )
             })}

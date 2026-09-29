@@ -1,5 +1,5 @@
 import { Icon } from '@/shared/ui/Icon'
-import { border, textMuted, textPrimary } from '../../styles'
+import { cn } from '@/shared/ui'
 import { useEditor } from '../EditorContext'
 import { SettingsSection } from './SettingsSection'
 import { PresetRow } from './PresetRow'
@@ -9,22 +9,20 @@ export function PresetsSection() {
   const { presets: { presets, presetsLoaded, presetBusy, handleSavePreset } } = useEditor()
   return (
     <SettingsSection eyebrow="פריסטים">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="flex flex-col gap-2">
         {!presetsLoaded ? (
-          <div style={{ fontSize: 12, color: textMuted, padding: '4px 0' }}>טוען…</div>
+          <div className="py-1 text-[12px] text-muted">טוען…</div>
         ) : presets.length === 0 ? (
-          <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.5, padding: '4px 0' }}>
+          <div className="py-1 text-[12px] leading-normal text-muted">
             עדיין אין פריסטים. שמרו את הגדרות הגלריה הנוכחית כפריסט לשימוש חוזר.
           </div>
         ) : (
           presets.map(p => <PresetRow key={p.id} preset={p} />)
         )}
-        <button disabled={presetBusy} onClick={handleSavePreset} style={{
-          alignSelf: 'flex-start', marginTop: 4, padding: '9px 14px', borderRadius: 2,
-          border: `1px dashed ${border}`, background: 'transparent', color: textPrimary,
-          fontSize: 12, fontWeight: 500, cursor: presetBusy ? 'default' : 'pointer',
-          fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6,
-        }}>
+        <button disabled={presetBusy} onClick={handleSavePreset} className={cn(
+          'mt-1 inline-flex items-center gap-1.5 self-start rounded-hair border border-dashed border-line px-3.5 py-[9px] text-[12px] font-medium text-ink',
+          presetBusy ? 'cursor-default' : 'cursor-pointer',
+        )}>
           <Icon name="plus" size={13} strokeWidth={1.85} />
           שמור הגדרות נוכחיות כפריסט
         </button>

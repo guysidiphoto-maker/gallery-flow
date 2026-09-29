@@ -1,4 +1,4 @@
-import { border, textMuted, textPrimary } from '../../../styles'
+import { Button, Eyebrow, Input, cn } from '@/shared/ui'
 import { useEditor } from '../../EditorContext'
 
 export function DomainForm() {
@@ -6,16 +6,12 @@ export function DomainForm() {
   const blocked = domainSaving || !domainInput.trim()
   return (
     <div>
-      <div style={{ fontSize: 12, color: textMuted, lineHeight: 1.6, marginBottom: 14 }}>
+      <div className="mb-3.5 text-[12px] leading-[1.6] text-muted">
         חברו דומיין שבבעלותכם וגלריות יוצגו תחתיו במקום תחת pixflow-ai.com.
       </div>
-      <label style={{ display: 'block', marginBottom: 12 }}>
-        <span style={{
-          fontSize: 9, fontWeight: 500, letterSpacing: '0.22em',
-          color: textMuted, textTransform: 'uppercase',
-          display: 'block', marginBottom: 8,
-        }}>הדומיין המותאם שלך</span>
-        <input
+      <label className="mb-3 block">
+        <Eyebrow className="mb-2 block text-[9px] font-medium">הדומיין המותאם שלך</Eyebrow>
+        <Input
           type="text"
           value={domainInput}
           onChange={(e) => changeDomainInput(e.target.value)}
@@ -24,40 +20,21 @@ export function DomainForm() {
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          style={{
-            width: '100%', padding: '12px 14px', borderRadius: 2,
-            background: '#fff', border: `1px solid ${domainError ? '#A85B5B' : border}`,
-            color: textPrimary, fontSize: 14, fontFamily: 'inherit',
-            outline: 'none', boxSizing: 'border-box',
-            transition: 'border-color .15s',
-            textAlign: 'left',
-          }}
-          onFocus={(e) => { if (!domainError) e.currentTarget.style.borderColor = textPrimary }}
-          onBlur={(e) => { if (!domainError) e.currentTarget.style.borderColor = border }}
+          className={cn('py-3 text-left text-[14px]', domainError && 'border-danger focus:border-danger')}
         />
       </label>
       {domainError && (
-        <div style={{ fontSize: 12, color: '#A85B5B', marginBottom: 12, lineHeight: 1.5 }}>
+        <div className="mb-3 text-[12px] leading-normal text-danger">
           {domainError}
         </div>
       )}
-      <button
-        type="button"
+      <Button
         onClick={submitCustomDomain}
         disabled={blocked}
-        style={{
-          padding: '10px 18px', borderRadius: 2,
-          background: textPrimary, color: '#fff',
-          border: `1px solid ${textPrimary}`,
-          fontSize: 12, fontWeight: 600, letterSpacing: '0.14em',
-          textTransform: 'uppercase',
-          cursor: blocked ? 'not-allowed' : 'pointer',
-          fontFamily: 'inherit',
-          opacity: blocked ? 0.5 : 1,
-        }}
+        className="px-[18px] py-2.5 text-[12px] font-semibold tracking-[0.14em] disabled:opacity-50"
       >
         {domainSaving ? 'שומר...' : 'בדוק זמינות ושמור'}
-      </button>
+      </Button>
     </div>
   )
 }
