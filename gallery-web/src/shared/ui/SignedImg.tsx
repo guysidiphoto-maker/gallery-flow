@@ -4,6 +4,7 @@
 import React, { forwardRef, useEffect, useRef, useState } from 'react'
 import { useSignedSrc } from '@/shared/lib/useSignedSrc'
 import { renderUrl, storageUrl } from '@/shared/lib/supabase'
+import { srcsetEntry } from '@/shared/lib/srcset'
 
 type ImgProps = Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'>
 
@@ -62,13 +63,13 @@ export const SignedImg = forwardRef<HTMLImageElement, Props>(
     const hasWidths = !!transformWidths?.length
 
     const staticParts = (transformable && !needsTransform && srcSetPaths?.length)
-      ? srcSetPaths.filter(s => !!s.path).map(s => `${bust(storageUrl(bucket, s.path!))} ${s.width}w`)
+      ? srcSetPaths.filter(s => !!s.path).map(s => srcsetEntry(bust(storageUrl(bucket, s.path!)), s.width))
       : []
 
     const srcSet = staticParts.length
       ? staticParts.join(', ')
       : (needsTransform && hasWidths
-          ? transformWidths!.map(w => `${bust(renderUrl(bucket, path!, w, transformQuality))} ${w}w`).join(', ')
+          ? transformWidths!.map(w => srcsetEntry(bust(renderUrl(bucket, path!, w, transformQuality)), w)).join(', ')
           : undefined)
 
     const src = needsTransform
