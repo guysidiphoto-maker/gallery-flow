@@ -1,5 +1,5 @@
 import { Icon } from '@/shared/ui/Icon'
-import { border, textMuted, textPrimary } from '../../styles'
+import { cn } from '@/shared/ui'
 import { useEditor } from '../EditorContext'
 
 const PHASE_LABEL: Record<string, string> = {
@@ -20,28 +20,26 @@ export function CoverUploadDrop() {
         onDragOver={e => { e.preventDefault(); setCoverDragOver(true) }}
         onDragLeave={() => setCoverDragOver(false)}
         onDrop={e => { e.preventDefault(); void handleCoverFile(e.dataTransfer.files?.[0]) }}
-        style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          gap: 8, padding: '28px 16px', borderRadius: 10, textAlign: 'center',
-          border: `1.5px dashed ${coverDragOver ? textPrimary : border}`,
-          background: coverDragOver ? 'rgba(20,20,19,.03)' : 'transparent',
-          cursor: coverUploading ? 'default' : 'pointer',
-          transition: 'border-color .15s, background .15s',
-        }}>
+        className={cn(
+          'flex flex-col items-center justify-center gap-2 rounded-md border-[1.5px] border-dashed px-4 py-7 text-center transition-colors duration-150',
+          coverDragOver ? 'border-ink bg-ink/3' : 'border-line bg-transparent',
+          coverUploading ? 'cursor-default' : 'cursor-pointer',
+        )}>
         <Icon name="photo" size={24} strokeWidth={1.4} />
         {coverUploading ? (
           <>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: textPrimary }}>
+            <div className="text-[12.5px] font-semibold text-ink">
               {coverUploadPhase ? PHASE_LABEL[coverUploadPhase] : 'מעלה…'}
             </div>
-            <div style={{ width: '70%', maxWidth: 220, height: 4, borderRadius: 4, overflow: 'hidden', background: '#e6e4e0' }}>
-              <div style={{ width: '45%', height: '100%', background: textPrimary, borderRadius: 4, animation: 'dl-progress-pulse 1.1s ease-in-out infinite' }} />
+            <div className="h-1 w-[70%] max-w-[220px] overflow-hidden rounded-[4px] bg-line-soft">
+              {/* dl-progress-pulse keyframes live in legacy.css. */}
+              <div className="h-full w-[45%] animate-[dl-progress-pulse_1.1s_ease-in-out_infinite] rounded-[4px] bg-ink" />
             </div>
           </>
         ) : (
           <>
-            <div style={{ fontSize: 13, fontWeight: 600, color: textPrimary }}>גררו תמונה לכאן או לחצו לבחירה</div>
-            <div style={{ fontSize: 11, color: textMuted }}>JPG · PNG · WebP · עד 40MB</div>
+            <div className="text-[13px] font-semibold text-ink">גררו תמונה לכאן או לחצו לבחירה</div>
+            <div className="text-[11px] text-muted">JPG · PNG · WebP · עד 40MB</div>
           </>
         )}
         <input
@@ -50,10 +48,10 @@ export function CoverUploadDrop() {
           accept="image/jpeg,image/png,image/webp"
           disabled={coverUploading}
           onChange={e => { void handleCoverFile(e.target.files?.[0]); e.currentTarget.value = '' }}
-          style={{ display: 'none' }}
+          className="hidden"
         />
       </label>
-      <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.5, marginTop: 8 }}>
+      <div className="mt-2 text-[11px] leading-normal text-muted">
         תמונה שמועלית כאן משמשת <strong>כשער בלבד</strong> ולא תתווסף לתמונות הגלריה.
       </div>
     </div>

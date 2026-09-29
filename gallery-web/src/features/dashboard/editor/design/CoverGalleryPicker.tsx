@@ -1,6 +1,6 @@
 import { readCoverConfig } from '@/shared/gallery/coverImage'
 import { SignedImg } from '@/shared/ui/SignedImg'
-import { textMuted, textPrimary } from '../../styles'
+import { cn } from '@/shared/ui'
 import { useEditor, useOpenGallery } from '../EditorContext'
 
 // First 48 gallery photos as cover candidates.
@@ -10,13 +10,13 @@ export function CoverGalleryPicker() {
   const coverCfg = readCoverConfig(ds)
   if (galleryImages.length === 0) {
     return (
-      <div style={{ fontSize: 12, color: textMuted, padding: '10px 0' }}>
+      <div className="py-2.5 text-[12px] text-muted">
         אין עדיין תמונות בגלריה. העלו תמונות, או בחרו "העלאת תמונה נפרדת".
       </div>
     )
   }
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 4, maxHeight: 320, overflowY: 'auto' }}>
+    <div className="grid max-h-80 grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-1 overflow-y-auto">
       {galleryImages.slice(0, 48).map(img => {
         const isCover =
           coverCfg.source === 'gallery_asset' &&
@@ -28,17 +28,13 @@ export function CoverGalleryPicker() {
             onClick={() => void selectGalleryCover(img)}
             aria-label={isCover ? 'תמונת שער נוכחית' : 'הגדר כתמונת שער'}
             aria-pressed={isCover}
-            style={{
-              padding: 0, border: 'none', background: 'transparent',
-              aspectRatio: '4 / 3', overflow: 'hidden', cursor: 'pointer',
-              outline: isCover ? `2px solid ${textPrimary}` : 'none',
-              outlineOffset: isCover ? -2 : 0,
-              opacity: isCover ? 1 : 0.92,
-              transition: 'outline-offset .15s, opacity .15s',
-            }}>
+            className={cn(
+              'aspect-[4/3] overflow-hidden bg-transparent p-0 transition-[outline-offset,opacity] duration-150',
+              isCover ? 'opacity-100 outline-2 -outline-offset-2 outline-ink' : 'opacity-92 outline-none',
+            )}>
             <SignedImg bucket="gallery-images" path={img.thumbnail_path || img.storage_path}
               alt="" loading="lazy"
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              className="block size-full object-cover" />
           </button>
         )
       })}

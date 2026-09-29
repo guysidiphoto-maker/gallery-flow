@@ -1,36 +1,38 @@
-import { border, textMuted } from '../../styles'
+const caption = 'mb-1.5 text-[9px] tracking-[0.14em] text-muted uppercase'
+const phoneFrame = 'relative aspect-[9/16] w-full overflow-hidden rounded-md border-2 border-line bg-night'
+const cover = 'block size-full object-cover'
 
 // Desktop public hero / mobile public / private entry screen previews.
 export function CoverPreviews({ url, title }: { url: string | null; title: string }) {
   return (
-    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-      <div style={{ flex: '1 1 200px', minWidth: 180 }}>
-        <div style={{ fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: textMuted, marginBottom: 6 }}>דסקטופ · ציבורי</div>
-        <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 7', borderRadius: 8, overflow: 'hidden', background: '#0a0a0f' }}>
-          {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 8, textAlign: 'center', color: '#fff', background: 'linear-gradient(to bottom, rgba(0,0,0,.1), rgba(0,0,0,.5))' }}>
-            <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.15 }}>{title}</div>
+    <div className="flex flex-wrap items-end gap-3">
+      <div className="min-w-[180px] flex-[1_1_200px]">
+        <div className={caption}>דסקטופ · ציבורי</div>
+        <div className="relative aspect-[16/7] w-full overflow-hidden rounded-[8px] bg-night">
+          {url && <img src={url} alt="" className={cover} />}
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-linear-to-b from-black/10 to-black/50 p-2 text-center text-white">
+            <div className="text-[14px] leading-[1.15] font-bold">{title}</div>
           </div>
         </div>
       </div>
-      <div style={{ width: 92 }}>
-        <div style={{ fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: textMuted, marginBottom: 6 }}>מובייל</div>
-        <div style={{ position: 'relative', width: '100%', aspectRatio: '9 / 16', borderRadius: 10, overflow: 'hidden', background: '#0a0a0f', border: `2px solid ${border}` }}>
-          {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 6, textAlign: 'center', color: '#fff', background: 'linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,.6))' }}>
-            <div style={{ fontSize: 9, fontWeight: 700, lineHeight: 1.1 }}>{title}</div>
+      <div className="w-[92px]">
+        <div className={caption}>מובייל</div>
+        <div className={phoneFrame}>
+          {url && <img src={url} alt="" className={cover} />}
+          <div className="absolute inset-0 flex items-end justify-center bg-linear-to-b from-black/0 to-black/60 p-1.5 text-center text-white">
+            <div className="text-[9px] leading-[1.1] font-bold">{title}</div>
           </div>
         </div>
       </div>
-      <div style={{ width: 92 }}>
-        <div style={{ fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: textMuted, marginBottom: 6 }}>מסך כניסה</div>
-        <div style={{ position: 'relative', width: '100%', aspectRatio: '9 / 16', borderRadius: 10, overflow: 'hidden', background: '#0a0a0f', border: `2px solid ${border}` }}>
-          {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', filter: 'blur(6px) brightness(.55) saturate(.85)', transform: 'scale(1.12)' }} />}
-          <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(120% 90% at 50% 40%, rgba(10,10,15,.35), rgba(10,10,15,.85))' }} />
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, padding: 6 }}>
-            <div style={{ width: 18, height: 15, borderRadius: 3, border: '1.5px solid rgba(255,255,255,.55)' }} />
-            <div style={{ width: '70%', height: 8, borderRadius: 4, background: 'rgba(255,255,255,.14)' }} />
-            <div style={{ width: '70%', height: 8, borderRadius: 4, background: 'rgba(255,255,255,.28)' }} />
+      <div className="w-[92px]">
+        <div className={caption}>מסך כניסה</div>
+        <div className={phoneFrame}>
+          {url && <img src={url} alt="" className={`${cover} scale-[1.12] blur-[6px] brightness-[.55] saturate-[.85]`} />}
+          <div className="absolute inset-0 bg-radial-[120%_90%_at_50%_40%] from-night/35 to-night/85" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-1.5">
+            <div className="h-[15px] w-[18px] rounded-[3px] border-[1.5px] border-white/55" />
+            <div className="h-2 w-[70%] rounded-[4px] bg-white/14" />
+            <div className="h-2 w-[70%] rounded-[4px] bg-white/28" />
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { border, textMuted, textPrimary } from '../../styles'
+import { Eyebrow, cn } from '@/shared/ui'
 import { useEditor } from '../EditorContext'
 import { CoverSubTab } from './CoverSubTab'
 import { TypographySubTab } from './TypographySubTab'
@@ -16,38 +16,21 @@ const SUB_TABS = [
 export function DesignTab() {
   const { session: { designSubTab, setDesignSubTab } } = useEditor()
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{
-          fontSize: 11, fontWeight: 500, letterSpacing: '0.22em',
-          color: textMuted, textTransform: 'uppercase', marginBottom: 10,
-        }}>Design</div>
-        <h3 style={{
-          fontSize: 22, fontWeight: 500, margin: 0,
-          letterSpacing: '-0.015em', color: textPrimary,
-        }}>עיצוב הגלריה</h3>
+    <div className="flex flex-col">
+      <div className="mb-4">
+        <Eyebrow className="mb-2.5 block">Design</Eyebrow>
+        <h3 className="text-[22px] font-medium tracking-[-0.015em] text-ink">עיצוב הגלריה</h3>
       </div>
 
-      <div style={{
-        display: 'flex', gap: 0, borderBottom: `1px solid ${border}`,
-        marginBottom: 28, overflowX: 'auto',
-      }}>
+      <div className="mb-7 flex overflow-x-auto border-b border-line">
         {SUB_TABS.map(t => {
           const active = designSubTab === t.id
           return (
             <button key={t.id} onClick={() => setDesignSubTab(t.id)}
-              style={{
-                padding: '14px 22px',
-                background: 'transparent', border: 'none', cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontSize: 11, fontWeight: 500,
-                letterSpacing: '0.22em', textTransform: 'uppercase',
-                color: active ? textPrimary : textMuted,
-                borderBottom: active ? `2px solid ${textPrimary}` : '2px solid transparent',
-                marginBottom: -1,
-                transition: 'color .15s, border-color .15s',
-                flexShrink: 0,
-              }}>
+              className={cn(
+                '-mb-px shrink-0 border-b-2 bg-transparent px-[22px] py-3.5 text-[11px] font-medium tracking-wide-label uppercase transition-colors duration-150',
+                active ? 'border-ink text-ink' : 'border-transparent text-muted',
+              )}>
               {t.label}
             </button>
           )

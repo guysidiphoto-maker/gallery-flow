@@ -1,9 +1,10 @@
 import { readCoverConfig } from '@/shared/gallery/coverImage'
 import { Icon } from '@/shared/ui/Icon'
-import { border, textMuted, textPrimary } from '../../styles'
+import { OptionTile } from '@/shared/ui/OptionTile'
+import { Toggle, cn } from '@/shared/ui'
 import { useEditor, useOpenGallery } from '../EditorContext'
 import { imgUrl } from '../useCover'
-import { tileStyle } from './designStyles'
+import { tileClass } from './designStyles'
 import { CoverPreviews } from './CoverPreviews'
 import { CoverGalleryPicker } from './CoverGalleryPicker'
 import { CoverUploadDrop } from './CoverUploadDrop'
@@ -22,66 +23,50 @@ export function CoverImageSection() {
   const title = (ds.galleryTitle as string) || gallery.name
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: textPrimary, marginBottom: 3 }}>תמונת שער</div>
-          <div style={{ fontSize: 11.5, color: textMuted, lineHeight: 1.5, maxWidth: 380 }}>
+          <div className="mb-[3px] text-[13.5px] font-semibold text-ink">תמונת שער</div>
+          <div className="max-w-[380px] text-[11.5px] leading-normal text-muted">
             תמונה גדולה בראש הגלריה. בגלריה פרטית היא מופיעה מטושטשת ואפלה ברקע מסך הכניסה, לאווירה יוקרתית בלי לחשוף את התוכן.
           </div>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={coverCfg.enabled}
-          aria-label="הצגת תמונת שער"
-          onClick={() => {
-            const next = !coverCfg.enabled
+        <Toggle
+          checked={coverCfg.enabled}
+          label="הצגת תמונת שער"
+          onChange={next => {
             if (next) updateGallerySetting('coverEnabled', true)
             else void handleCoverRemove()
           }}
-          style={{
-            flexShrink: 0, width: 46, height: 26, borderRadius: 999,
-            border: 'none', cursor: 'pointer', position: 'relative',
-            background: coverCfg.enabled ? textPrimary : '#cfcdc9',
-            transition: 'background .18s',
-          }}
-        >
-          <span style={{
-            position: 'absolute', top: 3, insetInlineStart: coverCfg.enabled ? 23 : 3,
-            width: 20, height: 20, borderRadius: '50%', background: '#fff',
-            transition: 'inset-inline-start .18s',
-            boxShadow: '0 1px 2px rgba(0,0,0,.25)',
-          }} />
-        </button>
+          className="h-[26px] w-[46px] p-[3px]"
+        />
       </div>
 
       {coverCfg.enabled && (
-        <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div className="mt-[18px] flex flex-col gap-[18px]">
           <CoverPreviews url={coverPreviewUrl} title={title} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <button type="button" onClick={() => setCoverMode('gallery')} style={tileStyle(coverMode === 'gallery')}>
+          <div className="grid grid-cols-2 gap-2">
+            <OptionTile type="button" selected={coverMode === 'gallery'} onClick={() => setCoverMode('gallery')} className={tileClass}>
               <Icon name="gallery" size={18} strokeWidth={coverMode === 'gallery' ? 1.85 : 1.4} />
-              <div style={{ fontSize: 12.5, fontWeight: coverMode === 'gallery' ? 600 : 500, color: textPrimary }}>בחירה מהגלריה</div>
-            </button>
-            <button type="button" onClick={() => setCoverMode('upload')} style={tileStyle(coverMode === 'upload')}>
+              <div className={cn('text-[12.5px] text-ink', coverMode === 'gallery' ? 'font-semibold' : 'font-medium')}>בחירה מהגלריה</div>
+            </OptionTile>
+            <OptionTile type="button" selected={coverMode === 'upload'} onClick={() => setCoverMode('upload')} className={tileClass}>
               <Icon name="photo" size={18} strokeWidth={coverMode === 'upload' ? 1.85 : 1.4} />
-              <div style={{ fontSize: 12.5, fontWeight: coverMode === 'upload' ? 600 : 500, color: textPrimary }}>העלאת תמונה נפרדת</div>
-            </button>
+              <div className={cn('text-[12.5px] text-ink', coverMode === 'upload' ? 'font-semibold' : 'font-medium')}>העלאת תמונה נפרדת</div>
+            </OptionTile>
           </div>
 
           {coverMode === 'gallery' ? <CoverGalleryPicker /> : <CoverUploadDrop />}
 
           {coverCfg.source !== 'none' && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 4 }}>
-              <div style={{ fontSize: 11.5, color: textMuted }}>
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <div className="text-[11.5px] text-muted">
                 {coverCfg.source === 'custom_upload' ? 'שער: תמונה שהועלתה בנפרד' : 'שער: תמונה מתוך הגלריה'}
               </div>
-              <button type="button" onClick={() => void handleCoverRemove()} style={{
-                background: 'transparent', border: `1px solid ${border}`, borderRadius: 8,
-                cursor: 'pointer', color: textPrimary, fontFamily: 'inherit',
-                fontSize: 11.5, fontWeight: 500, padding: '6px 12px',
-              }}>הסרת תמונת שער</button>
+              <button type="button" onClick={() => void handleCoverRemove()}
+                className="rounded-[8px] border border-line bg-transparent px-3 py-1.5 text-[11.5px] font-medium text-ink">
+                הסרת תמונת שער
+              </button>
             </div>
           )}
         </div>

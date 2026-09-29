@@ -1,6 +1,7 @@
-import { border, textMuted, textPrimary } from '../../styles'
+import { Eyebrow, cn } from '@/shared/ui'
+import { OptionTile } from '@/shared/ui/OptionTile'
 import { useEditor, useOpenGallery } from '../EditorContext'
-import { labelStyle } from './designStyles'
+import { labelClass } from './designStyles'
 
 const GRID_OPTIONS = [
   {
@@ -28,24 +29,19 @@ export function GridSubTab() {
   const { settings: { updateGallerySetting } } = useEditor()
   const ds = (useOpenGallery().delivery_settings ?? {}) as Record<string, unknown>
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+    <div className="flex flex-col gap-7">
       {GRID_OPTIONS.map(g => (
         <div key={g.key}>
-          <div style={{ ...labelStyle }}>{g.eyebrow}</div>
-          <div style={{ fontSize: 11, color: textMuted, lineHeight: 1.4, margin: '0 0 8px' }}>{g.hint}</div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <Eyebrow className={labelClass}>{g.eyebrow}</Eyebrow>
+          <div className="mb-2 text-[11px] leading-[1.4] text-muted">{g.hint}</div>
+          <div className="flex gap-2">
             {g.opts.map(o => {
               const active = ((ds[g.key] as string) || g.defaultV) === o.id
               return (
-                <button key={o.id} onClick={() => updateGallerySetting(g.key, o.id)}
-                  style={{
-                    flex: 1, padding: '14px 16px',
-                    border: `1px solid ${active ? textPrimary : border}`,
-                    background: active ? '#fff' : 'transparent',
-                    borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
-                    fontSize: 13, fontWeight: active ? 600 : 500, color: textPrimary,
-                    transition: 'border-color .15s, background .15s',
-                  }}>{o.label}</button>
+                <OptionTile key={o.id} selected={active} onClick={() => updateGallerySetting(g.key, o.id)}
+                  className={cn('flex-1 px-4 py-3.5 text-[13px] text-ink', active ? 'font-semibold' : 'font-medium')}>
+                  {o.label}
+                </OptionTile>
               )
             })}
           </div>
