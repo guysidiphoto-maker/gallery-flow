@@ -4,7 +4,7 @@
 import { useCallback } from 'react'
 import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import { saveProgress } from './onboarding'
-import { TOUR_RESTART_EVENT } from './FirstRunTour'
+import { TOUR_RESTART_EVENT } from './useFirstRunTour'
 
 export function RestartTourButton({ surface = 'owner_tour', className }: {
   surface?: string
