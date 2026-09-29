@@ -45,9 +45,10 @@ export function CreateClientModal({ open, onClose, reload, showToast, onOpenClie
       email: email || undefined,
       invite: withInvite,
     })
-    setCreateBusy(false)
-    if (!res.ok) { setCreateError(errorText(res.error)); return }
+    if (!res.ok) { setCreateBusy(false); setCreateError(errorText(res.error)); return }
+    // Stay busy through the reload so a second click can't create a duplicate.
     await reload()
+    setCreateBusy(false)
     if (res.invite) {
       // Keep the modal open to surface the link; the owner delivers it manually.
       setCreatedInvite(res.invite)

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type React from 'react'
 import { deleteGallery as deleteGalleryRow, duplicateGallery as duplicateGalleryRpc, findGallery } from '@/shared/data/galleries'
 import { warmGalleryCache } from '@/shared/lib/warmCache'
-import { purgeStorageForGallery } from '../lib/purgeStorage'
+import { listGalleryImagesForPurge, purgeStorageForImages } from '../lib/purgeStorage'
 import { galleryShareUrl } from '../lib/shareUrl'
 import { GALLERY_COLUMNS, type Confirm, type Gallery, type Toast } from '../types'
 
@@ -38,15 +38,16 @@ export function useGalleryActions(deps: {
       confirmLabel: 'מחק את הגלריה',
       danger: true,
     }))) return
-    // Starts listing image paths before the row delete cascades them away;
-    // not awaited because huge galleries take minutes to wipe.
-    void purgeStorageForGallery(g.id)
+    // Paths are listed before the cascade; the wipe itself (minutes on huge
+    // galleries) runs in the background and only if the row delete succeeded.
+    const images = await listGalleryImagesForPurge(g.id)
     const { error } = await deleteGalleryRow(g.id)
     if (error) {
       showToast({ kind: 'error', text: 'מחיקת הגלריה נכשלה. נסה שוב.' })
       console.warn('[deleteGallery]', error)
       return
     }
+    void purgeStorageForImages(images)
     setGalleries(prev => prev.filter(x => x.id !== g.id))
     if (editingGallery?.id === g.id) setEditingGallery(null)
     showToast({ kind: 'success', text: `הגלריה "${g.name}" נמחקה.` })

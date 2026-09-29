@@ -44,7 +44,12 @@ export function useShareGallery(deps: {
       })
       if (res.ok) {
         setShareSent(true)
-        setTimeout(() => { setShareGallery(null); setShareSent(false) }, 1800)
+        // Only auto-close the modal it was sent from, not one opened meanwhile.
+        const sentId = shareGallery.id
+        setTimeout(() => {
+          setShareGallery(g => (g?.id === sentId ? null : g))
+          setShareSent(false)
+        }, 1800)
       } else {
         showToast({ kind: 'error', text: 'שגיאה בשליחה: ' + (res.error || 'לא ידוע') })
       }

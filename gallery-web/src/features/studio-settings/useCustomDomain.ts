@@ -95,7 +95,11 @@ export function useCustomDomain(businessId: string | null) {
     if (!businessId) return
     setSaving(true)
     try {
-      await clearCustomDomain(businessId)
+      const { error } = await clearCustomDomain(businessId)
+      if (error) {
+        setError(`שגיאה בהסרה — ${error.message}`)
+        return
+      }
       applyRow(null)
       setError(null)
     } finally {

@@ -45,13 +45,13 @@ export async function purgeStorageForImages(images: GalleryImage[]) {
   ])
 }
 
-// Whole-gallery variant: lists every image (paginated past the 1000-row cap)
-// first. Must start before the gallery row delete cascades the image rows away.
-export async function purgeStorageForGallery(galleryId: string) {
+// Whole-gallery delete: list every image (paginated past the 1000-row cap) before
+// the row delete cascades them away; purge only once that delete succeeded.
+export async function listGalleryImagesForPurge(galleryId: string): Promise<GalleryImage[]> {
   try {
-    const data = await fetchAllGalleryImages<GalleryImage>(galleryId, IMAGE_COLUMNS_WITH_ORIGINAL)
-    await purgeStorageForImages(data)
+    return await fetchAllGalleryImages<GalleryImage>(galleryId, IMAGE_COLUMNS_WITH_ORIGINAL)
   } catch (error) {
     console.warn('[purgeStorageForGallery] could not list images', error)
+    return []
   }
 }
