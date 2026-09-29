@@ -12,7 +12,7 @@ export function Step1Explain({ t, onNext }: WizardCommon & { onNext: () => void 
     <ImportPanel>
       <h2 className={heading}>{t('import.step1.title')}</h2>
       <p className={intro}>{t('import.step1.intro')}</p>
-      <ol className="mb-[18px] flex flex-col gap-3 ps-[22px]">
+      <ol className="mb-[18px] flex list-decimal flex-col gap-3 ps-[22px] marker:font-semibold">
         {ITEMS.map(k => (
           <li key={k} className="text-sm leading-[1.7]">{t(k)}</li>
         ))}

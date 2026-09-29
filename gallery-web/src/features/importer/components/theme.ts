@@ -9,4 +9,4 @@ export const intro = `${textDim} mb-4 text-sm leading-[1.7]`
 export const emptyText = `${textDim} py-3 text-sm`
 export const select = `${surfaceAlt} ${textMain} rounded-sm border border-night-line px-2 py-1.5 text-[13px]`
 export const detailsSummary = `${textDim} cursor-pointer text-[13px]`
-export const detailsList = `${textDim} mt-2 ps-5 text-xs`
+export const detailsList = `${textDim} mt-2 list-disc ps-5 text-xs`
