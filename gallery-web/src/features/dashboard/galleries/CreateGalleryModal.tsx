@@ -55,7 +55,7 @@ export function CreateGalleryModal({ form, tokenBalance, locale, ownerT }: {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-[18px] flex items-center justify-between">
-          <Eyebrow className="font-medium">New Gallery</Eyebrow>
+          <Eyebrow className="font-medium">גלריה חדשה</Eyebrow>
           <button onClick={close} aria-label="סגירה" className="flex cursor-pointer border-none bg-transparent p-1 text-ink-soft">
             <Icon name="close" size={16} strokeWidth={1.85} />
           </button>
@@ -126,23 +126,23 @@ export function CreateGalleryModal({ form, tokenBalance, locale, ownerT }: {
         ))}
 
         <div className="dash-modal-actions mt-8 flex justify-end gap-2.5">
-          <Button variant="ghost" onClick={close} className="px-6 py-3">
-            Cancel
+          <Button variant="ghost" onClick={close} className="h-11 px-6 py-0">
+            ביטול
           </Button>
           <button
             onClick={form.createGallery}
             disabled={creating || !newName.trim()}
             className={cn(
-              'inline-flex items-center gap-2.5 rounded-hair border px-8 py-3 text-eyebrow font-medium tracking-label text-white uppercase',
+              'inline-flex h-11 items-center gap-2.5 rounded-hair border px-8 text-eyebrow font-medium tracking-label text-white uppercase',
               !newName.trim() || creating ? 'cursor-not-allowed border-line bg-line' : 'cursor-pointer border-ink bg-ink',
             )}
           >
             {creating ? (
               <>
                 <span className="inline-block size-3 animate-[spin_.6s_linear_infinite] rounded-full border-[1.5px] border-white/40 border-t-white" />
-                Creating
+                יוצר גלריה…
               </>
-            ) : 'Create Gallery'}
+            ) : 'יצירת גלריה'}
           </button>
         </div>
       </div>

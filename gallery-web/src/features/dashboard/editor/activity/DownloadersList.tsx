@@ -5,7 +5,7 @@ import { ActivitySection, activityRowClass, activityTagClass, activityTimeClass,
 // Distinct guests who identified via the download email gate.
 export function DownloadersList({ downloaders }: { downloaders: NonNullable<ActivitySummary['downloaders']> }) {
   return (
-    <ActivitySection eyebrow="מי הוריד · Downloaders">
+    <ActivitySection eyebrow="מי הוריד">
       {downloaders.slice(0, 50).map(u => (
         <div key={u.guest_email} className={activityRowClass}>
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
