@@ -69,7 +69,7 @@ export function DashboardSidebar({
           <span className="ms-1 size-[5px] -translate-y-px rounded-full bg-ink" />
         </a>
 
-        <Eyebrow className="block px-3 pb-3 text-[9px] font-medium">{ownerT('nav.workspace')}</Eyebrow>
+        <Eyebrow className="block px-3 pb-3 text-[10px] font-medium tracking-[0.06em]">{ownerT('nav.workspace')}</Eyebrow>
         <nav data-tour="overview" className="flex flex-1 flex-col gap-0.5">
           {/* In-page view switch: same shell, no navigation. */}
           {items.map(item => {
@@ -95,7 +95,7 @@ export function DashboardSidebar({
           })}
         </nav>
 
-        <Eyebrow className="block px-3 pt-5 pb-3 text-[9px] font-medium">{ownerT('nav.account')}</Eyebrow>
+        <Eyebrow className="block px-3 pt-5 pb-3 text-[10px] font-medium tracking-[0.06em]">{ownerT('nav.account')}</Eyebrow>
         <TokenBalanceCard tokenBalance={tokenBalance} onBuyTokens={onBuyTokens} ownerT={ownerT} />
 
         <RestartTourButton

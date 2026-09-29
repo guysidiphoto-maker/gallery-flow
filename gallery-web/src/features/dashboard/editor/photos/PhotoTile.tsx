@@ -145,9 +145,10 @@ export function PhotoTile({ img, visibleImages, currentCoverPath, ui }: {
           aria-haspopup="menu"
           aria-expanded={isMenuOpen}
           aria-label="תפריט תמונה"
+          title="עוד פעולות"
           className="absolute end-2 top-2 flex size-[26px] cursor-pointer items-center justify-center rounded-full bg-white/85 p-0 text-ink"
         >
-          <Icon name="menu" size={14} strokeWidth={1.85} />
+          <Icon name="more-vertical" size={15} strokeWidth={2} />
         </button>
       )}
 

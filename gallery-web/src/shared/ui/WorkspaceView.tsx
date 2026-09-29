@@ -23,7 +23,7 @@ export function WorkspaceView({ eyebrow, title, description, actions, dir, class
       <header className="mb-9 flex flex-wrap items-end justify-between gap-x-5 gap-y-4">
         <div className="min-w-0">
           {/* Fixed-height eyebrow row so a badge next to it can't nudge the title. */}
-          <Eyebrow className="mb-3.5 flex h-5 items-center gap-2.5 font-medium">{eyebrow}</Eyebrow>
+          <Eyebrow className="mb-3.5 flex h-5 items-center gap-2.5 font-medium tracking-[0.06em]">{eyebrow}</Eyebrow>
           <h1 className="text-[clamp(28px,4vw,52px)] leading-[1.02] font-medium tracking-[-0.025em] text-ink">
             {title}
           </h1>
