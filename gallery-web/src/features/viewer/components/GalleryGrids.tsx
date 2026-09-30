@@ -12,7 +12,7 @@ export type SharedGridProps = Omit<MasonryGridProps, 'images' | 'onImageClick'>
  * unsectioned leftovers, so no photo is ever stranded.
  */
 export function GalleryGrids({
-  images, sections, visibleImages, unsectionedImages, anySectionHasContent, pagedMode, activeAnchor, viewerRole, gridProps, onOpen,
+  images, sections, visibleImages, unsectionedImages, anySectionHasContent, pagedMode, activeAnchor, viewerRole, gridProps, photoCount, onOpen,
 }: {
   images: GalleryImage[]
   sections: Section[]
@@ -23,6 +23,7 @@ export function GalleryGrids({
   activeAnchor: string
   viewerRole: ViewerRole
   gridProps: SharedGridProps
+  photoCount: (n: number) => string
   /** Next/prev in the lightbox stays within the list the tile came from. */
   onOpen: (list: GalleryImage[], index: number) => void
 }) {
@@ -44,7 +45,7 @@ export function GalleryGrids({
           const sectionImages = visibleImages.filter(img => img.section_id === sec.id)
           if (sectionImages.length === 0) return null
           return (
-            <GallerySection key={sec.id} section={sec} count={sectionImages.length}>
+            <GallerySection key={sec.id} section={sec} countLabel={photoCount(sectionImages.length)}>
               <MasonryGrid {...gridProps} images={sectionImages} onImageClick={idx => onOpen(sectionImages, idx)} />
             </GallerySection>
           )

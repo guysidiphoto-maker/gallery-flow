@@ -1,4 +1,5 @@
 import { cn } from '@/shared/ui'
+import type { t } from '@/shared/i18n/viewerStrings'
 import type { AnimationSpeed, TextAnimation } from '../../lib/viewerSettings'
 import { OpeningText } from '../OpeningText'
 import { heroEyebrow, heroTitle } from './heroStyles'
@@ -7,9 +8,10 @@ const segment = 'rounded-full px-[18px] py-2 text-[12px] font-semibold tracking-
 
 /** Personalized hero after a face search: selfie, opening line and a Your/All photos toggle. */
 export function FaceMatchHeroContent({
-  selfieUrl, studioName, galleryTitle, welcomeMessage, textAnimation, animationSpeed,
+  txt, selfieUrl, studioName, galleryTitle, welcomeMessage, textAnimation, animationSpeed,
   isPrivate, matchCount, totalCount, faceFilterActive, onFilterChange,
 }: {
+  txt: ReturnType<typeof t>
   selfieUrl: string
   studioName: string
   galleryTitle: string
@@ -40,7 +42,7 @@ export function FaceMatchHeroContent({
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
           </svg>
           <span className="text-[10px] font-semibold tracking-[.05em] text-(--viewer-success)/60 uppercase">
-            Your photos are protected
+            {txt.photosProtected}
           </span>
         </div>
       )}
@@ -50,13 +52,13 @@ export function FaceMatchHeroContent({
           onClick={() => onFilterChange(true)}
           className={cn(segment, faceFilterActive ? 'bg-brand/25 text-white shadow-[0_1px_6px] shadow-brand/20' : 'bg-transparent text-white/40')}
         >
-          Your Photos · {matchCount}
+          {txt.yourPhotos} · {matchCount}
         </button>
         <button
           onClick={() => onFilterChange(false)}
           className={cn(segment, !faceFilterActive ? 'bg-white/12 text-white shadow-[0_1px_4px] shadow-black/20' : 'bg-transparent text-white/40')}
         >
-          All Photos · {totalCount}
+          {txt.allPhotos} · {totalCount}
         </button>
       </div>
     </>

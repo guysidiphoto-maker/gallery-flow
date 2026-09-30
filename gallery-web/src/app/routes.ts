@@ -1,6 +1,6 @@
 // Route table: first match wins, so order matters (specific paths before the
 // multi-segment gallery catch-alls). Pure data — see tests/routes.test.ts.
-import { LANDING_PATHS } from '../../seo/content'
+import { LANDING_PATHS } from '../../seo/landingPaths'
 
 export type RouteId =
   | 'home' | 'home-legacy' | 'photographers' | 'landing-en' | 'seo-landing'

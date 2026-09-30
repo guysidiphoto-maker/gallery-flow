@@ -112,6 +112,12 @@ export function normalizeAccentId(id: string | null | undefined): AccentId {
   return DEFAULT_ACCENT
 }
 
+/** CSS font-family for a stored font: a bare family name is quoted, a full stack passes through. */
+export function fontFamilyCss(font: string): string {
+  const f = font.trim()
+  return f.includes(',') || /^['"]/.test(f) ? f : `'${f}'`
+}
+
 /** Resolve colors + fonts for a gallery from its delivery_settings. */
 export function resolveGalleryBranding(
   raw: Record<string, unknown> | null | undefined,

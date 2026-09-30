@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useState } from 'react'
 import type { GalleryImage } from '@/shared/types'
+import { t } from '@/shared/i18n/viewerStrings'
 import { Icon } from '@/shared/ui/Icon'
 import { cn } from '@/shared/ui'
 import { signedStorageUrl } from '@/shared/lib/signedStorage'
@@ -19,6 +20,8 @@ interface ViewerProps {
   imgBucket: string
   allowDownloads: boolean
   downloadLabel: string
+  /** Control labels; the dashboard's photo preview omits it and gets Hebrew. */
+  txt?: ReturnType<typeof t>
   onClose: () => void
   onNavigate: (index: number) => void
   /** The parent resolves the right download URL for the image. */
@@ -32,7 +35,7 @@ const control =
 const focusRing = 'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-white/85'
 const imgBase = 'max-h-[85vh] max-w-[92vw] rounded-[3px] object-contain select-none animate-[gv-lightbox-img-in_.3s_cubic-bezier(.16,1,.3,1)]'
 
-export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel, onClose, onNavigate, onDownload }: ViewerProps) {
+export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel, txt = t('he'), onClose, onNavigate, onDownload }: ViewerProps) {
   const img = images[index]
   const total = images.length
   const [currentSrc, setCurrentSrc] = useState<string>('')
@@ -126,13 +129,13 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={`Photo ${index + 1} of ${images.length}`}
+      aria-label={txt.photoOf(index + 1, images.length)}
     >
       <div className="relative flex size-full items-center justify-center" onClick={(e) => e.stopPropagation()}>
         {/* Physically top-right in both directions, by convention. */}
         <button
           onClick={onClose}
-          aria-label="Close"
+          aria-label={txt.close}
           className={cn(control, focusRing, 'absolute top-4 right-4 z-10 size-[38px] rounded-hair hover:scale-105 hover:border-white/45')}
         >
           <Icon name="close" size={16} strokeWidth={1.85} />
@@ -140,7 +143,7 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
 
         <button
           onClick={prev}
-          aria-label="Previous"
+          aria-label={txt.previous}
           className={cn(control, focusRing, 'absolute top-1/2 left-3.5 z-10 size-[42px] -translate-y-1/2 rounded-hair hover:border-white/45')}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
@@ -205,7 +208,7 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
 
         <button
           onClick={next}
-          aria-label="Next"
+          aria-label={txt.next}
           className={cn(control, focusRing, 'absolute top-1/2 right-3.5 z-10 size-[42px] -translate-y-1/2 rounded-hair hover:border-white/45')}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">

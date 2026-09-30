@@ -18,7 +18,7 @@ export function GalleryNotFound() {
     ? 'הקישור לא תקין או שהגלריה הוסרה. אם קיבלת אותו מהצלם, פנה אליו לבדיקה.'
     : 'The link is invalid or the gallery was removed. If you received it from the photographer, please contact them.'
   return (
-    <div className={`${centered} p-6 text-center`} dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className={`${centered} flex-col p-6 text-center`} dir={isRtl ? 'rtl' : 'ltr'}>
       <h1 className="mb-3 font-gallery-heading text-[28px] font-bold tracking-[-0.02em] text-white/98">{headline}</h1>
       <p className="mb-6 max-w-[420px] text-[14px] leading-[1.6] text-white/65">{body}</p>
     </div>

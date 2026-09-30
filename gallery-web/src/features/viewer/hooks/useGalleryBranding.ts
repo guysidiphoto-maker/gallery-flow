@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect } from 'react'
-import { resolveGalleryBranding, type BrandDefaults } from '@/shared/gallery/galleryBranding'
+import { fontFamilyCss, resolveGalleryBranding, type BrandDefaults } from '@/shared/gallery/galleryBranding'
 import type { Gallery } from '@/shared/types'
 import type { Lang } from '@/shared/i18n/viewerStrings'
+import { ensureWebFonts } from '../lib/webFonts'
 
 /** Marks <html> so viewer.css can apply the page base (body bg/text/font) only while mounted. */
-export const VIEWER_ROOT_ATTR = 'data-gallery-viewer'
+const VIEWER_ROOT_ATTR = 'data-gallery-viewer'
 
 /**
  * Applies the resolved gallery branding as raw CSS vars on <html> (backing the
@@ -38,10 +39,12 @@ export function useGalleryBranding(gallery: Gallery | null, lang: Lang) {
     el.style.setProperty('--text', b.theme.text)
     el.style.setProperty('--text-muted', b.theme.textMuted)
     el.setAttribute('data-appearance', b.appearance)
-    if (b.headingFont) el.style.setProperty('--font-heading', `'${b.headingFont}'`)
+    if (b.headingFont) el.style.setProperty('--font-heading', fontFamilyCss(b.headingFont))
     else el.style.removeProperty('--font-heading')
-    if (b.bodyFont) el.style.setProperty('--font-body', `'${b.bodyFont}'`)
+    if (b.bodyFont) el.style.setProperty('--font-body', fontFamilyCss(b.bodyFont))
     else el.style.removeProperty('--font-body')
+    // Defaults mirror --font-gallery-heading (tokens.css) and the viewer.css body stack.
+    ensureWebFonts([b.headingFont || 'Playfair Display', b.bodyFont || 'Inter Tight, Noto Sans Hebrew'])
     return () => {
       el.style.removeProperty('--accent')
       el.style.removeProperty('--accent-ink')

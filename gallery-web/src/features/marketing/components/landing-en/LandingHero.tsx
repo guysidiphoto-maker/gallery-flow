@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { AppMockup } from './AppMockup'
 import { btn } from './classes'
 import { DOWNLOAD_URL, type LandingCopy } from './copy'
@@ -19,15 +20,18 @@ export function LandingHero({ tx, onSeeDemo }: Props) {
           <span className="size-2 animate-[mk-lp-pulse_2s_ease-in-out_infinite] rounded-full bg-brand" />
           {tx.heroBadge}
         </span>
-        <h1 className="mb-5 bg-(image:--mk-lp-hero-text) bg-clip-text text-[3.2rem] leading-[1.15] font-extrabold tracking-[-0.03em] text-transparent max-lg:text-[2.6rem] max-md:text-[2rem] max-sm:text-[1.7rem]">
+        {/* Gradient on each word: a clipped background on the h1 doesn't paint
+            words that sit on their own animated layer, so the headline was invisible. */}
+        <h1 className="mb-5 text-[3.2rem] leading-[1.15] font-extrabold tracking-[-0.03em] max-lg:text-[2.6rem] max-md:text-[2rem] max-sm:text-[1.7rem]">
           {tx.heroH1.split(' ').map((word, i) => (
-            <span
-              key={i}
-              className="inline-block animate-[mk-lp-word-in_0.5s_ease_forwards] opacity-0 [transform:translateY(20px)]"
-              style={{ animationDelay: `${0.3 + i * 0.08}s` }}
-            >
-              {word}{' '}
-            </span>
+            <Fragment key={i}>
+              <span
+                className="inline-block animate-[mk-lp-word-in_0.5s_ease_forwards] bg-(image:--mk-lp-hero-text) bg-clip-text text-transparent opacity-0 [transform:translateY(20px)]"
+                style={{ animationDelay: `${0.3 + i * 0.08}s` }}
+              >
+                {word}
+              </span>{' '}
+            </Fragment>
           ))}
         </h1>
         <p className="mx-auto mb-9 max-w-[540px] text-[1.2rem] text-white/50 max-md:text-[1rem]">{tx.heroSub}</p>

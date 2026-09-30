@@ -20,7 +20,7 @@ function s<K extends keyof DeliverySettings>(settings: Partial<DeliverySettings>
 }
 
 /** Demo galleries keep their files in a separate bucket. */
-export function imageBucketFor(gallery: Pick<Gallery, 'demo_expires_at'> | null | undefined): string {
+function imageBucketFor(gallery: Pick<Gallery, 'demo_expires_at'> | null | undefined): string {
   return gallery?.demo_expires_at ? 'demo-uploads' : 'gallery-images'
 }
 

@@ -1,4 +1,5 @@
 import { cn } from '@/shared/ui'
+import { fontFamilyCss } from '@/shared/gallery/galleryBranding'
 import { t, type Lang } from '@/shared/i18n/viewerStrings'
 import type { AnimationSpeed, TextAnimation, WelcomeStyle } from '../../lib/viewerSettings'
 import { OpeningText } from '../OpeningText'
@@ -80,7 +81,7 @@ export function WelcomeContent({
             isCinematic && 'text-shadow-[0_4px_60px_var(--color-black)]/70',
             style === 'mosaic' && 'text-shadow-[0_2px_40px_var(--color-black)]/50',
           )}
-          style={headingFont ? { fontFamily: `'${headingFont}', inherit` } : undefined}
+          style={headingFont ? { fontFamily: fontFamilyCss(headingFont) } : undefined}
         >{galleryTitle}</h1>
       </div>
 
@@ -93,7 +94,7 @@ export function WelcomeContent({
                 ? 'mt-4 text-[clamp(12px,1.5vw,15px)] tracking-[0.15em] text-white/35 uppercase'
                 : 'mt-2.5 text-[clamp(14px,2vw,19px)] tracking-[0.01em] text-white/45',
             )}
-            style={bodyFont ? { fontFamily: `'${bodyFont}', inherit` } : undefined}
+            style={bodyFont ? { fontFamily: fontFamilyCss(bodyFont) } : undefined}
           >{clientName}</p>
         </div>
       )}

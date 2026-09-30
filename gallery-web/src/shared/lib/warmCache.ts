@@ -4,13 +4,14 @@
 
 import { storageUrl, displayUrl } from './supabase'
 import { fetchImagesPage } from '@/shared/data/publicGallery'
+import { srcsetEntry } from './srcset'
 
 const BUCKET = 'gallery-images'
 const WARM_COUNT = 250 // first N thumbnails — covers the opening screens
 const CONCURRENCY = 6  // gentle on the photographer's connection
 
-// Shared with the grid so warming populates exactly the variants it requests.
-export const GRID_WIDTHS: number[] = [320, 640, 960, 1280]
+// Transform widths the preload asks for.
+const GRID_WIDTHS: number[] = [320, 640, 960, 1280]
 const THUMB_SIZES =
   '(max-width: 479px) 50vw, (max-width: 767px) 50vw, (max-width: 1099px) 33vw, 25vw'
 const TRANSFORMABLE = new Set(['gallery-images', 'demo-uploads'])
@@ -83,7 +84,7 @@ export function preloadGalleryThumbs(
     img.onload = img.onerror = () => { if (!cancelled) loadNext() }
     if (useTransforms) {
       img.sizes = THUMB_SIZES
-      img.srcset = GRID_WIDTHS.map(w => `${displayUrl(bucket, path, w, 60)} ${w}w`).join(', ')
+      img.srcset = GRID_WIDTHS.map(w => srcsetEntry(displayUrl(bucket, path, w, 60), w)).join(', ')
     }
     img.src = storageUrl(bucket, path) // fallback + non-transform buckets
   }

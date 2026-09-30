@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import * as Sentry from '@sentry/react'
+import { withSentry } from '@/shared/lib/sentry'
 import { getSentryReportContext } from '@/shared/lib/sentryContext'
 
 interface State {
@@ -18,13 +18,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    let eventId: string | null = null
-    try {
-      eventId = Sentry.captureException(error, { extra: { errorInfo } }) ?? null
-    } catch {
-      console.error('ErrorBoundary failed to report to Sentry', error)
-    }
-    this.setState({ eventId })
+    withSentry(S => this.setState({ eventId: S.captureException(error, { extra: { errorInfo } }) ?? null }))
   }
 
   copyReport = async (): Promise<void> => {

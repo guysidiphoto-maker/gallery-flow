@@ -71,7 +71,7 @@ export function WelcomeScreen({
       {style === 'minimal' && <MinimalBackground />}
 
       {isPrivate && (
-        <div className="gv-welcome-accent-line pointer-events-none absolute top-1/2 h-px w-[20%] animate-[wcLine_3.5s_ease-in-out_infinite]" />
+        <div className="gv-welcome-accent-line pointer-events-none absolute top-1/2 left-0 h-px w-[20%] animate-[wcLine_3.5s_ease-in-out_infinite]" />
       )}
 
       <WelcomeContent

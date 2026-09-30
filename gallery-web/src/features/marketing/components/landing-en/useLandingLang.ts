@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Lang } from './copy'
 
 const KEY = 'pixflow-lang'
@@ -12,6 +12,12 @@ export function useLandingLang() {
     } catch {}
     return 'en'
   })
+
+  // The shell ships as lang="he" dir="rtl"; keep <html> in step for screen readers and the scrollbar side.
+  useEffect(() => {
+    document.documentElement.lang = lang
+    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr'
+  }, [lang])
 
   const toggleLang = useCallback(() => {
     const next = lang === 'en' ? 'he' : 'en'

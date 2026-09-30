@@ -1,7 +1,7 @@
 import type { GallerySection } from '@/shared/types'
 
 /** Slug of the synthetic "More Photos" page holding unsectioned images. */
-export const UNSECTIONED_SLUG = 'more'
+const UNSECTIONED_SLUG = 'more'
 export const ALL_IMAGES_ANCHOR = 'all-images'
 
 export const sectionAnchor = (sectionId: string) => `section-${sectionId}`
