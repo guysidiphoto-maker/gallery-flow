@@ -45,6 +45,11 @@ export function GalleryViewerPage() {
   const txt = t(lang)
   const isMobile = isMobileUA()
 
+  // Browser tab shows the gallery (and studio) instead of the generic product title.
+  useEffect(() => {
+    if (galleryTitle) document.title = studioName ? `${galleryTitle} · ${studioName}` : galleryTitle
+  }, [galleryTitle, studioName])
+
   const [showWelcome, setShowWelcome] = useState(true)
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
   const [viewerList, setViewerList] = useState<GalleryImage[] | null>(null)

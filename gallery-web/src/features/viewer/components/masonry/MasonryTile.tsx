@@ -39,6 +39,8 @@ export function MasonryTile({
   onDownload?: (img: GalleryImage) => void
   onWarmDownload?: (img: GalleryImage, warm: boolean) => void
 }) {
+  const activate = () => (selectMode ? onToggleSelect?.(img.id) : onImageClick(index))
+
   return (
     <div
       ref={tileRef}
@@ -65,12 +67,17 @@ export function MasonryTile({
         {...(isAboveFold ? { fetchpriority: 'high' } : {})}
         decoding="async"
         className={cn(
-          'gv-tile-placeholder block h-auto w-full cursor-pointer [transition:opacity_.35s_ease,filter_.3s_ease]',
+          'gv-tile-placeholder block h-auto w-full cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white [transition:opacity_.35s_ease,filter_.3s_ease]',
           selectMode && !isSelected ? 'opacity-55 saturate-60' : clientMode && isHidden ? 'opacity-30' : 'opacity-100',
         )}
         // Reserve the tile's space before load (real ratio, else 3:2) so columns never collapse.
         style={{ aspectRatio: img.width && img.height ? `${img.width} / ${img.height}` : 'auto 3 / 2' }}
-        onClick={() => selectMode ? onToggleSelect?.(img.id) : onImageClick(index)}
+        onClick={activate}
+        // Keyboard access: tiles act as buttons (Enter/Space opens or toggles).
+        role="button"
+        tabIndex={0}
+        aria-label={selectMode ? `בחירת תמונה ${index + 1}` : `פתיחת תמונה ${index + 1}`}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate() } }}
       />
       {selectMode && (
         <button

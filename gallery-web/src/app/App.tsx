@@ -34,6 +34,21 @@ const PAGES: Record<RouteId, ComponentType | LazyExoticComponent<ComponentType>>
   vendor: page(() => import('@/features/vendor/VendorPortalPage'), 'VendorPortal'),
 }
 
+// Tab titles for app routes that aren't server-rendered (SSR pages ship their own).
+const TITLES: Partial<Record<RouteId, string>> = {
+  pricing: 'מחירים',
+  dashboard: 'הסטודיו שלי',
+  'brand-kit': 'Brand Kit',
+  'studio-settings': 'הגדרות סטודיו',
+  admin: 'ניהול',
+  'client-login': 'כניסת לקוחות',
+  'client-invite-accept': 'הצטרפות לאזור הלקוח',
+  'client-portal': 'אזור הלקוח',
+  questionnaire: 'שאלון',
+  'event-capture': 'הרשמה לאירוע',
+  vendor: 'פורטל ספקים',
+}
+
 export function App() {
   const route = resolveRoute(window.location.pathname)
   if (!route) {
@@ -41,6 +56,8 @@ export function App() {
     return null
   }
   const Page = PAGES[route]
+  const title = TITLES[route]
+  if (title) document.title = `${title} · Pixflow`
   return (
     <Suspense fallback={null}>
       <Page />
