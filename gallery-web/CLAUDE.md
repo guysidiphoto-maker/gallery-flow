@@ -12,6 +12,7 @@ src/
   styles/               index.css (entry), tokens.css (design tokens), base.css, dashboard-legacy.css (dash-* phone rules, being retired)
   shared/
     ui/                 design-system primitives (Button, Field, Modal, Toggle, Panel, Icon, cn …)
+    data/               every Supabase query/RPC/edge-function call, one module per entity (see its README)
     lib/                framework-level helpers (supabase client, auth, storage signing, analytics, hooks)
     i18n/               locale dictionaries + hooks (owner, portal, viewer)
     gallery/            gallery domain logic shared by viewer + dashboard (branding, layout, presets, schema)

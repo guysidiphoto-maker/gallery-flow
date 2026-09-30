@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { useAuth } from './auth'
-import { supabase } from './supabase'
+import { getOwnerBusiness } from '@/shared/data/businesses'
 
 export type OwnerBusinessStatus = 'loading' | 'signed-out' | 'no-business' | 'ready'
 
@@ -31,11 +31,7 @@ export function useOwnerBusiness<Row extends { id: string } = { id: string }>(
   useEffect(() => {
     if (!userId) return
     let cancelled = false
-    void supabase
-      .from('businesses')
-      .select(columns)
-      .eq('user_id', userId)
-      .maybeSingle()
+    void getOwnerBusiness(userId, columns)
       .then(({ data }) => {
         if (cancelled) return
         setBusiness((data as unknown as Row | null) ?? null)

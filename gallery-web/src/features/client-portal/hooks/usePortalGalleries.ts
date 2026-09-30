@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { supabase, storageUrl } from '@/shared/lib/supabase'
+import { storageUrl } from '@/shared/lib/supabase'
+import { listLiveGalleriesForClient } from '@/shared/data/galleries'
+import { getFirstImage } from '@/shared/data/images'
 
 export interface PortalGalleryRow {
   id: string; name: string; client_name: string | null; image_count: number
@@ -22,19 +24,14 @@ export function usePortalGalleries(clientId: string, resolveErr: string | null) 
     }
     load()
     async function load() {
-      const { data, error: e } = await supabase
-        .from('galleries')
-        .select('id, name, client_name, image_count, published_at, delivery_settings')
-        .eq('client_id', clientId).eq('status', 'live')
-        .order('published_at', { ascending: false })
+      const { data, error: e } = await listLiveGalleriesForClient(clientId)
       if (e || !data?.length) { setError(e ? 'Could not load' : 'No galleries found'); setLoading(false); return }
       setGalleries(data)
       // The legacy PIN lives in the first gallery's delivery settings.
       const s = (data[0].delivery_settings || {}) as Record<string, unknown>
       if (typeof s.clientCode === 'string' && s.clientCode) setClientCode(s.clientCode)
       const coverRes = await Promise.all(data.map(async g => {
-        const { data: img } = await supabase.from('images').select('thumbnail_path, web_preview_path')
-          .eq('gallery_id', g.id).order('sort_order', { ascending: true }).limit(1).maybeSingle()
+        const { data: img } = await getFirstImage(g.id, 'thumbnail_path, web_preview_path')
         return { id: g.id, url: img ? storageUrl('gallery-images', img.thumbnail_path || img.web_preview_path) : null }
       }))
       const cm = new Map<string, string>()

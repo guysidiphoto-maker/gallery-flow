@@ -1,5 +1,5 @@
 import { isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from '@/shared/lib/publicSession'
-import { getStoredToken } from '@/shared/gallery/galleryClient'
+import { getStoredToken } from '@/shared/data/publicGallery'
 import type { GalleryImage } from '@/shared/types'
 import { legacyDownloadUrl, resolveDownloadUrl, type DownloadUrlContext } from './downloadUrls'
 import { anchorDownload } from './fileSave'

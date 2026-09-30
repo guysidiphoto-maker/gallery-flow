@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { supabase } from '@/shared/lib/supabase'
-import { getStoredToken } from '@/shared/gallery/galleryClient'
+import { getStoredToken } from '@/shared/data/publicGallery'
+import { searchFacesBySelfie } from '@/shared/data/faceSearch'
 import { THINKING_LINES_MAP, type FaceSearchLang } from './faceSearchTexts'
 import { isServerImageRow, type ServerImageRow } from './serverImageRow'
 
@@ -85,15 +85,7 @@ export function useFaceSearch({ galleryId, privacyMode, lang, onSelfieCapture }:
     const notFound: Phase = privacyMode === 'private' ? 'not-found-private' : 'not-found'
 
     try {
-      const form = new FormData()
-      form.append('galleryId', galleryId)
-      form.append('selfie', file)
-      const token = getStoredToken(galleryId)
-      if (token) form.append('token', token)
-
-      const { data, error } = await supabase.functions.invoke('rekognition', {
-        body: form,
-      })
+      const { data, error } = await searchFacesBySelfie(galleryId, file, getStoredToken(galleryId))
 
       if (error) throw new Error(error.message || 'Search failed')
       if (data?.error) throw new Error(String(data.error))

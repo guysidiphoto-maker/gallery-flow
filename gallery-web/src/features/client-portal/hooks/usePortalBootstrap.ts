@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/shared/lib/supabase'
+import { getClientPortalBootstrap } from '@/shared/data/clientPortal'
 import { isPortalBootstrap, type PortalBootstrap } from '../lib/bootstrap'
 
 /**
@@ -19,7 +20,7 @@ export function usePortalBootstrap() {
         if (cancelled) return
         if (!session) { setBootstrap(null); setBootstrapChecked(true); return }
         setMemberEmail(session.user.email ?? null)
-        const { data, error: e } = await supabase.rpc('client_portal_bootstrap')
+        const { data, error: e } = await getClientPortalBootstrap()
         if (cancelled) return
         setBootstrap(!e && isPortalBootstrap(data) ? data : null)
       } catch {

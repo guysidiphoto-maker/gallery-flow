@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { resolveClientPortal, resolveClientPortalById } from '@/shared/data/clientPortal'
 import { parsePortalPath } from '../lib/parsePortalPath'
 
 /**
@@ -18,7 +18,7 @@ export function usePortalClient() {
     let cancelled = false
     if (clientId) {
       ;(async () => {
-        const { data, error: e } = await supabase.rpc('resolve_client_portal_by_id', { p_client_id: clientId })
+        const { data, error: e } = await resolveClientPortalById(clientId)
         if (cancelled || e) return
         const row = Array.isArray(data) ? data[0] : null
         if (!row?.business_slug || !row?.client_slug) return
@@ -31,10 +31,7 @@ export function usePortalClient() {
     }
     if (!parsedUrl.slug || !parsedUrl.clientSlug) return
     ;(async () => {
-      const { data, error: e } = await supabase.rpc('resolve_client_portal', {
-        p_business_slug: parsedUrl.slug,
-        p_client_slug: parsedUrl.clientSlug,
-      })
+      const { data, error: e } = await resolveClientPortal(parsedUrl.slug, parsedUrl.clientSlug)
       if (cancelled) return
       const row = !e && Array.isArray(data) ? data[0] : null
       if (!row?.client_id) { setResolveErr('Business not found'); return }

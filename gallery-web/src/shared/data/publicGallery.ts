@@ -1,8 +1,9 @@
-// Gated gallery reads/writes via SECURITY DEFINER RPCs that check an unlock token.
-// Galleries without the signed gate fall through to the public path server-side,
-// so the client never branches on the flag.
+// What an anonymous guest can read of a gallery. Guests can't read the gallery tables (RLS),
+// so every read is a SECURITY DEFINER RPC that checks the unlock token server-side.
+// Functions here retry and return plain values (null / [] / status), never throw.
 
 import { supabase } from '@/shared/lib/supabase'
+import { listImageDimensions } from './images'
 
 const TOKEN_KEY_PREFIX = 'gf_token_'
 
@@ -35,10 +36,7 @@ async function normalizeImageRows(
     storage_path: row.storage_path ?? row.web_preview_path,
   }))
   if (rows.length > 0 && rows[0].width == null) {
-    const { data: dimRows } = await supabase
-      .from('images')
-      .select('id, width, height')
-      .eq('gallery_id', galleryId)
+    const { data: dimRows } = await listImageDimensions(galleryId)
     if (dimRows) {
       const byId = new Map(dimRows.map(d => [d.id as string, d]))
       for (const r of rows) {
@@ -81,6 +79,7 @@ export interface GalleryMeta {
   [k: string]: unknown
 }
 
+/** The unlock token saved by a successful password entry, or null if missing/expired. */
 export function getStoredToken(galleryId: string): string | null {
   try {
     const raw = localStorage.getItem(TOKEN_KEY_PREFIX + galleryId)
@@ -106,6 +105,7 @@ function storeToken(galleryId: string, token: string, expiresAtIso: string): voi
   } catch { /* storage full / disabled — token will just be re-issued next visit */ }
 }
 
+/** Checks a gallery password (`verify_gallery_password`) and stores the returned unlock token. */
 export async function verifyPassword(galleryId: string, password: string): Promise<VerifyResult> {
   const { data, error } = await supabase.rpc('verify_gallery_password', {
     p_gallery_id: galleryId,
@@ -151,6 +151,7 @@ export async function bootstrapGallery<M = GalleryMeta, I = unknown, S = unknown
   }
 }
 
+/** Gallery settings row without secrets (`gallery_get_meta`), or null. */
 export async function getMeta(galleryId: string): Promise<GalleryMeta | null> {
   const { data, error } = await rpcWithRetry(() =>
     supabase.rpc('gallery_get_meta', { p_gallery_id: galleryId }),
@@ -159,6 +160,7 @@ export async function getMeta(galleryId: string): Promise<GalleryMeta | null> {
   return data as GalleryMeta
 }
 
+/** One page of guest-visible images (`gallery_get_images`), [] on failure. */
 export async function getImages<T = unknown>(
   galleryId: string,
   opts: { offset?: number; limit?: number } = {},
@@ -175,12 +177,7 @@ export async function getImagesResult<T = unknown>(
 ): Promise<{ ok: true; data: T[] } | { ok: false }> {
   const token = getStoredToken(galleryId)
   const { data, error } = await rpcWithRetry(
-    () => supabase.rpc('gallery_get_images', {
-      p_gallery_id: galleryId,
-      p_token: token,
-      p_offset: opts.offset ?? 0,
-      p_limit: opts.limit ?? 1000,
-    }),
+    () => fetchImagesPage(galleryId, token, opts.offset ?? 0, opts.limit ?? 1000),
     // Empty array = past the last page; don't burn retries on it.
     { isEmptyOk: d => Array.isArray(d) },
   )
@@ -189,6 +186,17 @@ export async function getImagesResult<T = unknown>(
   return { ok: true, data: rows as T[] }
 }
 
+/** One raw `gallery_get_images` page as `{ data, error }`: no retry, no row normalization. */
+export async function fetchImagesPage(galleryId: string, token: string | null, offset: number, limit: number) {
+  return supabase.rpc('gallery_get_images', {
+    p_gallery_id: galleryId,
+    p_token: token,
+    p_offset: offset,
+    p_limit: limit,
+  })
+}
+
+/** The gallery's stories (`gallery_get_stories`), [] on failure. */
 export async function getStories<T = unknown>(galleryId: string): Promise<T[]> {
   const token = getStoredToken(galleryId)
   const { data, error } = await rpcWithRetry(
@@ -199,6 +207,7 @@ export async function getStories<T = unknown>(galleryId: string): Promise<T[]> {
   return data as T[]
 }
 
+/** Ids of images the signed-in client hid (`gallery_get_hidden`), [] on failure. */
 export async function getHidden(galleryId: string): Promise<string[]> {
   const token = getStoredToken(galleryId)
   const { data, error } = await supabase.rpc('gallery_get_hidden', {
@@ -209,6 +218,7 @@ export async function getHidden(galleryId: string): Promise<string[]> {
   return (data as Array<{ image_id: string }>).map(r => r.image_id)
 }
 
+/** Hides/unhides one image for the client (`gallery_set_hidden`); result ignored. */
 export async function setHidden(
   galleryId: string,
   imageId: string,
@@ -221,4 +231,9 @@ export async function setHidden(
     p_hidden: hidden,
     p_token: token,
   })
+}
+
+/** Last-published revision (settings + sections) as `{ data, error }`; data may be a row or a one-row array. */
+export async function getPublishedSnapshot(galleryId: string) {
+  return supabase.rpc('gallery_get_published_snapshot', { p_gallery_id: galleryId })
 }

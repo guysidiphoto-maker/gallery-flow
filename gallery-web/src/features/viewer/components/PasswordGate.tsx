@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { verifyPassword, getStoredToken } from '@/shared/gallery/galleryClient'
+import { verifyPassword, getStoredToken } from '@/shared/data/publicGallery'
 import { useFocusTrap } from '@/shared/lib/useFocusTrap'
 import { cn } from '@/shared/ui'
 import { CoverBackdrop } from './CoverBackdrop'

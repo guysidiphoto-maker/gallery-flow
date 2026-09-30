@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { invokeAdmin, type GrantRow, type UserRow } from './adminApi'
+import { invokeAdmin } from '@/shared/data/admin'
+import type { GrantRow, UserRow } from './adminApi'
 
 export const PAGE_SIZE = 25
 

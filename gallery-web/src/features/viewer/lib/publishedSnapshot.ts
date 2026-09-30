@@ -1,4 +1,4 @@
-import { supabase } from '@/shared/lib/supabase'
+import { getPublishedSnapshot } from '@/shared/data/publicGallery'
 import type { DeliverySettings, Gallery, GallerySection } from '@/shared/types'
 
 // When on, clients see the last-published revision's settings + sections so
@@ -37,10 +37,7 @@ export async function applyPublishedSnapshot(
   let liveGallery = g
   if (!USE_PUBLISHED_SNAPSHOT || !publishedRevisionId) return { gallery: liveGallery, sections: liveSections }
   try {
-    const { data: snapRows, error: snapErr } = await supabase.rpc(
-      'gallery_get_published_snapshot',
-      { p_gallery_id: id },
-    )
+    const { data: snapRows, error: snapErr } = await getPublishedSnapshot(id)
     if (snapErr) {
       console.warn('[snapshot] rpc_error — falling back to live read', snapErr.message)
     } else {

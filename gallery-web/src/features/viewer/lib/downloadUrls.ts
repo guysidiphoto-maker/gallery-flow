@@ -1,7 +1,7 @@
 import { storageUrl } from '@/shared/lib/supabase'
 import { isPublicViewerSignedUrlsEnabled, readPublicSessionToken } from '@/shared/lib/publicSession'
 import { signedStorageUrl, signedWatermarkedUrl } from '@/shared/lib/signedStorage'
-import { getStoredToken } from '@/shared/gallery/galleryClient'
+import { getStoredToken } from '@/shared/data/publicGallery'
 import type { GalleryImage } from '@/shared/types'
 
 export interface DownloadUrlContext {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getHidden as gcGetHidden, setHidden as gcSetHidden } from '@/shared/gallery/galleryClient'
+import { getHidden as gcGetHidden, setHidden as gcSetHidden } from '@/shared/data/publicGallery'
 import type { Gallery } from '@/shared/types'
 import type { ViewerRole } from '../lib/viewerSettings'
 
