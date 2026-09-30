@@ -3,6 +3,7 @@
 import { insertGalleryWithSlug } from '@/shared/data/galleries'
 import { uploadMany } from '@/features/dashboard/lib/uploadPipeline'
 import { sha256HexBrowser, ZIP_ENTRY_MAX_BYTES } from './zipRules'
+import type { PriorFileStatus } from './resumePlan'
 import {
   reportCollectionProgress,
   type CollectionStatus, type ImportCollection, type OwnerBusiness, type ZipListing,
@@ -94,8 +95,10 @@ export interface CollectionRunResult {
 }
 
 /**
- * Import one collection in checkpointed chunks so pause/refresh resumes where it stopped.
+ * Import one collection in checkpointed chunks so a pause resumes where it stopped.
  * Files whose hash was already seen in this job are recorded skipped_duplicate, never re-uploaded.
+ * `priorFiles` lists files a previous run already handled; it is updated as files are
+ * handled so the caller's copy stays right even when a checkpoint report is lost.
  */
 export async function runCollection(args: {
   jobId: string
@@ -103,10 +106,12 @@ export async function runCollection(args: {
   listing: ZipListing
   business: OwnerBusiness
   clientId: string | null
-  alreadyUploadedNames: Set<string>
+  priorFiles: Map<string, PriorFileStatus>
   knownHashes: Set<string>
   controls: RunControls
   onProgress: (p: CollectionProgress) => void
+  /** Called as soon as the target gallery exists, so a resume reuses it. */
+  onGalleryReady?: (galleryId: string) => void
 }): Promise<CollectionRunResult> {
   const { jobId, collection, listing, business, controls, onProgress } = args
   const accepted = listing.summary.accepted
@@ -133,6 +138,7 @@ export async function runCollection(args: {
     }
     galleryId = g.id
   }
+  args.onGalleryReady?.(galleryId)
   await reportBestEffort({
     jobId, collectionId: collection.id, collectionStatus: 'importing', targetGalleryId: galleryId,
   })
@@ -140,7 +146,7 @@ export async function runCollection(args: {
   const report = () => onProgress({ uploaded, skippedDuplicate, failed, total })
 
   // 2) Chunked extract → hash → dedupe → upload → checkpoint.
-  let sortOffset = 0
+  let sortOffset = [...args.priorFiles.values()].filter(s => s === 'uploaded').length
   for (let i = 0; i < accepted.length; i += CHUNK_SIZE) {
     if (controls.isCancelled()) return { galleryId, uploaded, skippedDuplicate, failed, failures, stopped: 'cancelled' }
     if (controls.isPaused()) return { galleryId, uploaded, skippedDuplicate, failed, failures, stopped: 'paused' }
@@ -151,8 +157,10 @@ export async function runCollection(args: {
 
     for (const entry of chunk) {
       onProgress({ uploaded, skippedDuplicate, failed, total, currentFile: entry.filename })
-      // Resume: already uploaded in a previous run → count once, don't re-record.
-      if (args.alreadyUploadedNames.has(entry.filename)) { uploaded++; continue }
+      // Resume: handled in a previous run → count once, don't re-record.
+      const prior = args.priorFiles.get(entry.filename)
+      if (prior === 'uploaded') { uploaded++; continue }
+      if (prior === 'skipped_duplicate') { skippedDuplicate++; continue }
       const zipObj = listing.zip.file(entry.path)
       if (!zipObj) {
         failed++; failures.push({ filename: entry.filename, error: 'missing_in_zip' })
@@ -176,6 +184,7 @@ export async function runCollection(args: {
       const hash = await sha256HexBrowser(bytes)
       if (args.knownHashes.has(hash)) {
         skippedDuplicate++
+        args.priorFiles.set(entry.filename, 'skipped_duplicate')
         fileRecords.push({ filename: entry.filename, sizeBytes: bytes.byteLength, contentHash: hash, status: 'skipped_duplicate' })
         continue
       }
@@ -196,6 +205,7 @@ export async function runCollection(args: {
       sortOffset += toUpload.length
       for (const r of ok) {
         uploaded++
+        args.priorFiles.set(r.filename, 'uploaded')
         const src = toUpload.find(f => f.name === r.filename)
         fileRecords.push({
           filename: r.filename, sizeBytes: r.originalSize,

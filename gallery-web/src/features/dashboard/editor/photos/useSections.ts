@@ -4,7 +4,7 @@ import { updateGallery } from '@/shared/data/galleries'
 import { deleteSection as deleteSectionRow, insertSection, updateSection } from '@/shared/data/sections'
 import { trackAction } from '@/shared/lib/sentryContext'
 import { purgeStorageForImages } from '../../lib/purgeStorage'
-import { moveItem, persistSortOrder } from '../../lib/reorder'
+import { applyServerSortOrder, fetchServerSortOrder, moveItem, persistSortOrder } from '../../lib/reorder'
 import { SECTION_COLUMNS, type Confirm, type Toast } from '../../types'
 import type { EditorSession } from '../useEditorSession'
 
@@ -19,7 +19,7 @@ export function useSections(deps: {
   const { session, fetchGalleries, confirm, showToast } = deps
   const {
     editingGallery, galleryImages, setGalleryImages,
-    sections, setSections, activeSectionId, setActiveSectionId, markDirty,
+    sections, setSections, activeSectionId, setActiveSectionId, markDirty, isOpenGallery,
   } = session
   const [newSectionName, setNewSectionName] = useState('')
   const [newSectionDesc, setNewSectionDesc] = useState('')
@@ -42,13 +42,17 @@ export function useSections(deps: {
   }, [galleryId])
 
   // Appends a section to the open gallery; null (after a toast) on failure.
-  async function createSection(logLabel: string, fields: { name: string; description?: string | null }) {
+  async function createSection(
+    logLabel: string,
+    fields: { name: string; description?: string | null },
+    errorText = 'יצירת הסקשן נכשלה. נסה שוב.',
+  ) {
     const { data, error } = await insertSection(
       { gallery_id: editingGallery!.id, ...fields, sort_order: sections.length },
       SECTION_COLUMNS,
     )
     if (error || !data) {
-      showToast({ kind: 'error', text: 'יצירת הסקשן נכשלה. נסה שוב.' })
+      showToast({ kind: 'error', text: errorText })
       console.warn(logLabel, error)
       return null
     }
@@ -71,11 +75,16 @@ export function useSections(deps: {
   }
 
   // Uploads always land in a section; a brand-new gallery gets a default one
-  // on the fly. Returns the target section id.
+  // on the fly. Returns the target section id, or null (after a toast) when
+  // none could be created — the caller must not upload then.
   async function ensureUploadSection(): Promise<string | null> {
     if (activeSectionId) return activeSectionId
     if (!editingGallery) return null
-    const created = await createSection('[ensureUploadSection]', { name: `סקשן ${sections.length + 1}` })
+    const created = await createSection(
+      '[ensureUploadSection]',
+      { name: `סקשן ${sections.length + 1}` },
+      'ההעלאה בוטלה: לא הצלחנו ליצור סקשן לתמונות. נסה שוב.',
+    )
     return created?.id ?? null
   }
 
@@ -146,7 +155,8 @@ export function useSections(deps: {
   }
 
   async function reorderSection(draggedId: string, targetId: string) {
-    if (draggedId === targetId) return
+    if (draggedId === targetId || !editingGallery) return
+    const gid = editingGallery.id
     const ordered = sections.slice().sort((a, b) => a.sort_order - b.sort_order)
     const next = moveItem(ordered, draggedId, targetId)
     if (!next) return
@@ -158,8 +168,15 @@ export function useSections(deps: {
     markDirty()
     const failedIds = await persistSortOrder('gallery_sections', next.map(s => s.id))
     if (failedIds.length > 0) {
-      showToast({ kind: 'error', text: `סידור ${failedIds.length} סקשנים לא נשמר. רענן את הגלריה.` })
       console.warn('[reorderSection] failed ids', failedIds)
+      const rows = await fetchServerSortOrder('gallery_sections', gid)
+      if (rows && isOpenGallery(gid)) setSections(prev => applyServerSortOrder(prev, rows))
+      showToast({
+        kind: 'error',
+        text: rows
+          ? `סידור ${failedIds.length} סקשנים לא נשמר. הוצג הסדר השמור.`
+          : `סידור ${failedIds.length} סקשנים לא נשמר. רענן את הדף.`,
+      })
     }
   }
 

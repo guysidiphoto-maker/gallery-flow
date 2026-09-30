@@ -11,7 +11,7 @@ import { btnGhost, btnPrimary, h1, input } from './components/adminStyles'
 
 export function AdminPage() {
   const { user, loading: authLoading } = useAuth()
-  const { rows, total, offset, search, setSearch, loading, denied, err, audit, load, grant, toast } =
+  const { rows, total, offset, search, setSearch, loading, denied, err, audit, load, goToOffset, grant, toast } =
     useAdminUsers(user, authLoading)
 
   if (authLoading) return <AdminShell><p className="text-muted">טוען…</p></AdminShell>
@@ -62,9 +62,9 @@ export function AdminPage() {
       {loading ? <p className="text-muted">טוען…</p> : <UsersTable rows={rows} onGrant={grant.openGrant} />}
 
       <div className="mt-3 flex items-center gap-3 text-[13px] text-muted">
-        <Button variant="ghost" className={btnGhost} disabled={offset === 0} onClick={() => void load(Math.max(offset - PAGE_SIZE, 0), search)}>הקודם</Button>
+        <Button variant="ghost" className={btnGhost} disabled={offset === 0} onClick={() => void goToOffset(Math.max(offset - PAGE_SIZE, 0))}>הקודם</Button>
         <span>עמוד {page} מתוך {pages} · {total.toLocaleString('he-IL')} משתמשים</span>
-        <Button variant="ghost" className={btnGhost} disabled={page >= pages} onClick={() => void load(offset + PAGE_SIZE, search)}>הבא</Button>
+        <Button variant="ghost" className={btnGhost} disabled={page >= pages} onClick={() => void goToOffset(offset + PAGE_SIZE)}>הבא</Button>
       </div>
 
       <h2 className={cn(h1, 'mt-10 text-xl')}>פעולות ניהול אחרונות</h2>

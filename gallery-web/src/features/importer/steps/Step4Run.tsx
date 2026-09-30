@@ -1,14 +1,16 @@
 // Runs each mapped collection through runCollection (existing upload pipeline).
-// Pause/cancel hit the API and local refs so the loop stops between chunks.
+// Pause/cancel set local refs so the loop stops between chunks; a pause stays on
+// this step so it can be resumed.
 // Only the 'skip' duplicate policy exists; the others are shown disabled.
 import { useCallback, useRef, useState } from 'react'
 import { cn } from '@/shared/ui'
 import type { WizardCommon, ImportCollection, ZipSlot, CollectionOutcome, DuplicatePolicy } from '../wizardTypes'
 import {
-  startJob, pauseJob, resumeJob, cancelJob,
+  startJob, pauseJob, resumeJob, cancelJob, getJobStatus,
   type OwnerBusiness,
 } from '../importApi'
 import { runCollection, type CollectionProgress } from '../runCollection'
+import { planResume, type RunMemory } from '../resumePlan'
 import { ImportPanel } from '../components/ImportPanel'
 import { ImportButton } from '../components/ImportButton'
 import { Notice } from '../components/Notice'
@@ -35,6 +37,11 @@ export function Step4Run({
   const cancelledRef = useRef(false)
   // True while the collection loop runs; a pause only takes effect at the next chunk.
   const loopActiveRef = useRef(false)
+  // What this session already did, kept across pause/resume: created galleries,
+  // handled files, finished collections, outcomes and seen hashes.
+  const memoryRef = useRef<RunMemory>({ galleryIds: new Map(), priorFiles: new Map(), finished: new Set() })
+  const outcomesRef = useRef<Map<string, CollectionOutcome>>(new Map())
+  const knownHashesRef = useRef<Set<string>>(new Set())
 
   // Collections that have a mapped ZIP with accepted files.
   const runnable = collections
@@ -42,7 +49,9 @@ export function Step4Run({
     .map(c => ({ col: c, slot: zips.find(z => z.collectionId === c.id && z.listing && z.listing.summary.accepted.length > 0) }))
     .filter((x): x is { col: ImportCollection; slot: ZipSlot } => !!x.slot)
 
-  const run = useCallback(async () => {
+  // A resume continues from the job's checkpoint merged with this session's
+  // memory: finished collections are skipped and existing galleries reused.
+  const run = useCallback(async (resuming = false) => {
     if (loopActiveRef.current) return
     loopActiveRef.current = true
     setError(null)
@@ -51,28 +60,40 @@ export function Step4Run({
     setRunState('running')
 
     try {
-      const totalFiles = runnable.reduce((n, r) => n + (r.slot.listing?.summary.accepted.length ?? 0), 0)
-      const totalBytes = runnable.reduce((n, r) => n + (r.slot.listing?.summary.totalUncompressedBytes ?? 0), 0)
-      const started = await startJob(jobId, { files: totalFiles, bytes: totalBytes })
-      if (!started.ok) { setError(started.error ?? 'start_failed'); setRunState('idle'); return }
+      if (!resuming) {
+        const totalFiles = runnable.reduce((n, r) => n + (r.slot.listing?.summary.accepted.length ?? 0), 0)
+        const totalBytes = runnable.reduce((n, r) => n + (r.slot.listing?.summary.totalUncompressedBytes ?? 0), 0)
+        const started = await startJob(jobId, { files: totalFiles, bytes: totalBytes })
+        if (!started.ok) { setError(started.error ?? 'start_failed'); setRunState('idle'); return }
+      }
 
-      const outcomes: CollectionOutcome[] = []
-      const knownHashes = new Set<string>() // cross-collection dedupe within this run
+      // The checkpoint read is best effort: this session's memory alone already
+      // prevents duplicate galleries and re-uploads.
+      let persisted = null
+      if (resuming) {
+        const status = await getJobStatus(jobId).catch(() => null)
+        if (status?.ok) persisted = { collections: status.collections ?? [], files: status.files ?? [] }
+      }
+      const plan = planResume(runnable.map(r => r.col.id), persisted, memoryRef.current)
+      plan.knownHashes.forEach(h => knownHashesRef.current.add(h))
 
       for (const { col, slot } of runnable) {
         if (cancelledRef.current) break
+        const target = plan.targets.get(col.id)!
+        if (target.skip) continue
         const res = await runCollection({
           jobId,
-          collection: col,
+          collection: { ...col, target_gallery_id: target.targetGalleryId },
           listing: slot.listing!,
           business,
           clientId: col.matched_client_id,
-          alreadyUploadedNames: new Set<string>(),
-          knownHashes,
+          priorFiles: target.priorFiles,
+          knownHashes: knownHashesRef.current,
           controls: { isPaused: () => pausedRef.current, isCancelled: () => cancelledRef.current },
           onProgress: p => setProgress(prev => ({ ...prev, [col.id]: p })),
+          onGalleryReady: id => { memoryRef.current.galleryIds.set(col.id, id) },
         })
-        outcomes.push({
+        outcomesRef.current.set(col.id, {
           collectionId: col.id, sourceName: col.source_name,
           galleryId: res.galleryId, gallerySlug: null,
           uploaded: res.uploaded, skippedDuplicate: res.skippedDuplicate,
@@ -80,46 +101,52 @@ export function Step4Run({
         })
         if (res.stopped === 'cancelled') { cancelledRef.current = true; break }
         if (res.stopped === 'paused') {
+          // Paused server-side only now, so the last chunk's checkpoint was accepted.
+          await pauseJob(jobId).catch(() => setError('pause_failed'))
           setRunState('paused')
-          onFinished(outcomes)
           return
         }
+        memoryRef.current.finished.add(col.id)
       }
 
       setRunState(cancelledRef.current ? 'cancelled' : 'done')
-      onFinished(outcomes)
+      onFinished([...outcomesRef.current.values()])
     } catch (err) {
       console.warn('[import] run failed', err)
       setError('run_failed')
-      setRunState('idle')
+      setRunState(resuming ? 'paused' : 'idle')
     } finally {
       loopActiveRef.current = false
     }
   }, [runnable, jobId, business, onFinished])
 
-  const doPause = useCallback(async () => {
+  // The loop stops at the next chunk boundary and pauses the job then.
+  const doPause = useCallback(() => {
     pausedRef.current = true
     setRunState('paused')
-    await pauseJob(jobId).catch(() => setError('pause_failed'))
-  }, [jobId])
+  }, [])
 
   // Resuming before the loop reached its pause point just un-pauses it; starting
   // a second loop would import the same collections twice.
   const doResume = useCallback(async () => {
-    try { await resumeJob(jobId) } catch { setError('resume_failed'); return }
     if (loopActiveRef.current) {
       pausedRef.current = false
       setRunState('running')
-    } else {
-      void run()
+      return
     }
+    const resumed = await resumeJob(jobId).catch(() => null)
+    if (!resumed?.ok) { setError('resume_failed'); return }
+    void run(true)
   }, [jobId, run])
 
   const doCancel = useCallback(async () => {
     cancelledRef.current = true
     setRunState('cancelled')
+    const loopStopped = !loopActiveRef.current
     await cancelJob(jobId).catch(() => setError('cancel_failed'))
-  }, [jobId])
+    // Cancelled while paused: no loop is left to hand the outcomes over.
+    if (loopStopped) onFinished([...outcomesRef.current.values()])
+  }, [jobId, onFinished])
 
   const running = runState === 'running'
 
@@ -174,9 +201,9 @@ export function Step4Run({
       </div>
 
       <div className="flex flex-wrap justify-between gap-3">
-        <ImportButton variant="ghost" onClick={onBack} disabled={running}>{t('import.common.back')}</ImportButton>
+        <ImportButton variant="ghost" onClick={onBack} disabled={running || runState === 'paused'}>{t('import.common.back')}</ImportButton>
         <div className="flex gap-2.5">
-          {runState === 'idle' && <ImportButton onClick={run} disabled={runnable.length === 0}>{t('import.step4.start')}</ImportButton>}
+          {runState === 'idle' && <ImportButton onClick={() => void run()} disabled={runnable.length === 0}>{t('import.step4.start')}</ImportButton>}
           {running && <ImportButton variant="ghost" onClick={doPause}>{t('import.step4.pause')}</ImportButton>}
           {runState === 'paused' && <ImportButton onClick={doResume}>{t('import.step4.resume')}</ImportButton>}
           {(running || runState === 'paused') && <ImportButton variant="danger" onClick={doCancel}>{t('import.step4.cancel')}</ImportButton>}
