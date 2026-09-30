@@ -1,47 +1,6 @@
 import { serviceClient } from '../server/supabase.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-
-async function sendSms(
-  phone: string,
-  guestName: string,
-  galleryUrl: string,
-): Promise<{ ok: boolean; messageId?: string; error?: string }> {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID
-  const authToken = process.env.TWILIO_AUTH_TOKEN
-  const fromNumber = process.env.TWILIO_PHONE_NUMBER
-
-  if (!accountSid || !authToken || !fromNumber) {
-    return { ok: false, error: 'SMS not configured' }
-  }
-
-  const body = `היי ${guestName}! 📸\nהגלריה מהאירוע מוכנה.\nצפה בתמונות שלך כאן:\n${galleryUrl}`
-
-  try {
-    const resp = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          To: phone,
-          From: fromNumber,
-          Body: body,
-        }),
-      },
-    )
-
-    const data = await resp.json()
-    if (!resp.ok) {
-      return { ok: false, error: data?.message || `HTTP ${resp.status}` }
-    }
-    return { ok: true, messageId: data?.sid }
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' }
-  }
-}
+import { galleryReadySms, sendSms } from '../server/sms.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -91,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const galleryUrl = eventMap.get(lead.event_id)
     if (!galleryUrl) continue
 
-    const result = await sendSms(lead.phone, lead.name, galleryUrl)
+    const result = await sendSms(lead.phone, galleryReadySms(lead.name, galleryUrl))
     retried++
 
     await supabase
