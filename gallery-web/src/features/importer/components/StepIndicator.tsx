@@ -6,7 +6,7 @@ const STEPS: StepIndex[] = [1, 2, 3, 4, 5]
 
 export function StepIndicator({ t, step }: { t: T; step: StepIndex }) {
   return (
-    <ol className="mt-4 flex flex-wrap gap-2">
+    <ol className="flex flex-wrap gap-2">
       {STEPS.map(s => (
         <li
           key={s}

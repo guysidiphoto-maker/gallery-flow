@@ -7,7 +7,7 @@ import '../editor.css'
 const field = 'w-full rounded-hair border border-line bg-raised px-3.5 py-3 text-[14px] text-ink outline-none'
 const label = 'mb-2 block text-[13px] font-medium text-ink'
 
-// "New Photo Set" dialog: name + optional description shown to clients.
+// New photo set dialog: name + optional description shown to clients.
 export function AddSetModal() {
   const { sections: sec } = useEditor()
   const { newSectionName, setNewSectionName, newSectionDesc, setNewSectionDesc, setShowAddSetModal, addSection } = sec
@@ -27,10 +27,10 @@ export function AddSetModal() {
         className="dash-mobile-modal w-[calc(100vw-40px)] max-w-[480px] animate-[editor-modal-in_.25s_ease_both] border border-line bg-raised px-10 pt-10 pb-8"
       >
         <div className="mb-7 flex items-center justify-between">
-          <h3 id="add-set-heading" className="m-0 text-[12px] font-medium tracking-wide-label text-ink uppercase">New Photo Set</h3>
+          <h3 id="add-set-heading" className="m-0 text-[15px] font-medium text-ink">סט תמונות חדש</h3>
           <button
             onClick={() => setShowAddSetModal(false)}
-            aria-label="Close"
+            aria-label="סגירה"
             className="flex cursor-pointer bg-transparent p-1 text-ink-soft"
           >
             <Icon name="close" size={16} strokeWidth={1.85} />
@@ -38,7 +38,7 @@ export function AddSetModal() {
         </div>
 
         <label className="mb-6 block">
-          <span className={label}>Photo Set Name</span>
+          <span className={label}>שם הסט</span>
           <input
             autoFocus
             type="text"
@@ -51,7 +51,7 @@ export function AddSetModal() {
         </label>
 
         <label className="mb-7 block">
-          <span className={label}>Description</span>
+          <span className={label}>תיאור</span>
           <textarea
             value={newSectionDesc}
             onChange={(e) => setNewSectionDesc(e.target.value.slice(0, 500))}
@@ -70,7 +70,7 @@ export function AddSetModal() {
           <button
             onClick={() => setShowAddSetModal(false)}
             className="rounded-hair border py-2.5 text-[11px] font-medium tracking-label uppercase cursor-pointer border-line bg-transparent px-[22px] text-ink"
-          >Cancel</button>
+          >ביטול</button>
           <button
             onClick={addSection}
             disabled={!newSectionName.trim()}
@@ -78,7 +78,7 @@ export function AddSetModal() {
               'rounded-hair border py-2.5 text-[11px] font-medium tracking-label uppercase px-7 text-white',
               newSectionName.trim() ? 'cursor-pointer border-ink bg-ink' : 'cursor-not-allowed border-line bg-line',
             )}
-          >Save</button>
+          >שמירה</button>
         </div>
       </div>
     </div>

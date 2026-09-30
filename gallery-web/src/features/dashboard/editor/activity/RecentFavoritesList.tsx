@@ -6,7 +6,7 @@ export function RecentFavoritesList({ favorites, images }: {
   images: GalleryImage[]
 }) {
   return (
-    <ActivitySection eyebrow="Recent Favorites">
+    <ActivitySection eyebrow="מועדפים אחרונים">
       {favorites.slice(0, 10).map(f => {
         const img = images.find(g => g.id === f.image_id)
         return (

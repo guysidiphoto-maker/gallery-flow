@@ -7,7 +7,7 @@ export function RecentDownloadsList({ downloads, images }: {
   images: GalleryImage[]
 }) {
   return (
-    <ActivitySection eyebrow="Recent Downloads">
+    <ActivitySection eyebrow="הורדות אחרונות">
       {downloads.slice(0, 10).map(d => {
         const img = images.find(g => g.id === d.image_id)
         return (
@@ -22,8 +22,8 @@ export function RecentDownloadsList({ downloads, images }: {
               </span>
             )}
             <span className={cn(activityTagClass, 'text-muted')}>
-              {d.resolution === 'original' ? 'Original' : 'Web'}
-              {d.download_kind === 'batch' ? ' · Batch' : ''}
+              {d.resolution === 'original' ? 'מקור' : 'רשת'}
+              {d.download_kind === 'batch' ? ' · הורדה מרוכזת' : ''}
             </span>
             <span className={activityTimeClass}>
               {formatActivityTime(d.created_at)}

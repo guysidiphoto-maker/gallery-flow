@@ -23,7 +23,7 @@ export function VoiceSection({ brand, onChange, onBlur }: {
 
   return (
     <BrandKitCard
-      eyebrow="04 — Voice"
+      eyebrow="04"
       title="טון ומסר"
       description="המילים שמלוות את הסטודיו במייל הזמנה, בעמוד פתיחה ובכל סטורי."
     >

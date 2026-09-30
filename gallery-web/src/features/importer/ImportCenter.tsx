@@ -6,7 +6,7 @@ import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import { makeT, dirFor, type ImporterLocale } from './strings'
 import { createJob, loadOwnerBusiness, type ImportCollection, type OwnerBusiness } from './importApi'
 import type { StepIndex, ZipSlot, CollectionOutcome } from './wizardTypes'
-import { ImportButton } from './components/ImportButton'
+import { WorkspaceView } from '@/shared/ui'
 import { Notice } from './components/Notice'
 import { StepIndicator } from './components/StepIndicator'
 import { textDim, textMain } from './components/theme'
@@ -72,71 +72,64 @@ export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp
   const commonProps = { t, dir, locale }
 
   return (
-    <div dir={dir} className={`${textMain} mx-auto max-w-[920px] px-1 py-2`}>
-      <header className="mb-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="mb-1 text-2xl font-extrabold">{t('import.title')}</h1>
-            <p className={`${textDim} text-sm`}>{t('import.subtitle')}</p>
+    <WorkspaceView dir={dir} eyebrow={owner.t('nav.workspace')} title={t('import.title')} description={t('import.subtitle')}>
+      <div className={textMain}>
+        <div className="mb-6"><StepIndicator t={t} step={step} /></div>
+
+        {bootError && (
+          <div className="mb-4">
+            <Notice tone="danger">{t('import.common.error')}</Notice>
           </div>
-          {onExit && <ImportButton variant="ghost" onClick={onExit}>{t('import.common.close')}</ImportButton>}
-        </div>
-        <StepIndicator t={t} step={step} />
-      </header>
+        )}
 
-      {bootError && (
-        <div className="mb-4">
-          <Notice tone="danger">{t('import.common.error')}</Notice>
-        </div>
-      )}
+        {step === 1 && <Step1Explain {...commonProps} onNext={goToStep2} />}
 
-      {step === 1 && <Step1Explain {...commonProps} onNext={goToStep2} />}
+        {step === 2 && jobId && (
+          <Step2Csv
+            {...commonProps}
+            jobId={jobId}
+            collections={collections}
+            setCollections={setCollections}
+            onBack={() => setStep(1)}
+            onNext={() => setStep(3)}
+          />
+        )}
 
-      {step === 2 && jobId && (
-        <Step2Csv
-          {...commonProps}
-          jobId={jobId}
-          collections={collections}
-          setCollections={setCollections}
-          onBack={() => setStep(1)}
-          onNext={() => setStep(3)}
-        />
-      )}
+        {step === 3 && jobId && (
+          <Step3Zip
+            {...commonProps}
+            collections={collections}
+            zips={zips}
+            setZips={setZips}
+            onBack={() => setStep(2)}
+            onNext={() => setStep(4)}
+          />
+        )}
 
-      {step === 3 && jobId && (
-        <Step3Zip
-          {...commonProps}
-          collections={collections}
-          zips={zips}
-          setZips={setZips}
-          onBack={() => setStep(2)}
-          onNext={() => setStep(4)}
-        />
-      )}
+        {step === 4 && jobId && business && (
+          <Step4Run
+            {...commonProps}
+            jobId={jobId}
+            business={business}
+            collections={collections}
+            zips={zips}
+            onBack={() => setStep(3)}
+            onFinished={out => { setOutcomes(out); setStep(5) }}
+          />
+        )}
 
-      {step === 4 && jobId && business && (
-        <Step4Run
-          {...commonProps}
-          jobId={jobId}
-          business={business}
-          collections={collections}
-          zips={zips}
-          onBack={() => setStep(3)}
-          onFinished={out => { setOutcomes(out); setStep(5) }}
-        />
-      )}
+        {step === 5 && jobId && (
+          <Step5Report
+            {...commonProps}
+            jobId={jobId}
+            outcomes={outcomes}
+            onOpenGallery={onOpenGallery}
+            onDone={() => onExit?.()}
+          />
+        )}
 
-      {step === 5 && jobId && (
-        <Step5Report
-          {...commonProps}
-          jobId={jobId}
-          outcomes={outcomes}
-          onOpenGallery={onOpenGallery}
-          onDone={() => onExit?.()}
-        />
-      )}
-
-      {booting && <div className={`${textDim} mt-3 text-[13px]`}>{t('import.common.loading')}</div>}
-    </div>
+        {booting && <div className={`${textDim} mt-3 text-[13px]`}>{t('import.common.loading')}</div>}
+      </div>
+    </WorkspaceView>
   )
 }

@@ -9,7 +9,7 @@ export function TypographySection({ brand, onSelect }: {
   const current = brand.typography
   return (
     <BrandKitCard
-      eyebrow="03 — Typography"
+      eyebrow="03"
       title="טיפוגרפיה"
       description="חמישה זיווגי פונטים אוצרים. בחירה אחת מחילה את שני הפונטים יחד."
     >

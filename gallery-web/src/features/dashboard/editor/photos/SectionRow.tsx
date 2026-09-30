@@ -3,9 +3,10 @@ import { Icon } from '@/shared/ui/Icon'
 import type { GallerySection } from '../../types'
 import { useEditor } from '../EditorContext'
 
-const menuItem = 'w-full cursor-pointer rounded-hair bg-transparent px-2.5 py-2 text-right text-[12px]'
+const menuItem = 'w-full cursor-pointer rounded-hair bg-transparent px-2.5 py-2 text-start text-[12px] hover:bg-sunken'
 
-// One set in the sidebar: drag handle, name (or rename input), count, "…" menu.
+// One set in the sidebar: drag grip, name (or rename input), count, kebab menu.
+// The select button reserves end padding for the absolutely-placed menu button.
 // Select and menu are sibling buttons (nested buttons are invalid HTML).
 export function SectionRow({ section: s, draggedSectionId, setDraggedSectionId, sectionDragOverId, setSectionDragOverId }: {
   section: GallerySection
@@ -64,11 +65,11 @@ export function SectionRow({ section: s, draggedSectionId, setDraggedSectionId, 
       <button
         onClick={() => { setActiveSectionId(s.id); setSectionMenuOpenId(null) }}
         className={cn(
-          'flex w-full cursor-pointer items-center gap-2 rounded-hair bg-transparent py-2.5 pr-9 pl-3 text-right text-[13px] text-ink',
+          'flex w-full cursor-pointer items-center gap-2 rounded-hair bg-transparent py-2.5 ps-2 pe-9 text-start text-[13px] text-ink',
           isActive ? 'font-semibold' : 'font-medium',
         )}
       >
-        <span aria-hidden="true" className="inline-flex text-[12px] leading-none text-muted opacity-40">≡</span>
+        <Icon name="grip" size={14} strokeWidth={2} className="text-muted opacity-50" />
         {isRenaming ? (
           <input
             autoFocus
@@ -90,22 +91,23 @@ export function SectionRow({ section: s, draggedSectionId, setDraggedSectionId, 
             {s.name}
           </span>
         )}
-        <span className="text-[12px] font-normal text-muted">
+        <span className="shrink-0 text-[12px] font-normal text-muted tabular-nums">
           {count}
         </span>
       </button>
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setSectionMenuOpenId(isMenuOpen ? null : s.id) }}
-        aria-label="עוד פעולות לסקשן"
+        aria-label="עוד פעולות לסט"
+        title="עוד פעולות"
         aria-haspopup="menu"
         aria-expanded={isMenuOpen}
-        className="absolute end-1.5 top-2 inline-flex size-6 cursor-pointer items-center justify-center rounded-hair bg-transparent text-muted"
+        className="absolute end-1.5 top-1/2 inline-flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-hair bg-transparent text-muted hover:bg-sunken hover:text-ink"
       >
-        <Icon name="menu" size={14} strokeWidth={1.85} />
+        <Icon name="more-vertical" size={16} strokeWidth={2} />
       </button>
       {isMenuOpen && (
-        <div className="absolute start-2 top-full z-[5] min-w-[140px] border border-line bg-raised p-1 shadow-card">
+        <div className="absolute end-2 top-full z-[5] min-w-[140px] border border-line bg-raised p-1 shadow-card">
           <button
             onClick={() => startRename(s.id, s.name)}
             className={cn(menuItem, 'text-ink')}

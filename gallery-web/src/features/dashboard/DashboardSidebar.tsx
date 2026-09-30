@@ -11,9 +11,7 @@ type OwnerT = ReturnType<typeof useOwnerLocale>['t']
 interface NavItem {
   icon: IconName
   label: string
-  active: boolean
-  href: string | undefined
-  view: DashboardView | undefined
+  view: DashboardView
   tour: string | undefined
 }
 
@@ -32,12 +30,12 @@ export function DashboardSidebar({
   ownerT: OwnerT
 }) {
   const items: NavItem[] = [
-    { icon: 'activity', label: ownerT('nav.overview'),  active: activeView === 'overview', href: undefined, view: 'overview', tour: 'overview' },
-    { icon: 'gallery',  label: ownerT('nav.galleries'), active: activeView === 'galleries', href: undefined, view: 'galleries', tour: 'galleries' },
-    { icon: 'search',   label: ownerT('nav.search'),    active: activeView === 'search', href: undefined, view: 'search', tour: 'search' },
-    { icon: 'palette',  label: 'Brand Kit',             active: false, href: '/brand-kit', view: undefined, tour: undefined },
-    { icon: 'clients',  label: ownerT('nav.clients'),   active: activeView === 'clients', href: undefined, view: 'clients', tour: 'clients' },
-    { icon: 'download', label: ownerT('nav.import'),    active: activeView === 'import', href: undefined, view: 'import', tour: 'import' },
+    { icon: 'activity', label: ownerT('nav.overview'),  view: 'overview',  tour: 'overview' },
+    { icon: 'gallery',  label: ownerT('nav.galleries'), view: 'galleries', tour: 'galleries' },
+    { icon: 'search',   label: ownerT('nav.search'),    view: 'search',    tour: 'search' },
+    { icon: 'palette',  label: ownerT('nav.brandKit'),  view: 'brand-kit', tour: undefined },
+    { icon: 'clients',  label: ownerT('nav.clients'),   view: 'clients',   tour: 'clients' },
+    { icon: 'download', label: ownerT('nav.import'),    view: 'import',    tour: 'import' },
   ]
 
   return (
@@ -57,16 +55,13 @@ export function DashboardSidebar({
           open ? 'max-[900px]:translate-x-0' : 'max-[900px]:translate-x-full max-[900px]:rtl:-translate-x-full',
         )}
       >
-        {/* Mobile close X — only shown in drawer mode. */}
+        {/* Mobile close X, only shown in drawer mode. */}
         <button
           onClick={onClose}
-          aria-label="Close menu"
-          className="absolute top-3.5 left-3.5 hidden size-8 cursor-pointer items-center justify-center rounded-[8px] border border-line bg-black/3 p-0 text-ink max-[900px]:flex"
+          aria-label={ownerT('nav.closeMenu')}
+          className="absolute end-3.5 top-3.5 hidden size-8 cursor-pointer items-center justify-center rounded-[8px] border border-line bg-black/3 p-0 text-ink max-[900px]:flex"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
+          <Icon name="close" size={14} strokeWidth={2} />
         </button>
 
         <a href="/" className="flex items-baseline gap-1 px-1.5 pt-1 pb-8 text-[22px] font-medium tracking-[-0.02em] text-ink no-underline">
@@ -74,37 +69,34 @@ export function DashboardSidebar({
           <span className="ms-1 size-[5px] -translate-y-px rounded-full bg-ink" />
         </a>
 
-        <Eyebrow className="block px-3 pb-3 text-[9px] font-medium">Workspace</Eyebrow>
+        <Eyebrow className="block px-3 pb-3 text-[10px] font-medium tracking-[0.06em]">{ownerT('nav.workspace')}</Eyebrow>
         <nav data-tour="overview" className="flex flex-1 flex-col gap-0.5">
-          {items.map(item => (
-            <button
-              key={item.label}
-              {...(item.tour ? { 'data-tour': item.tour } : {})}
-              onClick={() => {
-                if (item.view) {
-                  // In-page view switch — same shell, no navigation.
-                  onSelectView(item.view)
-                  return
-                }
-                if (!item.href) return
-                window.location.pathname = item.href
-              }}
-              className={cn(
-                'relative flex cursor-pointer items-center gap-3 rounded-[4px] border-none bg-transparent px-3 py-[11px] text-right text-[13px] transition-colors duration-150',
-                item.active ? 'font-semibold text-ink' : 'font-normal text-ink-soft',
-              )}
-            >
-              {item.active && (
-                <span className="absolute -end-5 top-1/2 h-[18px] w-0.5 -translate-y-1/2 bg-ink" />
-              )}
-              <Icon name={item.icon} size={16} strokeWidth={1.6} className={item.active ? 'opacity-100' : 'opacity-70'} />
-              <span>{item.label}</span>
-            </button>
-          ))}
+          {/* In-page view switch: same shell, no navigation. */}
+          {items.map(item => {
+            const active = activeView === item.view
+            return (
+              <button
+                key={item.view}
+                {...(item.tour ? { 'data-tour': item.tour } : {})}
+                onClick={() => onSelectView(item.view)}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'relative flex cursor-pointer items-center gap-3 rounded-[4px] border-none bg-transparent px-3 py-[11px] text-start text-[13px] transition-colors duration-150 hover:text-ink',
+                  active ? 'font-semibold text-ink' : 'font-normal text-ink-soft',
+                )}
+              >
+                {active && (
+                  <span className="absolute -end-5 top-1/2 h-[18px] w-0.5 -translate-y-1/2 bg-ink" />
+                )}
+                <Icon name={item.icon} size={16} strokeWidth={1.6} className={active ? 'opacity-100' : 'opacity-70'} />
+                <span>{item.label}</span>
+              </button>
+            )
+          })}
         </nav>
 
-        <Eyebrow className="block px-3 pt-5 pb-3 text-[9px] font-medium">Account</Eyebrow>
-        <TokenBalanceCard tokenBalance={tokenBalance} onBuyTokens={onBuyTokens} />
+        <Eyebrow className="block px-3 pt-5 pb-3 text-[10px] font-medium tracking-[0.06em]">{ownerT('nav.account')}</Eyebrow>
+        <TokenBalanceCard tokenBalance={tokenBalance} onBuyTokens={onBuyTokens} ownerT={ownerT} />
 
         <RestartTourButton
           surface="owner_tour"
@@ -120,7 +112,7 @@ export function DashboardSidebar({
             <button
               onClick={signOut}
               className="mt-0.5 cursor-pointer border-none bg-transparent p-0 text-[10px] tracking-[.04em] text-danger"
-            >התנתקות ↩</button>
+            >{ownerT('nav.signOut')}</button>
           </div>
         </div>
       </aside>

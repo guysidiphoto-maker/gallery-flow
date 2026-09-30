@@ -22,8 +22,9 @@ const PAGES: Record<RouteId, ComponentType | LazyExoticComponent<ComponentType>>
   terms: page(() => import('@/features/marketing/pages/TermsPage'), 'TermsPage'),
   privacy: page(() => import('@/features/marketing/pages/PrivacyPage'), 'PrivacyPage'),
   dashboard: page(() => import('@/features/dashboard/DashboardPage'), 'Dashboard'),
+  // Brand Kit is a dashboard tab; the dashboard reads /brand-kit and opens it.
+  'brand-kit': page(() => import('@/features/dashboard/DashboardPage'), 'Dashboard'),
   'studio-settings': page(() => import('@/features/studio-settings/StudioSettingsPage'), 'StudioSettings'),
-  'brand-kit': page(() => import('@/features/brand-kit/BrandKitPage'), 'BrandKit'),
   admin: page(() => import('@/features/admin/AdminPage'), 'AdminPage'),
   'client-invite-accept': page(() => import('@/features/client-portal/InviteAcceptPage'), 'ClientInviteAccept'),
   'client-login': page(() => import('@/features/client-portal/ClientLoginPage'), 'ClientLogin'),

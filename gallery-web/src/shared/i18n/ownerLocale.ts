@@ -47,6 +47,24 @@ const STRINGS = {
     'nav.clients': 'לקוחות',
     'nav.search': 'חיפוש',
     'nav.import': 'ייבוא',
+    'nav.brandKit': 'Brand Kit',
+    'nav.workspace': 'סביבת עבודה',
+    'nav.account': 'חשבון',
+    'nav.openMenu': 'פתיחת תפריט',
+    'nav.closeMenu': 'סגירת תפריט',
+    'nav.signOut': 'התנתקות',
+
+    // ── Sidebar token card ───────────────────────────────────────────────
+    'tokens.label': 'טוקנים',
+    'tokens.low': 'נמוך',
+    'tokens.buyMore': 'רכישת טוקנים',
+
+    // ── Galleries tab ────────────────────────────────────────────────────
+    'galleries.new': 'גלריה חדשה',
+
+    // ── Brand Kit tab ────────────────────────────────────────────────────
+    'brandKit.subtitle': 'לוגו, צבעים, פונטים, נימה וסימן מים במקום אחד. ההגדרות חלות אוטומטית על כל גלריה חדשה, מייל שיתוף וסטורי.',
+    'brandKit.save': 'שמירה',
 
     // ── Owner overview (home) ────────────────────────────────────────────
     'overview.title': 'הבית של הסטודיו',
@@ -127,6 +145,24 @@ const STRINGS = {
     'nav.clients': 'Clients',
     'nav.search': 'Search',
     'nav.import': 'Import',
+    'nav.brandKit': 'Brand Kit',
+    'nav.workspace': 'Workspace',
+    'nav.account': 'Account',
+    'nav.openMenu': 'Open menu',
+    'nav.closeMenu': 'Close menu',
+    'nav.signOut': 'Sign out',
+
+    // ── Sidebar token card ───────────────────────────────────────────────
+    'tokens.label': 'Tokens',
+    'tokens.low': 'Low',
+    'tokens.buyMore': 'Buy more',
+
+    // ── Galleries tab ────────────────────────────────────────────────────
+    'galleries.new': 'New gallery',
+
+    // ── Brand Kit tab ────────────────────────────────────────────────────
+    'brandKit.subtitle': 'Logo, colors, fonts, voice and watermark in one place. Applied automatically to every new gallery, share email and story.',
+    'brandKit.save': 'Save',
 
     // ── Owner overview (home) ────────────────────────────────────────────
     'overview.title': 'Your studio home',

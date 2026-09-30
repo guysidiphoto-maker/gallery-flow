@@ -6,6 +6,12 @@ html {
   line-height: normal;
 }
 
+/* Dashboard: always reserve the scrollbar's lane, so a tab growing past the
+   viewport (or data arriving) doesn't shift the whole layout sideways. */
+html:has(.dash) {
+  scrollbar-gutter: stable;
+}
+
 /* Pages were designed on this dark default; the gallery viewer overrides the
    vars (--bg, --text, --font-body) with the gallery's own branding. */
 body {

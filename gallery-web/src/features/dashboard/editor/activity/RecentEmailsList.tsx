@@ -4,14 +4,14 @@ import { ActivitySection, activityRowClass, activityTagClass, activityTimeClass,
 
 export function RecentEmailsList({ emails }: { emails: ActivitySummary['recent_emails'] }) {
   return (
-    <ActivitySection eyebrow="Recent Emails" className="mb-3">
+    <ActivitySection eyebrow="מיילים אחרונים" className="mb-3">
       {emails.slice(0, 10).map(e => (
         <div key={e.id} className={activityRowClass}>
           <span className={truncateLtrEnd}>
             {e.recipient_email}
           </span>
           <span className={cn(activityTagClass, e.status === 'sent' ? 'text-sage' : 'text-muted')}>
-            {e.status === 'sent' ? 'Sent' : 'Failed'}
+            {e.status === 'sent' ? 'נשלח' : 'נכשל'}
           </span>
           <span className={activityTimeClass}>
             {formatActivityTime(e.created_at)}

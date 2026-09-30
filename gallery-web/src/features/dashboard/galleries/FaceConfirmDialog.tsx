@@ -22,7 +22,7 @@ export function FaceConfirmDialog({ tokenBalance, onCancel, onEnable }: {
         onClick={(e) => e.stopPropagation()}
         className="dash-mobile-modal w-[calc(100vw-40px)] max-w-[460px] animate-[dash-modal-in_.25s_ease_both] border border-line bg-raised px-10 pt-9 pb-8"
       >
-        <Eyebrow className="mb-3.5 block font-medium">Heads up</Eyebrow>
+        <Eyebrow className="mb-3.5 block font-medium">לפני שמפעילים</Eyebrow>
         <h3 id="face-confirm-heading" className="mb-3.5 text-[22px] leading-[1.15] font-medium tracking-[-0.015em] text-ink">
           זיהוי פנים — איך זה עובד
         </h3>
@@ -37,8 +37,8 @@ export function FaceConfirmDialog({ tokenBalance, onCancel, onEnable }: {
           ההעלאה תהיה איטית מעט יותר כי כל תמונה עוברת אינדוקס. אפשר להפעיל ולהשבית בכל רגע.
         </div>
         <div className="dash-modal-actions flex justify-end gap-2.5">
-          <Button variant="ghost" onClick={onCancel} className="px-[22px] py-[11px]">Cancel</Button>
-          <Button onClick={onEnable} className="px-[26px] py-[11px]">Enable</Button>
+          <Button variant="ghost" onClick={onCancel} className="h-11 px-[22px] py-0">ביטול</Button>
+          <Button onClick={onEnable} className="h-11 px-[26px] py-0">הפעלה</Button>
         </div>
       </div>
     </div>

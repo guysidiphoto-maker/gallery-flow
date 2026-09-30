@@ -4,7 +4,14 @@ import type { PhotoSort } from '../../lib/photoOrder'
 import { useEditor } from '../EditorContext'
 import { SectionHeading } from './SectionHeading'
 
-// Top strip: section heading, hidden file pickers, sort, grid size, select, Add Media.
+const control = 'inline-flex h-9 items-center rounded-hair border text-xs'
+
+const GRID_SIZES = [
+  { id: 'regular' as const, label: 'תצוגת רשת צפופה', icon: 'grid-small' as const },
+  { id: 'large'   as const, label: 'תצוגת רשת גדולה', icon: 'grid-large' as const },
+]
+
+// Top strip: section heading, hidden file pickers, then the photo controls.
 export function PhotosToolbar() {
   const { session, upload, photos } = useEditor()
   const { galleryImages } = session
@@ -25,58 +32,61 @@ export function PhotosToolbar() {
           e.target.value = ''
           if (f) void handleReplaceFile(f)
         }} />
-      <div className="flex items-center gap-2">
-        <select
-          value={photoSort}
-          onChange={(e) => setPhotoSort(e.target.value as PhotoSort)}
-          aria-label="מיון תמונות"
-          className="cursor-pointer rounded-hair border border-line bg-raised px-3 py-2 text-[11px] tracking-[0.14em] text-ink uppercase outline-none"
-        >
-          <option value="order">סדר ידני</option>
-          <option value="name">שם</option>
-          <option value="newest">חדש קודם</option>
-        </select>
-        <div className="flex rounded-hair border border-line">
-          {([
-            { id: 'regular' as const, label: 'Regular' },
-            { id: 'large'   as const, label: 'Large' },
-          ]).map(s => (
-            <button
-              key={s.id}
-              onClick={() => setGridSize(s.id)}
-              aria-label={`Grid ${s.label}`}
-              title={s.label}
-              className={cn(
-                'flex cursor-pointer items-center px-2.5 py-2',
-                gridSize === s.id ? 'bg-ink text-white' : 'bg-raised text-ink',
-                s.id === 'large' && 'border-s border-line',
-              )}
-            >
-              <Icon name={s.id === 'regular' ? 'sections' : 'gallery'} size={13} strokeWidth={1.85} />
-            </button>
-          ))}
-        </div>
-        {galleryImages.length > 0 && !selectMode && (
-          <button
-            onClick={() => setSelectMode(true)}
-            aria-label="בחירת תמונות"
-            className="inline-flex cursor-pointer items-center gap-2 rounded-hair border border-line bg-transparent px-4 py-2.5 text-[11px] font-medium tracking-label text-ink uppercase"
-          >
-            <Icon name="check" size={13} strokeWidth={1.85} />
-            בחר
-          </button>
-        )}
+      {/* Reading order (RTL): primary Add Media, then Select, then the view
+          controls (grid size + sort) grouped at the end. One height for all. */}
+      <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
           className={cn(
-            'inline-flex items-center gap-2 rounded-hair border border-ink bg-ink px-5 py-2.5 text-[11px] font-medium tracking-label text-white uppercase',
+            control,
+            'gap-2 border-ink bg-ink px-4 font-medium text-white',
             uploading ? 'cursor-wait opacity-60' : 'cursor-pointer',
           )}
         >
-          <Icon name="plus" size={13} strokeWidth={2} />
-          Add Media
+          <Icon name="plus" size={14} strokeWidth={2} />
+          הוספת מדיה
         </button>
+        {galleryImages.length > 0 && !selectMode && (
+          <button
+            onClick={() => setSelectMode(true)}
+            aria-label="בחירת תמונות"
+            className={cn(control, 'cursor-pointer gap-2 border-line bg-transparent px-4 font-medium text-ink hover:border-ink')}
+          >
+            <Icon name="check" size={14} strokeWidth={1.85} />
+            בחירה
+          </button>
+        )}
+        <span aria-hidden className="mx-1 h-5 w-px bg-line" />
+        <div role="group" aria-label="גודל תצוגה" className="flex rounded-hair border border-line">
+          {GRID_SIZES.map(s => (
+            <button
+              key={s.id}
+              onClick={() => setGridSize(s.id)}
+              aria-label={s.label}
+              aria-pressed={gridSize === s.id}
+              title={s.label}
+              className={cn(
+                'flex size-9 cursor-pointer items-center justify-center',
+                gridSize === s.id ? 'bg-ink text-white' : 'bg-raised text-ink hover:bg-sunken',
+                s.id === 'large' && 'border-s border-line',
+              )}
+            >
+              <Icon name={s.icon} size={14} strokeWidth={1.85} />
+            </button>
+          ))}
+        </div>
+        <select
+          value={photoSort}
+          onChange={(e) => setPhotoSort(e.target.value as PhotoSort)}
+          aria-label="מיון תמונות"
+          title="מיון תמונות"
+          className={cn(control, 'cursor-pointer border-line bg-raised px-3 text-ink outline-none')}
+        >
+          <option value="order">סדר ידני</option>
+          <option value="name">לפי שם</option>
+          <option value="newest">חדשות קודם</option>
+        </select>
       </div>
     </div>
   )
