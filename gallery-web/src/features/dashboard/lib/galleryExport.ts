@@ -1,11 +1,12 @@
 // Portable per-gallery backup: every original plus a metadata.json sidecar in
 // one client-side ZIP (JSZip + object URL). Very large galleries would be better
-// served by a server-side render; see the note at saveAs().
+// served server-side; DEFAULT_MAX_BYTES caps what the browser attempts.
 
 import { getGallery } from '@/shared/data/galleries'
 import { listImagesForExport } from '@/shared/data/images'
 import { listGallerySections } from '@/shared/data/sections'
 import { downloadStorageObject } from '@/shared/data/storage'
+import { buildReadme, safeFolderName, saveBlob, uniqueFilename } from './galleryExportFiles'
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -210,9 +211,8 @@ export async function exportGalleryAsZip(
   const dateStamp = new Date().toISOString().slice(0, 10)
   const filename = `${safeSlug}_export_${dateStamp}.zip`
 
-  // App.tsx pattern — no file-saver dep; createObjectURL + click anchor.
-  // Phase 2 (server-side render to S3) would skip this and hand back a
-  // presigned URL instead, sparing the browser the memory pressure.
+  // A server-side export would hand back a presigned URL instead, sparing the
+  // browser the memory pressure of holding the whole ZIP.
   saveBlob(zipBlob, filename)
   onProgress({ phase: 'saving', current: 1, total: 1 })
 
@@ -245,80 +245,4 @@ export class ExportCapExceededError extends Error {
     this.imagesDownloaded = imagesDownloaded
     this.totalImages = totalImages
   }
-}
-
-// ── Internals ───────────────────────────────────────────────────────────────
-
-function safeFolderName(raw: string): string {
-  // Keep Hebrew / Latin letters and digits; collapse the rest to "-".
-  return (
-    raw
-      .replace(/[^\p{L}\p{N}_-]+/gu, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 80) || 'gallery'
-  )
-}
-
-function uniqueFilename(name: string, sortOrder: number, used: Set<string>): string {
-  let candidate = name
-  if (used.has(candidate)) {
-    const dot = candidate.lastIndexOf('.')
-    const base = dot > 0 ? candidate.slice(0, dot) : candidate
-    const ext = dot > 0 ? candidate.slice(dot) : ''
-    candidate = `${base}-${sortOrder}${ext}`
-  }
-  used.add(candidate)
-  return candidate
-}
-
-function saveBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
-
-function buildReadme(galleryName: string, imageCount: number, exportedAt: string): string {
-  return [
-    '================================================================',
-    `  Pixflow Gallery Export — ${galleryName}`,
-    `  Exported: ${exportedAt}`,
-    `  Photos:   ${imageCount}`,
-    '================================================================',
-    '',
-    'STRUCTURE / מבנה הקובץ',
-    '----------------------',
-    '  photos/<section_name>/<sort_order>_<filename>.jpg',
-    '      The original photos (falls back to the web preview when an',
-    '      original was not uploaded to storage).',
-    '',
-    '  metadata.json',
-    '      Full gallery shape: settings, sections, and the ordered',
-    '      image list with section + top-pick flags. schema_version: 1.',
-    '',
-    '  README.txt',
-    '      This file.',
-    '',
-    'RESTORE / שחזור',
-    '---------------',
-    '  This archive is portable: the photos are standard JPEG/PNG/etc.',
-    '  files and metadata.json is plain JSON. Any future tool — Pixflow',
-    '  or otherwise — can rebuild the gallery from these two pieces.',
-    '',
-    '  הקובץ הזה נייד: התמונות הן קבצי JPEG רגילים ו-metadata.json',
-    '  הוא JSON פשוט. כל כלי עתידי (פיקספלו או אחר) יכול לשחזר את',
-    '  הגלריה מהשניים האלה.',
-    '',
-    'NOTES / הערות',
-    '-------------',
-    '  - Images whose "served_from" is "web_preview" in metadata.json',
-    '    are compressed copies (the original was never uploaded).',
-    '  - Section folders use safe-slug names; the human-readable name',
-    '    lives in metadata.json under sections[].name.',
-    '',
-  ].join('\n')
 }

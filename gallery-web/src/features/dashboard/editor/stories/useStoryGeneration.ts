@@ -39,7 +39,7 @@ export function useStoryGeneration(deps: {
   const [storyCandidateIds, setStoryCandidateIds] = useState<string[] | null>(null)
   const [storyShowAddPicker, setStoryShowAddPicker] = useState(false)
   // Only one render is followed at a time; cleared on cancel / gallery switch.
-  const storyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const storyPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const storyPollRenderIdRef = useRef<string | null>(null)
 
   // Stop polling when the editor closes or switches gallery.

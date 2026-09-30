@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { warmGalleryCache } from '@/shared/lib/warmCache'
 import { assignUnsectionedImages, fetchAllGalleryImages } from '@/shared/data/images'
 import { updateGallery } from '@/shared/data/galleries'
@@ -28,6 +28,14 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
   // Every photo belongs to a section; null only for an empty gallery.
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [stories, setStories] = useState<Story[]>([])
+  // Id of the gallery on screen, readable from async flows that started earlier.
+  const openGalleryIdRef = useRef<string | null>(null)
+  openGalleryIdRef.current = editingGallery?.id ?? null
+  // Bumped on every open so a slower earlier load can't overwrite a later one.
+  const loadSeqRef = useRef(0)
+
+  /** False once the editor closed or moved to another gallery. */
+  const isOpenGallery = (galleryId: string) => openGalleryIdRef.current === galleryId
 
   // Called by every mutation that changes what the client sees.
   const markDirty = () => {
@@ -35,17 +43,31 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
   }
 
   async function openGalleryEditor(g: Gallery) {
+    const seq = ++loadSeqRef.current
+    openGalleryIdRef.current = g.id
     setEditingGallery(g)
     setEditTab('photos')
+    // Drop the previous gallery's rows so nothing (uploads, bulk actions) targets them meanwhile.
+    setGalleryImages([])
+    setSections([])
+    setActiveSectionId(null)
     setStories([])
     setUnpublishedChanges(false)
-    const [imagesAll, sectionsRes, storiesRes] = await Promise.all([
-      // Paginated: a plain select silently truncated galleries past 1000 rows.
-      fetchAllGalleryImages<GalleryImage & { section_id?: string | null }>(g.id, IMAGE_COLUMNS_WITH_ORIGINAL),
-      listGallerySections(g.id, SECTION_COLUMNS),
-      listGalleryStories(g.id, STORY_COLUMNS),
-    ])
-    const imgs = imagesAll
+    let loaded
+    try {
+      loaded = await Promise.all([
+        // Paginated: a plain select silently truncated galleries past 1000 rows.
+        fetchAllGalleryImages<GalleryImage & { section_id?: string | null }>(g.id, IMAGE_COLUMNS_WITH_ORIGINAL),
+        listGallerySections(g.id, SECTION_COLUMNS),
+        listGalleryStories(g.id, STORY_COLUMNS),
+      ])
+    } catch (err) {
+      console.warn('[openGalleryEditor]', err)
+      if (seq === loadSeqRef.current) showToast({ kind: 'error', text: 'טעינת הגלריה נכשלה. נסה שוב.' })
+      return
+    }
+    if (seq !== loadSeqRef.current) return
+    const [imgs, sectionsRes, storiesRes] = loaded
     let secs: GallerySection[] = sectionsRes.data ?? []
 
     // Self-heal legacy photos with no section: fold them into the first
@@ -61,6 +83,7 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
         await assignUnsectionedImages(g.id, target.id)
         loose.forEach(i => { i.section_id = target!.id })
       }
+      if (seq !== loadSeqRef.current) return
     }
 
     setGalleryImages(imgs)
@@ -70,7 +93,7 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
   }
 
   async function publishGallery() {
-    if (!editingGallery) return
+    if (!editingGallery || publishing) return
     const wasLive = editingGallery.status === 'live'
     const publishedAt = new Date().toISOString()
     setPublishing(true)
@@ -81,10 +104,14 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
       console.warn('[publishGallery]', error)
       return
     }
-    setEditingGallery({ ...editingGallery, status: 'live', published_at: publishedAt })
-    setUnpublishedChanges(false)
-    setJustPublished(true)
-    setTimeout(() => setJustPublished(false), 1800)
+    // Functional + id-checked: the owner may have switched gallery during the await.
+    setEditingGallery(cur => cur && cur.id === editingGallery.id
+      ? { ...cur, status: 'live', published_at: publishedAt } : cur)
+    if (isOpenGallery(editingGallery.id)) {
+      setUnpublishedChanges(false)
+      setJustPublished(true)
+      setTimeout(() => setJustPublished(false), 1800)
+    }
     showToast({ kind: 'success', text: wasLive ? 'הגלריה עודכנה ושודרה ללקוח' : 'הגלריה פורסמה ✓' })
 
     // Pre-warm the CDN so the first guest gets cached thumbnails.
@@ -129,7 +156,7 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
     sections, setSections,
     activeSectionId, setActiveSectionId,
     stories, setStories,
-    openGalleryEditor, publishGallery, copyEditorLink, copyDirectLink,
+    isOpenGallery, openGalleryEditor, publishGallery, copyEditorLink, copyDirectLink,
   }
 }
 

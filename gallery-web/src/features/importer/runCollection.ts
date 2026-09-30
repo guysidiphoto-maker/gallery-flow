@@ -63,6 +63,11 @@ async function createImportGallery(args: {
 
 // ── Run engine ───────────────────────────────────────────────────────────────
 
+// Status reports throw on network errors; none of them may abort the import itself.
+async function reportBestEffort(args: Parameters<typeof reportCollectionProgress>[0]) {
+  try { await reportCollectionProgress(args) } catch { /* the next checkpoint retries */ }
+}
+
 const CHUNK_SIZE = 8            // files extracted+uploaded per chunk (memory bound)
 const UPLOAD_CONCURRENCY = 4    // within a chunk
 
@@ -120,7 +125,7 @@ export async function runCollection(args: {
       eventDate: typeof collection.stats?.event_date === 'string' ? collection.stats.event_date : null,
     })
     if (!g) {
-      await reportCollectionProgress({
+      await reportBestEffort({
         jobId, collectionId: collection.id, collectionStatus: 'failed',
         stats: { error: 'gallery_create_failed' },
       })
@@ -128,7 +133,7 @@ export async function runCollection(args: {
     }
     galleryId = g.id
   }
-  await reportCollectionProgress({
+  await reportBestEffort({
     jobId, collectionId: collection.id, collectionStatus: 'importing', targetGalleryId: galleryId,
   })
 
@@ -206,19 +211,16 @@ export async function runCollection(args: {
     }
 
     report()
-    // Best-effort checkpoint: a failure here must not kill the run.
-    try {
-      await reportCollectionProgress({
-        jobId, collectionId: collection.id,
-        stats: { uploaded, skipped_duplicate: skippedDuplicate, failed, total },
-        files: fileRecords,
-      })
-    } catch { /* checkpoint is best-effort */ }
+    await reportBestEffort({
+      jobId, collectionId: collection.id,
+      stats: { uploaded, skipped_duplicate: skippedDuplicate, failed, total },
+      files: fileRecords,
+    })
   }
 
   // 3) Final collection status.
   const finalStatus: CollectionStatus = failed > 0 && uploaded === 0 ? 'failed' : 'imported'
-  await reportCollectionProgress({
+  await reportBestEffort({
     jobId, collectionId: collection.id, collectionStatus: finalStatus,
     stats: { uploaded, skipped_duplicate: skippedDuplicate, failed, total },
   })

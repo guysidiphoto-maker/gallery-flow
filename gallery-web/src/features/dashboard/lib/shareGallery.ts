@@ -52,7 +52,7 @@ export interface ShareGalleryPreviewResult {
 // Light-weight loader used by both the send path and the preview button.
 // Returns null when no row matches (RLS / not signed in) or no kit is stored;
 // the edge function falls back to the legacy plain template in that case.
-export async function loadStudioBrandKit(): Promise<BrandKit | null> {
+async function loadStudioBrandKit(): Promise<BrandKit | null> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const { data, error } = await getOwnerBusiness(user.id, 'brand_kit, logo_url, business_name, website_url')

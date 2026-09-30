@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { deleteImages } from '@/shared/data/images'
 import { updateGallery } from '@/shared/data/galleries'
 import { deleteSection as deleteSectionRow, insertSection, updateSection } from '@/shared/data/sections'
@@ -32,6 +32,14 @@ export function useSections(deps: {
   // Inline description edit above the grid: the section id being edited.
   const [editingSectionDescId, setEditingSectionDescId] = useState<string | null>(null)
   const [sectionDescDraft, setSectionDescDraft] = useState('')
+
+  // Rename / menu / description edits refer to the previous gallery's sections.
+  const galleryId = editingGallery?.id
+  useEffect(() => {
+    setRenamingSectionId(null)
+    setSectionMenuOpenId(null)
+    setEditingSectionDescId(null)
+  }, [galleryId])
 
   // Appends a section to the open gallery; null (after a toast) on failure.
   async function createSection(logLabel: string, fields: { name: string; description?: string | null }) {

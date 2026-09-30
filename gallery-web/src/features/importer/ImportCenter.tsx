@@ -45,6 +45,7 @@ export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp
 
   const ensureJob = useCallback(async (): Promise<boolean> => {
     if (jobId && business) return true
+    if (booting) return false // a double-click must not create a second draft job
     setBooting(true); setBootError(null)
     try {
       const biz = business ?? ownerBusiness ?? await loadOwnerBusiness()
@@ -64,7 +65,7 @@ export default function ImportCenter({ onOpenGallery, onExit, locale: localeProp
     } finally {
       setBooting(false)
     }
-  }, [jobId, business, ownerBusiness])
+  }, [jobId, business, ownerBusiness, booting])
 
   const goToStep2 = useCallback(async () => {
     const ok = await ensureJob()

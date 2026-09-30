@@ -42,11 +42,13 @@ export function useAdminUsers(user: User | null, authLoading: boolean) {
     if (data) setAudit((data as { rows: GrantRow[] }).rows)
   }, [])
 
+  // Keyed on the user id: token refreshes replace the user object and would reset the list.
+  const userId = user?.id
   useEffect(() => {
-    if (authLoading || !user) return
+    if (authLoading || !userId) return
     void load(0, '')
     void loadAudit()
-  }, [authLoading, user, load, loadAudit])
+  }, [authLoading, userId, load, loadAudit])
 
   const amountNum = useMemo(() => Number(amount), [amount])
   const amountValid = Number.isInteger(amountNum) && amountNum > 0 && amountNum <= 1_000_000

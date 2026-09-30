@@ -4,15 +4,12 @@
 import { useCallback } from 'react'
 import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import { saveProgress } from './onboarding'
-import { TOUR_RESTART_EVENT } from './FirstRunTour'
+import { TOUR_RESTART_EVENT } from './useFirstRunTour'
 
-export interface RestartTourButtonProps {
+export function RestartTourButton({ surface = 'owner_tour', className }: {
   surface?: string
   className?: string
-  style?: React.CSSProperties
-}
-
-export function RestartTourButton({ surface = 'owner_tour', className, style }: RestartTourButtonProps) {
+}) {
   const { t } = useOwnerLocale()
 
   const onClick = useCallback(() => {
@@ -28,11 +25,8 @@ export function RestartTourButton({ surface = 'owner_tour', className, style }: 
       type="button"
       onClick={onClick}
       className={className ?? 'cursor-pointer rounded-[8px] border-none bg-transparent px-2.5 py-1.5 text-start text-sm text-ink-soft'}
-      style={style}
     >
       {t('tour.restart')}
     </button>
   )
 }
-
-export default RestartTourButton

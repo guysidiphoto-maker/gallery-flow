@@ -55,13 +55,15 @@ export function useCover(deps: {
         businessSlug,
         onPhase: setCoverUploadPhase,
       })
-      await updateGallerySettings({
+      const saved = await updateGallerySettings({
         coverEnabled: true,
         coverSource: 'custom_upload',
         coverImagePath: res.path,
         coverImageUrl: res.url,
         coverImageId: null,
       })
+      // On failure the settings rolled back to the previous cover (and toasted): keep its file.
+      if (!saved) return
       if (prevSource === 'custom_upload' && prevPath && prevPath !== res.path) {
         void deleteCoverObject(prevPath)
       }
@@ -89,8 +91,8 @@ export function useCover(deps: {
     if (!editingGallery) return
     const prev = (editingGallery.delivery_settings ?? {}) as Record<string, unknown>
     const cfg = readCoverConfig(prev)
-    await updateGallerySettings(COVER_CLEARED)
-    if (cfg.source === 'custom_upload' && cfg.path) void deleteCoverObject(cfg.path)
+    const cleared = await updateGallerySettings(COVER_CLEARED)
+    if (cleared && cfg.source === 'custom_upload' && cfg.path) void deleteCoverObject(cfg.path)
   }
 
   // Only a currently-loaded photo of this gallery may become the cover (the

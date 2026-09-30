@@ -2,7 +2,7 @@ import { signOut } from '@/shared/lib/auth'
 import type { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import { Icon, type IconName } from '@/shared/ui/Icon'
 import { cn, Eyebrow } from '@/shared/ui'
-import RestartTourButton from './tour/RestartTourButton'
+import { RestartTourButton } from './tour/RestartTourButton'
 import { TokenBalanceCard } from './TokenBalanceCard'
 import type { DashboardView } from './types'
 

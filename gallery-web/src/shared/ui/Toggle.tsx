@@ -25,7 +25,7 @@ export function Toggle({ checked, onChange, label, disabled, className }: {
     >
       <span
         className={cn(
-          'block size-5 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.18)] transition-transform duration-200',
+          'block size-5 rounded-full bg-white shadow-[0_1px_3px] shadow-black/18 transition-transform duration-200',
           checked && 'translate-x-5 rtl:-translate-x-5',
         )}
       />

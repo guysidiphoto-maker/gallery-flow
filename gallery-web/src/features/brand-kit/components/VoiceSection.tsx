@@ -12,14 +12,17 @@ const LANGUAGES: Array<{ id: BrandKitLanguage; label: string }> = [
   { id: 'auto', label: 'אוטומטי' },
 ]
 
-export function VoiceSection({ brand, onChange, onBlur }: {
+export function VoiceSection({ brand, onChange, onBlur, onSave }: {
   brand: BrandKit
   onChange: (next: BrandKit) => void
   onBlur: () => void
+  /** Apply and persist `next` in one step (for clicks, where no blur follows). */
+  onSave: (next: BrandKit) => void
 }) {
   const voice = brand.voice ?? {}
-  const setVoice = (patch: Partial<NonNullable<BrandKit['voice']>>) =>
-    onChange({ ...brand, voice: { ...voice, ...patch } })
+  const withVoice = (patch: Partial<NonNullable<BrandKit['voice']>>): BrandKit =>
+    ({ ...brand, voice: { ...voice, ...patch } })
+  const setVoice = (patch: Partial<NonNullable<BrandKit['voice']>>) => onChange(withVoice(patch))
 
   return (
     <BrandKitCard
@@ -61,10 +64,7 @@ export function VoiceSection({ brand, onChange, onBlur }: {
                 <button
                   key={lang.id}
                   type="button"
-                  onClick={() => {
-                    setVoice({ language: lang.id })
-                    onBlur()
-                  }}
+                  onClick={() => onSave(withVoice({ language: lang.id }))}
                   className={cn(
                     'rounded-hair border px-4 py-2 text-xs font-semibold tracking-[0.1em]',
                     active ? 'border-ink bg-ink text-white' : 'border-line bg-transparent text-ink',

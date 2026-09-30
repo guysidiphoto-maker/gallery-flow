@@ -21,7 +21,12 @@ export function StoryActions() {
         type="file"
         accept="video/mp4"
         className="hidden"
-        onChange={(e) => handleStoryUpload(e.target.files)}
+        onChange={(e) => {
+          // Copy, then reset so re-picking the same file after a failure still fires.
+          const files = e.target.files ? Array.from(e.target.files) : null
+          e.target.value = ''
+          void handleStoryUpload(files)
+        }}
       />
       <div className="inline-flex items-center gap-2.5">
         {/* Gated: a story from a handful of photos looks like a slideshow. */}

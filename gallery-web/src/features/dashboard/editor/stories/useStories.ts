@@ -17,7 +17,7 @@ export function useStories(deps: {
   showToast: Toast
 }) {
   const { session, businessSlug, showToast } = deps
-  const { editingGallery, stories, setStories, markDirty } = session
+  const { editingGallery, stories, setStories, markDirty, isOpenGallery } = session
   const [storyUploading, setStoryUploading] = useState(false)
   const [storyUploadProgress, setStoryUploadProgress] = useState<{ pct: number; filename: string } | null>(null)
   const [storyMenuOpenId, setStoryMenuOpenId] = useState<string | null>(null)
@@ -29,8 +29,8 @@ export function useStories(deps: {
     setStoryUploadProgress(null)
   }
 
-  async function handleStoryUpload(files: FileList | null) {
-    if (!files || files.length === 0 || !editingGallery || !businessSlug) return
+  async function handleStoryUpload(files: FileList | File[] | null) {
+    if (!files || files.length === 0 || !editingGallery || !businessSlug || storyUploading) return
     const file = files[0]
     if (files.length > 1) {
       showToast({ kind: 'info', text: `מעלה את הקובץ הראשון בלבד (${file.name}). העלאה מרובה תתווסף עם יצירת הסטוריז האוטומטית.` })
@@ -89,13 +89,15 @@ export function useStories(deps: {
       return
     }
 
-    setStories(prev => [...prev, inserted])
+    // The owner may have switched gallery mid-upload; don't list this story under the new one.
+    if (isOpenGallery(editingGallery.id)) {
+      setStories(prev => [...prev, inserted])
+      markDirty()
+    }
     setStoryUploadProgress({ pct: 100, filename: file.name })
     setStoryUploading(false)
-    markDirty()
     // Let the 100% bar show briefly before it disappears.
     setTimeout(() => setStoryUploadProgress(null), 600)
-    if (storyFileInputRef.current) storyFileInputRef.current.value = ''
   }
 
   // Optimistic removal with rollback. Storage object first, then the row; the

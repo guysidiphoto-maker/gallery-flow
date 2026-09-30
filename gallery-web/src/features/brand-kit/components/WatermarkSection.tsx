@@ -9,10 +9,12 @@ import { WatermarkPreview } from './WatermarkPreview'
 
 type Watermark = NonNullable<BrandKit['watermark']>
 
-export function WatermarkSection({ brand, onChange, onBlur }: {
+export function WatermarkSection({ brand, onChange, onBlur, onSave }: {
   brand: BrandKit
   onChange: (next: BrandKit) => void
   onBlur: () => void
+  /** Apply and persist `next` in one step (for clicks, where no blur follows). */
+  onSave: (next: BrandKit) => void
 }) {
   const wm = brand.watermark ?? {}
   const enabled = Boolean(wm.enabled)
@@ -26,8 +28,9 @@ export function WatermarkSection({ brand, onChange, onBlur }: {
       : source === 'studio_name' ? (brand.voice?.signature?.split('\n')[0] || 'STUDIO').trim()
         : ''
 
-  const update = (patch: Partial<Watermark>) => onChange({ ...brand, watermark: { ...wm, ...patch } })
-  const updateAndSave = (patch: Partial<Watermark>) => { update(patch); onBlur() }
+  const withWatermark = (patch: Partial<Watermark>): BrandKit => ({ ...brand, watermark: { ...wm, ...patch } })
+  const update = (patch: Partial<Watermark>) => onChange(withWatermark(patch))
+  const updateAndSave = (patch: Partial<Watermark>) => onSave(withWatermark(patch))
 
   return (
     <BrandKitCard
