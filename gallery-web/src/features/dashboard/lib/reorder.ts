@@ -1,4 +1,5 @@
-import { supabase } from '@/shared/lib/supabase'
+import { updateImage } from '@/shared/data/images'
+import { updateSection } from '@/shared/data/sections'
 
 /** Copy of `list` with `fromId` moved to `toId`'s index, or null if either is missing. */
 export function moveItem<T extends { id: string }>(list: T[], fromId: string, toId: string): T[] | null {
@@ -15,9 +16,8 @@ export function moveItem<T extends { id: string }>(list: T[], fromId: string, to
 // allSettled so one failed UPDATE is reported instead of silently mis-ordering
 // the rest. Returns the ids whose write failed.
 export async function persistSortOrder(table: 'images' | 'gallery_sections', ids: string[]): Promise<string[]> {
-  const results = await Promise.allSettled(ids.map((id, idx) =>
-    supabase.from(table).update({ sort_order: idx * 1000 }).eq('id', id)
-  ))
+  const update = table === 'images' ? updateImage : updateSection
+  const results = await Promise.allSettled(ids.map((id, idx) => update(id, { sort_order: idx * 1000 })))
   return results
     .map((r, i) => (r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error)) ? ids[i] : null)
     .filter((x): x is string => x !== null)

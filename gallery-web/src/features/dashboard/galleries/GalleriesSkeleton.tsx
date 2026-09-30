@@ -1,4 +1,4 @@
-const shimmer = 'animate-[dash-skeleton_1.4s_ease_infinite] bg-linear-90 from-sunken from-25% via-line-soft via-37% to-sunken to-63% bg-size-[400%_100%]'
+import { shimmer } from '../lib/skeleton'
 
 // Mirrors the loaded layout (stats strip + 4:3 cards with a caption) so the
 // grid doesn't jump when galleries arrive.

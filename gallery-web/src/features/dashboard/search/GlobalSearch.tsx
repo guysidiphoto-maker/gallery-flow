@@ -1,10 +1,11 @@
 // Owner-side global search over the self-scoped `search_owner_content` RPC.
-// supabase.rpc can't be aborted, so stale responses are dropped with a
+// RPCs can't be aborted, so stale responses are dropped with a
 // sequence guard; photos render thumbnails only (displayUrl).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { supabase, displayUrl } from '@/shared/lib/supabase'
+import { displayUrl } from '@/shared/lib/supabase'
+import { searchOwnerContent } from '@/shared/data/search'
 import { cn, Input, Select, WorkspaceView } from '@/shared/ui'
 import { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import {
@@ -71,10 +72,7 @@ export default function GlobalSearch({
       const ticket = guard.next()
       setPhase('loading')
       void (async () => {
-        const { data, error } = await supabase.rpc('search_owner_content', {
-          p_query: query.trim(),
-          p_filters: payload,
-        })
+        const { data, error } = await searchOwnerContent(query.trim(), payload)
         if (!guard.isCurrent(ticket)) return   // a newer request took over
         if (error) {
           setPhase('error')

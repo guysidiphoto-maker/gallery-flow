@@ -3,7 +3,7 @@
 
 import { supabase } from '@/shared/lib/supabase'
 
-const DOMAIN_COLUMNS = 'custom_domain, custom_domain_status, custom_domain_verification_token'
+export const DOMAIN_COLUMNS = 'custom_domain, custom_domain_status, custom_domain_verification_token'
 
 /** Public business profile by URL slug, as a one-row array (RPC, so guests can call it). */
 export async function getBusinessBySlug(slug: string) {
@@ -18,6 +18,24 @@ export async function getBusinessSlug(businessId: string) {
 /** The signed-in owner's business row (or null) with the given `columns`. */
 export async function getOwnerBusiness(userId: string, columns: string) {
   return supabase.from('businesses').select(columns).eq('user_id', userId).maybeSingle()
+}
+
+/** Creates the owner's business on first sign-in; data is `{ id, slug }`. */
+export async function createBusiness(userId: string, businessName: string, slug: string) {
+  return supabase
+    .from('businesses')
+    .insert({ user_id: userId, business_name: businessName, slug })
+    .select('id, slug')
+    .single()
+}
+
+/** `{ brand_kit }` of a business, or null (RLS: owner only). */
+export async function getBrandKitRow(businessId: string) {
+  return supabase.from('businesses').select('brand_kit').eq('id', businessId).maybeSingle()
+}
+
+export async function updateBrandKit(businessId: string, brandKit: object) {
+  return supabase.from('businesses').update({ brand_kit: brandKit }).eq('id', businessId)
 }
 
 /** The signed-in owner's plan (`get_my_plan`); data may be a row or a one-row array. */

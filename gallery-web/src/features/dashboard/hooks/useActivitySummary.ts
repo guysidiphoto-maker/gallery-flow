@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { getGalleryActivitySummary } from '@/shared/data/activity'
 import type { ActivitySummary, EditorTab } from '../types'
 
 // Per-gallery downloads / favourites / recent email recipients. Shared by the
@@ -10,9 +10,7 @@ export function useActivitySummary(editTab: EditorTab, editingGalleryId: string 
 
   const loadActivitySummary = useCallback((galleryId: string) => {
     setActivityLoading(true)
-    return supabase
-      .rpc('gallery_activity_summary', { p_gallery_id: galleryId })
-      .then(({ data, error }) => {
+    return getGalleryActivitySummary(galleryId).then(({ data, error }) => {
         if (error) {
           console.warn('[activities] fetch failed', error)
           setActivitySummary(null)

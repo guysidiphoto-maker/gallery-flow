@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { listGalleryStories } from '@/shared/data/stories'
 import { getBrandKit } from '@/features/brand-kit/brandKit'
 import { toPlannerImages, toBrandResolved, type GalleryImageRow } from '@/features/story-studio/galleryAdapter'
 import type { PlannerImage } from '@/features/story-studio/planner'
@@ -71,11 +71,7 @@ export function useStoryGeneration(deps: {
   // The status endpoint inserts the row on 'ready', so a re-select shows it.
   async function refreshStoriesForCurrentGallery() {
     if (!editingGallery) return
-    const { data } = await supabase
-      .from('stories')
-      .select(STORY_COLUMNS)
-      .eq('gallery_id', editingGallery.id)
-      .order('created_at', { ascending: true })
+    const { data } = await listGalleryStories(editingGallery.id, STORY_COLUMNS)
     setStories(data ?? [])
   }
 

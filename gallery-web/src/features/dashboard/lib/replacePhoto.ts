@@ -2,7 +2,8 @@
 // Upload new → transactional DB flip → delete old: any failure leaves the original
 // usable, and a failed flip removes the freshly uploaded object.
 
-import { supabase } from '@/shared/lib/supabase'
+import { replaceImage } from '@/shared/data/images'
+import { removeStorageObjects } from '@/shared/data/storage'
 import {
   uploadReplacementOriginal,
   readImageDimensions,
@@ -47,7 +48,7 @@ async function removeObjects(paths: Array<string | null | undefined>): Promise<v
   if (unique.length === 0) return
   for (const bucket of CLEANUP_BUCKETS) {
     try {
-      await supabase.storage.from(bucket).remove(unique)
+      await removeStorageObjects(bucket, unique)
     } catch {
       /* best-effort — an orphaned object is reconciled by the storage sweep */
     }
@@ -66,7 +67,7 @@ export async function replacePhoto(opts: ReplacePhotoOptions): Promise<ReplacePh
   const { path: newPath, size } = await uploadReplacementOriginal(file, { galleryId, businessSlug })
 
   onProgress?.('commit')
-  const { data, error } = await supabase.rpc('replace_image', {
+  const { data, error } = await replaceImage({
     p_gallery_id: galleryId,
     p_image_id: imageId,
     p_web_preview_path: newPath,

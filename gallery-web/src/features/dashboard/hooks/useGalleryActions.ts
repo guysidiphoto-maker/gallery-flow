@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type React from 'react'
-import { supabase } from '@/shared/lib/supabase'
+import { deleteGallery as deleteGalleryRow, duplicateGallery as duplicateGalleryRpc, findGallery } from '@/shared/data/galleries'
 import { warmGalleryCache } from '@/shared/lib/warmCache'
 import { purgeStorageForGallery } from '../lib/purgeStorage'
 import { galleryShareUrl } from '../lib/shareUrl'
@@ -41,7 +41,7 @@ export function useGalleryActions(deps: {
     // Starts listing image paths before the row delete cascades them away;
     // not awaited because huge galleries take minutes to wipe.
     void purgeStorageForGallery(g.id)
-    const { error } = await supabase.from('galleries').delete().eq('id', g.id)
+    const { error } = await deleteGalleryRow(g.id)
     if (error) {
       showToast({ kind: 'error', text: 'מחיקת הגלריה נכשלה. נסה שוב.' })
       console.warn('[deleteGallery]', error)
@@ -65,10 +65,7 @@ export function useGalleryActions(deps: {
       return
     }
     setDuplicatingId(source.id)
-    const { data, error } = await supabase.rpc('duplicate_gallery', {
-      p_source_gallery_id: source.id,
-      p_new_name: trimmed,
-    })
+    const { data, error } = await duplicateGalleryRpc(source.id, trimmed)
     setDuplicatingId(null)
     if (error) {
       console.error('[duplicate-gallery] rpc failed', error)
@@ -80,11 +77,7 @@ export function useGalleryActions(deps: {
     await fetchGalleries()
     if (newId) {
       // Re-read so we get the slug + settings the RPC and slug trigger produced.
-      const { data: fresh } = await supabase
-        .from('galleries')
-        .select(GALLERY_COLUMNS)
-        .eq('id', newId)
-        .maybeSingle()
+      const { data: fresh } = await findGallery(newId, GALLERY_COLUMNS)
       if (fresh) openGalleryEditor(fresh as Gallery)
     }
   }

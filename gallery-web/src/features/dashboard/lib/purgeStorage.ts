@@ -1,5 +1,5 @@
-import { supabase } from '@/shared/lib/supabase'
-import { fetchAllGalleryImages } from '@/shared/gallery/fetchAllImages'
+import { fetchAllGalleryImages } from '@/shared/data/images'
+import { removeStorageObjects } from '@/shared/data/storage'
 import { IMAGE_COLUMNS_WITH_ORIGINAL, type GalleryImage } from '../types'
 
 // storage.remove() accepts ~1000 paths; 500 leaves headroom for URL limits.
@@ -9,7 +9,7 @@ async function purgeBucket(bucket: string, all: string[]) {
   for (let i = 0; i < all.length; i += CHUNK) {
     const chunk = all.slice(i, i + CHUNK)
     try {
-      const { error } = await supabase.storage.from(bucket).remove(chunk)
+      const { error } = await removeStorageObjects(bucket, chunk)
       if (error) {
         console.warn('[purgeStorageForImages] chunk remove failed', {
           bucket, chunkSize: chunk.length, error: error.message,

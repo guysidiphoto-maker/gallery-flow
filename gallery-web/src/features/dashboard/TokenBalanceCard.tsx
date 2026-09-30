@@ -2,16 +2,18 @@ import type { useOwnerLocale } from '@/shared/i18n/ownerLocale'
 import { TOKEN_BILLING_ON } from './lib/billing'
 import { cn } from '@/shared/ui'
 import { Icon } from '@/shared/ui/Icon'
+import { shimmer } from './lib/skeleton'
 
 type OwnerT = ReturnType<typeof useOwnerLocale>['t']
 
 // Sidebar token balance. Clickable (opens the buy modal) only when checkout is live.
+// `null` while the balance is loading: a placeholder instead of a misleading "low" 0.
 export function TokenBalanceCard({ tokenBalance, onBuyTokens, ownerT }: {
-  tokenBalance: number
+  tokenBalance: number | null
   onBuyTokens: () => void
   ownerT: OwnerT
 }) {
-  const low = tokenBalance < 50
+  const low = tokenBalance !== null && tokenBalance < 50
   return (
     <button
       onClick={TOKEN_BILLING_ON ? onBuyTokens : undefined}
@@ -25,7 +27,9 @@ export function TokenBalanceCard({ tokenBalance, onBuyTokens, ownerT }: {
         {low && <span className="text-warning">{ownerT('tokens.low')}</span>}
       </div>
       <div className="mb-2.5 text-[26px] leading-none font-medium tracking-[-0.02em] text-ink">
-        {tokenBalance.toLocaleString('he-IL')}
+        {tokenBalance === null
+          ? <span className={cn('block h-[26px] w-20 rounded-[4px]', shimmer)} aria-hidden />
+          : tokenBalance.toLocaleString('he-IL')}
       </div>
       {TOKEN_BILLING_ON && (
         <div className="flex items-center gap-1.5 border-t border-line pt-2.5 text-xs font-medium text-ink-soft">

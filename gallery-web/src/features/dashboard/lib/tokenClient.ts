@@ -1,9 +1,9 @@
 // Photographer-facing token API. Single seam for balance reads + checkout.
 
-import { supabase } from '@/shared/lib/supabase'
+import { createCheckout, getMyTokenBalance as fetchTokenBalance } from '@/shared/data/tokens'
 
 export async function getMyTokenBalance(): Promise<number> {
-  const { data, error } = await supabase.rpc('get_my_token_balance')
+  const { data, error } = await fetchTokenBalance()
   if (error) {
     console.warn('[tokens] balance fetch failed', error)
     return 0
@@ -16,18 +16,13 @@ export type PlanId = 'pro' | 'business' | 'agency'
 /** Open the LemonSqueezy checkout for a subscription tier. Returns the hosted
  *  checkout URL (or null on failure). */
 export async function startCheckout(planId: PlanId): Promise<string | null> {
-  const { data, error } = await supabase.functions.invoke('create-checkout', {
-    body: { planId },
-  })
+  const { data, error } = await createCheckout(planId)
   if (error) {
     console.warn('[tokens] checkout failed', error)
     return null
   }
   return (data as { checkoutUrl?: string })?.checkoutUrl ?? null
 }
-
-// The retired one-time gallery unlock checkout was removed; subscription
-// checkout (startCheckout) and the token economy are unaffected.
 
 /** Token package metadata for the buy modal. Source of truth is the `plans`
  *  table; this is just the display copy. */

@@ -1,6 +1,6 @@
 // Per-collection run engine: jszip holds the whole archive in memory, so entries are
 // extracted, hashed and uploaded (existing uploadMany pipeline) in small checkpointed chunks.
-import { supabase } from '@/shared/lib/supabase'
+import { insertGalleryWithSlug } from '@/shared/data/galleries'
 import { uploadMany } from '@/features/dashboard/lib/uploadPipeline'
 import { sha256HexBrowser, ZIP_ENTRY_MAX_BYTES } from './zipRules'
 import {
@@ -17,7 +17,7 @@ async function createImportGallery(args: {
   importSource: { provider: string; url: string | null; jobId: string }
   eventDate?: string | null
 }): Promise<{ id: string; slug: string | null } | null> {
-  const { data, error } = await supabase.from('galleries').insert({
+  const { data, error } = await insertGalleryWithSlug({
     name: args.name,
     business_id: args.businessId,
     status: 'draft',
@@ -56,7 +56,7 @@ async function createImportGallery(args: {
       feedLayout: 'grid',
       importSource: args.importSource,
     },
-  }).select('id, slug').maybeSingle()
+  })
   if (error || !data) return null
   return { id: data.id as string, slug: (data.slug as string | null) ?? null }
 }

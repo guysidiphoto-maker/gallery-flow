@@ -1,4 +1,6 @@
-const bar = 'animate-[dash-skeleton_1.4s_ease_infinite] rounded-[4px] bg-linear-90 from-sunken from-25% via-line-soft via-37% to-sunken to-63% bg-size-[400%_100%]'
+import { shimmer } from './lib/skeleton'
+
+const bar = `${shimmer} rounded-[4px]`
 
 // Auth is still resolving: paint the shell's silhouette (sidebar + tab header)
 // at the real sizes, so the signed-in dashboard fades in without a jump.
