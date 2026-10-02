@@ -12,8 +12,8 @@ import { dirname, resolve } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..')
-const mig = readFileSync(resolve(root, 'supabase/migrations/114_draft_isolation_hardening.sql'), 'utf8')
-const rb  = readFileSync(resolve(root, 'supabase/migrations/114_draft_isolation_hardening_rollback.sql'), 'utf8')
+const mig = readFileSync(resolve(root, 'supabase/migrations_archive/114_draft_isolation_hardening.sql'), 'utf8')
+const rb  = readFileSync(resolve(root, 'supabase/rollbacks/114_draft_isolation_hardening_rollback.sql'), 'utf8')
 const body = mig.replace(/--[^\n]*/g, '') // strip comments
 
 let pass = 0, fail = 0
