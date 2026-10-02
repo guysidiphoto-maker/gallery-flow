@@ -14,7 +14,7 @@ import { dirname, resolve } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..')
-const mig = readFileSync(resolve(root, 'supabase/migrations/112_replace_image_rpc.sql'), 'utf8')
+const mig = readFileSync(resolve(root, 'supabase/migrations_archive/112_replace_image_rpc.sql'), 'utf8')
 const migBody = mig.replace(/--[^\n]*/g, '') // strip comments
 const lib = readFileSync(resolve(here, '..', 'src/features/dashboard/lib/replacePhoto.ts'), 'utf8')
 const imagesData = readFileSync(resolve(here, '..', 'src/shared/data/images.ts'), 'utf8')
