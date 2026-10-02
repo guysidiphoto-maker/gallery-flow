@@ -1,6 +1,6 @@
 # Pixflow brand assets
 
-Generated for the launch of the Pixflow desktop app and marketing site.
+Generated for the launch of Pixflow and its marketing site.
 All vector originals are SVG; PNG exports are provided at common sizes.
 
 ## Files
@@ -74,7 +74,6 @@ If you need a wordmark that's font-independent (no fallback risk), ask me to con
 
 ## What's NOT in this folder yet
 
-- `pixflow-icon.icns` — already in `build/icon.icns`, used by electron-builder
 - Apple Touch Icon (180×180) — generate from `pixflow-icon-256.png`
 - Open Graph image (1200×630) — needs custom layout (not just the icon)
 - Twitter card (1200×675) — needs custom layout
