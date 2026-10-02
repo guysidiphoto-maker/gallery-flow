@@ -63,19 +63,19 @@ ok('returns was_cover hint', /was_cover/.test(migBody))
 ok('does NOT consume a token (no business_tokens UPDATE)', !/business_tokens/.test(migBody))
 
 // ── replacePhoto.ts: fail-closed ordering ────────────────────────────────────
-const iUpload = lib.indexOf('await uploadReplacementOriginal(')
+const iUpload = lib.indexOf('await uploadReplacementImage(')
 const iRpc = lib.indexOf('await replaceImage(')
 ok('replaceImage() is the replace_image RPC', /rpc\('replace_image'/.test(imagesData))
 const iCleanup = lib.lastIndexOf('removeObjects')
 ok('uploads new original BEFORE the DB flip', iUpload > 0 && iRpc > 0 && iUpload < iRpc)
 ok('deletes old objects AFTER the DB flip', iCleanup > iRpc)
-ok('on RPC failure, removes the just-uploaded object (no orphan)',
-  /error \|\| !data[\s\S]*?removeObjects\(\[newPath\]\)/.test(lib))
-ok('never deletes the new object during cleanup', /p !== newPath/.test(lib))
+ok('on RPC failure, removes the just-uploaded objects (no orphan)',
+  /error \|\| !data[\s\S]*?removeObjects\(\[\.\.\.newPaths\]\)/.test(lib))
+ok('never deletes a new object during cleanup', /!newPaths\.has\(p\)/.test(lib))
 ok('validates the file with the shared upload gate', /validateUploadFile\(file\)/.test(lib))
 
 // ── cover re-point happens BEFORE old-object cleanup (no 404-cover window) ────
-const iRepoint = lib.indexOf('onRepointCover(newPath)')
+const iRepoint = lib.indexOf('onRepointCover(webPath)')
 ok('re-points the cover before deleting old objects',
   iRepoint > iRpc && iRepoint < iCleanup, `repoint=${iRepoint} rpc=${iRpc} cleanup=${iCleanup}`)
 ok('cover re-point only runs when the replaced image was the cover',
@@ -85,11 +85,13 @@ ok('cleanup covers the public thumbs bucket too',
   /gallery-images-thumbs-public/.test(lib) && /CLEANUP_BUCKETS/.test(lib))
 
 // ── uploadPipeline: replacement helper does not record a row / consume token ──
-const helper = (pipeline.match(/export async function uploadReplacementOriginal[\s\S]*?\n}/) || [''])[0]
-ok('uploadReplacementOriginal does NOT call record_image_upload',
-  helper.length > 0 && !/record_image_upload/.test(helper))
-ok('uploadReplacementOriginal is content-addressed (embeds size + lastModified)',
-  /pathHash\(`\$\{galleryId\}\/\$\{file\.name\}\/\$\{file\.size\}\/\$\{file\.lastModified\}`\)/.test(helper))
+const helper = (pipeline.match(/export async function uploadReplacementImage[\s\S]*?\n}/) || [''])[0]
+const objects = (pipeline.match(/async function uploadImageObjects[\s\S]*?\n}/) || [''])[0]
+ok('uploadReplacementImage does NOT call record_image_upload',
+  helper.length > 0 && !/record_image_upload|recordImageUpload/.test(helper))
+ok('uploadReplacementImage uploads via the shared object helper', /uploadImageObjects\(/.test(helper))
+ok('uploaded objects are content-addressed (embeds size + lastModified)',
+  /pathHash\(`\$\{galleryId\}\/\$\{file\.name\}\/\$\{file\.size\}\/\$\{file\.lastModified\}`\)/.test(objects))
 
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)

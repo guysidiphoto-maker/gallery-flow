@@ -20,12 +20,15 @@ export interface ResolvedDownload { url: string; downgraded: boolean }
  * the client-side ZIP fallback while the signed-URL flag is off.
  */
 export function legacyDownloadUrl(img: GalleryImage, ctx: DownloadUrlContext): string {
-  const path = ctx.wantsHd
-    ? (img.original_uploaded && img.original_path ? img.original_path : img.storage_path)
-    : img.storage_path
+  const path = downloadPath(img)
   if (ctx.watermarkEnabled && ctx.businessId) return signedWatermarkedUrl(path, ctx.businessId)
-  if (ctx.wantsHd && img.original_path && img.original_uploaded) return storageUrl(ctx.imgBucket, img.original_path)
-  return storageUrl(ctx.imgBucket, img.storage_path)
+  return storageUrl(ctx.imgBucket, path)
+}
+
+/** The object a download serves at every quality setting: the original once it's
+ *  uploaded. storage_path is a 2048px display copy, never the delivered file. */
+function downloadPath(img: GalleryImage): string {
+  return img.original_uploaded && img.original_path ? img.original_path : img.storage_path
 }
 
 /**
@@ -55,9 +58,7 @@ export async function resolveDownloadUrl(img: GalleryImage, ctx: DownloadUrlCont
   const webCopy = async (): Promise<ResolvedDownload> =>
     ({ url: await sign(img.storage_path), downgraded: true })
 
-  if (!wantsHd || !img.original_path) {
-    return direct(wantsHd ? (img.original_uploaded ? img.original_path! : img.storage_path) : img.storage_path)
-  }
+  if (!wantsHd || !img.original_path) return direct(downloadPath(img))
 
   const original = img.original_path
   const wm = watermarkUrl(original)

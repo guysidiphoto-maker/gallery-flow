@@ -4,6 +4,7 @@
 
 import { recordImageUpload } from '@/shared/data/images'
 import { uploadStorageObject } from '@/shared/data/storage'
+import { makeDisplayCopies } from './displayCopies'
 
 const BUCKET = 'gallery-images'
 
@@ -140,25 +141,60 @@ export interface UploadOptions {
   onProgress?: ProgressFn
 }
 
-/** Upload one original and record it. Every display size is an on-the-fly,
- *  CDN-cached transform of this object, so no client-side resizing. */
-async function uploadOneImage(file: File, opts: UploadOptions): Promise<UploadResult> {
-  const { galleryId, businessSlug, sectionId, sortOrder, onProgress } = opts
+interface StoredPaths { originalPath: string; webPath: string; thumbPath: string }
+
+/** Upload the original plus its 2048px web and 640px thumb copies. The viewer
+ *  serves the copies directly; if the browser can't make them, all three paths
+ *  point at the original and the viewer transforms it on the fly instead. */
+async function uploadImageObjects(
+  file: File, businessSlug: string, galleryId: string, onProgress?: ProgressFn,
+): Promise<StoredPaths> {
   const hash     = pathHash(`${galleryId}/${file.name}/${file.size}/${file.lastModified}`)
   const origPath = buildPath(businessSlug, galleryId, 'originals', hash, file.name)
 
   onProgress?.({ phase: 'original' })
-  await uploadWithRetry(BUCKET, origPath, file, file.type || 'image/jpeg')
+  // Resizing runs in a worker, so it overlaps the network-bound original upload.
+  const [, copies] = await Promise.all([
+    uploadWithRetry(BUCKET, origPath, file, file.type || 'image/jpeg'),
+    uploadDisplayCopies(file, businessSlug, galleryId, hash),
+  ])
+  return copies
+    ? { originalPath: origPath, ...copies }
+    : { originalPath: origPath, webPath: origPath, thumbPath: origPath }
+}
+
+async function uploadDisplayCopies(
+  file: File, businessSlug: string, galleryId: string, hash: string,
+): Promise<{ webPath: string; thumbPath: string } | null> {
+  const copies = await makeDisplayCopies(file)
+  if (!copies) return null
+  const name = sanitizeFilename(file.name).replace(/\.[^.]*$/, '') + '.jpg'
+  const webPath   = buildPath(businessSlug, galleryId, 'web', hash, name)
+  const thumbPath = buildPath(businessSlug, galleryId, 'thumbs', hash, name)
+  try {
+    await Promise.all([
+      uploadWithRetry(BUCKET, webPath, copies.web, 'image/jpeg'),
+      uploadWithRetry(BUCKET, thumbPath, copies.thumb, 'image/jpeg'),
+    ])
+    return { webPath, thumbPath }
+  } catch {
+    return null
+  }
+}
+
+/** Upload one image and record it. */
+async function uploadOneImage(file: File, opts: UploadOptions): Promise<UploadResult> {
+  const { galleryId, businessSlug, sectionId, sortOrder, onProgress } = opts
+  const { originalPath, webPath, thumbPath } = await uploadImageObjects(file, businessSlug, galleryId, onProgress)
 
   onProgress?.({ phase: 'record' })
-  // All path columns point at the original; sizes are derived on demand and
   // original_uploaded becomes true so HD downloads resolve immediately.
   const { data, error } = await recordImageUpload({
     p_gallery_id:            galleryId,
     p_filename:              file.name,
-    p_web_preview_path:      origPath,
-    p_thumbnail_path:        origPath,
-    p_original_path:         origPath,
+    p_web_preview_path:      webPath,
+    p_thumbnail_path:        thumbPath,
+    p_original_path:         originalPath,
     p_original_size:         file.size,
     p_section_id:            sectionId ?? null,
     p_sort_order:            sortOrder ?? 0,
@@ -170,27 +206,25 @@ async function uploadOneImage(file: File, opts: UploadOptions): Promise<UploadRe
   onProgress?.({ phase: 'done' })
   return {
     imageId, filename: file.name,
-    webPath: origPath, thumbPath: origPath, originalPath: origPath,
+    webPath, thumbPath, originalPath,
     originalSize: file.size,
     publicThumbPresent: false,
   }
 }
 
-/** Upload an original without recording a row or consuming a token (photo
- *  replace). Content-addressed, so it never collides with the object it replaces. */
-export async function uploadReplacementOriginal(
+/** Upload a replacement image (original + display copies) without recording a
+ *  row or consuming a token. Content-addressed, so it never collides with the
+ *  objects it replaces. */
+export async function uploadReplacementImage(
   file: File,
   opts: { galleryId: string; businessSlug: string; onProgress?: ProgressFn },
-): Promise<{ path: string; size: number }> {
+): Promise<StoredPaths & { size: number }> {
   const reason = validateUploadFile(file)
   if (reason) throw new Error(reason)
   const { galleryId, businessSlug, onProgress } = opts
-  const hash     = pathHash(`${galleryId}/${file.name}/${file.size}/${file.lastModified}`)
-  const origPath = buildPath(businessSlug, galleryId, 'originals', hash, file.name)
-  onProgress?.({ phase: 'original' })
-  await uploadWithRetry(BUCKET, origPath, file, file.type || 'image/jpeg')
+  const paths = await uploadImageObjects(file, businessSlug, galleryId, onProgress)
   onProgress?.({ phase: 'done' })
-  return { path: origPath, size: file.size }
+  return { ...paths, size: file.size }
 }
 
 /** Best-effort decode of an image file's intrinsic pixel dimensions. Returns

@@ -29,8 +29,9 @@ interface ZipBody {
    *  for password galleries; no-op for non-password galleries. */
   unlockToken?: string
   filenameStem?: string
-  /** 'web' (default) | 'original'. 'original' tries original_path with a
-   *  per-row fallback to web_preview_path when original_uploaded is false. */
+  /** 'web' (default) | 'original'. Both serve original_path, falling back per row
+   *  to web_preview_path when original_uploaded is false: web_preview_path is a
+   *  2048px display copy, not a delivery quality. */
   quality?: 'web' | 'original'
 }
 
@@ -48,7 +49,6 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   const body = (req.body || {}) as ZipBody
   const galleryId = String(body.galleryId ?? '').trim()
   const pvt = String(body.pvt ?? '').trim()
-  const quality = body.quality === 'original' ? 'original' : 'web'
   const filenameStem = (body.filenameStem ?? 'photos').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 60) || 'photos'
   const imageIds: string[] = Array.isArray(body.imageIds) ? body.imageIds.filter(s => typeof s === 'string') : []
 
@@ -144,7 +144,7 @@ async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const downloadOne = async (row: Row) => {
-    const path = quality === 'original' && row.original_uploaded && row.original_path
+    const path = row.original_uploaded && row.original_path
       ? row.original_path
       : row.web_preview_path
     if (!path) return
