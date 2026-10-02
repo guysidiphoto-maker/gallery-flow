@@ -15,3 +15,12 @@ export async function listVendorImageTags(vendorId: string) {
     .select('image_id, gallery_id')
     .eq('vendor_id', vendorId)
 }
+
+/**
+ * Photos tagged for the vendor behind `code`, in that vendor's live galleries
+ * (`get_vendor_images`, code-checked server-side). Errors when the RPC isn't
+ * deployed yet; callers then fall back to `listVendorImageTags` + `listImagesByIds`.
+ */
+export async function getVendorImages(code: string) {
+  return supabase.rpc('get_vendor_images', { p_code: code })
+}
