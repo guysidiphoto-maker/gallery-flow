@@ -57,7 +57,7 @@ export function GalleryViewerPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [storyPlayerIndex, setStoryPlayerIndex] = useState<number | null>(null)
 
-  const client = useClientAccess(gallery, unlocked, settings.clientSelectionEnabled, settings.clientCode)
+  const client = useClientAccess(gallery, unlocked, settings.clientSelectionEnabled)
   const face = useFaceMatches({ facePrivacyMode, setImages, closeWelcome: () => setShowWelcome(false) })
   const nav = useSectionNav({
     sections, images, galleryBasePath: route?.basePath ?? null, faceFilterActive: face.faceFilterActive, showWelcome,

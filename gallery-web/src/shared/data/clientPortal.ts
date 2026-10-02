@@ -20,3 +20,9 @@ export async function resolveClientPortal(businessSlug: string, clientSlug: stri
 export async function resolveClientPortalById(clientId: string) {
   return supabase.rpc('resolve_client_portal_by_id', { p_client_id: clientId })
 }
+
+/** Whether the client's live galleries carry a legacy PIN (the PIN itself stays server-side). */
+export async function clientHasLegacyPin(clientId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('client_has_legacy_pin', { p_client_id: clientId })
+  return !error && data === true
+}

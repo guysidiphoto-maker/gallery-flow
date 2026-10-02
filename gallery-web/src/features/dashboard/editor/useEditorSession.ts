@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { warmGalleryCache } from '@/shared/lib/warmCache'
 import { assignUnsectionedImages, fetchAllGalleryImages } from '@/shared/data/images'
-import { updateGallery } from '@/shared/data/galleries'
+import { getGalleryClientCode, updateGallery } from '@/shared/data/galleries'
 import { insertSection, listGallerySections } from '@/shared/data/sections'
 import { listGalleryStories } from '@/shared/data/stories'
 import { requestFaceIndex } from '../lib/faceIndex'
@@ -60,6 +60,7 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
         fetchAllGalleryImages<GalleryImage & { section_id?: string | null }>(g.id, IMAGE_COLUMNS_WITH_ORIGINAL),
         listGallerySections(g.id, SECTION_COLUMNS),
         listGalleryStories(g.id, STORY_COLUMNS),
+        getGalleryClientCode(g.id),
       ])
     } catch (err) {
       console.warn('[openGalleryEditor]', err)
@@ -67,7 +68,13 @@ export function useEditorSession(deps: { showToast: Toast; fetchGalleries: () =>
       return
     }
     if (seq !== loadSeqRef.current) return
-    const [imgs, sectionsRes, storiesRes] = loaded
+    const [imgs, sectionsRes, storiesRes, clientCode] = loaded
+    // The code isn't in delivery_settings any more; put it back for the editor form.
+    if (clientCode) {
+      setEditingGallery(cur => cur && cur.id === g.id
+        ? { ...cur, delivery_settings: { ...(cur.delivery_settings ?? {}), clientCode } }
+        : cur)
+    }
     let secs: GallerySection[] = sectionsRes.data ?? []
 
     // Self-heal legacy photos with no section: fold them into the first

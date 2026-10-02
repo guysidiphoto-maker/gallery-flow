@@ -3,10 +3,10 @@ import { dashKey, tokenExpiresKey, tokenKey } from '../lib/legacySession'
 
 /**
  * Legacy PIN verification. /api/gallery-access `verify_code` answers with
- * `{ok, token, expires_at}` (hashed PIN), `{ok, fallback_to_legacy}` (client not
- * migrated yet → plaintext compare) or `{error:'cooldown_active', cooldown_until}`.
+ * `{ok, token, expires_at}` (hashed PIN), `{ok, legacy}` (gallery PIN matched
+ * server-side) or `{error:'cooldown_active', cooldown_until}`.
  */
-export function usePinUnlock(clientId: string, clientCode: string, onUnlocked: () => void) {
+export function usePinUnlock(clientId: string, onUnlocked: () => void) {
   const [codeInput, setCodeInputRaw] = useState('')
   const [codeError, setCodeError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -30,13 +30,9 @@ export function usePinUnlock(clientId: string, clientCode: string, onUnlocked: (
         onUnlocked()
         return
       }
-      if (json.ok && json.fallback_to_legacy) {
-        if (codeInput === clientCode) {
-          sessionStorage.setItem(dashKey(clientId), 'true')
-          onUnlocked()
-          return
-        }
-        setCodeError('קוד שגוי')
+      if (json.ok && json.legacy) {
+        sessionStorage.setItem(dashKey(clientId), 'true')
+        onUnlocked()
         return
       }
       if (json.error === 'cooldown_active') {
