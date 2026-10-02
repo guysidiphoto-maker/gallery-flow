@@ -40,16 +40,16 @@ export function usePhotoReplace(deps: {
         businessSlug,
         file,
         // Re-point a cover to the new pixels before the old object is deleted.
-        onRepointCover: async (newPath) => {
+        onRepointCover: async (newWebPath) => {
           await updateGallerySettings({
-            coverImagePath: newPath,
-            coverImageUrl: imgUrl(newPath),
+            coverImagePath: newWebPath,
+            coverImageUrl: imgUrl(newWebPath),
           })
         },
       })
       setGalleryImages(prev => prev.map(i =>
         i.id === imageId
-          ? { ...i, storage_path: res.newPath, thumbnail_path: res.newPath, original_path: res.newPath, filename: res.filename }
+          ? { ...i, storage_path: res.webPath, thumbnail_path: res.thumbPath, original_path: res.newPath, filename: res.filename }
           : i,
       ))
       clearSignedUrlCache()

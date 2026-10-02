@@ -5,7 +5,7 @@
 import { replaceImage } from '@/shared/data/images'
 import { removeStorageObjects } from '@/shared/data/storage'
 import {
-  uploadReplacementOriginal,
+  uploadReplacementImage,
   readImageDimensions,
   validateUploadFile,
   type UploadRejectReason,
@@ -24,7 +24,10 @@ export class ReplacePhotoError extends Error {
 
 export interface ReplacePhotoResult {
   imageId: string
+  /** The new original. */
   newPath: string
+  webPath: string
+  thumbPath: string
   filename: string
   wasCover: boolean
 }
@@ -36,8 +39,8 @@ export interface ReplacePhotoOptions {
   file: File
   onProgress?: (phase: ReplacePhotoPhase) => void
   /** Runs after the DB flip and before old objects are deleted, only for the
-   *  cover: its delivery_settings reference must move to newPath first. */
-  onRepointCover?: (newPath: string) => Promise<void>
+   *  cover: its delivery_settings reference must move to the new web copy first. */
+  onRepointCover?: (newWebPath: string) => Promise<void>
 }
 
 // Old keys may also exist as dual-written public thumbnails; clean both buckets.
@@ -64,14 +67,16 @@ export async function replacePhoto(opts: ReplacePhotoOptions): Promise<ReplacePh
 
   onProgress?.('upload')
   const dims = await readImageDimensions(file)
-  const { path: newPath, size } = await uploadReplacementOriginal(file, { galleryId, businessSlug })
+  const { originalPath: newPath, webPath, thumbPath, size } =
+    await uploadReplacementImage(file, { galleryId, businessSlug })
+  const newPaths = new Set([newPath, webPath, thumbPath])
 
   onProgress?.('commit')
   const { data, error } = await replaceImage({
     p_gallery_id: galleryId,
     p_image_id: imageId,
-    p_web_preview_path: newPath,
-    p_thumbnail_path: newPath,
+    p_web_preview_path: webPath,
+    p_thumbnail_path: thumbPath,
     p_original_path: newPath,
     p_filename: file.name,
     p_original_size: size,
@@ -81,10 +86,9 @@ export async function replacePhoto(opts: ReplacePhotoOptions): Promise<ReplacePh
   })
 
   if (error || !data || (data as { ok?: boolean }).ok !== true) {
-    // DB flip failed — the row still points at the old object. Drop the object
-    // we just uploaded (unless it happens to be the same content-addressed key
-    // the row already used) so a failed replace accrues no garbage.
-    await removeObjects([newPath])
+    // DB flip failed — the row still points at the old objects. Drop the ones
+    // we just uploaded so a failed replace accrues no garbage.
+    await removeObjects([...newPaths])
     throw new ReplacePhotoError(
       error?.message || 'replace_failed',
       (error as { message?: string })?.message,
@@ -102,18 +106,18 @@ export async function replacePhoto(opts: ReplacePhotoOptions): Promise<ReplacePh
   // Re-point the cover before deleting the old object so an interruption can't
   // leave a broken cover. A re-point failure is swallowed; cleanup still runs.
   if (result.was_cover && opts.onRepointCover) {
-    try { await opts.onRepointCover(newPath) } catch { /* cover re-point best-effort */ }
+    try { await opts.onRepointCover(webPath) } catch { /* cover re-point best-effort */ }
   }
 
-  // The row now points at newPath. Delete the old objects, but never the new
+  // The row now points at the new objects. Delete the old ones, but never a new
   // one (in the rare exact-same-file case old === new and we must keep it).
   onProgress?.('cleanup')
   await removeObjects(
     [result.old_web_path, result.old_thumb_path, result.old_original_path].filter(
-      (p) => p && p !== newPath,
+      (p) => p && !newPaths.has(p),
     ),
   )
 
   onProgress?.('done')
-  return { imageId, newPath, filename: file.name, wasCover: !!result.was_cover }
+  return { imageId, newPath, webPath, thumbPath, filename: file.name, wasCover: !!result.was_cover }
 }

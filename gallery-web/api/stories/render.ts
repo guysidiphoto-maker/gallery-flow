@@ -31,13 +31,17 @@ const DEFAULT_STORY_DURATION_SECONDS = 30
 const STORY_MAX_PHOTOS = 60
 
 // Full-size originals exhaust Chromium's image decoder in the function ("source
-// image cannot be decoded" → page crash), so frames are always fetched through
-// Supabase's on-the-fly transform, bounded to 1280x1920.
+// image cannot be decoded" → page crash), so an original is fetched through
+// Supabase's on-the-fly transform, bounded to 1280x1920. A stored 2048px web copy
+// decodes fine and is used as-is: transforms are billed per source image.
 const RENDER_IMAGE_MAX_W = 1280
 const RENDER_IMAGE_MAX_H = 1920
 const RENDER_IMAGE_QUALITY = 78
 
 function renderImageUrl(storagePath: string): string {
+  if (!storagePath.includes('/originals/')) {
+    return `${SUPABASE_URL}/storage/v1/object/public/${GALLERY_IMAGES_BUCKET}/${storagePath}`
+  }
   const q = `width=${RENDER_IMAGE_MAX_W}&height=${RENDER_IMAGE_MAX_H}&resize=contain&quality=${RENDER_IMAGE_QUALITY}`
   return `${SUPABASE_URL}/storage/v1/render/image/public/${GALLERY_IMAGES_BUCKET}/${storagePath}?${q}`
 }
