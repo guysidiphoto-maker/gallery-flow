@@ -3,7 +3,7 @@
 import { LANDING_PATHS } from '../../seo/landingPaths'
 
 export type RouteId =
-  | 'home' | 'home-legacy' | 'photographers' | 'landing-en' | 'seo-landing'
+  | 'home' | 'home-legacy' | 'photographers' | 'seo-landing'
   | 'blog-index' | 'blog-post' | 'demo' | 'pricing' | 'terms' | 'privacy'
   | 'dashboard' | 'studio-settings' | 'brand-kit' | 'admin'
   | 'client-invite-accept' | 'client-login' | 'client-portal' | 'portfolio'
@@ -17,7 +17,6 @@ const ROUTES: ReadonlyArray<readonly [RouteId, Matcher]> = [
   ['home', p => p === '/'],
   ['home-legacy', p => p === '/home-legacy'],
   ['photographers', exact('/photographers')],
-  ['landing-en', exact('/en')],
   ['seo-landing', (_p, t) => LANDING_PATHS.has(t)],
   ['blog-index', exact('/blog')],
   ['blog-post', p => p.startsWith('/blog/')],
@@ -54,7 +53,7 @@ export function resolveRoute(path: string): RouteId | null {
 
 /** Marketing pages are the only place the ad pixel may load. */
 const MARKETING: ReadonlySet<RouteId> = new Set([
-  'home', 'home-legacy', 'photographers', 'landing-en', 'seo-landing',
+  'home', 'home-legacy', 'photographers', 'seo-landing',
   'blog-index', 'blog-post', 'demo', 'pricing',
 ])
 export const isMarketingRoute = (id: RouteId | null) => id !== null && MARKETING.has(id)

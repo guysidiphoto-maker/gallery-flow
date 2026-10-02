@@ -25,10 +25,6 @@
       "destination": "/api/page?route=home-he"
     },
     {
-      "source": "/en",
-      "destination": "/api/page?route=home-en"
-    },
-    {
       "source": "/photographers",
       "destination": "/api/page?route=photographers"
     },

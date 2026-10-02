@@ -47,50 +47,13 @@
 
     /* Dark indigo (English landing, SEO pages, selfie demo) */
     --mk-night-card: #12121a;
-    --mk-night-ink: #e2e8f0;
     --mk-seo-ink: #e8e8f0;
-    --mk-brand-pale: #a5b4fc;
     --mk-brand-hover: #5457e0;
-    --mk-brand-gradient: linear-gradient(135deg, #6366f1, #8b5cf6);
-    --mk-brand-glow: 0 0 24px rgba(99, 102, 241, 0.35), 0 0 60px rgba(99, 102, 241, 0.15);
-    --mk-brand-glow-strong: 0 0 32px rgba(99, 102, 241, 0.5), 0 0 80px rgba(99, 102, 241, 0.2);
-    --mk-lift-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
-    --mk-star: #f59e0b;
-    --mk-gold: rgba(251, 191, 36, 0.9);
-    --mk-gold-ink: #1a1a00;
-    --mk-dot-red: #ff5f57;
-    --mk-dot-yellow: #febc2e;
-    --mk-dot-green: #28c840;
     --mk-success: #22c55e;
     --mk-font-inter: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --mk-selfie-bg: radial-gradient(ellipse at 50% 30%, rgba(99, 102, 241, 0.1) 0%, #07070d 70%);
     --mk-selfie-cta: linear-gradient(135deg, #6366f1, #818cf8);
     --mk-font-inter-plain: Inter, sans-serif;
-
-    /* English landing art direction */
-    --mk-lp-hero-bg: radial-gradient(ellipse at 40% 30%, rgba(99, 102, 241, 0.18) 0%, transparent 60%), radial-gradient(ellipse at 70% 70%, rgba(139, 92, 246, 0.12) 0%, transparent 50%);
-    --mk-lp-hero-overlay: linear-gradient(180deg, rgba(10, 10, 15, 0.6) 0%, rgba(10, 10, 15, 0.95) 100%);
-    --mk-lp-hero-text: linear-gradient(135deg, #fff, #c7d2fe, #818cf8);
-    --mk-lp-orb-1: radial-gradient(circle, rgba(99, 102, 241, 0.6), transparent 70%);
-    --mk-lp-orb-2: radial-gradient(circle, rgba(139, 92, 246, 0.5), transparent 70%);
-    --mk-lp-orb-3: radial-gradient(circle, rgba(99, 102, 241, 0.4), transparent 70%);
-    --mk-lp-mock-1: linear-gradient(135deg, #2d1b69 0%, #11998e 100%);
-    --mk-lp-mock-2: linear-gradient(135deg, #1a1a2e 0%, #6366f1 100%);
-    --mk-lp-mock-3: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
-    --mk-lp-mock-4: linear-gradient(135deg, #141e30 0%, #243b55 100%);
-    --mk-lp-mock-5: linear-gradient(135deg, #1f1c2c 0%, #928dab 100%);
-    --mk-lp-mock-6: linear-gradient(135deg, #0d0d0d 0%, #434343 100%);
-    --mk-lp-star-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
-    --mk-lp-feature-bar: linear-gradient(90deg, #6366f1, #8b5cf6, #818cf8);
-    --mk-lp-feature-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), 0 0 40px rgba(99, 102, 241, 0.15);
-    --mk-lp-popular-shadow: 0 0 30px rgba(99, 102, 241, 0.15);
-    --mk-lp-popular-shadow-hover: 0 0 40px rgba(99, 102, 241, 0.25), 0 12px 40px rgba(0, 0, 0, 0.3);
-    --mk-lp-gallery-glow: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.08), transparent 70%);
-    --mk-lp-final-glow: radial-gradient(circle, rgba(99, 102, 241, 0.12), transparent 70%);
-    --mk-lp-footer-line: linear-gradient(90deg, #6366f1, rgba(139, 92, 246, 0.5), transparent);
-    --mk-lp-demo-veil: linear-gradient(to bottom, rgba(10, 10, 15, 0.7), rgba(10, 10, 15, 0.9));
-    --mk-lp-vignette: radial-gradient(ellipse at center, transparent 35%, rgba(0, 0, 0, 0.5) 100%);
-    --mk-lp-sepia: rgba(120, 80, 40, 0.18);
 
     /* Legal pages (terms / privacy) */
     --mk-legal-bg: #f8f9fa;
@@ -120,36 +83,6 @@
     .mk-scan-node { animation: none; }
   }
 
-  /* Animated gradient ring behind the /en hero download button. */
-  .mk-lp-ring {
-    position: relative;
-    z-index: 0;
-  }
-  .mk-lp-ring::before {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa, #6366f1);
-    background-size: 200% 200%;
-    animation: mk-lp-gradient-shift 3s ease infinite;
-    z-index: -1;
-  }
-
-  /* Spark that drifts across the /en final CTA button. */
-  .mk-lp-sparkle::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: -20%;
-    width: 6px;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.7);
-    border-radius: 50%;
-    filter: blur(1px);
-    animation: mk-lp-sparkle 4s ease-in-out infinite;
-    pointer-events: none;
-  }
 }
 
 /* Smooth in-page anchor scrolling while a page that opts in is mounted. */
@@ -191,50 +124,3 @@
   100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
 }
 
-/* English landing + interactive demo */
-@keyframes mk-lp-orb-float {
-  0%, 100% { transform: translate(0, 0); }
-  25% { transform: translate(30px, -40px); }
-  50% { transform: translate(-20px, 20px); }
-  75% { transform: translate(15px, 30px); }
-}
-@keyframes mk-lp-hero-entrance {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes mk-lp-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.4); }
-}
-@keyframes mk-lp-mockup-in {
-  from { opacity: 0; transform: translateY(40px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-@keyframes mk-lp-float {
-  0% { transform: translateY(0); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translateY(-120vh); opacity: 0; }
-}
-@keyframes mk-lp-word-in {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes mk-lp-gradient-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-@keyframes mk-lp-badge-pulse {
-  0%, 100% { transform: translateX(-50%) scale(1); opacity: 1; }
-  50% { transform: translateX(-50%) scale(1.05); opacity: 0.85; }
-}
-@keyframes mk-lp-sparkle {
-  0%, 100% { left: -10%; top: 50%; opacity: 0; }
-  10% { opacity: 1; }
-  50% { left: 110%; top: 30%; opacity: 1; }
-  60% { opacity: 0; }
-}
-@keyframes mk-lp-demo-enter { from { opacity: 0; } to { opacity: 1; } }
-@keyframes mk-lp-ph-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-@keyframes mk-lp-star-pop { 0% { transform: scale(0); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }

@@ -12,7 +12,7 @@ export const seo = {
 }
 
 export const BLOG_NAV = [
-  { href: '/en', label: 'Home' },
+  { href: '/', label: 'Home' },
   { href: '/blog', label: 'Blog' },
   { href: '/demo', label: 'Demo' },
 ]

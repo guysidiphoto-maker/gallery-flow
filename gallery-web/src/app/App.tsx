@@ -13,7 +13,6 @@ const PAGES: Record<RouteId, ComponentType | LazyExoticComponent<ComponentType>>
   home: page(() => import('@/features/marketing/home3d/Homepage3D'), 'Homepage3D'),
   'home-legacy': page(() => import('@/features/marketing/pages/LandingPageHe'), 'LandingPageHe'),
   photographers: page(() => import('@/features/marketing/pages/PhotographersLanding'), 'PhotographersLanding'),
-  'landing-en': page(() => import('@/features/marketing/pages/LandingPage'), 'LandingPage'),
   'seo-landing': page(() => import('@/features/marketing/pages/SeoLanding'), 'SeoLanding'),
   'blog-index': page(() => import('@/features/marketing/pages/BlogIndex'), 'BlogIndex'),
   'blog-post': page(() => import('@/features/marketing/pages/BlogPost'), 'BlogPost'),

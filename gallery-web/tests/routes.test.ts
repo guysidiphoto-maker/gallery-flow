@@ -15,8 +15,9 @@ const CASES: Array<[string, ReturnType<typeof resolveRoute>]> = [
   ['/home-legacy', 'home-legacy'],
   ['/photographers', 'photographers'],
   ['/photographers/', 'photographers'],
-  ['/en', 'landing-en'],
-  ['/en/', 'landing-en'],
+  // The retired Mac-app landing: unknown now, so the app sends it home.
+  ['/en', null],
+  ['/en/', null],
   ['/face-recognition-photo-gallery', 'seo-landing'],
   ['/blog', 'blog-index'],
   ['/blog/', 'blog-index'],
