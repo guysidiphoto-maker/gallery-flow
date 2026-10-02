@@ -3,13 +3,31 @@
 // viewer stops paying a Supabase image transform per photo per billing cycle.
 // Originals are never modified or deleted. Dry run unless --apply.
 //
-//   SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/backfill-display-copies.mts [--apply] [--gallery <id>] [--limit <n>]
+//   npx tsx scripts/backfill-display-copies.mts [--apply] [--gallery <id>] [--limit <n>]
+// Uses SUPABASE_SERVICE_ROLE_KEY if set, else asks the logged-in Supabase CLI.
+import { execFileSync } from 'node:child_process'
 import { createClient } from '@supabase/supabase-js'
 import sharp from 'sharp'
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://vlyiqfawkrjvqcmkpfvs.supabase.co'
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-if (!SERVICE_KEY) { console.error('SUPABASE_SERVICE_ROLE_KEY is required'); process.exit(1) }
+const PROJECT_REF = 'vlyiqfawkrjvqcmkpfvs'
+const SUPABASE_URL = process.env.SUPABASE_URL || `https://${PROJECT_REF}.supabase.co`
+
+function serviceKeyFromCli(): string | undefined {
+  try {
+    const out = execFileSync('npx', ['-y', 'supabase@latest', 'projects', 'api-keys',
+      '--project-ref', PROJECT_REF, '-o', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    const keys = JSON.parse(out) as Array<{ name?: string; api_key?: string }>
+    return keys.find(k => k.name === 'service_role')?.api_key
+  } catch {
+    return undefined
+  }
+}
+
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || serviceKeyFromCli()
+if (!SERVICE_KEY) {
+  console.error('No service key: set SUPABASE_SERVICE_ROLE_KEY or run `npx supabase login`')
+  process.exit(1)
+}
 
 const args = process.argv.slice(2)
 const flag = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined }
@@ -92,9 +110,9 @@ async function main() {
       .select('id, original_path, web_preview_path, galleries!inner(demo_expires_at)')
       .like('web_preview_path', '%/originals/%')
       .is('galleries.demo_expires_at', null)
-      .gt('id', cursor)
       .order('id')
       .limit(Math.min(PAGE, LIMIT - seen))
+    if (cursor) q = q.gt('id', cursor)
     if (GALLERY) q = q.eq('gallery_id', GALLERY)
     const { data, error } = await q
     if (error) throw new Error(`query: ${error.message}`)
