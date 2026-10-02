@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { listGalleryNames } from '@/shared/data/galleries'
 import { listImagesByIds } from '@/shared/data/images'
-import { getVendorByCode, listVendorImageTags } from '@/shared/data/vendors'
+import { getVendorByCode, getVendorImages, listVendorImageTags } from '@/shared/data/vendors'
 
 export interface VendorInfo {
   id: string; name: string; category: string; logo_url: string | null
@@ -46,26 +46,29 @@ export function useVendorPortal() {
       const v = Array.isArray(vData) ? vData[0] : vData
       setVendor(v)
 
-      const { data: tags } = await listVendorImageTags(v.id)
+      // The code-checked RPC is the only path that still returns photos from
+      // private-face-mode galleries; the legacy anon reads cover a DB without it.
+      let tagged: TaggedImage[] | null = null
+      const rpc = await getVendorImages(code)
+      if (!rpc.error && Array.isArray(rpc.data)) {
+        tagged = rpc.data as TaggedImage[]
+      } else {
+        const { data: tags } = await listVendorImageTags(v.id)
+        if (tags && tags.length > 0) {
+          const { data: rows } = await listImagesByIds(tags.map(t => t.image_id))
+          tagged = rows ?? []
+        }
+      }
 
-      if (!tags || tags.length === 0) {
+      if (!tagged || tagged.length === 0) {
         setError('No photos tagged for you yet')
         setLoading(false)
         return
       }
 
-      const imageIds = tags.map(t => t.image_id)
-      const galleryIds = [...new Set(tags.map(t => t.gallery_id))]
-
-      const [imgsRes, galsRes] = await Promise.all([
-        listImagesByIds(imageIds),
-        listGalleryNames(galleryIds),
-      ])
-
-      if (imgsRes.data) {
-        setImages(imgsRes.data)
-        setSelectedIds(new Set(imgsRes.data.map(i => i.id)))
-      }
+      setImages(tagged)
+      setSelectedIds(new Set(tagged.map(i => i.id)))
+      const galsRes = await listGalleryNames([...new Set(tagged.map(t => t.gallery_id))])
 
       if (galsRes.data) {
         const gm = new Map<string, GalleryInfo>()
