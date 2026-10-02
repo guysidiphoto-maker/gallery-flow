@@ -2,7 +2,7 @@
 
 | Folder | What it is |
 |---|---|
-| `migrations/` | The database schema, in order. Starts at `20261003000000_baseline.sql` (production's schema dumped 2026-10-03). Every change after it is a new file here. |
+| `migrations/` | The database schema, in order. Starts at `20261002000000_baseline.sql` (production's schema dumped 2026-10-03). Every change after it is a new file here. |
 | `rollbacks/` | Hand-run undo scripts. Never put these in `migrations/` — the CLI applies every file there. |
 | `migrations_archive/` | Pre-baseline migrations and production's old history, for reference only. |
 | `functions/` | Edge functions. |
