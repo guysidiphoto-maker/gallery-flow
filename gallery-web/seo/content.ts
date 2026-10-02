@@ -50,7 +50,7 @@ export interface LandingContent {
   priority: number
 }
 
-const HOME_EN: CtaLink = { label: 'Pixflow home', href: '/en' }
+const HOME: CtaLink = { label: 'Pixflow home', href: '/' }
 const DEMO: CtaLink = { label: 'See the live demo', href: '/demo' }
 
 // One page per distinct search intent; `related` cross-links the cluster.
@@ -70,7 +70,7 @@ export const LANDING_PAGES: LandingContent[] = [
     intro:
       'Pixflow turns a finished shoot into a branded gallery where every guest finds their own photos in seconds — no scrolling through thousands of images. Upload once, share one link, and let AI face recognition do the sorting.',
     primaryCta: DEMO,
-    secondaryCta: HOME_EN,
+    secondaryCta: HOME,
     sections: [
       {
         h2: 'How face recognition finds the right photos',
@@ -128,7 +128,7 @@ export const LANDING_PAGES: LandingContent[] = [
     intro:
       'Pixflow uses AI to remove the slow parts of event delivery — sorting, finding faces, and getting the right photos to the right people. You upload; guests find themselves; everyone gets their photos fast.',
     primaryCta: DEMO,
-    secondaryCta: HOME_EN,
+    secondaryCta: HOME,
     sections: [
       {
         h2: 'What the AI actually does',
@@ -177,7 +177,7 @@ export const LANDING_PAGES: LandingContent[] = [
     intro:
       'Stop manually culling, tagging, and emailing photos. Pixflow gives you branded galleries with AI face recognition so guests find themselves, download what they want, and you move on to the next shoot.',
     primaryCta: DEMO,
-    secondaryCta: HOME_EN,
+    secondaryCta: HOME,
     sections: [
       {
         h2: 'Spend less time on delivery',
@@ -231,7 +231,7 @@ export const LANDING_PAGES: LandingContent[] = [
     intro:
       'Production companies run many events for many clients. Pixflow gives you a single platform to deliver branded, AI face-recognition galleries for every event — fast enough to share while the event is still the talk of the room.',
     primaryCta: DEMO,
-    secondaryCta: HOME_EN,
+    secondaryCta: HOME,
     sections: [
       {
         h2: 'Delivery that scales with your calendar',
@@ -281,7 +281,7 @@ export const LANDING_PAGES: LandingContent[] = [
     intro:
       'After the wedding, guests want their photos and couples want to relive the day. Pixflow delivers a branded wedding gallery where every guest finds the photos they’re in with a quick selfie — and the couple gets everything in one place.',
     primaryCta: DEMO,
-    secondaryCta: HOME_EN,
+    secondaryCta: HOME,
     sections: [
       {
         h2: 'A better gallery for the couple and their guests',
@@ -331,7 +331,7 @@ export const LANDING_PAGES: LandingContent[] = [
     intro:
       'Conferences, summits, and company events produce thousands of photos and hundreds of people who want them. Pixflow delivers a branded gallery where attendees find their own photos with a selfie — fast enough to drive engagement while the event is still live.',
     primaryCta: DEMO,
-    secondaryCta: HOME_EN,
+    secondaryCta: HOME,
     sections: [
       {
         h2: 'On-brand, on-time delivery',
@@ -381,7 +381,7 @@ export const LANDING_PAGES: LandingContent[] = [
     intro:
       'Face recognition photo delivery lets event guests find their own photos instantly instead of scrolling through everything. Here is how the process works end to end with Pixflow.',
     primaryCta: DEMO,
-    secondaryCta: HOME_EN,
+    secondaryCta: HOME,
     sections: [
       {
         h2: 'Step 1 — The photographer uploads the event',

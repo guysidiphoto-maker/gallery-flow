@@ -139,12 +139,11 @@ const NAV_HE = `
     <nav aria-label="ראשי" style="display:flex;gap:20px;flex-wrap:wrap;font-size:15px">
       <a href="/" style="color:#1a1a1a">בית</a>
       <a href="/demo" style="color:#1a1a1a">דמו</a>
-      <a href="/en" style="color:#1a1a1a">English</a>
     </nav>`
 
 const NAV_EN = `
     <nav aria-label="Primary" style="display:flex;gap:20px;flex-wrap:wrap;font-size:15px">
-      <a href="/en" style="color:#1a1a1a">Home</a>
+      <a href="/" style="color:#1a1a1a">Home</a>
       <a href="/how-it-works" style="color:#1a1a1a">How it works</a>
       <a href="/demo" style="color:#1a1a1a">Demo</a>
       <a href="/" style="color:#1a1a1a">עברית</a>
@@ -161,7 +160,7 @@ function shell(lang: Lang, inner: string): string {
       : "'Inter','Inter Tight',system-ui,sans-serif"
   };color:#1a1a1a;line-height:1.6">
     <header style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:40px">
-      <a href="${lang === 'he' ? '/' : '/en'}" style="font-weight:700;font-size:20px;color:#1a1a1a;text-decoration:none">Pixflow</a>
+      <a href="/" style="font-weight:700;font-size:20px;color:#1a1a1a;text-decoration:none">Pixflow</a>
       ${nav}
     </header>
     <main>
@@ -243,9 +242,9 @@ ${c.faq
   return `
   <div style="background:${D.bg};color:${D.text};min-height:100vh;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.6">
     <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:980px;margin:0 auto;padding:22px 24px;border-bottom:1px solid ${D.border}">
-      <a href="/en" style="font-weight:700;font-size:19px;color:${D.text};text-decoration:none">Pixflow</a>
+      <a href="/" style="font-weight:700;font-size:19px;color:${D.text};text-decoration:none">Pixflow</a>
       <nav aria-label="Primary" style="display:flex;gap:22px;flex-wrap:wrap;font-size:14px">
-        <a href="/en" style="color:${D.muted};text-decoration:none">Home</a>
+        <a href="/" style="color:${D.muted};text-decoration:none">Home</a>
         <a href="/how-it-works" style="color:${D.muted};text-decoration:none">How it works</a>
         <a href="/demo" style="color:${D.muted};text-decoration:none">Demo</a>
         <a href="/" style="color:${D.muted};text-decoration:none">עברית</a>
@@ -301,7 +300,7 @@ function landingToRoute(c: LandingContent): SeoRoute {
       }),
       faqLd(c.faq),
       breadcrumbLd([
-        { name: 'Home', path: '/en' },
+        { name: 'Home', path: '/' },
         { name: c.eyebrow, path: c.path },
       ]),
     ],
@@ -330,9 +329,9 @@ function blogHeaderFooter(inner: string): string {
   return `
   <div style="background:${D.bg};color:${D.text};min-height:100vh;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.7">
     <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:820px;margin:0 auto;padding:22px 24px;border-bottom:1px solid ${D.border}">
-      <a href="/en" style="font-weight:700;font-size:19px;color:${D.text};text-decoration:none">Pixflow</a>
+      <a href="/" style="font-weight:700;font-size:19px;color:${D.text};text-decoration:none">Pixflow</a>
       <nav aria-label="Primary" style="display:flex;gap:22px;flex-wrap:wrap;font-size:14px">
-        <a href="/en" style="color:${D.muted};text-decoration:none">Home</a>
+        <a href="/" style="color:${D.muted};text-decoration:none">Home</a>
         <a href="/blog" style="color:${D.muted};text-decoration:none">Blog</a>
         <a href="/demo" style="color:${D.muted};text-decoration:none">Demo</a>
       </nav>
@@ -434,7 +433,7 @@ function blogToRoute(p: BlogPost): SeoRoute {
       organizationLd(),
       blogPostingLd(p),
       breadcrumbLd([
-        { name: 'Home', path: '/en' },
+        { name: 'Home', path: '/' },
         { name: 'Blog', path: BLOG_INDEX_PATH },
         { name: p.h1, path: p.path },
       ]),
@@ -471,7 +470,7 @@ const BLOG_INDEX_ROUTE: SeoRoute = {
       })),
     },
     breadcrumbLd([
-      { name: 'Home', path: '/en' },
+      { name: 'Home', path: '/' },
       { name: 'Blog', path: BLOG_INDEX_PATH },
     ]),
   ],
@@ -506,7 +505,7 @@ const STATIC_ROUTES: SeoRoute[] = [
     title: 'Pixflow — גלריות אירועים חכמות עם זיהוי פנים',
     description:
       'פלטפורמת גלריות אירועים עם זיהוי פנים מבוסס AI. אורחים מוצאים את התמונות שלהם תוך שניות, והצלם מספק גלריה ממותגת בקישור אחד — לצלמי אירועים, חתונות וכנסים.',
-    alternates: { he: '/', en: '/en' },
+    alternates: { he: '/' },
     changefreq: 'weekly',
     priority: 1.0,
     indexable: true,
@@ -524,60 +523,6 @@ const STATIC_ROUTES: SeoRoute[] = [
         lang: 'he',
       }),
       faqLd(HOME_FAQ_HE),
-    ],
-  },
-  {
-    key: 'home-en',
-    path: '/en',
-    lang: 'en',
-    dir: 'ltr',
-    title: 'Pixflow — AI Face Recognition Photo Galleries for Events',
-    description:
-      'AI face-recognition event photo galleries. Guests find their photos in seconds with a selfie; photographers deliver branded galleries in one link.',
-    alternates: { he: '/', en: '/en' },
-    changefreq: 'weekly',
-    priority: 0.9,
-    // De-indexed until an on-brand English page exists (/en still hydrates the
-    // legacy landing). Drives both the robots meta and the sitemap.
-    indexable: false,
-    bodyHtml: shell(
-      'en',
-      `      <h1 style="font-size:38px;line-height:1.2;margin:0 0 16px">AI Face Recognition Photo Galleries for Events</h1>
-      <p style="font-size:19px;margin:0 0 24px">Pixflow lets event photographers deliver branded galleries where every guest finds themselves in seconds — with a selfie or AI-powered search. Upload once, share with a single link.</p>
-      <h2 style="font-size:24px;margin:32px 0 12px">Why photographers choose Pixflow</h2>
-      <ul style="font-size:17px;padding-inline-start:20px">
-        <li>Face recognition photo search — a guest takes a selfie and gets every photo they're in.</li>
-        <li>Galleries fully branded with your studio logo and colors.</li>
-        <li>One-tap sharing and downloads, optimized for mobile.</li>
-        <li>Fast delivery — start sharing minutes after the event ends.</li>
-      </ul>
-      <h2 style="font-size:24px;margin:32px 0 12px">Explore by use case</h2>
-      <ul style="font-size:17px;padding-inline-start:20px">
-        <li><a href="/face-recognition-photo-gallery" style="color:#1a1a1a">Face recognition photo gallery</a></li>
-        <li><a href="/ai-event-photo-gallery" style="color:#1a1a1a">AI event photo gallery</a></li>
-        <li><a href="/event-photographers" style="color:#1a1a1a">For event photographers</a></li>
-        <li><a href="/event-production-companies" style="color:#1a1a1a">For production companies</a></li>
-        <li><a href="/wedding-photo-gallery" style="color:#1a1a1a">Wedding photo gallery</a></li>
-        <li><a href="/corporate-event-gallery" style="color:#1a1a1a">Corporate event gallery</a></li>
-        <li><a href="/how-it-works" style="color:#1a1a1a">How it works</a></li>
-      </ul>
-      <p style="margin:28px 0"><a href="/demo" style="display:inline-block;background:#1a1a1a;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none">See the demo</a></p>
-      <h2 style="font-size:24px;margin:40px 0 12px">Frequently asked questions</h2>
-      ${HOME_FAQ_EN.map(
-        f => `      <h3 style="font-size:18px;margin:20px 0 6px">${esc(f.q)}</h3>\n      <p style="font-size:16px;margin:0">${esc(f.a)}</p>`,
-      ).join('\n')}`,
-    ),
-    jsonLd: [
-      organizationLd(),
-      websiteLd(),
-      softwareApplicationLd(),
-      serviceLd({
-        name: 'AI face recognition event photo galleries',
-        description: 'A face-recognition event photo delivery platform for photographers and production companies.',
-        audience: 'Event photographers and production companies',
-        lang: 'en',
-      }),
-      faqLd(HOME_FAQ_EN),
     ],
   },
   {
@@ -634,7 +579,7 @@ const STATIC_ROUTES: SeoRoute[] = [
       'he',
       `      <h1 style="font-size:34px;margin:0 0 16px">דמו אינטראקטיבי</h1>
       <p style="font-size:18px;margin:0 0 20px">חוו כיצד אורח מוצא את התמונות שלו בגלריית Pixflow באמצעות סלפי וזיהוי פנים. הדמו ממחיש את חוויית האורח מקצה לקצה.</p>
-      <p style="margin:24px 0"><a href="/" style="color:#1a1a1a">חזרה לעמוד הבית</a> &nbsp; <a href="/en" style="color:#1a1a1a">English site</a></p>`,
+      <p style="margin:24px 0"><a href="/" style="color:#1a1a1a">חזרה לעמוד הבית</a></p>`,
     ),
     jsonLd: [
       organizationLd(),

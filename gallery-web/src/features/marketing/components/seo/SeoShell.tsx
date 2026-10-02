@@ -20,7 +20,7 @@ export function SeoShell({ dir, nav, children }: Props) {
       dir={dir}
     >
       <header className="mx-auto flex max-w-[980px] items-center justify-between gap-4 border-b border-white/8 px-6 py-[22px]">
-        <a className="text-[19px] font-bold tracking-[-0.01em] text-(--mk-seo-ink)" href="/en">
+        <a className="text-[19px] font-bold tracking-[-0.01em] text-(--mk-seo-ink)" href="/">
           Pixflow
         </a>
         <nav className="flex flex-wrap gap-[22px] text-[14px]" aria-label="Primary">

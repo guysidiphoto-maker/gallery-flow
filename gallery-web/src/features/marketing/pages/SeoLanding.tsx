@@ -10,7 +10,7 @@ import { seo } from '../components/seo/seoClasses'
 // read seo/content.ts so crawler copy and user copy never drift.
 
 const NAV = [
-  { href: '/en', label: 'Home' },
+  { href: '/', label: 'Home' },
   { href: '/how-it-works', label: 'How it works' },
   { href: '/demo', label: 'Demo' },
   { href: '/', label: 'עברית' },
@@ -31,9 +31,9 @@ export function SeoLanding() {
     if (meta) meta.setAttribute('content', content.description)
   }, [content])
 
-  // Unknown landing path: send the user to the English home rather than render blank.
+  // Unknown landing path: send the user home rather than render blank.
   if (!content) {
-    window.location.replace('/en')
+    window.location.replace('/')
     return null
   }
 
