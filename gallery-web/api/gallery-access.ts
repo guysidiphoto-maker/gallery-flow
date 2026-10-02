@@ -107,20 +107,23 @@ async function handleVerifyCode(
     .maybeSingle()
   const hash = (cli as { access_code_hash?: string | null } | null)?.access_code_hash ?? null
   if (cli && hash === null) {
-    // Fail closed: only offer the legacy fallback when a live gallery actually
-    // has a non-empty clientCode — never compare against an absent code.
-    const { data: coded } = await supabase
-      .from('galleries')
-      .select('id')
-      .eq('client_id', clientId)
-      .eq('status', 'live')
-      .not('delivery_settings->>clientCode', 'is', null)
-      .neq('delivery_settings->>clientCode', '')
-      .limit(1)
-    if (coded && coded.length > 0) {
-      res.status(200).json({ ok: true, fallback_to_legacy: true }); return
+    // Legacy PIN: the client code of one of the client's live galleries, kept
+    // server-side in gallery_client_codes. Attempts go to client_code_attempts so
+    // verify_client_code's cooldown covers this path too.
+    const { data: codes } = await supabase
+      .from('gallery_client_codes')
+      .select('code, galleries!inner(client_id, status)')
+      .eq('galleries.client_id', clientId)
+      .eq('galleries.status', 'live')
+    const known = (codes ?? []) as Array<{ code: string }>
+    if (known.length === 0) {
+      res.status(401).json({ ok: false, error: 'access_not_configured' }); return
     }
-    res.status(401).json({ ok: false, error: 'access_not_configured' }); return
+    const match = known.some(c => c.code === code.toUpperCase())
+    await supabase.from('client_code_attempts').insert({ client_id: clientId, ip, success: match })
+    if (match) {
+      res.status(200).json({ ok: true, legacy: true }); return
+    }
   }
 
   res.status(401).json({ ok: false, error: 'invalid_code' })

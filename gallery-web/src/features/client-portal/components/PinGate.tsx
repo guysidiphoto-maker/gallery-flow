@@ -4,13 +4,12 @@ import { CenteredCard } from './CenteredCard'
 import { CardHeading } from './CardHeading'
 
 /** Legacy access-code gate for clients that were given a PIN instead of a membership. */
-export function PinGate({ clientId, clientCode, slug, onUnlocked }: {
+export function PinGate({ clientId, slug, onUnlocked }: {
   clientId: string
-  clientCode: string
   slug: string
   onUnlocked: () => void
 }) {
-  const { codeInput, setCodeInput, codeError, submitting, tryUnlock } = usePinUnlock(clientId, clientCode, onUnlocked)
+  const { codeInput, setCodeInput, codeError, submitting, tryUnlock } = usePinUnlock(clientId, onUnlocked)
 
   return (
     <CenteredCard dir="rtl">

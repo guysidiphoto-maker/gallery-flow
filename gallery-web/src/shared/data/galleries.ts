@@ -87,3 +87,10 @@ export async function updateGallerySettings(galleryId: string, patch: Record<str
 export async function duplicateGallery(sourceGalleryId: string, newName: string) {
   return supabase.rpc('duplicate_gallery', { p_source_gallery_id: sourceGalleryId, p_new_name: newName })
 }
+
+/** The gallery's client code (owner-only table; a trigger moves it out of delivery_settings). */
+export async function getGalleryClientCode(galleryId: string): Promise<string> {
+  const { data } = await supabase
+    .from('gallery_client_codes').select('code').eq('gallery_id', galleryId).maybeSingle()
+  return (data as { code?: string } | null)?.code ?? ''
+}

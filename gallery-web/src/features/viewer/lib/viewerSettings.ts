@@ -58,7 +58,6 @@ export function resolveViewerSettings(gallery: Gallery | null) {
     galleryTitle: s(raw, 'galleryTitle', '') || (gallery?.name ?? ''),
     clientName: s(raw, 'clientName', '') || gallery?.client_name,
     clientSelectionEnabled: raw.clientSelectionEnabled ?? false,
-    clientCode: raw.clientCode ?? '',
     isFeedMode,
     layoutMode,
     imageSpacing,

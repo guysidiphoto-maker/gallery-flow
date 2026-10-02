@@ -218,19 +218,32 @@ export async function getHidden(galleryId: string): Promise<string[]> {
   return (data as Array<{ image_id: string }>).map(r => r.image_id)
 }
 
-/** Hides/unhides one image for the client (`gallery_set_hidden`); result ignored. */
+/** Hides/unhides one image (`gallery_set_hidden`); the server requires the owner or a valid client code. */
 export async function setHidden(
   galleryId: string,
   imageId: string,
   hidden: boolean,
-): Promise<void> {
+  clientCode: string | null,
+): Promise<boolean> {
   const token = getStoredToken(galleryId)
-  await supabase.rpc('gallery_set_hidden', {
+  const { error } = await supabase.rpc('gallery_set_hidden', {
     p_gallery_id: galleryId,
     p_image_id: imageId,
     p_hidden: hidden,
     p_token: token,
+    p_client_code: clientCode,
   })
+  return !error
+}
+
+/** Server-side client-code check (`gallery_verify_client_code`); false on any error. */
+export async function verifyClientCode(galleryId: string, code: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('gallery_verify_client_code', {
+    p_gallery_id: galleryId,
+    p_code: code,
+    p_token: getStoredToken(galleryId),
+  })
+  return !error && data === true
 }
 
 /** Last-published revision (settings + sections) as `{ data, error }`; data may be a row or a one-row array. */

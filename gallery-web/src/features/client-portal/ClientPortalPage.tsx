@@ -17,7 +17,7 @@ export function ClientDashboard() {
   const { slug, clientId, resolveErr } = usePortalClient()
   const { authenticated, markAuthenticated } = useLegacySession(clientId)
   const { bootstrap, bootstrapChecked, memberEmail } = usePortalBootstrap()
-  const { galleries, covers, clientCode, error, loading } = usePortalGalleries(clientId, resolveErr)
+  const { galleries, covers, hasPin, error, loading } = usePortalGalleries(clientId, resolveErr)
   const loc = usePortalLocale()
 
   // Bootstrap is self-scoped via auth.uid(); the route param is never trusted.
@@ -35,8 +35,8 @@ export function ClientDashboard() {
 
   if (!authenticated && !memberAuthorized) {
     // A missing PIN must fail closed, never render the portal open.
-    return clientCode
-      ? <PinGate clientId={clientId} clientCode={clientCode} slug={slug} onUnlocked={markAuthenticated} />
+    return hasPin
+      ? <PinGate clientId={clientId} slug={slug} onUnlocked={markAuthenticated} />
       : <RestrictedGate loc={loc} />
   }
 
