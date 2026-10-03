@@ -66,7 +66,7 @@ export function GalleryViewerPage() {
   useGalleryBranding(gallery, lang)
   const covers = useCoverUrls(settings.rec, images, imgBucket, settings.coverEnabled)
   usePreloadThumbs(showWelcome, images, imgBucket)
-  const downloads = useDownloads({ gallery, settings, images, viewerIndex, viewerList, isMobile, txt })
+  const downloads = useDownloads({ gallery, settings, viewerIndex, isMobile, txt })
   const view = useVisibleImages({
     images, sections, hiddenImageIds: client.hiddenImageIds, viewerRole: client.viewerRole,
     faceMatchIds: face.faceMatchIds, faceFilterActive: face.faceFilterActive,
@@ -183,7 +183,7 @@ export function GalleryViewerPage() {
     imageSpacing: settings.imageSpacing,
     cornerStyle: settings.cornerStyle,
     onDownload: downloadsEnabled ? downloads.handleImageDownload : undefined,
-    onWarmDownload: downloads.warmTileDownload,
+    onWarmDownload: downloads.warmDownload,
     selectMode,
     selectedIds,
     onToggleSelect: id => setSelectedIds(prev => {
@@ -319,6 +319,7 @@ export function GalleryViewerPage() {
             onClose={() => { setViewerIndex(null); setViewerList(null) }}
             onNavigate={setViewerIndex}
             onDownload={downloads.handleImageDownload}
+            onWarmDownload={downloads.warmDownload}
           />
         </Suspense>
       )}
