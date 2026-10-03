@@ -12,26 +12,25 @@ import { runBatchDownload } from '../lib/batchDownload'
 import type { ViewerSettings } from '../lib/viewerSettings'
 import { useDownloadGate } from './useDownloadGate'
 
-// Bounds memory for warmed HD Files: a phone viewport of tiles plus the viewer's current/next.
+// Bounds memory for Files kept for a repeat tap.
 const MAX_DOWNLOAD_CACHE = 12
 
 type ViewerTexts = ReturnType<typeof t>
 
 /**
- * Single + batch downloads. On iOS the only reliable one-tap save is calling
- * navigator.share() synchronously in the tap, so the File for the image in view
- * (and on-screen tiles, mobile only) is prefetched ahead of time.
+ * Single + batch downloads. The download file is only fetched once a finger
+ * lands on a download button, never while guests browse. iOS needs
+ * navigator.share() called synchronously in the tap, so a slow first fetch may
+ * need a second tap, which then opens the share sheet from the cached File.
  */
 export function useDownloads(opts: {
   gallery: Gallery | null
   settings: ViewerSettings
-  images: GalleryImage[]
   viewerIndex: number | null
-  viewerList: GalleryImage[] | null
   isMobile: boolean
   txt: ViewerTexts
 }) {
-  const { gallery, settings, images, viewerIndex, viewerList, isMobile, txt } = opts
+  const { gallery, settings, viewerIndex, isMobile, txt } = opts
   const { downloadsEnabled, downloadQuality, galleryTitle } = settings
   const gate = useDownloadGate(gallery?.id, settings.trackDownloads)
 
@@ -41,9 +40,9 @@ export function useDownloads(opts: {
   const [dlProgress, setDlProgress] = useState<string | null>(null)
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null)
 
-  // Warmed Files keyed by downloadCacheKey; inflight de-dupes, aborts cancel superseded warms.
+  // Files keyed by downloadCacheKey. The tap awaits an in-flight warm instead of fetching the file twice.
   const downloadFileCache = useRef<Map<string, { file: File }>>(new Map())
-  const downloadPrefetchInflight = useRef<Set<string>>(new Set())
+  const downloadPrefetchInflight = useRef<Map<string, Promise<File | null>>>(new Map())
   const downloadPrefetchAborts = useRef<Map<string, AbortController>>(new Map())
 
   const urlCtx: DownloadUrlContext = {
@@ -74,68 +73,49 @@ export function useDownloads(opts: {
   }
 
   /** Best-effort warm; the cached File holds the bytes, so it outlives the signed URL. */
-  async function prefetchDownloadFile(img: GalleryImage) {
-    if (!img?.id) return
+  function prefetchDownloadFile(img: GalleryImage): Promise<File | null> {
     const key = downloadCacheKey(img.id, currentQuality())
-    if (downloadFileCache.current.has(key) || downloadPrefetchInflight.current.has(key)) return
+    const cached = downloadFileCache.current.get(key)
+    if (cached) return Promise.resolve(cached.file)
+    const inflight = downloadPrefetchInflight.current.get(key)
+    if (inflight) return inflight
     const controller = new AbortController()
-    downloadPrefetchInflight.current.add(key)
     downloadPrefetchAborts.current.set(key, controller)
-    try {
-      const { url } = await resolveDownloadUrl(img, urlCtx)
-      const res = await fetch(url, { signal: controller.signal })
-      if (!res.ok) return
-      const blob = await res.blob()
-      if (controller.signal.aborted) return
-      cacheDownloadFile(key, new File([blob], downloadFileName(img.filename), { type: 'image/jpeg' }))
-    } catch {
-      /* best-effort (incl. AbortError): the tap fetches on demand */
-    } finally {
-      downloadPrefetchInflight.current.delete(key)
-      downloadPrefetchAborts.current.delete(key)
-    }
+    const warm = (async () => {
+      try {
+        const { url } = await resolveDownloadUrl(img, urlCtx)
+        const res = await fetch(url, { signal: controller.signal })
+        if (!res.ok) return null
+        const blob = await res.blob()
+        if (controller.signal.aborted) return null
+        const file = new File([blob], downloadFileName(img.filename), { type: 'image/jpeg' })
+        cacheDownloadFile(key, file)
+        return file
+      } catch {
+        return null // best-effort (incl. AbortError): the tap fetches on demand
+      } finally {
+        downloadPrefetchInflight.current.delete(key)
+        downloadPrefetchAborts.current.delete(key)
+      }
+    })()
+    downloadPrefetchInflight.current.set(key, warm)
+    return warm
   }
 
-  /** Abort a warm for a tile that scrolled away; a finished entry stays cached. */
-  function cancelDownloadPrefetch(img: GalleryImage) {
-    if (!img?.id) return
-    const key = downloadCacheKey(img.id, currentQuality())
-    const controller = downloadPrefetchAborts.current.get(key)
-    if (controller) { controller.abort(); downloadPrefetchAborts.current.delete(key) }
-    downloadPrefetchInflight.current.delete(key)
+  /** A finger landed on a download button: start fetching ahead of the tap. */
+  function warmDownload(img: GalleryImage) {
+    if (!img?.id || !shouldWarmDownload({ isMobile, downloadsEnabled })) return
+    void prefetchDownloadFile(img)
   }
 
-  function warmTileDownload(img: GalleryImage, warm: boolean) {
-    if (!shouldWarmDownload({ isMobile, downloadsEnabled })) return
-    if (warm) void prefetchDownloadFile(img)
-    else cancelDownloadPrefetch(img)
-  }
-
-  // Warm the viewer's current image (and next, web quality only); on close
-  // abort everything and drop cached blobs.
+  // On lightbox close, abort warms still in flight and drop cached Files.
   useEffect(() => {
-    if (viewerIndex === null) {
-      downloadPrefetchAborts.current.forEach(c => c.abort())
-      downloadPrefetchAborts.current.clear()
-      downloadPrefetchInflight.current.clear()
-      downloadFileCache.current.clear()
-      return
-    }
-    if (!downloadsEnabled) return
-    const list = viewerList ?? images
-    const cur = list[viewerIndex]
-    const quality = currentQuality()
-    const nxt = list.length > 1 ? list[(viewerIndex + 1) % list.length] : undefined
-    const wanted = new Set<string>()
-    if (cur) wanted.add(downloadCacheKey(cur.id, quality))
-    if (nxt && quality === 'web') wanted.add(downloadCacheKey(nxt.id, 'web'))
-    downloadPrefetchAborts.current.forEach((c, key) => {
-      if (!wanted.has(key)) { c.abort(); downloadPrefetchAborts.current.delete(key) }
-    })
-    if (cur) void prefetchDownloadFile(cur)
-    if (nxt && nxt.id !== cur?.id && quality === 'web') void prefetchDownloadFile(nxt)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewerIndex, viewerList, images])
+    if (viewerIndex !== null) return
+    downloadPrefetchAborts.current.forEach(c => c.abort())
+    downloadPrefetchAborts.current.clear()
+    downloadPrefetchInflight.current.clear()
+    downloadFileCache.current.clear()
+  }, [viewerIndex])
 
   const saveFailed = () => showHdNotice(txt.saveFailed ?? 'Save failed — tap Save to try again.')
   const originalStillUploading = () =>
@@ -174,7 +154,7 @@ export function useDownloads(opts: {
       const key = downloadCacheKey(img.id, quality)
       const cached = downloadFileCache.current.get(key)
       if (isMobile) {
-        let file = cached?.file
+        let file = cached?.file ?? (await downloadPrefetchInflight.current.get(key)) ?? undefined
         if (!file) {
           const { url, downgraded } = await resolveDownloadUrl(img, urlCtx)
           if (downgraded) originalStillUploading()
@@ -193,8 +173,11 @@ export function useDownloads(opts: {
       flashSaved()
       if (gallery) void logDownload(gallery.id, img.id, quality, 'single', gate.downloaderRef.current)
     } catch (err) {
-      // Dismissed sheets and iOS gesture-timing rejections stay silent.
-      if (classifyDownloadError(err) === 'failure') saveFailed()
+      // A dismissed sheet stays silent. If the tap's gesture lapsed during the fetch,
+      // the File is cached now, so the next tap opens the share sheet at once.
+      const kind = classifyDownloadError(err)
+      if (kind === 'failure') saveFailed()
+      else if (kind === 'preparation') showHdNotice(txt.tapAgainToSave)
     } finally {
       setSavingPhoto(false)
     }
@@ -226,6 +209,6 @@ export function useDownloads(opts: {
     closeEmailGate: gate.closeGate,
     handleImageDownload,
     handleBatchDownload,
-    warmTileDownload,
+    warmDownload,
   }
 }

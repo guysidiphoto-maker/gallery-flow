@@ -16,7 +16,7 @@ const roundBtn =
   'absolute flex items-center justify-center rounded-full transition-all duration-250 ease-[cubic-bezier(.16,1,.3,1)]'
 
 export function MasonryTile({
-  img, index, imgBucket, imgSizes, isAboveFold, rounded, tileRef,
+  img, index, imgBucket, imgSizes, fullWidth, isAboveFold, rounded,
   selectMode, isSelected, clientMode, isHidden, watermark,
   onImageClick, onToggleSelect, onToggleHide, onDownload, onWarmDownload,
 }: {
@@ -24,10 +24,11 @@ export function MasonryTile({
   index: number
   imgBucket: string
   imgSizes: string
+  /** One-column layout: the tile spans the page, so the 2048px web copy may be picked. */
+  fullWidth: boolean
   /** First-row tiles are the LCP: eager + high fetch priority. */
   isAboveFold: boolean
   rounded: boolean
-  tileRef: (el: HTMLDivElement | null) => void
   selectMode?: boolean
   isSelected: boolean
   clientMode?: boolean
@@ -37,13 +38,12 @@ export function MasonryTile({
   onToggleSelect?: (id: string) => void
   onToggleHide?: (id: string) => void
   onDownload?: (img: GalleryImage) => void
-  onWarmDownload?: (img: GalleryImage, warm: boolean) => void
+  onWarmDownload?: (img: GalleryImage) => void
 }) {
   const activate = () => (selectMode ? onToggleSelect?.(img.id) : onImageClick(index))
 
   return (
     <div
-      ref={tileRef}
       className={cn(
         'group relative overflow-hidden [contain-intrinsic-size:auto_320px] [content-visibility:auto]',
         // Hover lift only where hover is real: per-tile compositor work crashed mobile Safari on fast scroll.
@@ -54,11 +54,12 @@ export function MasonryTile({
     >
       <SignedImg
         bucket={imgBucket}
-        // Pre-baked derivatives served directly: phones pick the ~640 thumb, big columns the ≤2048 web copy.
+        // Grid tiles use the 640px thumb; the 2048px web copy is for the lightbox. Only a
+        // one-column layout is wide enough that a thumb would look soft.
         path={img.thumbnail_path || img.storage_path}
         srcSetPaths={[
           { path: img.thumbnail_path, width: 640 },
-          { path: img.storage_path, width: 2048 },
+          ...(fullWidth ? [{ path: img.storage_path, width: 2048 }] : []),
         ]}
         sizes={imgSizes}
         alt=""
@@ -119,7 +120,7 @@ export function MasonryTile({
       {!selectMode && onDownload && (
         <button
           // Warm the File the moment the finger lands so the first tap can open the share sheet.
-          onPointerDown={() => onWarmDownload?.(img, true)}
+          onPointerDown={() => onWarmDownload?.(img)}
           onClick={e => { e.stopPropagation(); onDownload(img) }}
           className={cn(
             roundBtn, 'end-2.5 bottom-2.5 size-[34px] border border-white/10 bg-black/45 text-white opacity-0 shadow-[0_2px_8px] shadow-black/25 backdrop-blur-[12px]',

@@ -26,6 +26,8 @@ interface ViewerProps {
   onNavigate: (index: number) => void
   /** The parent resolves the right download URL for the image. */
   onDownload: (img: GalleryImage) => void
+  /** Called when a finger lands on the download button, before the tap. */
+  onWarmDownload?: (img: GalleryImage) => void
 }
 
 // Hairline controls on the dark overlay, same editorial language as the rest of the app.
@@ -35,7 +37,7 @@ const control =
 const focusRing = 'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-white/85'
 const imgBase = 'max-h-[85vh] max-w-[92vw] rounded-[3px] object-contain select-none animate-[gv-lightbox-img-in_.3s_cubic-bezier(.16,1,.3,1)]'
 
-export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel, txt = t('he'), onClose, onNavigate, onDownload }: ViewerProps) {
+export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel, txt = t('he'), onClose, onNavigate, onDownload, onWarmDownload }: ViewerProps) {
   const img = images[index]
   const total = images.length
   const [currentSrc, setCurrentSrc] = useState<string>('')
@@ -72,10 +74,10 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
     return () => { cancelled = true }
   }, [imgBucket, img?.storage_path, img?.thumbnail_path])
 
-  // Preload the next 5 photos.
+  // Preload the next 2 web copies so swiping forward is instant.
   useEffect(() => {
     if (total <= 1) return
-    const count = Math.min(5, total - 1)
+    const count = Math.min(2, total - 1)
     for (let i = 1; i <= count; i++) {
       const nextImg = images[(index + i) % total]
       if (!nextImg?.storage_path) continue
@@ -223,6 +225,7 @@ export function Viewer({ images, index, imgBucket, allowDownloads, downloadLabel
 
           {allowDownloads && (
             <button
+              onPointerDown={() => onWarmDownload?.(img)}
               onClick={() => onDownload(img)}
               className={cn(
                 control, focusRing,

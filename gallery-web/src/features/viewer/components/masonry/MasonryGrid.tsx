@@ -3,9 +3,7 @@ import { gapForSpacing } from '@/shared/gallery/galleryLayout'
 import { cn } from '@/shared/ui'
 import type { GalleryImage } from '@/shared/types'
 import { MasonryTile, type TileWatermark } from './MasonryTile'
-import {
-  useBalancedColumns, useColumnCount, useContainerWidth, useProgressiveImages, useTileWarmObserver,
-} from './useMasonryLayout'
+import { useBalancedColumns, useColumnCount, useContainerWidth, useProgressiveImages } from './useMasonryLayout'
 
 export interface MasonryGridProps {
   images: GalleryImage[]
@@ -15,8 +13,8 @@ export interface MasonryGridProps {
   cornerStyle: string
   onImageClick: (index: number) => void
   onDownload?: (img: GalleryImage) => void
-  /** Called with (img, true) as a tile enters the viewport and (img, false) as it leaves. */
-  onWarmDownload?: (img: GalleryImage, warm: boolean) => void
+  /** Called when a finger lands on a tile's download button, before the tap. */
+  onWarmDownload?: (img: GalleryImage) => void
   selectMode?: boolean
   selectedIds?: Set<string>
   onToggleSelect?: (id: string) => void
@@ -32,7 +30,6 @@ export function MasonryGrid({
   selectMode, selectedIds, onToggleSelect, clientMode, hiddenIds, onToggleHide, watermark,
 }: MasonryGridProps) {
   const cols = useColumnCount(layoutMode)
-  const registerTile = useTileWarmObserver(onWarmDownload)
   const { containerRef, containerWidth } = useContainerWidth()
   const { visibleImages, hasMore, sentinelRef } = useProgressiveImages(images)
   const columns = useBalancedColumns(visibleImages, cols)
@@ -56,9 +53,9 @@ export function MasonryGrid({
               index={index}
               imgBucket={imgBucket}
               imgSizes={imgSizes}
+              fullWidth={cols === 1}
               isAboveFold={index < cols}
               rounded={cornerStyle === 'rounded'}
-              tileRef={registerTile(img)}
               selectMode={selectMode}
               isSelected={!!(selectMode && selectedIds?.has(img.id))}
               clientMode={clientMode}
